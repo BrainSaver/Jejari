@@ -3,5 +3,20 @@
     "commit": "",
     "pr": "",
     "sessionUrl": false
+  },
+  "permissions": {
+    "deny": [
+      "Bash(git checkout -b:*)",
+      "Bash(git checkout -B:*)",
+      "Bash(git checkout --orphan:*)",
+      "Bash(git switch -c:*)",
+      "Bash(git switch -C:*)",
+      "Bash(git switch --create:*)",
+      "Bash(git switch --force-create:*)",
+      "Bash(git worktree add:*)",
+      "Bash(git push origin HEAD:refs/heads/claude:*)",
+      "Bash(git push -u origin claude/:*)",
+      "Bash(git push origin claude/:*)"
+    ]
   }
 }
