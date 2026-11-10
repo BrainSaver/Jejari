@@ -20,6 +20,9 @@ Thumbs.db
 # Node
 node_modules/
 
+# 문서 사이트 로컬 실행 (wrangler)
+site/.wrangler/
+
 # Python
 __pycache__/
 *.pyc

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>제자리 설계 문서</title>
+<meta name="description" content="제자리 팀의 기능설계·DB설계·화면설계 문서. 보기는 누구나, 수정은 팀원 이름 브랜치로.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f5bd3'/%3E%3Cpath d='M9 22h14M11 22V12h10v10M14 12V9h4v3' stroke='white' stroke-width='2.2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <button class="icon-btn only-mobile" id="navToggle" aria-label="메뉴">☰</button>
+  <a class="brand" href="#/"><span class="logo" aria-hidden="true"></span>제자리 <span class="muted">설계 문서</span></a>
+  <div class="top-mid">
+    <label class="ref-pick" title="볼 브랜치">
+      <span class="muted">보기</span>
+      <select id="refSelect" aria-label="볼 브랜치"></select>
+    </label>
+  </div>
+  <div class="top-right">
+    <button class="btn ghost" id="mergeBtn" hidden>main에 합치기</button>
+    <button class="btn" id="loginBtn">수정하려면 로그인</button>
+    <div class="user" id="userBox" hidden>
+      <button class="chip" id="userChip"></button>
+      <div class="menu" id="userMenu" hidden>
+        <button data-act="mine">내 브랜치 보기</button>
+        <button data-act="reset" id="resetMenu" hidden>PIN 초기화</button>
+        <button data-act="logout">로그아웃</button>
+      </div>
+    </div>
+  </div>
+</header>
+<div class="layout">
+  <nav class="side" id="side">
+    <a href="#/" data-nav="home">홈</a>
+    <a href="#/doc/plan" data-nav="plan">기획서</a>
+    <a href="#/doc/func" data-nav="func">기능설계</a>
+    <a href="#/db" data-nav="db">DB설계 · ERD</a>
+    <a href="#/ui" data-nav="ui">화면설계</a>
+    <a href="#/doc/conc" data-nav="conc">동시성</a>
+    <div class="side-sep"></div>
+    <a href="#/history" data-nav="history">수정 기록</a>
+    <a href="#/tree" data-nav="tree">소스트리</a>
+    <div class="side-foot muted">보기는 누구나, 수정은 이름 + PIN. 수정은 각자 이름 브랜치에 커밋돼요.</div>
+  </nav>
+  <main id="main" tabindex="-1"></main>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+<div class="modal-back" id="modalBack" hidden>
+  <div class="modal" role="dialog" aria-modal="true" id="modal"></div>
+</div>
+<script src="/vendor/marked.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
