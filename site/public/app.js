@@ -477,12 +477,22 @@ async function erdTab(root) {
   root.innerHTML = `${branchBanner(S.ref)}${S.me ? `<div class="banner info" style="flex-wrap:wrap">ERD 편집기에서 고친 뒤
     <b>내 수정 저장</b>을 누르면 <code>docs/erd/exports/${esc(S.me)}-날짜.json</code>으로 내 브랜치에 커밋돼요. 스키마(HTML) 반영은 강동균이 패치로 해요.
     <button class="btn sm" id="erdSave">내 수정 저장</button></div>` : '<div class="banner info">테이블을 누르면 컬럼·설명이 나오고, 위쪽 "문서"에서 공통 규칙·흐름을 볼 수 있어요. 여기서 고친 내용은 내 브라우저에만 남아요.</div>'}
-    <iframe class="erd-frame" title="ERD 편집기"></iframe>`;
+    <div class="erd-tools"><span class="muted">칸이 좁으면 전체화면으로 크게 보세요.</span><button class="btn sm plain" id="erdFs">⛶ 전체화면</button></div>
+    <div class="erd-wrap"><iframe class="erd-frame" title="ERD 편집기"></iframe><button class="fs-close" type="button">닫기 (Esc)</button></div>`;
   bindBanner(root);
   const f = await fetchFile(ERD_PATH, S.ref);
   const frame = $('iframe', root);
   if (!f) { frame.replaceWith(Object.assign(document.createElement('p'), { className: 'empty', textContent: 'ERD 편집기 파일이 없어요.' })); return; }
   frame.srcdoc = f.content;
+  // 전체화면: 칸을 화면 가득 키우고, 지원하는 브라우저면 진짜 전체화면도 켠다. Esc는 편집기 안에서 눌러도 닫힌다.
+  const wrap = $('.erd-wrap', root);
+  const fsOff = () => { wrap.classList.remove('fs'); document.body.classList.remove('no-scroll'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); };
+  $('#erdFs', root).addEventListener('click', () => { wrap.classList.add('fs'); document.body.classList.add('no-scroll'); if (wrap.requestFullscreen) wrap.requestFullscreen().catch(() => {}); });
+  $('.fs-close', wrap).addEventListener('click', fsOff);
+  wrap.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) { wrap.classList.remove('fs'); document.body.classList.remove('no-scroll'); } });
+  const onEsc = (e) => { if (e.key === 'Escape' && wrap.classList.contains('fs')) fsOff(); };
+  document.addEventListener('keydown', function esc(e) { if (!wrap.isConnected) { document.removeEventListener('keydown', esc); return; } onEsc(e); });
+  frame.addEventListener('load', () => { try { frame.contentWindow.document.addEventListener('keydown', onEsc); } catch {} });
   if ($('#erdSave', root)) $('#erdSave', root).addEventListener('click', async () => {
     if (!needLogin()) return;
     let content;
