@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>열차 검색</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--fg:#1d1f24;--mut:#6b7079;--line:#e4e5e8;--pri:#2f5bd3;--pri2:#e8eefc;--ok:#1d6b33;--okb:#e3f4e6;--bad:#a12c2c;--badb:#fbe9e9;--warn:#7a5600;--warnb:#fff5db}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+.app{max-width:420px;margin:0 auto;min-height:100vh;background:var(--bg);display:flex;flex-direction:column}
+.bar{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:10px;z-index:2}
+.bar h1{font-size:17px;margin:0;flex:1}.bar a{color:var(--fg);text-decoration:none;font-size:20px}
+.body{padding:16px;flex:1;display:flex;flex-direction:column;gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.btn{display:block;width:100%;text-align:center;border:0;border-radius:10px;padding:13px;font:inherit;font-weight:700;background:var(--pri);color:#fff;text-decoration:none;cursor:pointer}
+.btn.sub{background:var(--pri2);color:var(--pri)}.btn.line{background:none;border:1px solid var(--line);color:var(--fg)}.btn.off{background:#c9ccd3;cursor:default}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}.field label{font-size:13px;color:var(--mut);font-weight:600}
+input,select{font:inherit;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;width:100%}
+.row{display:flex;gap:8px;align-items:center}.grow{flex:1}.mut{color:var(--mut);font-size:13px}.big{font-size:28px;font-weight:800}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--pri2);color:var(--pri)}
+.tag.ok{background:var(--okb);color:var(--ok)}.tag.bad{background:var(--badb);color:var(--bad)}.tag.warn{background:var(--warnb);color:var(--warn)}
+.err{background:var(--badb);color:var(--bad);border-radius:10px;padding:10px 12px;font-size:14px}
+.note{background:var(--warnb);color:var(--warn);border-radius:10px;padding:10px 12px;font-size:14px}
+.tabbar{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex}
+.tabbar a{flex:1;text-align:center;padding:10px 0;font-size:12px;color:var(--mut);text-decoration:none}.tabbar a.on{color:var(--pri);font-weight:700}
+.list a.item{display:flex;gap:10px;align-items:center;color:inherit;text-decoration:none}
+hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+.seats{display:grid;grid-template-columns:repeat(2,1fr) 18px repeat(2,1fr);gap:6px}
+.seat{aspect-ratio:1;border-radius:7px;border:1px solid var(--line);background:#fff;font-size:11px;display:flex;align-items:center;justify-content:center}
+.seat.taken{background:#d9dce2;color:#999}.seat.hold{background:var(--warnb);color:var(--warn)}.seat.mine{background:var(--pri);color:#fff;border-color:var(--pri)}
+.aisle{}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="bar"><h1>열차 검색</h1></header>
+<main class="body">
+<div class="card">
+  <div class="row"><div class="grow field"><label>출발</label><select><option>서울</option></select></div><span>⇄</span><div class="grow field"><label>도착</label><select><option>부산</option></select></div></div>
+  <div class="field"><label>운행일</label><input value="2027-02-06 (토)"></div>
+  <a class="btn" href="#">검색</a>
+</div>
+<div class="card">
+  <div class="row"><b class="grow">101 · 06:00 → 08:40</b><span class="tag ok">판매 중</span></div>
+  <div class="mut">2시간 40분</div><hr>
+  <div class="row"><span class="grow">일반실 59,800원</span><span class="mut">12석 남음</span></div>
+  <div class="row"><span class="grow">특실 83,700원</span><span class="mut">3석 남음</span></div><br>
+  <a class="btn" href="U-04.html">예매하기</a>
+</div>
+<div class="card">
+  <div class="row"><b class="grow">103 · 07:00 → 09:38</b><span class="tag bad">매진</span></div>
+  <div class="mut">2시간 38분</div><hr>
+  <div class="row"><span class="grow">일반실 59,800원</span><span class="mut">0석</span></div><br>
+  <a class="btn sub" href="U-10.html">취소표 대기 신청</a>
+</div>
+<div class="card">
+  <div class="row"><b class="grow">105 · 08:00 → 10:41</b><span class="tag warn">오픈 전</span></div>
+  <div class="mut">예매 오픈 02-01 10:00</div><br>
+  <span class="btn off">예매 오픈 전</span>
+</div>
+</main>
+<nav class="tabbar"><a href="U-03.html" class="on">검색</a><a href="U-08.html" class="">예매 내역</a><a href="U-10.html" class="">취소표</a><a href="U-11.html" class="">알림</a><a href="U-09.html" class="">내 정보</a></nav>
+</div>
+</body>
+</html>

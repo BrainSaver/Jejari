@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>운영 설정</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--fg:#1d1f24;--mut:#6b7079;--line:#e4e5e8;--pri:#2f5bd3;--pri2:#e8eefc;--ok:#1d6b33;--okb:#e3f4e6;--bad:#a12c2c;--badb:#fbe9e9;--warn:#7a5600;--warnb:#fff5db;--side:#1f2430}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+.wrap{display:flex;min-height:100vh}
+.side{width:200px;background:var(--side);color:#cfd3dc;padding:16px 10px;flex:none}
+.side b{display:block;color:#fff;padding:0 10px 14px;font-size:15px}
+.side a{display:block;color:#cfd3dc;text-decoration:none;padding:7px 10px;border-radius:7px;font-size:13.5px}.side a.on{background:#323a4b;color:#fff;font-weight:700}
+.main{flex:1;min-width:0;padding:20px 24px}
+.head{display:flex;align-items:center;gap:10px;margin-bottom:16px}.head h1{font-size:20px;margin:0;flex:1}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:14px}
+.kpi .n{font-size:24px;font-weight:800}.kpi .l{color:var(--mut);font-size:12.5px}
+table{border-collapse:collapse;width:100%;font-size:13.5px}th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left}th{color:var(--mut);font-weight:600;background:#fafafb}
+.btn{display:inline-block;border:0;border-radius:8px;padding:7px 12px;font:inherit;font-weight:700;background:var(--pri);color:#fff;text-decoration:none;cursor:pointer}
+.btn.line{background:#fff;border:1px solid var(--line);color:var(--fg)}.btn.bad{background:var(--bad)}
+input,select,textarea{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--pri2);color:var(--pri)}
+.tag.ok{background:var(--okb);color:var(--ok)}.tag.bad{background:var(--badb);color:var(--bad)}.tag.warn{background:var(--warnb);color:var(--warn)}
+.mut{color:var(--mut)}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grow{flex:1}
+.two{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}.field label{font-size:12.5px;color:var(--mut);font-weight:600}
+.tl{position:relative;padding-left:18px}.tl div{position:relative;padding:5px 0;font-size:13px}.tl div::before{content:"";position:absolute;left:-14px;top:11px;width:8px;height:8px;border-radius:50%;background:var(--mut)}
+.tl .hl{background:var(--warnb);border-radius:6px;padding-left:6px}.tl .hl::before{background:var(--bad)}
+.bars{display:flex;align-items:flex-end;gap:4px;height:90px}.bars i{flex:1;background:var(--pri2);border-top:3px solid var(--pri);display:block}
+@media(max-width:700px){.side{display:none}.two{grid-template-columns:1fr}.main{padding:14px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="side"><b>제자리 관리자</b><a href="A-04.html" class="">실시간 현황</a><a href="A-05.html" class="">위험 사용자</a><a href="A-06.html" class="">케이스 상세</a><a href="A-02.html" class="">기준 데이터</a><a href="A-03.html" class="">운행·행사</a><a href="A-07.html" class="on">운영 설정</a><a href="A-01.html">로그아웃</a></nav>
+<main class="main">
+<div class="head"><h1>운영 설정</h1></div>
+<div class="two">
+<div class="card"><table>
+<tr><th>키</th><th>값</th><th>버전</th></tr>
+<tr><td>reservation.pay_deadline_min</td><td>10</td><td>1</td></tr>
+<tr><td>queue.admit_per_sec</td><td>200</td><td>1</td></tr>
+<tr><td>queue.pass_ttl_sec</td><td>300</td><td>1</td></tr>
+<tr><td>waitlist.max_active</td><td>3</td><td>1</td></tr>
+<tr><td>scanner.hold_interval_sec</td><td>5</td><td>1</td></tr>
+<tr><td>risk.penalty_ms_per_point</td><td>1000</td><td>2</td></tr>
+</table></div>
+<div class="card"><b>queue.admit_per_sec</b><p class="mut">초당 입장시키는 인원</p>
+<div class="field"><label>새 값</label><input value="300"></div>
+<div class="field"><label>변경 사유</label><input value="부하 테스트 결과 반영"></div>
+<a class="btn" href="#">저장 (버전 1 → 2)</a>
+<p class="mut">이력: 아직 변경 없음</p></div>
+</div>
+</main>
+</div>
+</body>
+</html>

@@ -1,0 +1,201 @@
+[
+  {
+    "id": "U-01",
+    "name": "로그인",
+    "kind": "user",
+    "features": [
+      "AUTH-03"
+    ],
+    "owner": "강다인 · 조영준",
+    "summary": "이메일·비밀번호 로그인"
+  },
+  {
+    "id": "U-02",
+    "name": "회원가입·모의 본인인증",
+    "kind": "user",
+    "features": [
+      "AUTH-01",
+      "AUTH-02"
+    ],
+    "owner": "강다인",
+    "summary": "모의 인증으로 CI 발급 후 가입"
+  },
+  {
+    "id": "U-03",
+    "name": "메인·운행 검색 결과",
+    "kind": "user",
+    "features": [
+      "TRN-01",
+      "TRN-02",
+      "TRN-03"
+    ],
+    "owner": "강동균",
+    "summary": "출발·도착·날짜로 운행 검색"
+  },
+  {
+    "id": "U-04",
+    "name": "대기열 (번호표)",
+    "kind": "user",
+    "features": [
+      "QUE-01",
+      "QUE-02",
+      "QUE-03",
+      "QUE-05"
+    ],
+    "owner": "김성원",
+    "summary": "번호표와 예상 대기 시간, 입장"
+  },
+  {
+    "id": "U-05",
+    "name": "좌석 선택",
+    "kind": "user",
+    "features": [
+      "RSV-01",
+      "RSV-02"
+    ],
+    "owner": "강동균",
+    "summary": "배치도에서 좌석 고르고 선점"
+  },
+  {
+    "id": "U-06",
+    "name": "결제 (기한 카운트다운)",
+    "kind": "user",
+    "features": [
+      "PAY-01",
+      "RSV-05",
+      "WL-05"
+    ],
+    "owner": "길동현 · 강동균",
+    "summary": "결제 기한 안에 결제, 결제 전 취소"
+  },
+  {
+    "id": "U-07",
+    "name": "결제 결과",
+    "kind": "user",
+    "features": [
+      "PAY-02",
+      "PAY-03"
+    ],
+    "owner": "길동현",
+    "summary": "승인·실패·확인 중 결과"
+  },
+  {
+    "id": "U-08",
+    "name": "예매 내역·상세·취소",
+    "kind": "user",
+    "features": [
+      "RSV-04",
+      "CNL-01",
+      "CNL-02"
+    ],
+    "owner": "강다인",
+    "summary": "내 예약 목록, 수수료 보고 취소"
+  },
+  {
+    "id": "U-09",
+    "name": "내 정보·결제 수단",
+    "kind": "user",
+    "features": [
+      "AUTH-06",
+      "AUTH-07"
+    ],
+    "owner": "강다인 · 길동현",
+    "summary": "내 정보, 가상 카드 등록, 탈퇴"
+  },
+  {
+    "id": "U-10",
+    "name": "취소표 대기 신청·목록",
+    "kind": "user",
+    "features": [
+      "WL-01",
+      "WL-02"
+    ],
+    "owner": "강다인",
+    "summary": "매진 운행 대기 신청과 내 대기 목록"
+  },
+  {
+    "id": "U-11",
+    "name": "알림함",
+    "kind": "user",
+    "features": [
+      "EVT-06",
+      "WL-04"
+    ],
+    "owner": "길동현",
+    "summary": "취소표 제안·결제 임박·만료 알림"
+  },
+  {
+    "id": "A-01",
+    "name": "관리자 로그인",
+    "kind": "admin",
+    "features": [
+      "AUTH-05"
+    ],
+    "owner": "조영준",
+    "summary": "관리자 계정 로그인"
+  },
+  {
+    "id": "A-02",
+    "name": "노선·역·열차·좌석 관리",
+    "kind": "admin",
+    "features": [
+      "ADM-01"
+    ],
+    "owner": "강동균",
+    "summary": "기준 데이터 등록"
+  },
+  {
+    "id": "A-03",
+    "name": "운행·명절 행사 관리",
+    "kind": "admin",
+    "features": [
+      "ADM-02"
+    ],
+    "owner": "강동균",
+    "summary": "운행 생성, 판매 오픈, 명절 묶기"
+  },
+  {
+    "id": "A-04",
+    "name": "실시간 예매 현황",
+    "kind": "admin",
+    "features": [
+      "ADM-03",
+      "ADM-07",
+      "ADM-09"
+    ],
+    "owner": "강동균 · 강다인 · 길동현",
+    "summary": "판매·대기열·결제 모름 건, 강제 취소"
+  },
+  {
+    "id": "A-05",
+    "name": "위험 사용자 목록",
+    "kind": "admin",
+    "features": [
+      "ADM-04"
+    ],
+    "owner": "강다인",
+    "summary": "점수 순 목록, 마스킹"
+  },
+  {
+    "id": "A-06",
+    "name": "케이스 상세 (타임라인·판정·재생)",
+    "kind": "admin",
+    "features": [
+      "ADM-05",
+      "ADM-06",
+      "ADM-11"
+    ],
+    "owner": "강다인",
+    "summary": "의심 구간 타임라인, 판정·조치"
+  },
+  {
+    "id": "A-07",
+    "name": "운영 설정",
+    "kind": "admin",
+    "features": [
+      "ADM-08"
+    ],
+    "owner": "조영준",
+    "summary": "app_policy 값 보기·바꾸기"
+  }
+]
