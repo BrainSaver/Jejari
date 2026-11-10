@@ -432,7 +432,7 @@ function pageHomeAnon() {
     <p class="page-sub">명절 열차 공정 예매 시스템의 설계 문서예요. 팀원은 오른쪽 위에서 로그인하면 문서를 고치고 수정 기록도 볼 수 있어요.</p>
     <div class="cards">
       <a class="card" href="#/doc/func"><h3>기능설계</h3><p>기능 목록, 상세, 상태 전이, API, Kafka, 에러 코드</p></a>
-      <a class="card" href="#/db"><h3>DB설계</h3><p>Oracle·MongoDB·Redis·Kafka 역할과 테이블 정의</p></a>
+      <a class="card" href="#/db"><h3>DB설계 · ERD</h3><p>Oracle·MongoDB·Redis·Kafka 역할, 테이블 정의, ERD</p></a>
       <a class="card" href="#/ui"><h3>화면설계</h3><p>사용자 11개, 관리자 7개 화면 설명과 HTML 시안</p></a>
     </div></div>`;
 }
@@ -485,10 +485,10 @@ async function pageDoc(key) {
 
 async function pageDb(tab) {
   tab = tab || 'doc';
-  if (!S.me && tab !== 'doc') return pageLocked();
-  main.innerHTML = `<div class="wide"><h1 class="page">${S.me ? 'DB설계 · ERD' : 'DB설계'}</h1>
-    <p class="page-sub">${S.me ? '저장소별 역할과 테이블 정의는 DB설계서, 스키마 원본은 ERD 편집기예요.' : '저장소별 역할과 테이블 정의예요.'}</p>
-    <div class="tabs"${S.me ? '' : ' hidden'}><button data-t="doc">DB설계서</button><button data-t="erd">ERD 편집기</button><button data-t="exp">ERD 수정 내보내기</button></div>
+  if (!S.me && tab === 'exp') return pageLocked();
+  main.innerHTML = `<div class="wide"><h1 class="page">DB설계 · ERD</h1>
+    <p class="page-sub">저장소별 역할과 테이블 정의는 DB설계서, 테이블 관계 그림과 스키마 원본은 ERD예요.</p>
+    <div class="tabs"><button data-t="doc">DB설계서</button><button data-t="erd">ERD</button>${S.me ? '<button data-t="exp">ERD 수정 내보내기</button>' : ''}</div>
     <div id="tab"></div></div>`;
   $$('.tabs button', main).forEach((b) => { b.classList.toggle('on', b.dataset.t === tab); b.addEventListener('click', () => { location.hash = '#/db/' + b.dataset.t; }); });
   const root = $('#tab');
@@ -497,16 +497,16 @@ async function pageDb(tab) {
   return exportsTab(root);
 }
 async function erdTab(root) {
-  root.innerHTML = `${branchBanner(S.ref)}<div class="banner info" style="flex-wrap:wrap">ERD 편집기에서 고친 뒤
-    <b>내 수정 저장</b>을 누르면 <code>docs/erd/exports/${esc(S.me || '이름')}-날짜.json</code>으로 내 브랜치에 커밋돼요. 스키마(HTML) 반영은 강동균이 패치로 해요.
-    <button class="btn sm" id="erdSave">내 수정 저장</button></div>
+  root.innerHTML = `${branchBanner(S.ref)}${S.me ? `<div class="banner info" style="flex-wrap:wrap">ERD 편집기에서 고친 뒤
+    <b>내 수정 저장</b>을 누르면 <code>docs/erd/exports/${esc(S.me)}-날짜.json</code>으로 내 브랜치에 커밋돼요. 스키마(HTML) 반영은 강동균이 패치로 해요.
+    <button class="btn sm" id="erdSave">내 수정 저장</button></div>` : '<div class="banner info">테이블을 누르면 컬럼·설명이 나오고, 위쪽 "문서"에서 공통 규칙·흐름을 볼 수 있어요. 여기서 고친 내용은 내 브라우저에만 남아요.</div>'}
     <iframe class="erd-frame" title="ERD 편집기"></iframe>`;
   bindBanner(root);
   const f = await fetchFile(ERD_PATH, S.ref);
   const frame = $('iframe', root);
   if (!f) { frame.replaceWith(Object.assign(document.createElement('p'), { className: 'empty', textContent: 'ERD 편집기 파일이 없어요.' })); return; }
   frame.srcdoc = f.content;
-  $('#erdSave', root).addEventListener('click', async () => {
+  if ($('#erdSave', root)) $('#erdSave', root).addEventListener('click', async () => {
     if (!needLogin()) return;
     let content;
     try { content = frame.contentWindow.exportJSON(); } catch { toast('ERD 편집기에서 내보내기를 읽지 못했어요.'); return; }
@@ -554,29 +554,68 @@ async function pageUi() {
   bindBanner(main);
 }
 function mockDoc(html) {
-  const inject = `<script>document.addEventListener('click',function(e){var a=e.target.closest('a[href]');if(!a)return;var h=a.getAttribute('href');var m=h.match(/^([UA]-\\d{2})\\.html/);e.preventDefault();if(m)parent.postMessage({jejariGo:m[1]},'*');});document.addEventListener('submit',function(e){e.preventDefault();});<\/script>`;
+  // 시안 안에서 링크를 누르면 부모 사이트가 다음 화면으로 바꾼다. 누를 수 없는 곳을 누르면 누를 수 있는 곳을 잠깐 표시한다.
+  const inject = `<style>.jj-hint a[href]{outline:2px solid rgba(37,99,235,.85)!important;outline-offset:2px;background-color:rgba(37,99,235,.12)!important;transition:outline-color .2s}</style><script>(function(){var t;function hint(on){document.documentElement.classList.toggle('jj-hint',on);}
+document.addEventListener('click',function(e){var a=e.target.closest('a[href]');if(!a){if(!e.target.closest('button,input,select,textarea,label')){hint(true);clearTimeout(t);t=setTimeout(function(){hint(false);},700);}return;}var h=a.getAttribute('href');var m=h.match(/^([UA]-\\d{2})\\.html/);e.preventDefault();if(m)parent.postMessage({jejariGo:m[1]},'*');});
+document.addEventListener('submit',function(e){e.preventDefault();});
+window.addEventListener('message',function(e){if(e.data&&e.data.jejariHint!==undefined)hint(!!e.data.jejariHint);});})();<\/script>`;
   return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, inject + '</body>') : html + inject;
 }
-window.addEventListener('message', (e) => { if (e.data && typeof e.data.jejariGo === 'string' && /^[UA]-\d{2}$/.test(e.data.jejariGo)) location.hash = '#/ui/' + e.data.jejariGo; });
+window.addEventListener('message', (e) => {
+  if (!e.data || typeof e.data.jejariGo !== 'string' || !/^[UA]-\d{2}$/.test(e.data.jejariGo)) return;
+  location.hash = '#/ui/' + e.data.jejariGo;
+});
 
+let protoHint = false;
+const protoDev = { user: store.get('dev-user') || 'mobile', admin: store.get('dev-admin') || 'pc' };
 async function pageUiOne(id) {
-  main.innerHTML = '<div class="wide"><p class="loading">불러오는 중…</p></div>';
   const list = await uiIndex();
   const i = list.findIndex((x) => x.id === id); const it = list[i] || { id, name: id, kind: id[0] === 'A' ? 'admin' : 'user' };
   const prev = list[i - 1], next = list[i + 1];
   const admin = it.kind === 'admin';
-  main.innerHTML = `<div class="wide">
-    <p class="page-sub"><a href="#/ui">화면설계</a> › <b>${esc(it.id)} ${esc(it.name)}</b> · ${esc((it.features || []).join(', '))}${it.owner ? ' · 담당 ' + esc(it.owner) : ''}
-     ${prev ? ` · <a href="#/ui/${prev.id}">← ${prev.id}</a>` : ''}${next ? ` · <a href="#/ui/${next.id}">${next.id} →</a>` : ''}</p>
-    <div class="ui-split"><div id="uiDoc"></div>
-    <div class="mock-frame${admin ? ' admin' : ''}"><div class="mock-tools"><b>HTML 시안</b><span class="muted">docs/ui/${esc(id)}.html</span><span style="flex:1"></span>
-      ${S.me && (S.ref === 'main' || S.ref === S.me) ? '<button class="btn sm plain" id="mockEdit">시안 수정</button>' : ''}</div>
-      <iframe sandbox="allow-scripts" title="${esc(id)} 시안"></iframe></div></div></div>`;
-  if (admin) { const split = $('.ui-split', main); split.style.gridTemplateColumns = 'minmax(0,1fr)'; split.insertBefore($('.mock-frame', main), split.firstChild); }
-  const frame = $('.mock-frame iframe', main);
-  const [html] = await Promise.all([fetchFile(`docs/ui/${id}.html`, S.ref), docView($('#uiDoc'), `docs/ui/${id}.md`, { compact: true })]);
-  if (html) frame.srcdoc = mockDoc(html.content); else frame.replaceWith(Object.assign(document.createElement('p'), { className: 'empty', textContent: '시안 파일이 없어요.' }));
+  // 같은 종류(사용자/관리자) 화면 사이를 오가면 틀은 그대로 두고 시안·설명만 바꾼다 (실제 사이트처럼 매끄럽게)
+  let root = $('.proto', main);
+  const dev = protoDev[it.kind];
+  if (!root || root.dataset.kind !== it.kind || root.dataset.ref !== S.ref || root.dataset.dev !== dev) {
+    main.innerHTML = `<div class="proto ${dev}" data-kind="${it.kind}" data-ref="${esc(S.ref)}" data-dev="${dev}">
+      <div class="proto-stage">
+        <div class="proto-bar">
+          <a class="btn sm plain" href="#/ui">← 화면 목록</a>
+          <select class="proto-pick" aria-label="화면 고르기">${['user', 'admin'].map((k) => `<optgroup label="${k === 'user' ? '사용자 화면' : '관리자 화면'}">${list.filter((x) => x.kind === k).map((x) => `<option value="${x.id}">${x.id} ${esc(x.name)}</option>`).join('')}</optgroup>`).join('')}</select>
+          <span class="seg" role="group" aria-label="화면 크기"><button data-dev="pc"${dev === 'pc' ? ' class="on"' : ''}>PC</button><button data-dev="mobile"${dev === 'mobile' ? ' class="on"' : ''}>모바일</button></span>
+          <span class="grow"></span>
+          <label class="proto-hint"><input type="checkbox"${protoHint ? ' checked' : ''}> 누를 수 있는 곳 표시</label>
+        </div>
+        <div class="device"><div class="device-top">${dev === 'pc' ? '<i></i><i></i><i></i><span class="url"></span>' : '<span class="notch"></span>'}</div>
+          <iframe sandbox="allow-scripts" title="화면 시안"></iframe></div>
+        <p class="proto-tip muted">시안 안의 버튼·링크를 누르면 실제 사이트처럼 다음 화면으로 넘어가요. 빈 곳을 누르면 누를 수 있는 곳이 잠깐 표시돼요.</p>
+      </div>
+      <aside class="proto-side"><div class="proto-head"></div><div id="uiDoc"></div></aside></div>`;
+    root = $('.proto', main);
+    $$('.seg button', root).forEach((b) => b.addEventListener('click', () => { protoDev[it.kind] = b.dataset.dev; store.set('dev-' + it.kind, b.dataset.dev); route(); }));
+    $('.proto-pick', root).addEventListener('change', (e) => { location.hash = '#/ui/' + e.target.value; });
+    $('.proto-hint input', root).addEventListener('change', (e) => { protoHint = e.target.checked; $('.device iframe', root).contentWindow.postMessage({ jejariHint: protoHint }, '*'); });
+    $('.device iframe', root).addEventListener('load', (e) => { if (protoHint) e.target.contentWindow.postMessage({ jejariHint: true }, '*'); });
+  }
+  $('.proto-pick', root).value = id;
+  const url = $('.device .url', root); if (url) url.textContent = `${admin ? 'admin.' : ''}jejari.dev/${id}`;
+  const canEdit = S.me && (S.ref === 'main' || S.ref === S.me);
+  $('.proto-head', root).innerHTML = `${branchBanner(S.ref)}
+    <div class="proto-id">${esc(it.id)} · ${admin ? '관리자 화면' : '사용자 화면'}</div>
+    <h1>${esc(it.name)}</h1>
+    ${it.summary ? `<p class="proto-sum">${esc(it.summary)}</p>` : ''}
+    <dl class="proto-meta">${(it.features || []).length ? `<dt>기능</dt><dd>${it.features.map((f) => `<code>${esc(f)}</code>`).join(' ')}</dd>` : ''}${it.owner ? `<dt>담당</dt><dd>${esc(it.owner)}</dd>` : ''}</dl>
+    <div class="proto-nav">${prev ? `<a class="btn sm plain" href="#/ui/${prev.id}">← ${prev.id}</a>` : '<span></span>'}
+      ${canEdit ? '<button class="btn sm plain" id="mockEdit">시안 수정</button>' : ''}
+      ${next ? `<a class="btn sm plain" href="#/ui/${next.id}">${next.id} →</a>` : '<span></span>'}</div>`;
+  bindBanner(root);
   const eb = $('#mockEdit'); if (eb) eb.addEventListener('click', () => editMock(id));
+  const frame = $('.device iframe', root);
+  const side = $('.proto-side', root); side.scrollTop = 0;
+  $('#uiDoc').innerHTML = '<p class="loading">불러오는 중…</p>';
+  const [html] = await Promise.all([fetchFile(`docs/ui/${id}.html`, S.ref), docView($('#uiDoc'), `docs/ui/${id}.md`, { compact: true })]);
+  if (html) frame.srcdoc = mockDoc(html.content);
+  else frame.srcdoc = '<p style="font-family:sans-serif;color:#888;padding:24px">시안 파일이 없어요.</p>';
 }
 async function editMock(id) {
   if (!needLogin()) return;

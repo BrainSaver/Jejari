@@ -123,6 +123,7 @@ console.log('로그인 안 한 사람');
 r = await anon('/file?path=README.md&ref=main&fresh=7'); ok(r.status === 401, '기획서는 로그인 필요');
 r = await anon('/file?path=docs/concurrency.md&ref=main&fresh=7'); ok(r.status === 401, '동시성 문서는 로그인 필요');
 r = await anon('/file?path=docs/DB%EC%84%A4%EA%B3%84%EC%84%9C.md&ref=main&fresh=7'); ok(r.status === 200, 'main DB설계서는 공개');
+r = await anon('/file?path=docs/erd/jejari-erd.html&ref=main&fresh=7'); ok(r.status === 200, 'main ERD는 공개');
 r = await anon(`/file?path=${encodeURIComponent(F)}&ref=DongHyeon&fresh=7`); ok(r.status === 401, '이름 브랜치 보기는 로그인 필요');
 r = await anon('/list?dir=docs/erd/exports&ref=main'); ok(r.status === 401, 'ERD 내보내기 목록은 로그인 필요');
 for (const q of ['/branches', '/commits', '/graph']) { r = await anon(q + '?fresh=7'); ok(r.status === 401, q + ' 로그인 필요'); }
