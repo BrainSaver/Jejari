@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v8 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-10
+> 스키마 v9 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-10
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -39,7 +39,7 @@
 | 테이블 | 60개 (운영 56 + 확장 예정 4) |
 | 저장소 | Oracle 44 · MongoDB 11 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 505개 |
+| 컬럼 | 509개 |
 | 관계 (FK) | 85개 (Oracle 제약 60 · 논리 참조 20) |
 
 | 영역 | 저장소 | 테이블 |
@@ -559,6 +559,14 @@ Oracle
 | payment.pg_recheck_sec | 60 | 1 | NUMBER | PG 결과를 모를 때 다음 조회까지(초). payment.next_check_at을 미룸 |
 | waitlist.reoffer_hold_sec | 60 | 1 | NUMBER | 취소로 풀린 좌석을 대기자 제안 전까지 막아 두는 시간(초) |
 | replay.hold_cache_sec | 30 | 1 | NUMBER | legal_hold 캐시 TTL(초). 보류 후 이 시간 뒤 $unset 한 번 더 |
+| waitlist.max_per_run | 1 | 1 | NUMBER | 회원당 같은 운행 활성 대기 건수 |
+| waitlist.max_active | 3 | 1 | NUMBER | 회원당 전체 활성 대기 건수 |
+| cancel.after_departure_limit_min | 20 | 1 | NUMBER | 출발 후 취소 가능 시간(분). 지나면 취소 불가 |
+| scanner.hold_interval_sec | 5 | 1 | NUMBER | HOLD 만료 스캐너 주기(초) |
+| scanner.pay_recheck_interval_sec | 10 | 1 | NUMBER | 결제 결과 확인 스캐너 주기(초) |
+| scanner.batch_size | 500 | 1 | NUMBER | 스캐너 한 회차 최대 처리 건수 |
+| notification.pay_reminder_sec | 120 | 1 | NUMBER | 결제 기한 몇 초 전에 PAY_REMINDER 알림 |
+| risk.batch_interval_sec | 60 | 1 | NUMBER | 위험 점수 배치 주기(초). 각 운행 sale_open_at 전 1회는 반드시 실행 |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -1446,7 +1454,7 @@ Oracle
 |---|---|---|---|---|---|
 | `notification_id` | NUMBER | PK | 시스템 |  |  |
 | `member_id` | NUMBER | FK, NN → member | 시스템 |  |  |
-| `type` | VARCHAR2(20) | NN | 시스템 | WAITLIST_OFFER / PAY_REMINDER / EXPIRED |  |
+| `type` | VARCHAR2(20) | NN | 시스템 | WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED | 취소표 건너뜀(매수 한도 초과)·환불 완료 안내 |
 | `ref_type` | VARCHAR2(20) | NN | 시스템 | RESERVATION / WAITLIST / CASE | ref_id가 어느 테이블을 가리키는지 |
 | `ref_id` | NUMBER |  | 시스템 | 관련 예약·대기 ID |  |
 | `channel` | VARCHAR2(10) | NN | 시스템 | PUSH / EMAIL / IN_APP | 채널 추가 확장 |
@@ -1550,11 +1558,12 @@ Oracle
 | `admin_id` | NUMBER | FK, NN → admin_user | 시스템 | 조치자 | 감사 추적 |
 | `subject_type` | VARCHAR2(10) | NN | 시스템 | CI / PAYMENT / DEVICE | 대상 유형 코드 통일 (CHECK) |
 | `subject_hash` | VARCHAR2(64) | NN | 시스템 | 대상 해시 |  |
-| `action_type` | VARCHAR2(20) | NN | 시스템 | CONFIRM / CLEAR / RESTRICT / BAN |  |
+| `action_type` | VARCHAR2(20) | NN | 시스템 | CONFIRM / CLEAR / RESTRICT / BAN / CANCEL_RESERVATION / RESOLVE_PAYMENT / UNMASK | 예약 대상 조치는 그 예약의 CI를 subject로 기록하고 reservation_id를 채움. UNMASK는 위험 사용자 목록의 마스킹 해제 |
 | `memo` | VARCHAR2(500) |  | 시스템 | 사유 |  |
+| `reservation_id` | NUMBER |  | 시스템 | 관련 예약 (예약 대상 조치일 때) | 강제 취소·결제 결과 수동 처리 추적. NULL 허용이라 FK는 비고로 선언 |
 | `acted_at` | TIMESTAMP | NN | 시스템 | 조치 시각 |  |
 
-> **제약·비고** 회원 상태 변경(RESTRICT·BAN)은 member.status와 같은 트랜잭션에서 갱신
+> **제약·비고** 회원 상태 변경(RESTRICT·BAN)은 member.status와 같은 트랜잭션에서 갱신 · FK(reservation_id) → reservation(reservation_id) · CANCEL_RESERVATION·RESOLVE_PAYMENT는 reservation_id 필수: CHECK(action_type NOT IN ('CANCEL_RESERVATION', 'RESOLVE_PAYMENT') OR reservation_id IS NOT NULL)
 
 **관계** admin_id → [`admin_user`](#admin-user) · [`suspicious_case`](#suspicious-case).admin_action_id → 이 테이블
 
@@ -1910,7 +1919,7 @@ MongoDB · 🅱 빅데이터
 | `initial_rank` | Long |  | 시스템 | 조정 전 순번 | 조정이 의도대로 됐는지 검증 |
 | `adjusted_rank` | Long |  | 시스템 | 조정 후 순번 |  |
 | `admitted_at` | Date |  | 시스템 | 입장 시각 | 실제 대기 시간 vs 예상 대기 시간 비교 |
-| `left_reason` | String |  | 시스템 | ADMITTED / TIMEOUT / LEFT | 이탈률 |
+| `left_reason` | String |  | 시스템 | ADMITTED / TIMEOUT / LEFT / REJECTED_DUPLICATE | 이탈률, 중복 대기 차단 |
 
 > **제약·비고** TTL { expire_at: 1 }, expireAfterSeconds: 0 · 점선은 논리 참조 · 절차: concurrency.md §13
 
@@ -1930,8 +1939,11 @@ Redis
 |---|---|---|---|---|---|
 | `idem:{memberId}:{key}` | STRING+TTL |  | 시스템 | 값: reservation_id (결제는 idem:pay:{reservationId}:{key}) | 같은 버튼 재시도에 같은 예약을 돌려줌 |
 | `relay:shard:{n}` | STRING+TTL |  | 시스템 | 값: 릴레이 인스턴스 ID | 샤드 담당 리스. 갱신 실패 시 그 샤드 처리 즉시 중단 |
-| `queue:{runId}` | ZSET |  | 시스템 | member=memberId, score=진입시각ms + penalty_ms | 위험 점수를 score에 더하면 별도 지연 없이 후순위 처리 |
+| `queue:{runId}` | ZSET |  | 시스템 | member={12자리 0채움 seq}:{memberId}, score=진입시각ms + penalty_ms | 위험 점수를 score에 더해 별도 지연 없이 후순위 처리. score가 같으면 member 문자열 순서(= 진입 순서)로 정렬 |
 | `queue:active:{runId}` | ZSET |  | 시스템 | 입장 허용된 사용자, score=만료시각 | 동시 입장 인원 제한 |
+| `queue:seq:{runId}` | STRING |  | 시스템 | 진입 시퀀스 (INCR) | queue member 앞부분 생성 |
+| `queue:member:{memberId}` | STRING+TTL |  | 시스템 | 값: {runId}\|{queue member} | 회원당 동시 대기 1개. 여러 탭으로 여러 자리 점유 방지, 이탈 시 지울 member 찾기 |
+| `queue:ci:{ciHash}` | ZSET |  | 시스템 | member=memberId, score=만료 시각 | CI당 동시 대기 1개. 진입 전 ZREMRANGEBYSCORE로 만료 멤버 정리 |
 | `queue:throughput:{runId}` | STRING |  | 시스템 | 초당 입장 처리 수 | 예상 대기시간 = 내 순번 ÷ 처리량 |
 | `queue:pass:{runId}:{memberId}` | STRING+TTL |  | 시스템 | 입장 토큰 (대기열 통과 증명) | 좌석 조회·선점 API가 토큰을 검사해야 대기열 우회 차단 |
 | `seat:hold:{runId}:{seatId}:{segNo}` | STRING+TTL |  | 시스템 | 값: reservation_id (HOLD), SOLD:reservation_id (확정), REOFFER:reservation_id (대기자 제안 대기) | 만료 = pay_deadline_at, SOLD는 출발 시각, REOFFER는 waitlist.reoffer_hold_sec. 해제·연장은 값이 일치할 때만 (compare-and-delete) |
@@ -2282,6 +2294,7 @@ Oracle
 | v6 | 팀 2차 검토 반영: 결제 시작 시 마감 연장, 마감 시각 원천 규칙, outbox shard_no·샤드별 릴레이, 예매 흐름 순서(ID 발급 → Redis 경쟁 → 한 트랜잭션 INSERT), 참조 전용 테이블 FK 인덱스 생략·ix_resv_ci_run 제거, purchase_counter 동시성 규칙·CHECK, Mongo expire_at TTL, processed_event 정리 인덱스, updated_at 규칙, Redis 클러스터 메모 |
 | v7 | 팀 3차 검토 반영 + 동시성 절차를 docs/concurrency.md로 분리: 마감 연장 GREATEST·PG 180+60초, 재선점 시 이전 예약 HOLD 행 전부 삭제, 멱등 키 선조회, outbox seq·시퀀스·FAILED 샤드 정지·Redis 리스·FOR UPDATE WAIT, Redis 보상·limit 복원 SET NX, version 증가 규칙, PG 결과 미확인 만료 금지, 카운터 정렬 갱신, 취소·취소표 카운터, Mongo expire_at 확대·legal_hold 확인, Redis 클러스터 태그 {runId}, 비고 축약 |
 | v8 | 동시성 4차 검토 반영: 결제 결과 갈래(늦은 승인 환불·실패 시 EXPIRED), 스캐너 분리(ix_resv_hold_due, payment.next_check_at·ix_pay_recheck), ix_seatinv_hold 제거, cancellation 유형 정리(EXPIRED 제거)·resold_yn 배치, saga 단계 정리, 취소표 대기자 우선(REOFFER)·제안 기한 연장·wl 멱등 키, 한도 값 규칙·자가 복구, Redis 보상 outbox 보장·limit:dec, ORA_HASH 문자열, inbox 8일, 행동 로그 180일 확정, 시간대·Redis 설정 결정 |
+| v9 | 기능설계서 맞춤: admin_action에 reservation_id·예약 대상 조치(강제 취소·결제 수동 처리·마스킹 해제), 알림 종류(취소표 건너뜀·환불 완료), 대기열 중복 진입 차단(queue:member·queue:ci)·같은 시각 진입 순서(queue:seq), 운영 값 8개(취소표 한도·출발 후 취소·스캐너·알림·위험 점수 주기) |
 
 ## 참고 자료
 

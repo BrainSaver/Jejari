@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v8)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v9)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -588,12 +588,12 @@ CREATE TABLE notification (
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_notification PRIMARY KEY (notification_id),
-  CONSTRAINT ck_notification_type CHECK (type IN ('WAITLIST_OFFER', 'PAY_REMINDER', 'EXPIRED')),
+  CONSTRAINT ck_notification_type CHECK (type IN ('WAITLIST_OFFER', 'PAY_REMINDER', 'EXPIRED', 'WAITLIST_SKIPPED', 'REFUNDED')),
   CONSTRAINT ck_notification_ref_type CHECK (ref_type IN ('RESERVATION', 'WAITLIST', 'CASE')),
   CONSTRAINT ck_notification_channel CHECK (channel IN ('PUSH', 'EMAIL', 'IN_APP'))
 );
 COMMENT ON TABLE notification IS '알림 - 취소표 배정·결제 독촉·만료 알림.';
-COMMENT ON COLUMN notification.type IS 'WAITLIST_OFFER / PAY_REMINDER / EXPIRED';
+COMMENT ON COLUMN notification.type IS 'WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED / 취소표 건너뜀(매수 한도 초과)·환불 완료 안내';
 COMMENT ON COLUMN notification.ref_type IS 'RESERVATION / WAITLIST / CASE / ref_id가 어느 테이블을 가리키는지';
 COMMENT ON COLUMN notification.ref_id IS '관련 예약·대기 ID';
 COMMENT ON COLUMN notification.channel IS 'PUSH / EMAIL / IN_APP / 채널 추가 확장';
@@ -675,19 +675,22 @@ CREATE TABLE admin_action (
   subject_hash               VARCHAR2(64) NOT NULL,
   action_type                VARCHAR2(20) NOT NULL,
   memo                       VARCHAR2(500),
+  reservation_id             NUMBER,
   acted_at                   TIMESTAMP NOT NULL,
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_admin_action PRIMARY KEY (action_id),
+  CONSTRAINT ck_admin_action_r1 CHECK (action_type NOT IN ('CANCEL_RESERVATION', 'RESOLVE_PAYMENT') OR reservation_id IS NOT NULL),
   CONSTRAINT ck_admin_action_subject_type CHECK (subject_type IN ('CI', 'PAYMENT', 'DEVICE')),
-  CONSTRAINT ck_admin_action_action_type CHECK (action_type IN ('CONFIRM', 'CLEAR', 'RESTRICT', 'BAN'))
+  CONSTRAINT ck_admin_action_action_type CHECK (action_type IN ('CONFIRM', 'CLEAR', 'RESTRICT', 'BAN', 'CANCEL_RESERVATION', 'RESOLVE_PAYMENT', 'UNMASK'))
 );
 COMMENT ON TABLE admin_action IS '관리자 조치 - 위험 사용자 검토·제재 기록. 감사 추적.';
 COMMENT ON COLUMN admin_action.admin_id IS '조치자 / 감사 추적';
 COMMENT ON COLUMN admin_action.subject_type IS 'CI / PAYMENT / DEVICE / 대상 유형 코드 통일 (CHECK)';
 COMMENT ON COLUMN admin_action.subject_hash IS '대상 해시';
-COMMENT ON COLUMN admin_action.action_type IS 'CONFIRM / CLEAR / RESTRICT / BAN';
+COMMENT ON COLUMN admin_action.action_type IS 'CONFIRM / CLEAR / RESTRICT / BAN / CANCEL_RESERVATION / RESOLVE_PAYMENT / UNMASK / 예약 대상 조치는 그 예약의 CI를 subject로 기록하고 reservation_id를 채움. UNMASK는 위험 사용자 목록의 마스킹 해제';
 COMMENT ON COLUMN admin_action.memo IS '사유';
+COMMENT ON COLUMN admin_action.reservation_id IS '관련 예약 (예약 대상 조치일 때) / 강제 취소·결제 결과 수동 처리 추적. NULL 허용이라 FK는 비고로 선언';
 COMMENT ON COLUMN admin_action.acted_at IS '조치 시각';
 COMMENT ON COLUMN admin_action.created_at IS '생성 시각';
 COMMENT ON COLUMN admin_action.updated_at IS '수정 시각';
@@ -1152,6 +1155,8 @@ ALTER TABLE notification ADD CONSTRAINT fk_notification_member_id FOREIGN KEY (m
 CREATE INDEX ix_notification_member_id ON notification (member_id);
 ALTER TABLE risk_score ADD CONSTRAINT fk_risk_score_model_version FOREIGN KEY (model_version) REFERENCES model_run (model_version);
 CREATE INDEX ix_risk_score_model_version ON risk_score (model_version);
+ALTER TABLE admin_action ADD CONSTRAINT fk_admin_action_reservation_id FOREIGN KEY (reservation_id) REFERENCES reservation (reservation_id);
+CREATE INDEX ix_admin_action_reservation_id ON admin_action (reservation_id);
 ALTER TABLE admin_action ADD CONSTRAINT fk_admin_action_admin_id FOREIGN KEY (admin_id) REFERENCES admin_user (admin_id);
 CREATE INDEX ix_admin_action_admin_id ON admin_action (admin_id);
 ALTER TABLE synthetic_label ADD CONSTRAINT fk_synthetic_label_member_id FOREIGN KEY (member_id) REFERENCES member (member_id);
@@ -1230,6 +1235,14 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('payment.pg_recheck_sec', '60', 1, 'NUMBER', 'PG 결과를 모를 때 다음 조회까지(초). payment.next_check_at을 미룸');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('waitlist.reoffer_hold_sec', '60', 1, 'NUMBER', '취소로 풀린 좌석을 대기자 제안 전까지 막아 두는 시간(초)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('replay.hold_cache_sec', '30', 1, 'NUMBER', 'legal_hold 캐시 TTL(초). 보류 후 이 시간 뒤 $unset 한 번 더');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('waitlist.max_per_run', '1', 1, 'NUMBER', '회원당 같은 운행 활성 대기 건수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('waitlist.max_active', '3', 1, 'NUMBER', '회원당 전체 활성 대기 건수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('cancel.after_departure_limit_min', '20', 1, 'NUMBER', '출발 후 취소 가능 시간(분). 지나면 취소 불가');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('scanner.hold_interval_sec', '5', 1, 'NUMBER', 'HOLD 만료 스캐너 주기(초)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('scanner.pay_recheck_interval_sec', '10', 1, 'NUMBER', '결제 결과 확인 스캐너 주기(초)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('scanner.batch_size', '500', 1, 'NUMBER', '스캐너 한 회차 최대 처리 건수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('notification.pay_reminder_sec', '120', 1, 'NUMBER', '결제 기한 몇 초 전에 PAY_REMINDER 알림');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.batch_interval_sec', '60', 1, 'NUMBER', '위험 점수 배치 주기(초). 각 운행 sale_open_at 전 1회는 반드시 실행');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (1, 1, 'PER_RESERVATION', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (2, 1, 'PER_RUN', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (3, 1, 'PER_HOLIDAY', 8, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');

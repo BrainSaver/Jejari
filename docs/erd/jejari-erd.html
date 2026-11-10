@@ -1100,7 +1100,8 @@ const DOCS = {
   ['v5','팀 검토 반영: seat_inventory 열차 일치 복합 FK·HOLD 만료 재선점, purchase_counter, outbox 부분 인덱스·정리, reservation·waitlist 인덱스, 수정 없는 테이블 updated_at 생략, 로그 Kafka 적재·녹화 상한, app_policy version·이력, ci_hash 불변, 위험 대상 코드 CHECK, model_run 예시 행 보정 (60개)'],
   ['v6','팀 2차 검토 반영: 결제 시작 시 마감 연장, 마감 시각 원천 규칙, outbox shard_no·샤드별 릴레이, 예매 흐름 순서(ID 발급 → Redis 경쟁 → 한 트랜잭션 INSERT), 참조 전용 테이블 FK 인덱스 생략·ix_resv_ci_run 제거, purchase_counter 동시성 규칙·CHECK, Mongo expire_at TTL, processed_event 정리 인덱스, updated_at 규칙, Redis 클러스터 메모'],
   ['v7','팀 3차 검토 반영 + 동시성 절차를 docs/concurrency.md로 분리: 마감 연장 GREATEST·PG 180+60초, 재선점 시 이전 예약 HOLD 행 전부 삭제, 멱등 키 선조회, outbox seq·시퀀스·FAILED 샤드 정지·Redis 리스·FOR UPDATE WAIT, Redis 보상·limit 복원 SET NX, version 증가 규칙, PG 결과 미확인 만료 금지, 카운터 정렬 갱신, 취소·취소표 카운터, Mongo expire_at 확대·legal_hold 확인, Redis 클러스터 태그 {runId}, 비고 축약'],
-  ['v8','동시성 4차 검토 반영: 결제 결과 갈래(늦은 승인 환불·실패 시 EXPIRED), 스캐너 분리(ix_resv_hold_due, payment.next_check_at·ix_pay_recheck), ix_seatinv_hold 제거, cancellation 유형 정리(EXPIRED 제거)·resold_yn 배치, saga 단계 정리, 취소표 대기자 우선(REOFFER)·제안 기한 연장·wl 멱등 키, 한도 값 규칙·자가 복구, Redis 보상 outbox 보장·limit:dec, ORA_HASH 문자열, inbox 8일, 행동 로그 180일 확정, 시간대·Redis 설정 결정']]}
+  ['v8','동시성 4차 검토 반영: 결제 결과 갈래(늦은 승인 환불·실패 시 EXPIRED), 스캐너 분리(ix_resv_hold_due, payment.next_check_at·ix_pay_recheck), ix_seatinv_hold 제거, cancellation 유형 정리(EXPIRED 제거)·resold_yn 배치, saga 단계 정리, 취소표 대기자 우선(REOFFER)·제안 기한 연장·wl 멱등 키, 한도 값 규칙·자가 복구, Redis 보상 outbox 보장·limit:dec, ORA_HASH 문자열, inbox 8일, 행동 로그 180일 확정, 시간대·Redis 설정 결정'],
+  ['v9','기능설계서 맞춤: admin_action에 reservation_id·예약 대상 조치(강제 취소·결제 수동 처리·마스킹 해제), 알림 종류(취소표 건너뜀·환불 완료), 대기열 중복 진입 차단(queue:member·queue:ci)·같은 시각 진입 순서(queue:seq), 운영 값 8개(취소표 한도·출발 후 취소·스캐너·알림·위험 점수 주기)']]}
 };
 // ===== 스키마 v5: 팀 검토 12건 반영 (2026-11-06) =====
 const V5_TABLES = [
@@ -1316,7 +1317,35 @@ const V8_OPS = [
 ];
 // v8에서 값이 바뀐 결정 사항 (기존 사용자 중 "예시" 상태인 항목만 새 값으로)
 const DECISION_REFRESH_V8 = ['Inbox 보관 기간', 'Redis 구성'];
-const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS} ];
+// ===== 스키마 v9: 기능설계서 맞춤 (2026-11-10) =====
+const V9_TABLES = [];
+const V9_OPS = [
+  // 관리자 강제 취소·결제 수동 처리·마스킹 해제 기록
+  ['add','admin_action','memo',[['reservation_id','NUMBER','','시스템','관련 예약 (예약 대상 조치일 때)','강제 취소·결제 결과 수동 처리 추적. NULL 허용이라 FK는 비고로 선언']]],
+  ['notes+','admin_action','FK(reservation_id) → reservation(reservation_id)'],
+  ['set','admin_action','action_type',{desc:'CONFIRM / CLEAR / RESTRICT / BAN / CANCEL_RESERVATION / RESOLVE_PAYMENT / UNMASK',reason:'예약 대상 조치는 그 예약의 CI를 subject로 기록하고 reservation_id를 채움. UNMASK는 위험 사용자 목록의 마스킹 해제'}],
+  ['notes+','admin_action','CANCEL_RESERVATION·RESOLVE_PAYMENT는 reservation_id 필수: CHECK(action_type NOT IN (\'CANCEL_RESERVATION\', \'RESOLVE_PAYMENT\') OR reservation_id IS NOT NULL)'],
+  // 알림 종류
+  ['set','notification','type',{desc:'WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED',reason:'취소표 건너뜀(매수 한도 초과)·환불 완료 안내'}],
+  // 대기열 중복 진입 차단·같은 시각 진입 순서
+  ['set','redis_keys','queue:{runId}',{desc:'member={12자리 0채움 seq}:{memberId}, score=진입시각ms + penalty_ms',reason:'위험 점수를 score에 더해 별도 지연 없이 후순위 처리. score가 같으면 member 문자열 순서(= 진입 순서)로 정렬'}],
+  ['add','redis_keys','queue:active:{runId}',[
+    ['queue:seq:{runId}','STRING','','시스템','진입 시퀀스 (INCR)','queue member 앞부분 생성'],
+    ['queue:member:{memberId}','STRING+TTL','','시스템','값: {runId}|{queue member}','회원당 동시 대기 1개. 여러 탭으로 여러 자리 점유 방지, 이탈 시 지울 member 찾기'],
+    ['queue:ci:{ciHash}','ZSET','','시스템','member=memberId, score=만료 시각','CI당 동시 대기 1개. 진입 전 ZREMRANGEBYSCORE로 만료 멤버 정리']]],
+  ['set','queue_log','left_reason',{desc:'ADMITTED / TIMEOUT / LEFT / REJECTED_DUPLICATE',reason:'이탈률, 중복 대기 차단'}],
+  // 운영 값
+  ['samples+','app_policy',[
+    {policy_key:'waitlist.max_per_run',policy_value:'1',version:1,value_type:'NUMBER',description:'회원당 같은 운행 활성 대기 건수'},
+    {policy_key:'waitlist.max_active',policy_value:'3',version:1,value_type:'NUMBER',description:'회원당 전체 활성 대기 건수'},
+    {policy_key:'cancel.after_departure_limit_min',policy_value:'20',version:1,value_type:'NUMBER',description:'출발 후 취소 가능 시간(분). 지나면 취소 불가'},
+    {policy_key:'scanner.hold_interval_sec',policy_value:'5',version:1,value_type:'NUMBER',description:'HOLD 만료 스캐너 주기(초)'},
+    {policy_key:'scanner.pay_recheck_interval_sec',policy_value:'10',version:1,value_type:'NUMBER',description:'결제 결과 확인 스캐너 주기(초)'},
+    {policy_key:'scanner.batch_size',policy_value:'500',version:1,value_type:'NUMBER',description:'스캐너 한 회차 최대 처리 건수'},
+    {policy_key:'notification.pay_reminder_sec',policy_value:'120',version:1,value_type:'NUMBER',description:'결제 기한 몇 초 전에 PAY_REMINDER 알림'},
+    {policy_key:'risk.batch_interval_sec',policy_value:'60',version:1,value_type:'NUMBER',description:'위험 점수 배치 주기(초). 각 운행 sale_open_at 전 1회는 반드시 실행'}]]
+];
+const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS} ];
 const SEED_VERSION = Math.max(2,...PATCHES.map(p=>p.v));
 const LAYOUT = [
  ['station','route','route_station','fare','common_code'],

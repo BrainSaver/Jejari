@@ -12,7 +12,6 @@
 4. [테이블 정의](#4-테이블-정의)
 5. [상태 코드표](#5-상태-코드표)
 6. [MongoDB·Redis·Kafka](#6-mongodbrediskafka)
-7. [2주차 진행 예정](#7-2주차-진행-예정)
 
 ---
 
@@ -782,7 +781,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 |---|---|---|---|---|---|
 | `notification_id` | NUMBER | PK | 시스템 |  |  |
 | `member_id` | NUMBER | FK, NN → member | 시스템 |  |  |
-| `type` | VARCHAR2(20) | NN | 시스템 | WAITLIST_OFFER / PAY_REMINDER / EXPIRED |  |
+| `type` | VARCHAR2(20) | NN | 시스템 | WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED | 취소표 건너뜀(매수 한도 초과)·환불 완료 안내 |
 | `ref_type` | VARCHAR2(20) | NN | 시스템 | RESERVATION / WAITLIST / CASE | ref_id가 어느 테이블을 가리키는지 |
 | `ref_id` | NUMBER |  | 시스템 | 관련 예약·대기 ID |  |
 | `channel` | VARCHAR2(10) | NN | 시스템 | PUSH / EMAIL / IN_APP | 채널 추가 확장 |
@@ -835,11 +834,12 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `admin_id` | NUMBER | FK, NN → admin_user | 시스템 | 조치자 | 감사 추적 |
 | `subject_type` | VARCHAR2(10) | NN | 시스템 | CI / PAYMENT / DEVICE | 대상 유형 코드 통일 (CHECK) |
 | `subject_hash` | VARCHAR2(64) | NN | 시스템 | 대상 해시 |  |
-| `action_type` | VARCHAR2(20) | NN | 시스템 | CONFIRM / CLEAR / RESTRICT / BAN |  |
+| `action_type` | VARCHAR2(20) | NN | 시스템 | CONFIRM / CLEAR / RESTRICT / BAN / CANCEL_RESERVATION / RESOLVE_PAYMENT / UNMASK | 예약 대상 조치는 그 예약의 CI를 subject로 기록하고 reservation_id를 채움. UNMASK는 위험 사용자 목록의 마스킹 해제 |
 | `memo` | VARCHAR2(500) |  | 시스템 | 사유 |  |
+| `reservation_id` | NUMBER |  | 시스템 | 관련 예약 (예약 대상 조치일 때) | 강제 취소·결제 결과 수동 처리 추적. NULL 허용이라 FK는 비고로 선언 |
 | `acted_at` | TIMESTAMP | NN | 시스템 | 조치 시각 |  |
 
-> **제약·비고** 회원 상태 변경(RESTRICT·BAN)은 member.status와 같은 트랜잭션에서 갱신
+> **제약·비고** 회원 상태 변경(RESTRICT·BAN)은 member.status와 같은 트랜잭션에서 갱신 · FK(reservation_id) → reservation(reservation_id) · CANCEL_RESERVATION·RESOLVE_PAYMENT는 reservation_id 필수: CHECK(action_type NOT IN ('CANCEL_RESERVATION', 'RESOLVE_PAYMENT') OR reservation_id IS NOT NULL)
 
 #### `model_run` 모델 학습 기록
 
@@ -974,7 +974,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `initial_rank` | Long |  | 시스템 | 조정 전 순번 | 조정이 의도대로 됐는지 검증 |
 | `adjusted_rank` | Long |  | 시스템 | 조정 후 순번 |  |
 | `admitted_at` | Date |  | 시스템 | 입장 시각 | 실제 대기 시간 vs 예상 대기 시간 비교 |
-| `left_reason` | String |  | 시스템 | ADMITTED / TIMEOUT / LEFT | 이탈률 |
+| `left_reason` | String |  | 시스템 | ADMITTED / TIMEOUT / LEFT / REJECTED_DUPLICATE | 이탈률, 중복 대기 차단 |
 
 > **제약·비고** TTL { expire_at: 1 }, expireAfterSeconds: 0 · 점선은 논리 참조
 
@@ -1041,13 +1041,13 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `saga_instance` | `status` | RUNNING / DONE / COMPENSATED | 좌석 복구율 100% 검증 |
 | `waitlist` | `seat_grade` | GENERAL / FIRST | 희망 등급. 좌석 등급 코드 통일 |
 | `waitlist` | `status` | WAITING / OFFERED / ACCEPTED / EXPIRED / CANCELED / SKIPPED | SKIPPED = 제안 시 매수 한도 초과로 건너뜀 |
-| `notification` | `type` | WAITLIST_OFFER / PAY_REMINDER / EXPIRED |  |
+| `notification` | `type` | WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED | 취소표 건너뜀(매수 한도 초과)·환불 완료 안내 |
 | `notification` | `ref_type` | RESERVATION / WAITLIST / CASE | ref_id가 어느 테이블을 가리키는지 |
 | `notification` | `channel` | PUSH / EMAIL / IN_APP | 채널 추가 확장 |
 | `risk_score` | `subject_type` | CI / PAYMENT / DEVICE | 계정이 아닌 식별 단위 |
 | `risk_score` | `review_status` | NONE / PENDING / CONFIRMED / CLEARED | 높은 점수는 검토 후 조치 |
 | `admin_action` | `subject_type` | CI / PAYMENT / DEVICE | 대상 유형 코드 통일 (CHECK) |
-| `admin_action` | `action_type` | CONFIRM / CLEAR / RESTRICT / BAN |  |
+| `admin_action` | `action_type` | CONFIRM / CLEAR / RESTRICT / BAN / CANCEL_RESERVATION / RESOLVE_PAYMENT / UNMASK | 예약 대상 조치는 그 예약의 CI를 subject로 기록하고 reservation_id를 채움. UNMASK는 위험 사용자 목록의 마스킹 해제 |
 | `model_run` | `algorithm` | RULE / IFOREST | 두 방식 비교 |
 | `suspicious_case` | `subject_type` | CI / PAYMENT / DEVICE | 계정이 아닌 묶음 단위 |
 | `suspicious_case` | `trigger_type` | RISK_THRESHOLD / RULE / MODEL / ADMIN | 어떻게 열렸는지 |
@@ -1059,7 +1059,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `case_marker` | `severity` | LOW / MID / HIGH |  |
 | `behavior_log` | `event_type` | VIEW_TRAIN / VIEW_SEAT / QUEUE_ENTER / SEAT_HOLD / PAY / CANCEL |  |
 | `behavior_log` | `channel` | WEB / APP |  |
-| `queue_log` | `left_reason` | ADMITTED / TIMEOUT / LEFT | 이탈률 |
+| `queue_log` | `left_reason` | ADMITTED / TIMEOUT / LEFT / REJECTED_DUPLICATE | 이탈률, 중복 대기 차단 |
 | `synthetic_label` | `user_type` | NORMAL / RESELLER / CANCEL_ABUSER / MACRO | 위험 점수의 정밀도·재현율 측정 |
 | `reservation_history` | `from_status` | HOLD / PAYMENT_PENDING / CONFIRMED / CANCELED / EXPIRED (NULL 허용) | 비고의 CHECK |
 
@@ -1083,7 +1083,10 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 
 | 키 | 자료형 | 값 | 만료 | 기능 |
 |---|---|---|---|---|
-| `queue:{runId}` | ZSET | member=memberId, score=진입시각ms + penalty_ms | 운행 판매 마감 | QUE-01 |
+| `queue:{runId}` | ZSET | member=`{12자리 seq}:{memberId}`, score=진입시각ms + penalty_ms | 운행 판매 마감 | QUE-01 |
+| `queue:seq:{runId}` | STRING | 진입 시퀀스 (INCR) | 운행 판매 마감 | QUE-01 |
+| `queue:member:{memberId}` | STRING | `{runId}\|{queue member}` (회원당 대기 1개) | 토큰 만료 | QUE-01·05 |
+| `queue:ci:{ciHash}` | ZSET | memberId, score=만료 시각 (CI당 대기 1개) | 멤버별 score | QUE-01·05 |
 | `queue:active:{runId}` | ZSET | 입장한 회원, score=토큰 만료 시각 | | QUE-03 |
 | `queue:throughput:{runId}` | STRING | 초당 입장 수 | | QUE-02 |
 | `queue:pass:{runId}:{memberId}` | STRING | 입장 토큰 | `queue.pass_ttl_sec` | QUE-03·04 |
@@ -1127,14 +1130,3 @@ Lua 스크립트(`hold`, `release`, `extend`, `rehold`, `sold`, `reoffer`, `limi
 | 확장 기능 | common_code, member_push_token, password_reset_token, ticket_transfer | Oracle |
 
 진행하기로 하면 이 문서 4장에 컬럼 정의를 추가합니다.
-
-### 7.2 추가할 컬럼·키
-
-| 기능 | 추가 내용 |
-|---|---|
-| ADM-07 강제 취소, ADM-09 결제 수동 처리 | `admin_action.reservation_id` (FK, NULL 허용), `action_type`에 CANCEL_RESERVATION / RESOLVE_PAYMENT |
-| WL-03, CNL-03 알림 | `notification.type`에 WAITLIST_SKIPPED / REFUNDED |
-| ADM-04 마스킹 해제 기록 | `admin_action.action_type`에 UNMASK |
-| QUE-01 중복 대기 차단 | Redis `queue:member:{memberId}`, `queue:ci:{ciHash}`, `queue_log.left_reason`에 REJECTED_DUPLICATE |
-| QUE-01 같은 시각 진입 순서 | `queue:{runId}` member를 `{12자리 seq}:{memberId}`로, Redis `queue:seq:{runId}` |
-| WL-01, CNL-02, RSV-03, EVT-06, RISK-02 운영 값 | app_policy `waitlist.max_per_run`(1), `waitlist.max_active`(3), `cancel.after_departure_limit_min`(20), `scanner.hold_interval_sec`(5), `scanner.batch_size`(500), `notification.pay_reminder_sec`(120), `risk.batch_interval_sec`(60) |
