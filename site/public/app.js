@@ -983,7 +983,7 @@ function askModal(c) {
       wait.innerHTML = ''; wait.appendChild(renderMd(r.answer));
       if (r.refs && r.refs.length) {
         const d = document.createElement('details'); d.className = 'ask-refs';
-        d.innerHTML = `<summary>참고한 문서 ${r.refs.length}곳</summary><ul>${r.refs.map((x) => `<li>${esc(x.doc)} · ${esc(x.heading || '(머리말)')}</li>`).join('')}</ul>`;
+        d.innerHTML = `<summary>참고한 문서 ${r.refs.length}곳${r.model ? ` · 모델 ${esc(r.model)}` : ''}</summary><ul>${r.refs.map((x) => `<li>${esc(x.doc)} · ${esc(x.heading || '(머리말)')}</li>`).join('')}</ul>`;
         wait.appendChild(d);
       }
       history.push({ role: 'user', content: q }, { role: 'assistant', content: r.answer });

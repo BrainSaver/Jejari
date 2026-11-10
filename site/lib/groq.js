@@ -1,6 +1,52 @@
 // 커밋 메시지를 Groq로 만든다. 키가 없거나 실패하면 기본 형식으로 돌려준다.
 import { scopeOf } from './config.js';
 
+// ---------- 모델 고르기 ----------
+// Groq는 모델을 자주 내리므로 이름을 박아 두지 않는다. 환경 변수가 없으면 /models 목록에서 선호 순서대로 고른다.
+const PREFER = [
+  'moonshotai/kimi-k2-instruct-0905', 'moonshotai/kimi-k2-instruct', 'meta-llama/llama-4-maverick-17b-128e-instruct',
+  'llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct', 'openai/gpt-oss-120b', 'qwen/qwen3-32b',
+  'openai/gpt-oss-20b', 'llama-3.1-8b-instant',
+];
+const FALLBACK_MODEL = 'llama-3.3-70b-versatile';
+let modelCache = null; // { at, id }
+const chatUrl = (env) => env.GROQ_API || 'https://api.groq.com/openai/v1/chat/completions';
+export async function pickModel(env, { refresh } = {}) {
+  if (env.GROQ_MODEL && !refresh) return env.GROQ_MODEL;
+  if (!refresh && modelCache && Date.now() - modelCache.at < 6 * 3600 * 1000) return modelCache.id;
+  const url = chatUrl(env);
+  if (!/\/chat\/completions$/.test(url)) return env.GROQ_MODEL || FALLBACK_MODEL;
+  try {
+    const res = await fetch(url.replace(/\/chat\/completions$/, '/models'), { headers: { 'Authorization': `Bearer ${env.GROQ_API_KEY}` } });
+    if (!res.ok) return env.GROQ_MODEL || FALLBACK_MODEL;
+    const ids = ((await res.json()).data || []).filter((m) => m.active !== false).map((m) => m.id);
+    const chat = ids.filter((id) => !/whisper|tts|guard|playai|orpheus|distil|compound|prompt|safeguard/i.test(id));
+    const id = PREFER.find((x) => chat.includes(x)) || chat.find((x) => /llama|kimi|qwen|gpt-oss|mistral|gemma/i.test(x)) || chat[0] || FALLBACK_MODEL;
+    modelCache = { at: Date.now(), id };
+    return id;
+  } catch { return env.GROQ_MODEL || FALLBACK_MODEL; }
+}
+// 모델 이름이 틀렸으면(404·모델 없음) 목록을 새로 받아 한 번 더 보낸다
+async function groqChat(env, body, { model, signal }) {
+  const send = (m) => fetch(chatUrl(env), {
+    method: 'POST', signal,
+    headers: { 'Authorization': `Bearer ${env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, model: m }),
+  });
+  let m = model || await pickModel(env);
+  let res = await send(m);
+  if (res.status === 404 || res.status === 400) {
+    const text = await res.clone().text();
+    if (/model/i.test(text) && /(not found|decommissioned|does not exist|not supported)/i.test(text)) {
+      modelCache = null;
+      m = await pickModel(env, { refresh: true });
+      res = await send(m);
+    }
+  }
+  return { res, model: m };
+}
+const stripThink = (t) => String(t || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+
 const TYPES = 'feat|fix|perf|refactor|test|db|docs|build|ci|chore';
 const VALID = new RegExp(`^(${TYPES})\\([^)]{1,20}\\): .{2,60}$`);
 
@@ -44,21 +90,15 @@ export async function commitMessage(env, { path, heading, before, after }) {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
-    const res = await fetch(env.GROQ_API || 'https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      signal: ctrl.signal,
-      headers: { 'Authorization': `Bearer ${env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-        temperature: 0.2,
-        max_tokens: 80,
-        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-      }),
-    });
+    const { res } = await groqChat(env, {
+      temperature: 0.2,
+      max_tokens: 400,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+    }, { signal: ctrl.signal });
     clearTimeout(timer);
     if (!res.ok) return { message: fallback, ai: false, reason: `Groq ${res.status}` };
     const data = await res.json();
-    let line = ((data.choices && data.choices[0] && data.choices[0].message.content) || '').trim().split('\n')[0];
+    let line = stripThink((data.choices && data.choices[0] && data.choices[0].message.content) || '').split('\n')[0];
     line = line.replace(/^["'`]+|["'`]+$/g, '').replace(/\.$/, '').trim();
     if (!VALID.test(line)) return { message: fallback, ai: false, reason: '형식이 맞지 않음', raw: line };
     return { message: line, ai: true };
@@ -103,14 +143,9 @@ async function callGroq(env, msgs) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 30000);
   try {
-    const res = await fetch(env.GROQ_API || 'https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      signal: ctrl.signal,
-      headers: { 'Authorization': `Bearer ${env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: env.GROQ_ASK_MODEL || env.GROQ_MODEL || 'llama-3.3-70b-versatile', temperature: 0.3, max_tokens: 1200, messages: msgs }),
-    });
+    const { res, model } = await groqChat(env, { temperature: 0.3, max_tokens: 2000, messages: msgs }, { model: env.GROQ_ASK_MODEL, signal: ctrl.signal });
     const text = await res.text();
-    return { status: res.status, text };
+    return { status: res.status, text, model };
   } finally { clearTimeout(timer); }
 }
 
@@ -141,11 +176,14 @@ export async function askDoc(env, input, buildContext) {
     const tooBig = r.status === 413 || (r.status === 429 && /token/i.test(r.text) && /(request|too large|limit)/i.test(r.text) && t === tries[0]);
     if (tooBig) { last = r; continue; }
     if (r.status === 429) return { error: 'AI_BUSY', status: 429, message: 'AI 사용량이 잠시 꽉 찼어요. 1분쯤 뒤에 다시 물어봐 주세요.' };
-    if (r.status < 200 || r.status >= 300) return { error: 'AI_FAIL', status: 502, message: `AI 응답을 받지 못했어요 (Groq ${r.status}).` };
+    if (r.status < 200 || r.status >= 300) {
+      let why = ''; try { why = (JSON.parse(r.text).error || {}).message || ''; } catch {}
+      return { error: 'AI_FAIL', status: 502, message: `AI 응답을 받지 못했어요 (Groq ${r.status}${why ? ': ' + why.slice(0, 120) : ''}).` };
+    }
     let answer = '';
-    try { const d = JSON.parse(r.text); answer = ((d.choices && d.choices[0] && d.choices[0].message.content) || '').trim(); } catch {}
+    try { const d = JSON.parse(r.text); answer = stripThink((d.choices && d.choices[0] && d.choices[0].message.content) || ''); } catch {}
     if (!answer) return { error: 'AI_FAIL', status: 502, message: 'AI가 빈 답을 보냈어요.' };
-    return { answer, refs: ctx.related.map((x) => ({ doc: x.doc, heading: x.heading, path: x.path })) };
+    return { answer, model: r.model, refs: ctx.related.map((x) => ({ doc: x.doc, heading: x.heading, path: x.path })) };
   }
   return { error: 'AI_BUSY', status: 429, message: `질문이 AI 한도보다 커요 (Groq ${last && last.status}). 고른 부분을 줄이거나 1분 뒤에 다시 물어봐 주세요.` };
 }
