@@ -1,19 +1,19 @@
-# FairRail — Claude 작업 안내
+# 제자리 — Claude 작업 안내
 
 명절 열차 공정 예매 시스템 팀 프로젝트(5명, 3주). Spring Boot · Kafka · Redis · MongoDB · Oracle · Python.
-이 문서는 Claude가 ERD 편집기(`fairrail-erd.html`)를 읽고, 고치고, 팀원이 편집기에서 바꾼 내용을 반영할 때 따르는 규칙입니다.
+이 문서는 Claude가 ERD 편집기(`jejari-erd.html`)를 읽고, 고치고, 팀원이 편집기에서 바꾼 내용을 반영할 때 따르는 규칙입니다.
 
 ## 저장소 구조
 
 ```
-docs/erd/fairrail-erd.html      ERD 편집기 = 스키마의 단일 원본
-docs/erd/fairrail-erd.ddl.sql   check-erd.js가 생성하는 Oracle DDL (직접 고치지 않음)
+docs/erd/jejari-erd.html        ERD 편집기 = 스키마의 단일 원본
+docs/erd/jejari-erd.ddl.sql     check-erd.js가 생성하는 Oracle DDL (직접 고치지 않음)
 docs/erd/exports/*.json         팀원이 편집기에서 내보낸 JSON (이름-날짜.json)
 docs/spec/*.md                  v1~v4 명세·점검 보고서 (변경 이력, 읽기 전용)
 tools/check-erd.js              스키마 검사 + DDL 생성
 tools/erd-diff.js               내보낸 JSON → 다음 버전 패치 코드
 tools/erd-md.js                 HTML → 종합 ERD 문서 생성
-docs/FairRail_ERD.md            종합 ERD 문서 (erd-md.js가 생성, 직접 고치지 않음)
+docs/Jejari_ERD.md              종합 ERD 문서 (erd-md.js가 생성, 직접 고치지 않음)
 docs/작업안내.md                팀원용 안내
 docs/templates/                 트러블슈팅·개인 기여 문서 틀
 docs/{이름}/                    팀원별 contribution.md, features/(기능 문서), troubleshooting/
@@ -21,10 +21,11 @@ docs/{이름}/                    팀원별 contribution.md, features/(기능 �
 CONTRIBUTING.md                 깃 규칙
 ```
 
-- 스키마를 바꾼 뒤에는 종합 문서도 다시 만듭니다: `node tools/erd-md.js docs/erd/fairrail-erd.html > docs/FairRail_ERD.md`
+- 스키마를 바꾼 뒤에는 종합 문서도 다시 만듭니다: `node tools/erd-md.js docs/erd/jejari-erd.html > docs/Jejari_ERD.md`
 
+- 프로젝트 이름은 **제자리**(영문 Jejari, 구 FairRail)입니다. `docs/spec`의 기록 문서는 이력이라 옛 이름 FairRail을 그대로 둡니다.
 - **스키마의 원본은 HTML 하나**입니다. `docs/spec`의 md는 과거 기록이라 최신과 다를 수 있습니다 (예: v2 md의 replay_event 시계열 설계는 v3에서 바뀜). 최신 명세가 필요하면 HTML의 데이터 블록을 읽거나 편집기 "내보내기 → Markdown 명세"를 쓰세요.
-- 스키마를 바꾼 커밋에는 항상 `node tools/check-erd.js docs/erd/fairrail-erd.html` 결과가 **FAIL 0**이어야 합니다. 이 명령이 `fairrail-erd.ddl.sql`도 다시 만듭니다.
+- 스키마를 바꾼 커밋에는 항상 `node tools/check-erd.js docs/erd/jejari-erd.html` 결과가 **FAIL 0**이어야 합니다. 이 명령이 `jejari-erd.ddl.sql`도 다시 만듭니다.
 
 ## 깃 규칙 (자세한 건 CONTRIBUTING.md)
 
@@ -93,8 +94,8 @@ CONTRIBUTING.md                 깃 규칙
    `V6_*`는 `PATCHES` 바로 위에 둡니다.
 3. 새 테이블은 `LAYOUT`의 알맞은 열에 넣습니다 (빠지면 검사에서 WARN).
 4. `DOCS.history`에 `['v6','변경 요약']` 한 줄을 추가합니다. 기능이나 실패 시나리오가 바뀌면 `DOCS.trace`, `DOCS.scenarios`도 고칩니다.
-5. `node tools/check-erd.js docs/erd/fairrail-erd.html` → FAIL 0 확인. WARN은 읽고 의도한 것인지 판단합니다 (FK를 일부러 걸지 않는 ID 컬럼은 스크립트의 `NO_FK_OK`에 추가).
-6. 저장소 키 `STORE = 'fairrail-erd-v1'`은 **바꾸지 않습니다.** 바꾸면 모든 팀원의 편집 내용이 사라집니다.
+5. `node tools/check-erd.js docs/erd/jejari-erd.html` → FAIL 0 확인. WARN은 읽고 의도한 것인지 판단합니다 (FK를 일부러 걸지 않는 ID 컬럼은 스크립트의 `NO_FK_OK`에 추가).
+6. 저장소 키 `STORE = 'fairrail-erd-v1'`은 **바꾸지 않습니다.** 바꾸면 모든 팀원의 편집 내용이 사라집니다. (프로젝트 이름이 제자리로 바뀌었어도 이 키는 옛 이름 그대로 둡니다.)
 
 ## 테이블 설계 규칙
 
@@ -138,7 +139,7 @@ CONTRIBUTING.md                 깃 규칙
 1. 팀원: 편집기 → "내보내기" → "JSON 내보내기" → 복사 → `docs/erd/exports/{이름}-{YYYYMMDD}.json`으로 저장해 커밋.
 2. Claude:
    ```bash
-   node tools/erd-diff.js docs/erd/fairrail-erd.html docs/erd/exports/kim-20261110.json
+   node tools/erd-diff.js docs/erd/jejari-erd.html docs/erd/exports/kim-20261110.json
    ```
 3. 출력된 `V{n}_TABLES`, `V{n}_OPS`를 읽고 사람에게 요약해 확인받습니다. 특히 다음은 반드시 짚습니다.
    - `del`·`droptable`: 의도한 삭제인지, 이름 변경이었는지
@@ -151,7 +152,7 @@ CONTRIBUTING.md                 깃 규칙
 
 ## 코드로 옮길 때
 
-- **Oracle**: `docs/erd/fairrail-erd.ddl.sql`을 그대로 실행 (CREATE → COMMENT → FK·인덱스 → 예시 INSERT 순). 직접 고치지 말고 HTML을 고친 뒤 다시 생성합니다.
+- **Oracle**: `docs/erd/jejari-erd.ddl.sql`을 그대로 실행 (CREATE → COMMENT → FK·인덱스 → 예시 INSERT 순). 직접 고치지 말고 HTML을 고친 뒤 다시 생성합니다.
 - **JPA**: 복합 PK 테이블(route_station, train_car, train_stop, member_device, seat_inventory, reservation_seat, processed_event, risk_score, case_session, purchase_counter)은 `@IdClass` 또는 `@EmbeddedId`. 상태 코드는 `@Enumerated(EnumType.STRING)`, `CHAR(1)` Y/N은 `AttributeConverter<Boolean,String>`.
 - **MongoDB**: 테이블 비고(notes)에 적힌 인덱스·TTL·유니크를 `mongo-init.js`로 만듭니다 (편집기 DDL은 Oracle만 생성).
 - **Redis**: `redis_keys` 테이블의 키 패턴을 그대로 쓰고, TTL·임계값은 하드코딩하지 말고 `app_policy`에서 읽습니다. 매수 제한은 Redis가 1차, `purchase_counter` 조건부 UPDATE가 최종 판정입니다.
@@ -170,6 +171,6 @@ CONTRIBUTING.md                 깃 규칙
 ## 하지 말 것
 
 - 배포된 패치 블록 수정, `STORE` 키 변경
-- `fairrail-erd.ddl.sql`이나 `docs/spec/*.md`를 원본처럼 직접 수정
+- `jejari-erd.ddl.sql`이나 `docs/spec/*.md`를 원본처럼 직접 수정
 - 검사 FAIL이 남은 상태로 커밋
 - 예시 데이터에 실제 개인정보·비밀값 넣기

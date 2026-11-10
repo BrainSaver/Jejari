@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /*
- * FairRail ERD 검사 스크립트
- * 사용법: node tools/check-erd.js docs/erd/fairrail-erd.html [비교할 명세.md ...]
+ * 제자리 ERD 검사 스크립트
+ * 사용법: node tools/check-erd.js docs/erd/jejari-erd.html [비교할 명세.md ...]
  *  - FAIL이 하나라도 있으면 종료 코드 1
  *  - md 파일을 주면 "### `테이블명`" 아래 표의 첫 열(컬럼명)을 편집기 스키마와 비교
  */
 const fs = require('fs');
 const [, , htmlPath, ...mdPaths] = process.argv;
-if (!htmlPath) { console.error('사용법: node tools/check-erd.js <fairrail-erd.html> [spec.md ...]'); process.exit(2); }
+if (!htmlPath) { console.error('사용법: node tools/check-erd.js <jejari-erd.html> [spec.md ...]'); process.exit(2); }
 const html = fs.readFileSync(htmlPath, 'utf8');
 const src = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
 const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); if (i < 0 || j < 0) throw new Error(`구간을 찾을 수 없음: ${a} ~ ${b}`); return src.slice(i, j); };

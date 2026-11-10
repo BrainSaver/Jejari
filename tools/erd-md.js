@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /*
  * ERD 편집기 HTML에서 종합 ERD 문서(Markdown)를 만든다.
- * 사용법: node tools/erd-md.js docs/erd/fairrail-erd.html > docs/FairRail_ERD.md
+ * 사용법: node tools/erd-md.js docs/erd/jejari-erd.html > docs/Jejari_ERD.md
  * 영역별 Mermaid 관계도 + 전체 테이블 명세 + 결정 사항 + 설계 문서 + 참고 자료
  */
 const fs = require('fs');
 const htmlPath = process.argv[2];
-if (!htmlPath) { console.error('사용법: node tools/erd-md.js <fairrail-erd.html>'); process.exit(2); }
+if (!htmlPath) { console.error('사용법: node tools/erd-md.js <jejari-erd.html>'); process.exit(2); }
 const html = fs.readFileSync(htmlPath, 'utf8');
 const src = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
 const cut = (a, b) => { const i = src.indexOf(a); return src.slice(i, src.indexOf(b, i)); };
@@ -28,9 +28,9 @@ const out = (...x) => L.push(...x);
 const groups = Object.entries(api.GROUPS).filter(([k]) => T.some(t => t.g === k));
 const nOra = T.filter(t => dbOf(t) === 'Oracle' && !t.planned).length, nMongo = T.filter(t => dbOf(t) === 'MongoDB').length, nRedis = T.filter(t => dbOf(t) === 'Redis').length;
 
-out('# FairRail 종합 ERD', '',
+out('# 제자리 종합 ERD', '',
   '명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.', '',
-  `> 스키마 v${api.SEED_VERSION} · ERD 편집기(\`docs/erd/fairrail-erd.html\`)에서 생성 · 생성일 ${new Date().toISOString().slice(0, 10)}`,
+  `> 스키마 v${api.SEED_VERSION} · ERD 편집기(\`docs/erd/jejari-erd.html\`)에서 생성 · 생성일 ${new Date().toISOString().slice(0, 10)}`,
   '> 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.', '');
 
 out('## 목차', '', '1. [한눈에 보기](#한눈에-보기)', '2. [팀 결정 사항](#팀-결정-사항)', '3. [공통 규칙](#공통-규칙)', '4. [흐름](#흐름)', '5. [영역별 테이블](#영역별-테이블)');

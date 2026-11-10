@@ -1,4 +1,4 @@
-# FairRail 깃 규칙
+# 제자리 깃 규칙
 
 커밋 메시지 틀을 쓰려면 한 번만 실행: `git config commit.template .gitmessage`
 한글 경로가 `\352\270...`처럼 보이면: `git config core.quotepath false`
@@ -86,7 +86,7 @@ Refs: #21
 4. **빌드가 깨진 상태로 push 금지**: 최소한 `./gradlew build`(또는 해당 모듈 테스트) 통과 후 push.
 5. **AI 도구 흔적 금지**: `Co-Authored-By: Claude`, `Claude-Session`, `Generated with Claude Code` 같은 줄을 넣지 않습니다. 작성자는 본인 GitHub 계정. 레포의 `.claude/settings.json`이 Claude Code의 커밋·PR 서명을 자동으로 끕니다 (지우지 말 것).
 6. **ERD 반영은 담당자 1명만**: 다른 팀원은 ERD 프로그램에서 내보낸 JSON을 `docs/erd/exports/이름-YYYYMMDD.json`으로 올리기만 하고, HTML 패치·DDL·종합 문서 반영은 ERD 담당자(강동균)가 내보낸 순서대로 합니다.
-7. **스키마 변경(`db`)은 한 커밋에 묶음**: `fairrail-erd.html` + 재생성된 `fairrail-erd.ddl.sql` + `docs/FairRail_ERD.md`를 같은 커밋에. `node tools/check-erd.js` FAIL 0 확인 후 커밋.
+7. **스키마 변경(`db`)은 한 커밋에 묶음**: `jejari-erd.html` + 재생성된 `jejari-erd.ddl.sql` + `docs/Jejari_ERD.md`를 같은 커밋에. `node tools/check-erd.js` FAIL 0 확인 후 커밋.
 8. **트러블슈팅은 고친 커밋과 같이**: 버그를 잡았으면 그 커밋(또는 바로 다음 `docs` 커밋)에 `docs/본인이름/troubleshooting/` 문서를 추가하고 꼬리말에 경로를 적습니다. 수치가 아직 없으면 "수치" 칸을 `측정 예정`으로 두고 나중에 채웁니다.
 
 ## 3. 브랜치
