@@ -509,9 +509,10 @@ Argon2id 비밀번호 해시와 잠금 상태. 회원 프로필과 분리해 해
 | `user_agent` | String |  | 생성 |  |  |
 | `session_id` | String | FK → auth_session | 시스템 | 성공 시 발급된 세션 |  |
 | `verify_ms` | Int |  | 시스템 | Argon2 검증 소요 시간 | 예매 오픈 직전 로그인 폭주 시 CPU·메모리 병목 측정 |
-| `ts` | Date |  | 생성 | 시도 시각 | TTL 기준 |
+| `ts` | Date |  | 생성 | 시도 시각 | 시도 순서·기간 조회 |
+| `expire_at` | Date |  | 시스템 | 삭제 예정 시각 | ts + login_attempt.retention_days. 다른 로그 컬렉션과 같은 보관 방식 |
 
-> **제약·비고** TTL { ts: 1 } · 인덱스 { ip_hash: 1, ts: -1 }, { email_hash: 1, ts: -1 }
+> **제약·비고** 인덱스: { ip_hash: 1, ts: -1 }, { email_hash: 1, ts: -1 } · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 절차: concurrency.md §13
 
 ### 4.3 예약·결제·취소
 
@@ -953,7 +954,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `response_status` | Int |  | 시스템 | HTTP 상태 | 차단·에러 분석 |
 | `meta` | Object |  | 시스템 | 이벤트별 추가 정보 | 스키마 변경 없이 필드 확장 |
 
-> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 } · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조
+> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 }, { member_id: 1, ts: 1 } (타임라인 ADM-05) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13
 
 #### `queue_log` 대기열 기록
 
@@ -977,7 +978,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `admitted_at` | Date |  | 시스템 | 입장 시각 | 실제 대기 시간 vs 예상 대기 시간 비교 |
 | `left_reason` | String |  | 시스템 | ADMITTED / TIMEOUT / LEFT / REJECTED_DUPLICATE | 이탈률, 중복 대기 차단 |
 
-> **제약·비고** TTL { expire_at: 1 }, expireAfterSeconds: 0 · 점선은 논리 참조
+> **제약·비고** 인덱스: { run_id: 1, entered_at: 1 } (순번 조정 검증) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 점선은 논리 참조 · 절차: concurrency.md §13
 
 ### 4.8 가상 데이터
 
@@ -1076,9 +1077,8 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 |---|---|---|---|
 | behavior_log | `{ci_hash: 1, ts: -1}`, `{run_id: 1, ts: 1}`, `{expire_at: 1}` TTL. 타임라인(ADM-05)용 `{member_id: 1, ts: 1}` | `ts` + 180일 | 앱 → Kafka `jejari.behavior` → insertMany 1000건 |
 | queue_log | `{expire_at: 1}` TTL. 순번 검증용 `{run_id: 1, entered_at: 1}` | `entered_at` + 30일 | 같은 경로 |
-| login_attempt | `{ip_hash: 1, ts: -1}`, `{email_hash: 1, ts: -1}`, TTL | 30일 | 로그인 처리 중 비동기 |
+| login_attempt | `{ip_hash: 1, ts: -1}`, `{email_hash: 1, ts: -1}`, `{expire_at: 1}` TTL | `ts` + 30일 | 로그인 처리 중 비동기 |
 
-> ERD 비고에 아직 없는 항목: `behavior_log {member_id: 1, ts: 1}`, `queue_log {run_id: 1, entered_at: 1}`, `login_attempt` TTL 30일. `mongo-init.js`는 ERD 비고로 만들므로, ERD 반영 담당(강동균)이 다음 패치에 넣어야 합니다.
 
 ### 6.2 Redis 키
 

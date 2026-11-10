@@ -589,6 +589,7 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | replay_session | `started_at` + `replay.retention_days` (`retention_until`과 같은 값) | `legal_hold = true`면 필드 없음 |
 | replay_event | 세션의 `expire_at`과 같은 값 | 세션이 `legal_hold`면 필드 없음 |
 | queue_log | `entered_at` + `queue_log.retention_days` | 없음 |
+| login_attempt | `ts` + `login_attempt.retention_days` | 없음 |
 | evidence_snapshot | 케이스가 열려 있는 동안 필드 없음. 종료 시 `closed_at` + `evidence.retention_days` | 케이스 재개 시 필드 제거 |
 
 - **컨슈머는 `replay_event`를 저장하기 전에 세션의 `legal_hold`를 확인**합니다. 캐시를 쓰되 TTL은 `policy(replay.hold_cache_sec)` 이하입니다. 보류 중이면 `expire_at` 없이 저장합니다.
@@ -684,6 +685,7 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | `behavior.retention_days` | 180 | §13.2 (팀 확정) |
 | `replay.hold_cache_sec` | 30 | §13.2 legal_hold 캐시 TTL, 두 번째 `$unset` 지연 |
 | `queue_log.retention_days` | 30 | §13.2 |
+| `login_attempt.retention_days` | 30 | §13.2 |
 | `evidence.retention_days` | 365 | §13.2 (케이스 종료 후) |
 
 ---
