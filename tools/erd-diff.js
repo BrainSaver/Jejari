@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /*
  * 편집기에서 내보낸 JSON과 HTML 안의 기본 스키마를 비교해 다음 버전 패치 코드를 만든다.
- * 사용법: node tools/erd-diff.js docs/erd/fairrail-erd.html docs/erd/erd-export.json > patch.txt
+ * 사용법: node tools/erd-diff.js docs/erd/jejari-erd.html docs/erd/erd-export.json > patch.txt
  * 출력된 V{n}_TABLES / V{n}_OPS를 HTML의 PATCHES 바로 위에 붙이고
  * PATCHES 배열에 {v:n, tables:V{n}_TABLES, ops:V{n}_OPS}를 추가한다. (자세한 절차는 CLAUDE.md)
  */
 const fs = require('fs');
 const [, , htmlPath, jsonPath] = process.argv;
-if (!htmlPath || !jsonPath) { console.error('사용법: node tools/erd-diff.js <fairrail-erd.html> <erd-export.json>'); process.exit(2); }
+if (!htmlPath || !jsonPath) { console.error('사용법: node tools/erd-diff.js <jejari-erd.html> <erd-export.json>'); process.exit(2); }
 const html = fs.readFileSync(htmlPath, 'utf8');
 const src = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
 const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); return src.slice(i, j); };

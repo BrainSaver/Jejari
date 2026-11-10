@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>FairRail ERD</title>
+<title>제자리 ERD</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -209,7 +209,7 @@ kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><h1>FairRail ERD</h1><span class="meta" id="meta"></span></div>
+    <div class="brand"><h1>제자리 ERD</h1><span class="meta" id="meta"></span></div>
     <label class="search" for="q"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="q" type="search" placeholder="테이블·컬럼 검색" autocomplete="off"></label>
     <button class="btn" id="bUndo" title="실행 취소 (Ctrl+Z)">↶<span class="lbl"> 되돌리기</span></button>
@@ -1296,7 +1296,7 @@ function renderPanel(openCol){
   const panel=$('#panel');
   if(!sel){
     panel.classList.add('closed');
-    $('#ph').innerHTML=`<h2>FairRail 스키마</h2><button class="x" data-act="close" aria-label="닫기">×</button>`;
+    $('#ph').innerHTML=`<h2>제자리 스키마</h2><button class="x" data-act="close" aria-label="닫기">×</button>`;
     const cnt={}; tables.forEach(t=>cnt[t.g]=(cnt[t.g]||0)+1);
     $('#pb').innerHTML=`
       <div class="sec"><p class="p">명절 열차 공정 예매 시스템의 Oracle·MongoDB·Redis 구조도입니다. 테이블을 누르면 설명과 컬럼별 이유가 나오고, 그 자리에서 바로 고칠 수 있습니다.</p></div>
@@ -1524,7 +1524,7 @@ $('#docs').addEventListener('input',e=>{ const el=e.target; if(el.dataset.df==nu
 
 /* ---------- 내보내기·불러오기 ---------- */
 let tab='json';
-function exportJSON(){ return JSON.stringify({project:'FairRail',version:1,seedVersion:SEED_VERSION,exported_at:new Date().toISOString(),decisions,tables},null,2); }
+function exportJSON(){ return JSON.stringify({project:'제자리',version:1,seedVersion:SEED_VERSION,exported_at:new Date().toISOString(),decisions,tables},null,2); }
 function sqlStr(s){return "'"+String(s||'').replace(/'/g,"''")+"'";}
 function ddlType(t){ t=(t||'VARCHAR2(100)').trim(); if(/^CLOB/i.test(t))return 'CLOB'; return t.replace(/\s*\(JSON\)/i,''); }
 const ORA_RESERVED=new Set('ACCESS ADD ALL ALTER AND ANY AS ASC AUDIT BETWEEN BY CHAR CHECK CLUSTER COLUMN COMMENT COMPRESS CONNECT CREATE CURRENT DATE DECIMAL DEFAULT DELETE DESC DISTINCT DROP ELSE EXCLUSIVE EXISTS FILE FLOAT FOR FROM GRANT GROUP HAVING IDENTIFIED IMMEDIATE IN INCREMENT INDEX INITIAL INSERT INTEGER INTERSECT INTO IS LEVEL LIKE LOCK LONG MAXEXTENTS MINUS MLSLABEL MODE MODIFY NOAUDIT NOCOMPRESS NOT NOWAIT NULL NUMBER OF OFFLINE ON ONLINE OPTION OR ORDER PCTFREE PRIOR PUBLIC RAW RENAME RESOURCE REVOKE ROW ROWID ROWNUM ROWS SELECT SESSION SET SHARE SIZE SMALLINT START SUCCESSFUL SYNONYM SYSDATE TABLE THEN TO TRIGGER UID UNION UNIQUE UPDATE USER VALIDATE VALUES VARCHAR VARCHAR2 VIEW WHENEVER WHERE WITH'.split(' '));
@@ -1544,7 +1544,7 @@ function sqlVal(v){ if(v==null)return 'NULL'; if(typeof v==='number')return Stri
   const s=String(v); if(/^\d{4}-\d{2}-\d{2}$/.test(s))return `DATE '${s}'`; if(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(s))return `TIMESTAMP '${s}:00'`; return sqlStr(s); }
 function exportDDL(){
   const ora=tables.filter(t=>dbOf(t)==='Oracle'&&!t.planned), skipped=tables.filter(t=>dbOf(t)==='Oracle'&&t.planned); const L=[], warn=[];
-  L.push('-- FairRail Oracle DDL (ERD 편집기에서 생성, 스키마 v'+SEED_VERSION+')','-- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약','-- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성');
+  L.push('-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v'+SEED_VERSION+')','-- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약','-- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성');
   if(skipped.length)L.push('-- 확장 예정이라 제외: '+skipped.map(t=>t.id).join(', '));
   L.push('');
   ora.forEach(t=>{
@@ -1584,7 +1584,7 @@ function exportDDL(){
 function mdEsc(s){ return String(s??'').replace(/\|/g,'\\|').replace(/\n/g,' '); }
 function mdTable(head,rows){ return ['| '+head.join(' | ')+' |','|'+head.map(()=>'---').join('|')+'|',...rows.map(r=>'| '+r.map(mdEsc).join(' | ')+' |')].join('\n'); }
 function exportMD(){
-  const L=['# FairRail 데이터 명세 (ERD 편집기 생성, 스키마 v'+SEED_VERSION+')','',`테이블 ${tables.length}개 (확장 예정 ${tables.filter(t=>t.planned).length}) · 빅데이터 ${tables.filter(t=>t.big).length}개 · 관계 ${links().length}개`,''];
+  const L=['# 제자리 데이터 명세 (ERD 편집기 생성, 스키마 v'+SEED_VERSION+')','',`테이블 ${tables.length}개 (확장 예정 ${tables.filter(t=>t.planned).length}) · 빅데이터 ${tables.filter(t=>t.big).length}개 · 관계 ${links().length}개`,''];
   L.push('## 팀 결정 사항','',mdTable(['항목','값','반영 위치','근거','상태'],decisions.map(d=>[d.item,d.value,d.where,d.reason,d.status])),'');
   Object.entries(GROUPS).forEach(([k,g])=>{ const ts=tables.filter(t=>t.g===k); if(!ts.length)return;
     L.push(`## ${g.name}`,'');
