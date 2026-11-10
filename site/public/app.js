@@ -86,7 +86,7 @@ function sanitize(root) {
       if (DROP_TAGS.has(el.tagName)) { el.remove(); return; }
       if (!SAFE_TAGS.has(el.tagName)) { walk(el); el.replaceWith(...el.childNodes); return; }
       const ok = [...SAFE_ATTR['*'], ...(SAFE_ATTR[el.tagName] || [])];
-      [...el.attributes].forEach((at) => { if (!ok.includes(at.name)) el.removeAttribute(at.name); });
+      [...el.attributes].forEach((at) => { if (!ok.includes(at.name) && !(el.tagName === 'CODE' && at.name === 'class' && /^language-[\w-]+$/.test(at.value))) el.removeAttribute(at.name); });
       const href = el.getAttribute('href');
       if (el.tagName === 'A' && href != null && !/^(https?:|#|mailto:)/i.test(href.trim())) el.removeAttribute('href');
       if (el.tagName === 'A' && href && /^https?:/i.test(href)) { el.target = '_blank'; el.rel = 'noopener'; }
@@ -110,7 +110,34 @@ function renderMd(text) {
   $$('h1,h2,h3,h4', div).forEach((h) => { h.id = 'h-' + slug(h.textContent); });
   $$('details > summary', div).forEach((sm) => { if (!sm.id) sm.id = 'h-' + slug(sm.textContent); });
   $$('table', div).forEach((t) => { if (!t.parentElement.classList.contains('tbl-wrap')) { const w = document.createElement('div'); w.className = 'tbl-wrap'; t.replaceWith(w); w.appendChild(t); } });
+  $$('pre > code.language-mermaid', div).forEach((code) => {
+    const box = document.createElement('div'); box.className = 'mermaid-box'; box.dataset.src = code.textContent;
+    box.innerHTML = '<p class="muted">그림 그리는 중…</p>';
+    code.parentElement.replaceWith(box);
+  });
+  if ($('.mermaid-box', div)) drawMermaid(div);
   return div;
+}
+// mermaid 그림 (2.5MB라 그림이 있는 문서에서만 불러온다)
+let mermaidLoad = null;
+const darkMode = () => document.documentElement.dataset.theme === 'dark' || (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+function loadMermaid() {
+  if (!mermaidLoad) mermaidLoad = new Promise((ok, no) => {
+    const sc = document.createElement('script'); sc.src = '/vendor/mermaid.min.js';
+    sc.onload = () => { window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: darkMode() ? 'dark' : 'default', fontFamily: 'IBM Plex Sans KR, sans-serif' }); ok(window.mermaid); };
+    sc.onerror = () => { mermaidLoad = null; no(new Error('mermaid load')); };
+    document.head.appendChild(sc);
+  });
+  return mermaidLoad;
+}
+let mermaidSeq = 0;
+async function drawMermaid(root) {
+  let m;
+  try { m = await loadMermaid(); } catch { $$('.mermaid-box', root).forEach((b) => { b.innerHTML = `<pre><code>${esc(b.dataset.src)}</code></pre>`; }); return; }
+  for (const b of $$('.mermaid-box', root)) {
+    try { const { svg } = await m.render('mmd-' + (++mermaidSeq), b.dataset.src); b.innerHTML = svg; }
+    catch (e) { b.innerHTML = `<p class="err">그림 문법 오류: ${esc(e.message || e)}</p><pre><code>${esc(b.dataset.src)}</code></pre>`; }
+  }
 }
 document.addEventListener('click', (e) => {
   const a = e.target.closest && e.target.closest('.md a[href^="#"]');
