@@ -12,6 +12,7 @@
 4. [테이블 정의](#4-테이블-정의)
 5. [상태 코드표](#5-상태-코드표)
 6. [MongoDB·Redis·Kafka](#6-mongodbrediskafka)
+7. [2주차 진행 예정](#7-2주차-진행-예정)
 
 ---
 
@@ -1110,3 +1111,30 @@ Lua 스크립트(`hold`, `release`, `extend`, `rehold`, `sold`, `reoffer`, `limi
 | `jejari.behavior` | ci_hash | 앱 직접 | (outbox 안 거침) |
 
 이벤트 종류와 payload는 기능설계서 8장을 따릅니다. 소비자는 모두 `processed_event`에 `(consumer_group, event_id)`를 업무 처리와 같은 트랜잭션으로 INSERT합니다.
+
+---
+
+## 7. 2주차 진행 예정
+
+### 7.1 2주차 말에 진행 여부를 정하는 테이블
+
+| 기능 | 테이블 | 저장소 |
+|---|---|---|
+| 화면 녹화 재생 (ADM-11) | replay_session, replay_event | MongoDB |
+| 위험 점수 이력 | risk_score_history | Oracle |
+| 외부 데이터 분석 (DATA-04) | ext_dataset, ext_hotel_booking, ext_web_access_log, ext_renfe_price, ext_bot_detection, risk_feature | Oracle, MongoDB |
+| 증거 동결·열람 감사 | evidence_snapshot, replay_access_log | Oracle |
+| 확장 기능 | common_code, member_push_token, password_reset_token, ticket_transfer | Oracle |
+
+진행하기로 하면 이 문서 4장에 컬럼 정의를 추가합니다.
+
+### 7.2 추가할 컬럼·키
+
+| 기능 | 추가 내용 |
+|---|---|
+| ADM-07 강제 취소, ADM-09 결제 수동 처리 | `admin_action.reservation_id` (FK, NULL 허용), `action_type`에 CANCEL_RESERVATION / RESOLVE_PAYMENT |
+| WL-03, CNL-03 알림 | `notification.type`에 WAITLIST_SKIPPED / REFUNDED |
+| ADM-04 마스킹 해제 기록 | `admin_action.action_type`에 UNMASK |
+| QUE-01 중복 대기 차단 | Redis `queue:member:{memberId}`, `queue:ci:{ciHash}`, `queue_log.left_reason`에 REJECTED_DUPLICATE |
+| QUE-01 같은 시각 진입 순서 | `queue:{runId}` member를 `{12자리 seq}:{memberId}`로, Redis `queue:seq:{runId}` |
+| WL-01, CNL-02, RSV-03, EVT-06, RISK-02 운영 값 | app_policy `waitlist.max_per_run`(1), `waitlist.max_active`(3), `cancel.after_departure_limit_min`(20), `scanner.hold_interval_sec`(5), `scanner.batch_size`(500), `notification.pay_reminder_sec`(120), `risk.batch_interval_sec`(60) |
