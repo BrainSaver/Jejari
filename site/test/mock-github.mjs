@@ -112,6 +112,13 @@ const server = http.createServer(async (req, res) => {
   const m = (re) => p.match(re);
   let r;
   try {
+    // 가짜 Groq (GROQ_API=http://127.0.0.1:9100/groq, GROQ_API_KEY=test-groq). 받은 대화 수와 마지막 질문을 돌려준다
+    if (req.method === 'POST' && p === '/groq') {
+      if (req.headers.authorization !== 'Bearer test-groq') return send(res, 401, { error: { message: 'Invalid API Key' } });
+      const msgs = b.messages || [];
+      const last = msgs[msgs.length - 1].content.split('\n').pop();
+      return send(res, 200, { choices: [{ message: { content: `**테스트 답변** (메시지 ${msgs.length}개)\n\n${last}` } }] });
+    }
     if (req.headers.authorization !== 'Bearer test-token') return send(res, 401, { message: 'Bad credentials' });
     // 테스트 도우미: 다른 사람이 main을 바꾼 상황 만들기
     if (req.method === 'POST' && p === '/_test/commit') {

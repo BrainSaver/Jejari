@@ -4,7 +4,7 @@ import {
   gh, GhError, getFile, listDir, putFile, syncMain, compare, conflictFiles, listCommits, slimCommit,
 } from '../../lib/github.js';
 import { pinStatus, currentUser, login, logout, resetPin, sessionCookie, clearCookie } from '../../lib/auth.js';
-import { commitMessage, validMessage } from '../../lib/groq.js';
+import { commitMessage, validMessage, askDoc } from '../../lib/groq.js';
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers } });
@@ -16,6 +16,20 @@ const okRef = (r) => REFS.includes(r);
 const PUBLIC = [/^README\.md$/, /^docs\/concurrency\.md$/, /^docs\/기능설계서\.md$/, /^docs\/DB설계서\.md$/, /^docs\/ui\/[UA]-\d{2}\.(md|html)$/, /^docs\/ui\/index\.json$/, /^docs\/erd\/jejari-erd\.html$/];
 const LOGIN_FIRST = () => fail(401, 'LOGIN', '로그인하면 볼 수 있어요.');
 const authorOf = (name) => ({ name, email: `${name}@users.noreply.jejari.pages.dev` });
+
+// AI 질문은 로그인 없이 쓸 수 있으므로 IP당 분당 횟수를 제한한다 (인스턴스 메모리, 대략적인 방어)
+const ASK_PER_MIN = 15;
+const askHits = new Map();
+function askAllowed(req) {
+  const ip = req.headers.get('CF-Connecting-IP') || req.headers.get('X-Forwarded-For') || 'local';
+  const now = Date.now();
+  const list = (askHits.get(ip) || []).filter((t) => now - t < 60000);
+  if (list.length >= ASK_PER_MIN) { askHits.set(ip, list); return false; }
+  list.push(now); askHits.set(ip, list);
+  if (askHits.size > 5000) askHits.clear();
+  return true;
+}
+const str = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
 
 function kstDate() {
   const d = new Date(Date.now() + 9 * 3600 * 1000);
@@ -336,6 +350,19 @@ export async function onRequest(ctx) {
         if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
         if (!okPath(body.path, EDITABLE)) return fail(400, 'BAD_PATH', '사이트에서 고칠 수 없는 파일이에요.');
         return json(await commitMessage(env, body));
+      }
+      case 'POST /ask': {
+        // 로그인 없이 가능. 문서 일부를 골라 Groq에 질문한다
+        const { selection, question } = body;
+        if (!str(selection, 6000) || !str(question, 500)) return fail(400, 'BAD_ASK', '선택한 글(6000자 이하)과 질문(500자 이하)이 필요해요.');
+        if (body.history != null && (!Array.isArray(body.history) || body.history.length > 20
+          || !body.history.every((h) => h && ['user', 'assistant'].includes(h.role) && str(h.content, 6000)))) return fail(400, 'BAD_ASK', '대화 기록 형식이 맞지 않아요.');
+        if (!askAllowed(req)) return fail(429, 'ASK_LIMIT', `AI 질문은 1분에 ${ASK_PER_MIN}번까지예요. 잠시 뒤에 다시 물어봐 주세요.`);
+        const r = await askDoc(env, {
+          doc: String(body.doc || ''), path: String(body.path || ''), heading: String(body.heading || ''),
+          selection, section: String(body.section || ''), question, history: body.history,
+        });
+        return r.error ? fail(r.status, r.error, r.message) : json(r);
       }
       case 'POST /save':
         if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');

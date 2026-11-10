@@ -128,6 +128,23 @@ r = await anon(`/file?path=${encodeURIComponent(F)}&ref=DongHyeon&fresh=7`); ok(
 r = await anon('/list?dir=docs/erd/exports&ref=main'); ok(r.status === 401, 'ERD 내보내기 목록은 로그인 필요');
 for (const q of ['/branches', '/commits', '/graph']) { r = await anon(q + '?fresh=7'); ok(r.status === 401, q + ' 로그인 필요'); }
 
+console.log('AI에게 물어보기');
+const AI = process.env.ASK_AI === '1'; // 가짜 Groq를 붙여 띄웠을 때만 답변까지 검사
+r = await anon('/ask', { selection: '', question: '쉽게' }); ok(r.status === 400, '선택한 글이 없으면 거부');
+r = await anon('/ask', { selection: 'x'.repeat(6001), question: '쉽게' }); ok(r.status === 400, '선택한 글이 너무 길면 거부');
+r = await anon('/ask', { selection: 'SKIP LOCKED', question: '쉽게', history: [{ role: 'system', content: 'x' }] }); ok(r.status === 400, '대화 기록 역할이 이상하면 거부');
+r = await anon('/ask', { doc: '동시성', path: 'docs/concurrency.md', heading: '§9 취소표 제안', selection: 'FOR UPDATE SKIP LOCKED', section: '## §9 …', question: '쉽게 설명해줘' });
+if (AI) {
+  ok(r.status === 200 && /메시지 2개/.test(r.data.answer) && /쉽게 설명해줘/.test(r.data.answer), '로그인 없이 질문하면 답변');
+  r = await anon('/ask', { selection: 'FOR UPDATE SKIP LOCKED', question: '예시는?', history: [{ role: 'user', content: '쉽게 설명해줘' }, { role: 'assistant', content: '답' }] });
+  ok(r.status === 200 && /메시지 4개/.test(r.data.answer) && /예시는\?/.test(r.data.answer), '이어서 묻기는 앞 대화를 함께 보냄');
+  let limited = false;
+  for (let i = 0; i < 16 && !limited; i++) limited = (await anon('/ask', { selection: 'x', question: 'y' })).status === 429;
+  ok(limited, '1분 횟수 제한');
+} else {
+  ok(r.status === 503 && r.data.error === 'NO_AI', 'Groq 키가 없으면 503');
+}
+
 console.log('PIN 초기화');
 r = await dg('/admin/reset-pin', { name: 'DongHyeon' }); ok(r.status === 403, '팀장 아니면 거부');
 r = await dh('/admin/reset-pin', { name: 'DongGyun' }); ok(r.status === 200, '팀장이 초기화');

@@ -7,6 +7,7 @@
 - 고친 내용은 그 사람 이름 브랜치에 커밋됩니다. 저장 직전에 main을 그 브랜치에 먼저 합칩니다.
 - 커밋 메시지는 Groq AI가 바뀐 줄을 보고 `타입(범위): 제목` 형식으로 써 주고, 저장 전에 고칠 수 있습니다.
 - "main에 합치기"를 누르면 PR을 만들고 바로 merge합니다 (squash 아님, 이름별 커밋 보존).
+- 문서에서 글을 드래그하면 **AI에게 물어보기**(Groq)와 **LLM용 복사** 버튼이 뜹니다. 로그인 없이 쓸 수 있고, AI 질문은 IP당 1분에 15번까지입니다. 섹션마다 "LLM 복사", 문서 위에 "LLM용 전체 복사" 버튼도 있습니다. LLM용 복사는 프로젝트 소개·문서·섹션 이름과 원문을 붙여, ChatGPT·Claude에 그대로 붙여 넣고 질문만 쓰면 되는 형태입니다.
 
 ## 구조
 
@@ -38,7 +39,7 @@ site/
 |---|---|---|
 | KV 바인딩 | `AUTH` | 새 KV 네임스페이스 (예: `jejari-auth`). PIN 해시·로그인 세션 저장 |
 | 비밀값 | `GITHUB_TOKEN` | fine-grained 토큰. 저장소 `brainsaver/jejari`만, 권한 Contents 읽기·쓰기 + Pull requests 읽기·쓰기 |
-| 비밀값 | `GROQ_API_KEY` | Groq API 키. 없으면 기본 형식 메시지로 저장 |
+| 비밀값 | `GROQ_API_KEY` | Groq API 키. 커밋 메시지 자동 작성과 "AI에게 물어보기"에 씀. 없으면 기본 형식 메시지로 저장하고 물어보기 버튼은 숨김 |
 | 비밀값 (선택) | `PIN_PEPPER` | 아무 긴 문자열. 넣으려면 **누구도 PIN을 정하기 전에** 넣어야 함 (나중에 넣으면 기존 PIN이 안 맞음) |
 
 선택 변수: `GROQ_MODEL` (기본 `llama-3.3-70b-versatile`), `ADMIN_NAME` (PIN 초기화 권한, 기본 `DongHyeon`).
@@ -68,7 +69,9 @@ cd site
 node test/mock-github.mjs .. 9100 &        # 가짜 GitHub (레포 문서로 시작)
 npx wrangler@4.40.0 pages dev public --kv AUTH \
   --binding GITHUB_TOKEN=test-token --binding GITHUB_API=http://127.0.0.1:9100 --port 8790
-node test/api-test.mjs http://127.0.0.1:8790 http://127.0.0.1:9100   # API 흐름 39개 검사
+node test/api-test.mjs http://127.0.0.1:8790 http://127.0.0.1:9100   # API 흐름 검사
 ```
+
+AI 물어보기까지 보려면 `pages dev`에 `--binding GROQ_API_KEY=test-groq --binding GROQ_API=http://127.0.0.1:9100/groq`를 더하고, 검사는 `ASK_AI=1 node test/api-test.mjs …`로 돌립니다 (가짜 Groq가 답함). 실행할 때마다 `--persist-to`로 새 KV 폴더를 주면 지난 PIN이 남지 않습니다.
 
 브라우저로 http://127.0.0.1:8790 을 열면 가짜 GitHub 위에서 로그인·저장·합치기를 해 볼 수 있습니다.

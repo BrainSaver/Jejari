@@ -341,3 +341,23 @@ body.no-scroll{overflow:hidden}
 .erd-wrap.fs{position:fixed;inset:0;z-index:200;background:var(--bg)}
 .erd-wrap.fs .erd-frame{height:100vh;min-height:0;border:0;border-radius:0}
 .erd-wrap.fs .fs-close{display:block;position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:2;font:inherit;font-size:13px;border:0;border-radius:8px;padding:6px 14px;background:rgba(0,0,0,.7);color:#fff;cursor:pointer}
+
+/* 선택해서 AI에게 묻기 · LLM용 복사 */
+.linkish{border:0;background:none;padding:0;font:inherit;color:var(--accent);cursor:pointer}
+.linkish:hover{text-decoration:underline}
+.sel-pop{position:fixed;z-index:40;display:flex;gap:2px;padding:4px;background:var(--fg);border-radius:10px;box-shadow:var(--shadow)}
+.sel-pop button{border:0;background:transparent;color:var(--bg);font:inherit;font-size:13.5px;font-weight:600;padding:7px 11px;border-radius:7px;cursor:pointer;white-space:nowrap}
+.sel-pop button:hover{background:color-mix(in srgb,var(--bg) 18%,transparent)}
+.sel-pop.bottom{left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%)}
+.sel-pop.bottom button{padding:10px 14px;font-size:14.5px}
+.ask-where{margin:-4px 0 10px;font-size:13.5px}
+.ask-quote{margin:0 0 12px;padding:10px 12px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 8px 8px 0;max-height:140px;overflow:auto;white-space:pre-wrap;font-size:14px}
+.ask-log{display:flex;flex-direction:column;gap:10px}
+.ask-msg.q{align-self:flex-end;max-width:85%;background:var(--accent);color:var(--accent-fg);padding:8px 12px;border-radius:12px 12px 2px 12px;font-size:14.5px}
+.ask-msg.a{background:var(--bg);border:1px solid var(--line);padding:4px 14px;border-radius:12px}
+.ask-msg.a .md{font-size:14.5px}
+.ask-chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 8px}
+.ask-chips .chip{font-size:13px}
+.ask-row{display:flex;gap:8px}
+.ask-row input{flex:1;min-width:0}
+.ask-note{font-size:12.5px;margin:8px 0 0}
