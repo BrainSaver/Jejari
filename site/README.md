@@ -43,14 +43,15 @@ site/
 
 선택 변수: `GROQ_MODEL` (기본 `llama-3.3-70b-versatile`), `ADMIN_NAME` (PIN 초기화 권한, 기본 `DongHyeon`).
 
-### GitHub (레포 Settings → Secrets and variables → Actions)
+### 배포
 
-| 이름 | 값 |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare Pages 편집 권한이 있는 API 토큰 |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 계정 ID |
+GitHub Actions는 쓰지 않습니다. main에 `site/` 수정이 올라오면 Claude가 `site` 폴더 안에서 직접 배포합니다 (Functions도 함께 올라감).
 
-main에 `site/`가 바뀌면 `.github/workflows/site.yml`이 배포합니다. Actions 탭에서 손으로 돌릴 수도 있습니다.
+```bash
+cd site && npx -y wrangler@4.40.0 pages deploy public --project-name jejari --branch main --commit-dirty=true
+```
+
+필요한 값: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` 환경 변수 (Claude 클라우드 환경에 들어 있음).
 
 ## 팀원이 알아둘 것
 
