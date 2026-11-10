@@ -212,7 +212,7 @@ function myAhead() { const b = S.branches && S.branches.branches.find((x) => x.n
 function renderTop() {
   document.body.classList.toggle('anon', !S.me);
   if (!S.me && S.ref !== 'main') S.ref = 'main';
-  $('#sideFoot').textContent = S.me ? '수정은 섹션마다 "수정"을 눌러요. 저장하면 내 이름 브랜치에 커밋돼요.' : '로그인하면 기획서·동시성·수정 기록·소스트리와 브랜치별 내용도 볼 수 있어요.';
+  $('#sideFoot').textContent = S.me ? '수정은 섹션마다 "수정"을 눌러요. 저장하면 내 이름 브랜치에 커밋돼요.' : '팀원은 로그인하면 문서를 고치고 수정 기록·소스트리·브랜치별 내용을 볼 수 있어요.';
   const sel = $('#refSelect');
   const opts = [['main', 'main (합쳐진 최신)'], ...Object.keys(S.members).map((n) => {
     const b = S.branches && S.branches.branches.find((x) => x.name === n);
@@ -429,45 +429,22 @@ function staleModal(x, myText, path, key) {
 // ---------- 페이지 ----------
 function pageHomeAnon() {
   main.innerHTML = `<div class="wrap"><h1 class="page">제자리 설계 문서</h1>
-    <p class="page-sub">명절 열차 공정 예매 시스템의 설계 문서예요. 팀원은 오른쪽 위에서 로그인하면 문서를 고치고 수정 기록도 볼 수 있어요.</p>
+    <p class="page-sub">명절 열차 공정 예매 시스템의 설계 문서예요.${S.me ? '' : ' 팀원은 오른쪽 위에서 로그인하면 문서를 고칠 수 있어요.'}</p>
     <div class="cards">
+      <a class="card" href="#/doc/plan"><h3>기획서</h3><p>프로젝트 목표, 팀 역할, 일정, 기술 선택 이유</p></a>
       <a class="card" href="#/doc/func"><h3>기능설계</h3><p>기능 목록, 상세, 상태 전이, API, Kafka, 에러 코드</p></a>
       <a class="card" href="#/db"><h3>DB설계 · ERD</h3><p>Oracle·MongoDB·Redis·Kafka 역할, 테이블 정의, ERD</p></a>
-      <a class="card" href="#/ui"><h3>화면설계</h3><p>사용자 11개, 관리자 7개 화면 설명과 HTML 시안</p></a>
+      <a class="card" href="#/ui"><h3>화면설계</h3><p>사용자 11개, 관리자 7개 화면을 눌러 보는 시안과 설명</p></a>
+      <a class="card" href="#/doc/conc"><h3>동시성</h3><p>트랜잭션 순서, SQL, Redis Lua, 락 순서, 테스트 목록</p></a>
     </div></div>`;
 }
 function pageLocked() {
   main.innerHTML = `<div class="wrap"><h1 class="page">로그인이 필요해요</h1>
-    <p class="page-sub">이 페이지는 팀원만 볼 수 있어요. 로그인하지 않으면 기능설계·DB설계·화면설계만 보여요.</p>
+    <p class="page-sub">이 페이지는 팀원만 볼 수 있어요. 로그인하지 않으면 기획서·기능설계·DB설계·화면설계·동시성 문서만 보여요.</p>
     <p><button class="btn" id="lockLogin">로그인</button> <a class="btn plain" href="#/">처음으로</a></p></div>`;
   $('#lockLogin').addEventListener('click', () => loginModal(() => route()));
 }
-async function pageHome() {
-  if (!S.me) return pageHomeAnon();
-  main.innerHTML = `<div class="wrap"><h1 class="page">제자리 설계 문서</h1>
-    <p class="page-sub">명절 열차 공정 예매 시스템. 문서는 누구나 보고, 팀원은 이름과 PIN으로 들어와 섹션 단위로 고쳐요. 고친 내용은 그 사람 이름 브랜치에 커밋되고, "main에 합치기"로 반영돼요.</p>
-    <div class="cards">
-      <a class="card" href="#/doc/func"><h3>기능설계</h3><p>기능 목록, 상세, 상태 전이, API, Kafka, 에러 코드</p></a>
-      <a class="card" href="#/db"><h3>DB설계 · ERD</h3><p>Oracle·MongoDB·Redis·Kafka 역할, 테이블, ERD 편집기</p></a>
-      <a class="card" href="#/ui"><h3>화면설계</h3><p>사용자 11개, 관리자 7개 화면 설명과 HTML 시안</p></a>
-      <a class="card" href="#/doc/conc"><h3>동시성</h3><p>좌석 선점·결제·취소 절차의 원천 문서</p></a>
-      <a class="card" href="#/history"><h3>수정 기록</h3><p>이름·문서별 수정 목록, 비교, 되돌리기</p></a>
-      <a class="card" href="#/tree"><h3>소스트리</h3><p>main과 이름 브랜치의 커밋 그래프</p></a>
-    </div>
-    <div class="section-title">브랜치 현황</div><div id="brTbl" class="loading">불러오는 중…</div>
-    <div class="section-title">최근 수정</div><div id="recent" class="loading">불러오는 중…</div></div>`;
-  const br = S.branches || await api('/branches' + qs({})).catch(() => null);
-  $('#brTbl').outerHTML = br ? `<div class="tbl-wrap"><table class="list-tbl"><tr><th>이름 브랜치</th><th>main보다 앞</th><th>main보다 뒤</th><th></th></tr>
-    ${br.branches.map((b) => `<tr><td>${nameTag(b.name)}</td><td>${b.missing ? '브랜치 없음' : b.ahead}</td><td>${b.missing ? '' : b.behind}</td>
-    <td style="text-align:right">${b.missing ? '' : `<button class="btn sm plain" data-ref="${b.name}">보기</button> <a class="btn sm ghost" href="#/compare/${b.name}">main과 비교</a>`}</td></tr>`).join('')}</table></div>`
-    : '<p class="empty">브랜치 정보를 불러오지 못했어요.</p>';
-  $$('[data-ref]', main).forEach((b) => b.addEventListener('click', () => { setRef(b.dataset.ref); location.hash = '#/doc/func'; }));
-  try {
-    const list = (await api('/commits' + qs({}))).filter((c) => !isMerge(c)).slice(0, 10);
-    $('#recent').outerHTML = commitTable(list);
-    bindCommitRows(main);
-  } catch { $('#recent').outerHTML = '<p class="empty">기록을 불러오지 못했어요.</p>'; }
-}
+function pageHome() { pageHomeAnon(); }
 
 function commitTable(list) {
   if (!list.length) return '<p class="empty">기록이 없어요.</p>';
@@ -848,7 +825,7 @@ function setNav(key) { $$('.side a').forEach((a) => a.classList.toggle('on', a.d
 async function route() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
   const [p, a] = h;
-  const priv = (p === 'doc' && (a === 'plan' || a === 'conc')) || ['history', 'commit', 'compare', 'tree'].includes(p);
+  const priv = ['history', 'commit', 'compare', 'tree'].includes(p);
   try {
     if (!S.me && priv) { setNav(''); pageLocked(); return; }
     if (!p) { setNav('home'); await pageHome(); }

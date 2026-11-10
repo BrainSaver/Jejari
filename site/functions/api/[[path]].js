@@ -12,8 +12,8 @@ const fail = (status, error, message, extra = {}) => json({ error, message, ...e
 
 const okPath = (p, list) => typeof p === 'string' && !p.includes('..') && list.some((re) => re.test(p));
 const okRef = (r) => REFS.includes(r);
-// 로그인 안 한 사람은 main의 기능설계서·DB설계서(ERD 포함)·화면설계만 볼 수 있다
-const PUBLIC = [/^docs\/기능설계서\.md$/, /^docs\/DB설계서\.md$/, /^docs\/ui\/[UA]-\d{2}\.(md|html)$/, /^docs\/ui\/index\.json$/, /^docs\/erd\/jejari-erd\.html$/];
+// 로그인 안 한 사람은 main의 기획서·기능설계서·DB설계서(ERD 포함)·화면설계·동시성 문서만 볼 수 있다
+const PUBLIC = [/^README\.md$/, /^docs\/concurrency\.md$/, /^docs\/기능설계서\.md$/, /^docs\/DB설계서\.md$/, /^docs\/ui\/[UA]-\d{2}\.(md|html)$/, /^docs\/ui\/index\.json$/, /^docs\/erd\/jejari-erd\.html$/];
 const LOGIN_FIRST = () => fail(401, 'LOGIN', '로그인하면 볼 수 있어요.');
 const authorOf = (name) => ({ name, email: `${name}@users.noreply.jejari.pages.dev` });
 

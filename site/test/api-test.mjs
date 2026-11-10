@@ -120,8 +120,8 @@ r = await dh('/file?path=README.md&ref=claude/x');
 ok(r.status === 400, '이름 브랜치가 아닌 ref 거부');
 
 console.log('로그인 안 한 사람');
-r = await anon('/file?path=README.md&ref=main&fresh=7'); ok(r.status === 401, '기획서는 로그인 필요');
-r = await anon('/file?path=docs/concurrency.md&ref=main&fresh=7'); ok(r.status === 401, '동시성 문서는 로그인 필요');
+r = await anon('/file?path=README.md&ref=main&fresh=7'); ok(r.status === 200, 'main 기획서는 공개');
+r = await anon('/file?path=docs/concurrency.md&ref=main&fresh=7'); ok(r.status === 200, 'main 동시성 문서는 공개');
 r = await anon('/file?path=docs/DB%EC%84%A4%EA%B3%84%EC%84%9C.md&ref=main&fresh=7'); ok(r.status === 200, 'main DB설계서는 공개');
 r = await anon('/file?path=docs/erd/jejari-erd.html&ref=main&fresh=7'); ok(r.status === 200, 'main ERD는 공개');
 r = await anon(`/file?path=${encodeURIComponent(F)}&ref=DongHyeon&fresh=7`); ok(r.status === 401, '이름 브랜치 보기는 로그인 필요');
