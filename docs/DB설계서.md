@@ -12,6 +12,7 @@
 4. [테이블 정의](#4-테이블-정의)
 5. [상태 코드표](#5-상태-코드표)
 6. [MongoDB·Redis·Kafka](#6-mongodbrediskafka)
+7. [2주차 진행 예정](#7-2주차-진행-예정)
 
 ---
 
@@ -22,7 +23,7 @@
 | Oracle | 기준 데이터, 회원·인증, 예약·결제·취소, 매수 카운터, outbox·inbox·Saga, 취소표, 위험 점수, 관리자 조치, 의심 케이스 | 돈과 좌석이 걸린 데이터는 트랜잭션·PK·UNIQUE·조건부 UPDATE로 DB가 최종 판정 |
 | MongoDB | 행동 로그, 대기열 기록, 로그인 시도, (P2) 화면 녹화·외부 데이터 | 건수가 많고 형태가 자주 바뀌는 로그. Kafka에서 묶어 적재, TTL로 자동 삭제 |
 | Redis | 대기열, 입장 토큰, 좌석 선점 1차 경쟁, 매수 한도 1차, 멱등 키, 캐시 | 빠른 1차 판정. 통과해도 DB가 거절하면 거절 |
-| Kafka | 예약 흐름 이벤트, 행동 로그 | 예약 이후 처리(결제·확정·취소·재배정)를 비동기로, reservation_id 키로 순서 보장 |
+| Kafka | 예약 흐름 이벤트, 행동 로그 | 결제·확정·취소는 DB 트랜잭션으로 확정하고, 그 뒤의 후속 처리(좌석 반환·취소표 재배정·알림)를 Outbox → Kafka로 비동기 처리. reservation_id 키로 순서 보장 |
 
 ### 구현 범위별 테이블
 
@@ -1077,6 +1078,8 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | queue_log | `{expire_at: 1}` TTL. 순번 검증용 `{run_id: 1, entered_at: 1}` | `entered_at` + 30일 | 같은 경로 |
 | login_attempt | `{ip_hash: 1, ts: -1}`, `{email_hash: 1, ts: -1}`, TTL | 30일 | 로그인 처리 중 비동기 |
 
+> ERD 비고에 아직 없는 항목: `behavior_log {member_id: 1, ts: 1}`, `queue_log {run_id: 1, entered_at: 1}`, `login_attempt` TTL 30일. `mongo-init.js`는 ERD 비고로 만들므로, ERD 반영 담당(강동균)이 다음 패치에 넣어야 합니다.
+
 ### 6.2 Redis 키
 
 키의 `{…}`는 자리표시자입니다. 설정: 단일 노드, `maxmemory-policy noeviction`, AOF `everysec`.
@@ -1119,14 +1122,17 @@ Lua 스크립트(`hold`, `release`, `extend`, `rehold`, `sold`, `reoffer`, `limi
 
 ## 7. 2주차 진행 예정
 
-### 7.1 2주차 말에 진행 여부를 정하는 테이블
+### 7.1 1차 구현 밖 테이블
 
-| 기능 | 테이블 | 저장소 |
-|---|---|---|
-| 화면 녹화 재생 (ADM-11) | replay_session, replay_event | MongoDB |
-| 위험 점수 이력 | risk_score_history | Oracle |
-| 외부 데이터 분석 (DATA-04) | ext_dataset, ext_hotel_booking, ext_web_access_log, ext_renfe_price, ext_bot_detection, risk_feature | Oracle, MongoDB |
-| 증거 동결·열람 감사 | evidence_snapshot, replay_access_log | Oracle |
-| 확장 기능 | common_code, member_push_token, password_reset_token, ticket_transfer | Oracle |
+우선순위는 1장 표와 같습니다. P2는 2주차 말에 진행 여부를 정하고, P3는 발표 후, 확장 예정은 DDL에서도 빠집니다.
+
+| 기능 | 테이블 | 저장소 | 우선 |
+|---|---|---|---|
+| 화면 녹화 재생 (ADM-11) | replay_session, replay_event | MongoDB | P2 |
+| 위험 점수 이력 | risk_score_history | Oracle | P2 |
+| 외부 데이터 분석 (DATA-04) | ext_dataset, ext_hotel_booking, ext_web_access_log, ext_renfe_price, risk_feature | Oracle, MongoDB | P2 |
+| 외부 데이터 (선택) | ext_bot_detection | MongoDB | P3 |
+| 증거 동결·열람 감사 | evidence_snapshot, replay_access_log | Oracle | P3 |
+| 확장 기능 | common_code, member_push_token, password_reset_token, ticket_transfer | Oracle | 확장 예정 |
 
 진행하기로 하면 이 문서 4장에 컬럼 정의를 추가합니다.
