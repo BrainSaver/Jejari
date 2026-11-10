@@ -554,19 +554,34 @@ async function pageUi() {
   bindBanner(main);
 }
 function mockDoc(html) {
-  // 시안 안에서 링크를 누르면 부모 사이트가 다음 화면으로 바꾼다. 누를 수 없는 곳을 누르면 누를 수 있는 곳을 잠깐 표시한다.
-  const inject = `<style>.jj-hint a[href]{outline:2px solid rgba(37,99,235,.85)!important;outline-offset:2px;background-color:rgba(37,99,235,.12)!important;transition:outline-color .2s}</style><script>(function(){var t;function hint(on){document.documentElement.classList.toggle('jj-hint',on);}
-document.addEventListener('click',function(e){var a=e.target.closest('a[href]');if(!a){if(!e.target.closest('button,input,select,textarea,label')){hint(true);clearTimeout(t);t=setTimeout(function(){hint(false);},700);}return;}var h=a.getAttribute('href');var m=h.match(/^([UA]-\\d{2})\\.html/);e.preventDefault();if(m)parent.postMessage({jejariGo:m[1]},'*');});
+  // 시안 안에서 링크를 누르면 부모 사이트가 다음 화면으로 바꾼다. '누를 수 있는 곳 표시'를 켜면 링크에 테두리를 그린다.
+  const inject = `<style>.jj-hint a[href]{outline:2px solid rgba(37,99,235,.85)!important;outline-offset:2px;background-color:rgba(37,99,235,.12)!important;transition:outline-color .2s}</style><script>(function(){function hint(on){document.documentElement.classList.toggle('jj-hint',on);}
+document.addEventListener('click',function(e){var a=e.target.closest('a[href]');if(!a)return;var h=a.getAttribute('href');var m=h.match(/^([UA]-\\d{2})\\.html/);e.preventDefault();if(m)parent.postMessage({jejariGo:m[1]},'*');});
 document.addEventListener('submit',function(e){e.preventDefault();});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')parent.postMessage({jejariEsc:1},'*');});
 window.addEventListener('message',function(e){if(e.data&&e.data.jejariHint!==undefined)hint(!!e.data.jejariHint);});})();<\/script>`;
   return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, inject + '</body>') : html + inject;
 }
 window.addEventListener('message', (e) => {
+  if (e.data && e.data.jejariEsc) { const d = $('.device.fs'); if (d) $('.fs-close', d).click(); return; }
   if (!e.data || typeof e.data.jejariGo !== 'string' || !/^[UA]-\d{2}$/.test(e.data.jejariGo)) return;
   location.hash = '#/ui/' + e.data.jejariGo;
 });
 
 let protoHint = false;
+const PC_W = 1280;
+let protoSide = store.get('proto-side') !== 'off';
+// PC 시안은 실제 PC 폭(1280px)으로 그리고, 보이는 칸에 맞게 줄인다. 칸이 더 넓으면(전체화면 등) 그대로 칸 폭에 맞춘다.
+function protoFit(root) {
+  const scr = $('.screen', root), fr = $('iframe', scr);
+  if (!root.classList.contains('pc')) return;
+  const fit = () => {
+    const w = scr.clientWidth, h = scr.clientHeight; if (!w || !h) return;
+    const k = Math.min(1, w / PC_W), fw = k < 1 ? PC_W : w;
+    fr.style.width = fw + 'px'; fr.style.height = (h / k) + 'px'; fr.style.transform = k < 1 ? `scale(${k})` : '';
+  };
+  new ResizeObserver(fit).observe(scr); fit();
+}
 const protoDev = { user: store.get('dev-user') || 'mobile', admin: store.get('dev-admin') || 'pc' };
 async function pageUiOne(id) {
   const list = await uiIndex();
@@ -577,18 +592,21 @@ async function pageUiOne(id) {
   let root = $('.proto', main);
   const dev = protoDev[it.kind];
   if (!root || root.dataset.kind !== it.kind || root.dataset.ref !== S.ref || root.dataset.dev !== dev) {
-    main.innerHTML = `<div class="proto ${dev}" data-kind="${it.kind}" data-ref="${esc(S.ref)}" data-dev="${dev}">
+    main.innerHTML = `<div class="proto ${dev}${protoSide ? '' : ' no-side'}" data-kind="${it.kind}" data-ref="${esc(S.ref)}" data-dev="${dev}">
       <div class="proto-stage">
         <div class="proto-bar">
           <a class="btn sm plain" href="#/ui">← 화면 목록</a>
           <select class="proto-pick" aria-label="화면 고르기">${['user', 'admin'].map((k) => `<optgroup label="${k === 'user' ? '사용자 화면' : '관리자 화면'}">${list.filter((x) => x.kind === k).map((x) => `<option value="${x.id}">${x.id} ${esc(x.name)}</option>`).join('')}</optgroup>`).join('')}</select>
           <span class="seg" role="group" aria-label="화면 크기"><button data-dev="pc"${dev === 'pc' ? ' class="on"' : ''}>PC</button><button data-dev="mobile"${dev === 'mobile' ? ' class="on"' : ''}>모바일</button></span>
           <span class="grow"></span>
+          <button class="btn sm plain" id="sideBtn">${protoSide ? '설명 숨기기' : '설명 보기'}</button>
+          <button class="btn sm plain" id="fsBtn" title="전체화면 (Esc로 닫기)">⛶ 전체화면</button>
           <label class="proto-hint"><input type="checkbox"${protoHint ? ' checked' : ''}> 누를 수 있는 곳 표시</label>
         </div>
         <div class="device"><div class="device-top">${dev === 'pc' ? '<i></i><i></i><i></i><span class="url"></span>' : '<span class="notch"></span>'}</div>
-          <iframe sandbox="allow-scripts" title="화면 시안"></iframe></div>
-        <p class="proto-tip muted">시안 안의 버튼·링크를 누르면 실제 사이트처럼 다음 화면으로 넘어가요. 빈 곳을 누르면 누를 수 있는 곳이 잠깐 표시돼요.</p>
+          <div class="screen"><iframe sandbox="allow-scripts" title="화면 시안"></iframe></div>
+          <button class="fs-close" type="button">닫기 (Esc)</button></div>
+        <p class="proto-tip muted">시안 안의 버튼·링크를 누르면 실제 사이트처럼 다음 화면으로 넘어가요.${dev === 'pc' ? ' PC 화면은 폭 1280px 기준으로 그린 뒤 칸에 맞게 줄여 보여 줘요. 크게 보려면 설명 숨기기나 전체화면을 쓰세요.' : ''}</p>
       </div>
       <aside class="proto-side"><div class="proto-head"></div><div id="uiDoc"></div></aside></div>`;
     root = $('.proto', main);
@@ -596,6 +614,21 @@ async function pageUiOne(id) {
     $('.proto-pick', root).addEventListener('change', (e) => { location.hash = '#/ui/' + e.target.value; });
     $('.proto-hint input', root).addEventListener('change', (e) => { protoHint = e.target.checked; $('.device iframe', root).contentWindow.postMessage({ jejariHint: protoHint }, '*'); });
     $('.device iframe', root).addEventListener('load', (e) => { if (protoHint) e.target.contentWindow.postMessage({ jejariHint: true }, '*'); });
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    protoFit(root);
+    const device = $('.device', root);
+    const fsOff = () => { device.classList.remove('fs'); document.body.classList.remove('no-scroll'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); };
+    $('#sideBtn', root).addEventListener('click', (e) => {
+      protoSide = !protoSide; store.set('proto-side', protoSide ? 'on' : 'off');
+      root.classList.toggle('no-side', !protoSide); e.target.textContent = protoSide ? '설명 숨기기' : '설명 보기';
+    });
+    $('#fsBtn', root).addEventListener('click', () => {
+      device.classList.add('fs'); document.body.classList.add('no-scroll');
+      if (device.requestFullscreen) device.requestFullscreen().catch(() => {});
+    });
+    $('.fs-close', device).addEventListener('click', fsOff);
+    device.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) { device.classList.remove('fs'); document.body.classList.remove('no-scroll'); } });
+    document.addEventListener('keydown', function esc(e) { if (!device.isConnected) { document.removeEventListener('keydown', esc); return; } if (e.key === 'Escape' && device.classList.contains('fs')) fsOff(); });
   }
   $('.proto-pick', root).value = id;
   const url = $('.device .url', root); if (url) url.textContent = `${admin ? 'admin.' : ''}jejari.dev/${id}`;

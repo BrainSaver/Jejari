@@ -317,3 +317,21 @@ body{font-size:16px}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg)}
 .seg button{font:inherit;font-size:13px;border:0;background:none;color:var(--muted);padding:6px 14px;cursor:pointer}
 .seg button.on{background:var(--accent);color:#fff;font-weight:700}
+/* 시안 화면 칸, PC 축소 보기, 전체화면 */
+.device .screen{position:relative}
+.proto.pc .device .screen{width:100%;height:calc(100vh - var(--top) - 150px);min-height:600px;overflow:hidden;background:#fff}
+.proto.pc .device .screen iframe{position:absolute;left:0;top:0;transform-origin:0 0;border:0;border-radius:0;min-height:0;max-width:none}
+.fs-close{display:none}
+.device.fs{position:fixed;inset:0;z-index:200;width:auto;max-width:none;border-radius:0;padding:0;margin:0;display:flex;flex-direction:column;background:#16181d}
+.device.fs .fs-close{display:block;position:absolute;top:10px;right:12px;z-index:2;font:inherit;font-size:13px;border:0;border-radius:8px;padding:6px 12px;background:rgba(0,0,0,.65);color:#fff;cursor:pointer}
+.proto.pc .device.fs .device-top{background:#dcdfe5}
+.proto.pc .device.fs .screen{flex:1;height:auto;min-height:0}
+.proto.mobile .device.fs{align-items:center;justify-content:center}
+.proto.mobile .device.fs .device-top{display:none}
+.proto.mobile .device.fs iframe{height:min(880px,calc(100vh - 32px));border-radius:30px}
+body.no-scroll{overflow:hidden}
+@media (max-width:760px){
+  .proto.mobile .device.fs iframe{width:100vw;height:100vh;border-radius:0;border:0}
+}
+.proto.no-side{grid-template-columns:minmax(0,1fr)}
+.proto.no-side .proto-side{display:none}
