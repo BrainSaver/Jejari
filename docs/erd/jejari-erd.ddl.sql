@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v9)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v10)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -1243,6 +1243,7 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('scanner.batch_size', '500', 1, 'NUMBER', '스캐너 한 회차 최대 처리 건수');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('notification.pay_reminder_sec', '120', 1, 'NUMBER', '결제 기한 몇 초 전에 PAY_REMINDER 알림');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.batch_interval_sec', '60', 1, 'NUMBER', '위험 점수 배치 주기(초). 각 운행 sale_open_at 전 1회는 반드시 실행');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('login_attempt.retention_days', '30', 1, 'NUMBER', 'login_attempt 보관 기간 (expire_at 계산)');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (1, 1, 'PER_RESERVATION', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (2, 1, 'PER_RUN', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (3, 1, 'PER_HOLIDAY', 8, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');

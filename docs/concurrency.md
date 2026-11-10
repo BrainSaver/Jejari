@@ -2,7 +2,7 @@
 
 예매·결제·취소·취소표·이벤트 발행에서 **트랜잭션 경계, 실행 순서, SQL·Redis 명령**의 원천 문서입니다. 스키마(테이블·컬럼·제약)의 원천은 ERD 편집기(`docs/erd/jejari-erd.html`)이고, 테이블 비고에는 이 문서의 절 번호만 적습니다. 구현과 테스트는 이 문서를 그대로 따릅니다.
 
-- 기준 스키마: v8
+- 기준 스키마: v9
 - 표기: `:이름`은 바인드 변수, `app_policy`의 값은 `policy(키)`로 적습니다. Redis 키의 `{runId}` 같은 중괄호는 **자리표시자**이고 실제 키에는 중괄호가 없습니다 (`seat:hold:1001:57:0`). 클러스터 해시 태그와는 다릅니다 (§14.4).
 - §16에 테스트로 옮길 시나리오, §17에 비교 실험과 지표 정의가 있습니다.
 
@@ -409,8 +409,9 @@ SELECT payment_id, reservation_id, requested_at FROM payment
    한 건씩 fetch합니다. `SKIP LOCKED`는 fetch할 때 행을 잠그므로 읽은 행만 잠깁니다. 다른 인스턴스가 잡은 대기자는 건너뜁니다.
 5. 대기자마다:
    - 구간·등급·매수가 빈 좌석에 맞지 않으면 다음 대기자로 넘어갑니다 (변경 없음).
-   - 매수 한도(§10.6의 1회 한도, `limit_incr.lua`)에 걸리면 `UPDATE waitlist SET status = 'SKIPPED', updated_at = SYSTIMESTAMP WHERE waitlist_id = :w AND status = 'WAITING'`(T 안)을 하고 다음 대기자로 넘어갑니다.
+   - 매수 한도(§10.6의 `PER_RUN`·`PER_HOLIDAY`, `limit_incr.lua`)에 걸리면 `UPDATE waitlist SET status = 'SKIPPED', updated_at = SYSTIMESTAMP WHERE waitlist_id = :w AND status = 'WAITING'`(T 안)을 하고 다음 대기자로 넘어갑니다.
    - 맞으면 6으로 갑니다.
+   - 1회 한도(`PER_RESERVATION`)는 대기 신청 때 이미 확인했으므로 여기서 다시 보지 않습니다.
 6. 그 대기자 명의로 §2를 실행합니다. 다른 점은 다음과 같습니다.
    - 입장 토큰(`queue:pass`)을 검사하지 않습니다.
    - `idempotency_key = 'wl:' || waitlist_id`, `source = 'WAITLIST'`, `actor_type = 'SYSTEM'`
@@ -588,6 +589,7 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | replay_session | `started_at` + `replay.retention_days` (`retention_until`과 같은 값) | `legal_hold = true`면 필드 없음 |
 | replay_event | 세션의 `expire_at`과 같은 값 | 세션이 `legal_hold`면 필드 없음 |
 | queue_log | `entered_at` + `queue_log.retention_days` | 없음 |
+| login_attempt | `ts` + `login_attempt.retention_days` | 없음 |
 | evidence_snapshot | 케이스가 열려 있는 동안 필드 없음. 종료 시 `closed_at` + `evidence.retention_days` | 케이스 재개 시 필드 제거 |
 
 - **컨슈머는 `replay_event`를 저장하기 전에 세션의 `legal_hold`를 확인**합니다. 캐시를 쓰되 TTL은 `policy(replay.hold_cache_sec)` 이하입니다. 보류 중이면 `expire_at` 없이 저장합니다.
@@ -608,7 +610,10 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | 키 | 값 | 만료 |
 |---|---|---|
 | `idem:{memberId}:{key}`, `idem:pay:{reservationId}:{key}` | reservation_id / payment_id | `idem.ttl_sec` |
-| `queue:{runId}`, `queue:active:{runId}`, `queue:pass:{runId}:{memberId}` | 대기열 | `queue.pass_ttl_sec` |
+| `queue:{runId}`, `queue:seq:{runId}` | 대기 순번 ZSET (member = `{12자리 seq}:{memberId}`), 진입 시퀀스 | 운행 판매 마감 |
+| `queue:member:{memberId}`, `queue:ci:{ciHash}` | 회원당·CI당 동시 대기 1개 | 입장 토큰 만료 / 멤버별 score |
+| `queue:active:{runId}`, `queue:throughput:{runId}` | 입장한 회원 (score = 토큰 만료 시각), 초당 입장 수 | |
+| `queue:pass:{runId}:{memberId}` | 입장 토큰 | `queue.pass_ttl_sec` |
 | `seat:hold:{runId}:{seatId}:{segNo}` | `R`(HOLD), `SOLD:R`(확정), `REOFFER:R`(대기자 제안 대기) | `pay_deadline_at` / 운행 출발 시각 / `waitlist.reoffer_hold_sec` |
 | `limit:{runId}:{ciHash}`, `limit:event:{saleEventId}:{ciHash}` | 보유 매수 | 운행 출발·행사 종료 |
 | `limit:dec:{reservationId}` | 1 (이 예약의 한도 감소를 이미 했다는 표시) | 운행 출발·행사 종료 중 늦은 쪽 |
@@ -680,6 +685,7 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | `behavior.retention_days` | 180 | §13.2 (팀 확정) |
 | `replay.hold_cache_sec` | 30 | §13.2 legal_hold 캐시 TTL, 두 번째 `$unset` 지연 |
 | `queue_log.retention_days` | 30 | §13.2 |
+| `login_attempt.retention_days` | 30 | §13.2 |
 | `evidence.retention_days` | 365 | §13.2 (케이스 종료 후) |
 
 ---

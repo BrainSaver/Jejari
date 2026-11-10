@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v9 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-10
+> 스키마 v10 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-10
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -39,7 +39,7 @@
 | 테이블 | 60개 (운영 56 + 확장 예정 4) |
 | 저장소 | Oracle 44 · MongoDB 11 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 509개 |
+| 컬럼 | 510개 |
 | 관계 (FK) | 85개 (Oracle 제약 60 · 논리 참조 20) |
 
 | 영역 | 저장소 | 테이블 |
@@ -567,6 +567,7 @@ Oracle
 | scanner.batch_size | 500 | 1 | NUMBER | 스캐너 한 회차 최대 처리 건수 |
 | notification.pay_reminder_sec | 120 | 1 | NUMBER | 결제 기한 몇 초 전에 PAY_REMINDER 알림 |
 | risk.batch_interval_sec | 60 | 1 | NUMBER | 위험 점수 배치 주기(초). 각 운행 sale_open_at 전 1회는 반드시 실행 |
+| login_attempt.retention_days | 30 | 1 | NUMBER | login_attempt 보관 기간 (expire_at 계산) |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -947,9 +948,10 @@ MongoDB · 🅱 빅데이터
 | `user_agent` | String |  | 생성 |  |  |
 | `session_id` | String | FK → auth_session | 시스템 | 성공 시 발급된 세션 |  |
 | `verify_ms` | Int |  | 시스템 | Argon2 검증 소요 시간 | 예매 오픈 직전 로그인 폭주 시 CPU·메모리 병목 측정 |
-| `ts` | Date |  | 생성 | 시도 시각 | TTL 기준 |
+| `ts` | Date |  | 생성 | 시도 시각 | 시도 순서·기간 조회 |
+| `expire_at` | Date |  | 시스템 | 삭제 예정 시각 | ts + login_attempt.retention_days. 다른 로그 컬렉션과 같은 보관 방식 |
 
-> **제약·비고** TTL { ts: 1 } · 인덱스 { ip_hash: 1, ts: -1 }, { email_hash: 1, ts: -1 }
+> **제약·비고** 인덱스: { ip_hash: 1, ts: -1 }, { email_hash: 1, ts: -1 } · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 절차: concurrency.md §13
 
 **관계** member_id → [`member`](#member) · admin_id → [`admin_user`](#admin-user) · session_id → [`auth_session`](#auth-session)
 
@@ -1895,7 +1897,7 @@ MongoDB · 🅱 빅데이터
 | `response_status` | Int |  | 시스템 | HTTP 상태 | 차단·에러 분석 |
 | `meta` | Object |  | 시스템 | 이벤트별 추가 정보 | 스키마 변경 없이 필드 확장 |
 
-> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 } · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13
+> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 }, { member_id: 1, ts: 1 } (타임라인 ADM-05) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13
 
 **관계** member_id → [`member`](#member) · session_id → [`auth_session`](#auth-session) · run_id → [`train_run`](#train-run)
 
@@ -1921,7 +1923,7 @@ MongoDB · 🅱 빅데이터
 | `admitted_at` | Date |  | 시스템 | 입장 시각 | 실제 대기 시간 vs 예상 대기 시간 비교 |
 | `left_reason` | String |  | 시스템 | ADMITTED / TIMEOUT / LEFT / REJECTED_DUPLICATE | 이탈률, 중복 대기 차단 |
 
-> **제약·비고** TTL { expire_at: 1 }, expireAfterSeconds: 0 · 점선은 논리 참조 · 절차: concurrency.md §13
+> **제약·비고** 인덱스: { run_id: 1, entered_at: 1 } (순번 조정 검증) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 점선은 논리 참조 · 절차: concurrency.md §13
 
 **관계** member_id → [`member`](#member) · run_id → [`train_run`](#train-run) · session_id → [`auth_session`](#auth-session)
 
@@ -2295,6 +2297,7 @@ Oracle
 | v7 | 팀 3차 검토 반영 + 동시성 절차를 docs/concurrency.md로 분리: 마감 연장 GREATEST·PG 180+60초, 재선점 시 이전 예약 HOLD 행 전부 삭제, 멱등 키 선조회, outbox seq·시퀀스·FAILED 샤드 정지·Redis 리스·FOR UPDATE WAIT, Redis 보상·limit 복원 SET NX, version 증가 규칙, PG 결과 미확인 만료 금지, 카운터 정렬 갱신, 취소·취소표 카운터, Mongo expire_at 확대·legal_hold 확인, Redis 클러스터 태그 {runId}, 비고 축약 |
 | v8 | 동시성 4차 검토 반영: 결제 결과 갈래(늦은 승인 환불·실패 시 EXPIRED), 스캐너 분리(ix_resv_hold_due, payment.next_check_at·ix_pay_recheck), ix_seatinv_hold 제거, cancellation 유형 정리(EXPIRED 제거)·resold_yn 배치, saga 단계 정리, 취소표 대기자 우선(REOFFER)·제안 기한 연장·wl 멱등 키, 한도 값 규칙·자가 복구, Redis 보상 outbox 보장·limit:dec, ORA_HASH 문자열, inbox 8일, 행동 로그 180일 확정, 시간대·Redis 설정 결정 |
 | v9 | 기능설계서 맞춤: admin_action에 reservation_id·예약 대상 조치(강제 취소·결제 수동 처리·마스킹 해제), 알림 종류(취소표 건너뜀·환불 완료), 대기열 중복 진입 차단(queue:member·queue:ci)·같은 시각 진입 순서(queue:seq), 운영 값 8개(취소표 한도·출발 후 취소·스캐너·알림·위험 점수 주기) |
+| v10 | MongoDB 인덱스·보관 정리: behavior_log {member_id, ts}(타임라인), queue_log {run_id, entered_at}(순번 검증) 인덱스, login_attempt에 expire_at·TTL과 app_policy login_attempt.retention_days(30일) |
 
 ## 참고 자료
 

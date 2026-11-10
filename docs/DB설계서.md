@@ -12,6 +12,7 @@
 4. [테이블 정의](#4-테이블-정의)
 5. [상태 코드표](#5-상태-코드표)
 6. [MongoDB·Redis·Kafka](#6-mongodbrediskafka)
+7. [2주차 진행 예정](#7-2주차-진행-예정)
 
 ---
 
@@ -22,7 +23,7 @@
 | Oracle | 기준 데이터, 회원·인증, 예약·결제·취소, 매수 카운터, outbox·inbox·Saga, 취소표, 위험 점수, 관리자 조치, 의심 케이스 | 돈과 좌석이 걸린 데이터는 트랜잭션·PK·UNIQUE·조건부 UPDATE로 DB가 최종 판정 |
 | MongoDB | 행동 로그, 대기열 기록, 로그인 시도, (P2) 화면 녹화·외부 데이터 | 건수가 많고 형태가 자주 바뀌는 로그. Kafka에서 묶어 적재, TTL로 자동 삭제 |
 | Redis | 대기열, 입장 토큰, 좌석 선점 1차 경쟁, 매수 한도 1차, 멱등 키, 캐시 | 빠른 1차 판정. 통과해도 DB가 거절하면 거절 |
-| Kafka | 예약 흐름 이벤트, 행동 로그 | 예약 이후 처리(결제·확정·취소·재배정)를 비동기로, reservation_id 키로 순서 보장 |
+| Kafka | 예약 흐름 이벤트, 행동 로그 | 결제·확정·취소는 DB 트랜잭션으로 확정하고, 그 뒤의 후속 처리(좌석 반환·취소표 재배정·알림)를 Outbox → Kafka로 비동기 처리. reservation_id 키로 순서 보장 |
 
 ### 구현 범위별 테이블
 
@@ -508,9 +509,10 @@ Argon2id 비밀번호 해시와 잠금 상태. 회원 프로필과 분리해 해
 | `user_agent` | String |  | 생성 |  |  |
 | `session_id` | String | FK → auth_session | 시스템 | 성공 시 발급된 세션 |  |
 | `verify_ms` | Int |  | 시스템 | Argon2 검증 소요 시간 | 예매 오픈 직전 로그인 폭주 시 CPU·메모리 병목 측정 |
-| `ts` | Date |  | 생성 | 시도 시각 | TTL 기준 |
+| `ts` | Date |  | 생성 | 시도 시각 | 시도 순서·기간 조회 |
+| `expire_at` | Date |  | 시스템 | 삭제 예정 시각 | ts + login_attempt.retention_days. 다른 로그 컬렉션과 같은 보관 방식 |
 
-> **제약·비고** TTL { ts: 1 } · 인덱스 { ip_hash: 1, ts: -1 }, { email_hash: 1, ts: -1 }
+> **제약·비고** 인덱스: { ip_hash: 1, ts: -1 }, { email_hash: 1, ts: -1 } · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 절차: concurrency.md §13
 
 ### 4.3 예약·결제·취소
 
@@ -952,7 +954,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `response_status` | Int |  | 시스템 | HTTP 상태 | 차단·에러 분석 |
 | `meta` | Object |  | 시스템 | 이벤트별 추가 정보 | 스키마 변경 없이 필드 확장 |
 
-> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 } · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조
+> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 }, { member_id: 1, ts: 1 } (타임라인 ADM-05) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13
 
 #### `queue_log` 대기열 기록
 
@@ -976,7 +978,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `admitted_at` | Date |  | 시스템 | 입장 시각 | 실제 대기 시간 vs 예상 대기 시간 비교 |
 | `left_reason` | String |  | 시스템 | ADMITTED / TIMEOUT / LEFT / REJECTED_DUPLICATE | 이탈률, 중복 대기 차단 |
 
-> **제약·비고** TTL { expire_at: 1 }, expireAfterSeconds: 0 · 점선은 논리 참조
+> **제약·비고** 인덱스: { run_id: 1, entered_at: 1 } (순번 조정 검증) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 점선은 논리 참조 · 절차: concurrency.md §13
 
 ### 4.8 가상 데이터
 
@@ -1075,7 +1077,8 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 |---|---|---|---|
 | behavior_log | `{ci_hash: 1, ts: -1}`, `{run_id: 1, ts: 1}`, `{expire_at: 1}` TTL. 타임라인(ADM-05)용 `{member_id: 1, ts: 1}` | `ts` + 180일 | 앱 → Kafka `jejari.behavior` → insertMany 1000건 |
 | queue_log | `{expire_at: 1}` TTL. 순번 검증용 `{run_id: 1, entered_at: 1}` | `entered_at` + 30일 | 같은 경로 |
-| login_attempt | `{ip_hash: 1, ts: -1}`, `{email_hash: 1, ts: -1}`, TTL | 30일 | 로그인 처리 중 비동기 |
+| login_attempt | `{ip_hash: 1, ts: -1}`, `{email_hash: 1, ts: -1}`, `{expire_at: 1}` TTL | `ts` + 30일 | 로그인 처리 중 비동기 |
+
 
 ### 6.2 Redis 키
 
@@ -1119,14 +1122,17 @@ Lua 스크립트(`hold`, `release`, `extend`, `rehold`, `sold`, `reoffer`, `limi
 
 ## 7. 2주차 진행 예정
 
-### 7.1 2주차 말에 진행 여부를 정하는 테이블
+### 7.1 1차 구현 밖 테이블
 
-| 기능 | 테이블 | 저장소 |
-|---|---|---|
-| 화면 녹화 재생 (ADM-11) | replay_session, replay_event | MongoDB |
-| 위험 점수 이력 | risk_score_history | Oracle |
-| 외부 데이터 분석 (DATA-04) | ext_dataset, ext_hotel_booking, ext_web_access_log, ext_renfe_price, ext_bot_detection, risk_feature | Oracle, MongoDB |
-| 증거 동결·열람 감사 | evidence_snapshot, replay_access_log | Oracle |
-| 확장 기능 | common_code, member_push_token, password_reset_token, ticket_transfer | Oracle |
+우선순위는 1장 표와 같습니다. P2는 2주차 말에 진행 여부를 정하고, P3는 발표 후, 확장 예정은 DDL에서도 빠집니다.
+
+| 기능 | 테이블 | 저장소 | 우선 |
+|---|---|---|---|
+| 화면 녹화 재생 (ADM-11) | replay_session, replay_event | MongoDB | P2 |
+| 위험 점수 이력 | risk_score_history | Oracle | P2 |
+| 외부 데이터 분석 (DATA-04) | ext_dataset, ext_hotel_booking, ext_web_access_log, ext_renfe_price, risk_feature | Oracle, MongoDB | P2 |
+| 외부 데이터 (선택) | ext_bot_detection | MongoDB | P3 |
+| 증거 동결·열람 감사 | evidence_snapshot, replay_access_log | Oracle | P3 |
+| 확장 기능 | common_code, member_push_token, password_reset_token, ticket_transfer | Oracle | 확장 예정 |
 
 진행하기로 하면 이 문서 4장에 컬럼 정의를 추가합니다.

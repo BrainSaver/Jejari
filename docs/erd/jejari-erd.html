@@ -1105,7 +1105,8 @@ const DOCS = {
   ['v6','팀 2차 검토 반영: 결제 시작 시 마감 연장, 마감 시각 원천 규칙, outbox shard_no·샤드별 릴레이, 예매 흐름 순서(ID 발급 → Redis 경쟁 → 한 트랜잭션 INSERT), 참조 전용 테이블 FK 인덱스 생략·ix_resv_ci_run 제거, purchase_counter 동시성 규칙·CHECK, Mongo expire_at TTL, processed_event 정리 인덱스, updated_at 규칙, Redis 클러스터 메모'],
   ['v7','팀 3차 검토 반영 + 동시성 절차를 docs/concurrency.md로 분리: 마감 연장 GREATEST·PG 180+60초, 재선점 시 이전 예약 HOLD 행 전부 삭제, 멱등 키 선조회, outbox seq·시퀀스·FAILED 샤드 정지·Redis 리스·FOR UPDATE WAIT, Redis 보상·limit 복원 SET NX, version 증가 규칙, PG 결과 미확인 만료 금지, 카운터 정렬 갱신, 취소·취소표 카운터, Mongo expire_at 확대·legal_hold 확인, Redis 클러스터 태그 {runId}, 비고 축약'],
   ['v8','동시성 4차 검토 반영: 결제 결과 갈래(늦은 승인 환불·실패 시 EXPIRED), 스캐너 분리(ix_resv_hold_due, payment.next_check_at·ix_pay_recheck), ix_seatinv_hold 제거, cancellation 유형 정리(EXPIRED 제거)·resold_yn 배치, saga 단계 정리, 취소표 대기자 우선(REOFFER)·제안 기한 연장·wl 멱등 키, 한도 값 규칙·자가 복구, Redis 보상 outbox 보장·limit:dec, ORA_HASH 문자열, inbox 8일, 행동 로그 180일 확정, 시간대·Redis 설정 결정'],
-  ['v9','기능설계서 맞춤: admin_action에 reservation_id·예약 대상 조치(강제 취소·결제 수동 처리·마스킹 해제), 알림 종류(취소표 건너뜀·환불 완료), 대기열 중복 진입 차단(queue:member·queue:ci)·같은 시각 진입 순서(queue:seq), 운영 값 8개(취소표 한도·출발 후 취소·스캐너·알림·위험 점수 주기)']]}
+  ['v9','기능설계서 맞춤: admin_action에 reservation_id·예약 대상 조치(강제 취소·결제 수동 처리·마스킹 해제), 알림 종류(취소표 건너뜀·환불 완료), 대기열 중복 진입 차단(queue:member·queue:ci)·같은 시각 진입 순서(queue:seq), 운영 값 8개(취소표 한도·출발 후 취소·스캐너·알림·위험 점수 주기)'],
+  ['v10','MongoDB 인덱스·보관 정리: behavior_log {member_id, ts}(타임라인), queue_log {run_id, entered_at}(순번 검증) 인덱스, login_attempt에 expire_at·TTL과 app_policy login_attempt.retention_days(30일)']]}
 };
 // ===== 스키마 v5: 팀 검토 12건 반영 (2026-11-06) =====
 const V5_TABLES = [
@@ -1349,7 +1350,18 @@ const V9_OPS = [
     {policy_key:'notification.pay_reminder_sec',policy_value:'120',version:1,value_type:'NUMBER',description:'결제 기한 몇 초 전에 PAY_REMINDER 알림'},
     {policy_key:'risk.batch_interval_sec',policy_value:'60',version:1,value_type:'NUMBER',description:'위험 점수 배치 주기(초). 각 운행 sale_open_at 전 1회는 반드시 실행'}]]
 ];
-const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS} ];
+const V10_TABLES = [];
+const V10_OPS = [
+  // MongoDB 인덱스·보관을 비고에 모음 (mongo-init.js 원천)
+  ['notes','behavior_log','인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 }, { member_id: 1, ts: 1 } (타임라인 ADM-05) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13'],
+  ['notes','queue_log','인덱스: { run_id: 1, entered_at: 1 } (순번 조정 검증) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 점선은 논리 참조 · 절차: concurrency.md §13'],
+  ['add','login_attempt','ts',[['expire_at','Date','','시스템','삭제 예정 시각','ts + login_attempt.retention_days. 다른 로그 컬렉션과 같은 보관 방식']]],
+  ['set','login_attempt','ts',{reason:'시도 순서·기간 조회'}],
+  ['notes','login_attempt','인덱스: { ip_hash: 1, ts: -1 }, { email_hash: 1, ts: -1 } · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 절차: concurrency.md §13'],
+  ['samples+','app_policy',[
+    {policy_key:'login_attempt.retention_days',policy_value:'30',version:1,value_type:'NUMBER',description:'login_attempt 보관 기간 (expire_at 계산)'}]]
+];
+const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS} ];
 const SEED_VERSION = Math.max(2,...PATCHES.map(p=>p.v));
 const LAYOUT = [
  ['station','route','route_station','fare','common_code'],

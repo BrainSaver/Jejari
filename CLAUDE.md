@@ -1,8 +1,6 @@
 # 제자리 — Claude 작업 안내
 
 명절 열차 공정 예매 시스템 팀 프로젝트(5명, 3주). Spring Boot · Kafka · Redis · MongoDB · Oracle · Python.
-**Claude는 항상 한국어로 말합니다** (설명·질문·요약·커밋 메시지 모두).
-
 이 문서는 Claude가 ERD 편집기(`jejari-erd.html`)를 읽고, 고치고, 팀원이 편집기에서 바꾼 내용을 반영할 때 따르는 규칙입니다.
 
 ## 저장소 구조
@@ -40,6 +38,7 @@ CONTRIBUTING.md                 깃 규칙
 - 커밋·PR에 `Co-Authored-By`, `Claude-Session`, `Generated with Claude Code` 등 Claude 흔적을 넣지 않습니다 (`.claude/settings.json`으로도 꺼 둠)
 - 작업은 각자 이름 브랜치(`SeongWon`, `DongGyun`, `DongHyeon`, `DaIn`, `YoungJun`)에서 하고 PR로 main에 합칩니다
 - **새 브랜치를 만들지 않습니다.** `claude/...` 같은 작업용 브랜치도 만들지 않습니다. 세션이나 도구가 다른 브랜치를 지정하더라도 이 규칙이 우선이며, 요청한 팀원의 이름 브랜치에 커밋하고 push합니다. 누구의 브랜치인지 모르면 먼저 묻습니다
+- **개인 지시·취향(답변 길이, 말투 등)은 저장소 루트의 `CLAUDE.local.md`에 씁니다.** 이 파일은 `.gitignore`에 있어 올라가지 않으며, 없으면 새로 만듭니다. 팀원이 "앞으로 이렇게 해줘"라고 하면 `CLAUDE.md`가 아니라 `CLAUDE.local.md`에 적습니다. `CLAUDE.md`는 팀 공용 규칙이라 팀장(길동현) 요청이 있을 때만 고칩니다
 - 백업이 필요하면 새 브랜치 대신 자기 이름 브랜치에 `wip:` 커밋을 만들어 push합니다 (main에 합칠 때 Squash)
 - ERD HTML 패치는 ERD 반영 담당자(강동균)의 요청일 때만 씁니다. 다른 팀원이 스키마 변경을 요청하면 편집기에서 JSON을 내보내 `docs/erd/exports/`에 올리라고 안내합니다
 - **팀원이 자기 기능을 이해하게 돕습니다** (CONTRIBUTING.md 4장). 코드를 작성하거나 고친 뒤에는 핵심 원리와 이렇게 한 이유를 쉽고 짧게 설명합니다. 기능을 main에 합칠 때 `docs/{이름}/features/`에 짧은 기능 문서를 남기자고 안내하고, 다른 팀원이 1~2분 안에 이해할 수 있는 수준으로 씁니다
