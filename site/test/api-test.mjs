@@ -40,6 +40,27 @@ r = await bad('/login', { name: 'DongGyun', pin: '0000' }); ok(r.status === 423,
 r = await anon('/save', { path: F, mode: 'section', oldText: 'x', newText: 'y', message: 'docs: x' }); ok(r.status === 401, '로그인 없이 저장 거부');
 r = await fetch(BASE + '/api/save', { method: 'POST', body: 'a=1', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }); ok(r.status === 415, 'JSON 아닌 POST 거부');
 
+console.log('AI에게 물어보기');
+const AI = process.env.ASK_AI === '1'; // 가짜 Groq를 붙여 띄웠을 때만 답변까지 검사
+r = await anon('/ask', { selection: '', question: '쉽게' }); ok(r.status === 400, '선택한 글이 없으면 거부');
+r = await anon('/ask', { selection: 'x'.repeat(6001), question: '쉽게' }); ok(r.status === 400, '선택한 글이 너무 길면 거부');
+r = await anon('/ask', { selection: 'SKIP LOCKED', question: '쉽게', history: [{ role: 'system', content: 'x' }] }); ok(r.status === 400, '대화 기록 역할이 이상하면 거부');
+r = await anon('/ask', { doc: '동시성', path: 'docs/concurrency.md', heading: '§9 취소표 제안', selection: 'FOR UPDATE SKIP LOCKED', section: '## §9 …', question: '쉽게 설명해줘' });
+if (AI) {
+  ok(r.status === 200 && /메시지 2개/.test(r.data.answer) && /쉽게 설명해줘/.test(r.data.answer), '로그인 없이 질문하면 답변');
+  ok((r.data.refs || []).some((x) => x.doc === '동시성' && /§9|§11/.test(x.heading)), '전체 문서에서 관련 부분을 찾아 함께 보냄: ' + (r.data.refs || []).map((x) => x.heading.split(' > ')[0]).slice(0, 3).join(', '));
+  r = await anon('/ask', { selection: 'FOR UPDATE SKIP LOCKED', question: '예시는?', history: [{ role: 'user', content: '쉽게 설명해줘' }, { role: 'assistant', content: '답' }] });
+  ok(r.status === 200 && /메시지 4개/.test(r.data.answer) && /예시는\?/.test(r.data.answer), '이어서 묻기는 앞 대화를 함께 보냄');
+  let limited = false;
+  for (let i = 0; i < 16 && !limited; i++) limited = (await anon('/ask', { selection: 'x', question: 'y' })).status === 429;
+  ok(limited, '1분 횟수 제한');
+} else {
+  ok(r.status === 503 && r.data.error === 'NO_AI', 'Groq 키가 없으면 503');
+}
+r = await anon('/context', { path: 'docs/기능설계서.md', heading: '4. 기능 상세', selection: '좌석 선점 (매수 제한 포함)', section: '**RSV-02 좌석 선점** — 동시성 §1, §2, §3, §10' });
+ok(r.status === 200 && /\[프로젝트 지도\]/.test(r.data.brief) && /강동균/.test(r.data.brief), 'LLM 복사용 맥락: 프로젝트 지도');
+ok(r.data.related.some((x) => x.doc === '동시성' && /^§2/.test(x.heading)), 'LLM 복사용 맥락: 섹션이 가리키는 동시성 §2를 찾음');
+
 console.log('섹션 저장');
 let p = await dh('/prepare', { path: F });
 ok(p.status === 200 && p.data.file.content.includes('## 6. 화면 후보'), '내 브랜치 파일 열기');
@@ -127,23 +148,6 @@ r = await anon('/file?path=docs/erd/jejari-erd.html&ref=main&fresh=7'); ok(r.sta
 r = await anon(`/file?path=${encodeURIComponent(F)}&ref=DongHyeon&fresh=7`); ok(r.status === 401, '이름 브랜치 보기는 로그인 필요');
 r = await anon('/list?dir=docs/erd/exports&ref=main'); ok(r.status === 401, 'ERD 내보내기 목록은 로그인 필요');
 for (const q of ['/branches', '/commits', '/graph']) { r = await anon(q + '?fresh=7'); ok(r.status === 401, q + ' 로그인 필요'); }
-
-console.log('AI에게 물어보기');
-const AI = process.env.ASK_AI === '1'; // 가짜 Groq를 붙여 띄웠을 때만 답변까지 검사
-r = await anon('/ask', { selection: '', question: '쉽게' }); ok(r.status === 400, '선택한 글이 없으면 거부');
-r = await anon('/ask', { selection: 'x'.repeat(6001), question: '쉽게' }); ok(r.status === 400, '선택한 글이 너무 길면 거부');
-r = await anon('/ask', { selection: 'SKIP LOCKED', question: '쉽게', history: [{ role: 'system', content: 'x' }] }); ok(r.status === 400, '대화 기록 역할이 이상하면 거부');
-r = await anon('/ask', { doc: '동시성', path: 'docs/concurrency.md', heading: '§9 취소표 제안', selection: 'FOR UPDATE SKIP LOCKED', section: '## §9 …', question: '쉽게 설명해줘' });
-if (AI) {
-  ok(r.status === 200 && /메시지 2개/.test(r.data.answer) && /쉽게 설명해줘/.test(r.data.answer), '로그인 없이 질문하면 답변');
-  r = await anon('/ask', { selection: 'FOR UPDATE SKIP LOCKED', question: '예시는?', history: [{ role: 'user', content: '쉽게 설명해줘' }, { role: 'assistant', content: '답' }] });
-  ok(r.status === 200 && /메시지 4개/.test(r.data.answer) && /예시는\?/.test(r.data.answer), '이어서 묻기는 앞 대화를 함께 보냄');
-  let limited = false;
-  for (let i = 0; i < 16 && !limited; i++) limited = (await anon('/ask', { selection: 'x', question: 'y' })).status === 429;
-  ok(limited, '1분 횟수 제한');
-} else {
-  ok(r.status === 503 && r.data.error === 'NO_AI', 'Groq 키가 없으면 503');
-}
 
 console.log('PIN 초기화');
 r = await dg('/admin/reset-pin', { name: 'DongHyeon' }); ok(r.status === 403, '팀장 아니면 거부');

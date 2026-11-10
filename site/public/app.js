@@ -433,6 +433,22 @@ function staleModal(x, myText, path, key) {
   $('[data-reopen]', m).addEventListener('click', () => { closeModal(); bump(); setRef(S.me); });
 }
 
+// 프로젝트 전체 문서 묶음 (main 기준)
+async function projectBundle() {
+  const docs = [['README.md', '기획서'], ['docs/기능설계서.md', '기능설계'], ['docs/concurrency.md', '동시성 절차'], ['docs/DB설계서.md', 'DB설계']];
+  const files = await Promise.all(docs.map(([p]) => fetchFile(p, 'main').catch(() => null)));
+  const list = await uiIndex().catch(() => []);
+  const ui = await Promise.all(list.map((x) => fetchFile(`docs/ui/${x.id}.md`, 'main').catch(() => null)));
+  const out = ['아래는 "제자리" 팀 프로젝트(명절 열차 공정 예매 시스템, 5명·3주, Spring Boot·Kafka·Redis·MongoDB·Oracle·Python)의 설계 문서 전체입니다.',
+    '스키마의 원천은 ERD 편집기, 트랜잭션 순서·SQL·Redis 절차의 원천은 동시성 문서(§번호)입니다. 1차 구현 범위는 기능설계 1.1을 따릅니다.',
+    '이 문서들을 모두 읽은 상태로 답해 주세요.', ''];
+  files.forEach((f, i) => { if (f) out.push(`===== ${docs[i][1]} (${docs[i][0]}) =====`, f.content.trim(), ''); });
+  const uiParts = ui.filter(Boolean).map((f) => f.content.trim());
+  if (uiParts.length) out.push('===== 화면설계 설명 (docs/ui/*.md) =====', uiParts.join('\n\n---\n\n'), '');
+  out.push('질문: ');
+  return out.join('\n');
+}
+
 // ---------- 페이지 ----------
 function pageHomeAnon() {
   main.innerHTML = `<div class="wrap"><h1 class="page">제자리 설계 문서</h1>
@@ -443,7 +459,13 @@ function pageHomeAnon() {
       <a class="card" href="#/db"><h3>DB설계 · ERD</h3><p>Oracle·MongoDB·Redis·Kafka 역할, 테이블 정의, ERD</p></a>
       <a class="card" href="#/ui"><h3>화면설계</h3><p>사용자 11개, 관리자 7개 화면을 눌러 보는 시안과 설명</p></a>
       <a class="card" href="#/doc/conc"><h3>동시성</h3><p>트랜잭션 순서, SQL, Redis Lua, 락 순서, 테스트 목록</p></a>
+    </div>
+    <div class="llm-all">
+      <div><h3>프로젝트 전체를 LLM에 주기</h3>
+      <p class="muted">기획서·기능설계·동시성·DB설계·화면설계 설명을 한 덩어리로 복사해요. Claude·ChatGPT처럼 긴 글을 받는 곳에 붙여 넣고 질문하면 프로젝트 전체를 아는 상태로 답해요. 문서마다 위쪽의 "LLM용 전체 복사", 섹션마다 "LLM 복사", 글을 드래그하면 "AI에게 물어보기"도 있어요.</p></div>
+      <button class="btn" data-copyproject>프로젝트 전체 LLM용 복사</button>
     </div></div>`;
+  $('[data-copyproject]', main).addEventListener('click', () => copyLater(projectBundle, '프로젝트 문서 전체를 LLM용으로 복사했어요.'));
 }
 function pageLocked() {
   main.innerHTML = `<div class="wrap"><h1 class="page">로그인이 필요해요</h1>
@@ -848,6 +870,34 @@ function llmBlock(meta, heading, md, selection) {
   lines.push('', selection ? '[그 부분이 들어 있는 섹션 원문]' : '[원문]', '<<<', String(md || '').trim(), '>>>', '', '질문: ');
   return lines.join('\n');
 }
+async function copyLater(makeText, msg) {
+  const job = Promise.resolve().then(makeText);
+  let done = false;
+  try {
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      await navigator.clipboard.write([new ClipboardItem({ 'text/plain': job.then((t) => new Blob([t], { type: 'text/plain' })) })]);
+      done = true;
+    }
+  } catch {}
+  if (done) { toast(msg || '복사했어요.'); return; }
+  return copyText(await job, msg);
+}
+// 맥락 포함 LLM용 글: 프로젝트 지도 + 전체 문서에서 찾은 관련 부분 + 지금 섹션 + 고른 부분
+async function llmWithContext(meta, heading, md, selection, history) {
+  let ctx = null;
+  try { ctx = await api('/context', { body: { path: meta.path, heading: cleanHead(heading), selection, section: md } }); } catch {}
+  const lines = [`아래는 "제자리" 팀 프로젝트의 설계 문서에서 고른 부분과, 이해에 필요한 프로젝트 맥락입니다.`, ''];
+  if (ctx && ctx.brief) lines.push(ctx.brief, '');
+  if (ctx && ctx.related && ctx.related.length) {
+    lines.push('[관련 문서 조각 (전체 문서에서 자동 검색)]');
+    ctx.related.forEach((r) => lines.push(`### ${r.doc} · ${r.heading || '(머리말)'}`, r.text, ''));
+  }
+  lines.push(`[지금 보고 있는 섹션: ${meta.title} (${meta.path})${heading ? ' · ' + cleanHead(heading) : ''}]`, '<<<', String(md || '').trim(), '>>>', '',
+    '[내가 고른 부분]', '<<<', selection, '>>>');
+  if (history && history.length) lines.push('', '[지금까지 나눈 대화]', history.map((h) => `${h.role === 'user' ? '나' : 'AI'}: ${h.content}`).join('\n\n'));
+  lines.push('', '프로젝트 전체 맥락에서 이 부분이 어디에 쓰이고 무엇과 연결되는지까지 쉽게 설명해 주세요.', '질문: ');
+  return lines.join('\n');
+}
 async function copyText(text, msg) {
   let done = false;
   try { await navigator.clipboard.writeText(text); done = true; } catch {}
@@ -898,7 +948,8 @@ window.addEventListener('scroll', () => { if (!selPop.hidden && !selPop.classLis
 selPop.addEventListener('mousedown', (e) => e.preventDefault());
 $('[data-copysel]', selPop).addEventListener('click', () => {
   if (!selCtx) return;
-  copyText(llmBlock(selCtx.meta, selCtx.sec._head, selCtx.sec._md, selCtx.text), '고른 부분을 섹션 원문과 함께 LLM용으로 복사했어요.');
+  const c = selCtx;
+  copyLater(() => llmWithContext(c.meta, c.sec._head, c.sec._md, c.text), '고른 부분을 프로젝트 맥락과 함께 LLM용으로 복사했어요.');
   selPop.hidden = true;
 });
 $('[data-ask]', selPop).addEventListener('click', () => {
@@ -917,7 +968,7 @@ function askModal(c) {
     <div class="ask-log"></div>
     <div class="ask-chips">${ASK_CHIPS.map((q) => `<button type="button" class="chip">${esc(q)}</button>`).join('')}</div>
     <form class="ask-row"><input type="text" maxlength="500" value="쉽게 설명해줘" aria-label="질문" autofocus><button class="btn" type="submit">묻기</button></form>
-    <p class="muted ask-note">Groq AI가 고른 부분과 그 섹션만 보고 답해요. 틀릴 수 있으니 중요한 건 문서 원문이나 담당 팀원에게 확인하세요.</p>
+    <p class="muted ask-note">AI(Groq)는 프로젝트 지도와, 전체 문서에서 이 질문과 관련 있는 부분을 자동으로 찾아 함께 보고 답해요. 틀릴 수 있으니 중요한 건 문서 원문이나 담당 팀원에게 확인하세요.</p>
     <div class="row"><button class="btn plain" type="button" data-copylog>대화까지 LLM용 복사</button><button class="btn plain" type="button" data-close>닫기</button></div>`, { wide: true });
   const log = $('.ask-log', m), input = $('.ask-row input', m), send = $('.ask-row button', m);
   const add = (role, html) => { const d = document.createElement('div'); d.className = 'ask-msg ' + role; d.innerHTML = html; log.appendChild(d); d.scrollIntoView({ block: 'nearest' }); return d; };
@@ -930,6 +981,11 @@ function askModal(c) {
     try {
       const r = await api('/ask', { body: { ...ctx, question: q, history: history.length ? history : undefined } });
       wait.innerHTML = ''; wait.appendChild(renderMd(r.answer));
+      if (r.refs && r.refs.length) {
+        const d = document.createElement('details'); d.className = 'ask-refs';
+        d.innerHTML = `<summary>참고한 문서 ${r.refs.length}곳</summary><ul>${r.refs.map((x) => `<li>${esc(x.doc)} · ${esc(x.heading || '(머리말)')}</li>`).join('')}</ul>`;
+        wait.appendChild(d);
+      }
       history.push({ role: 'user', content: q }, { role: 'assistant', content: r.answer });
     } catch (x) {
       wait.innerHTML = `<p class="err">${esc(x.message)}</p>`;
@@ -939,9 +995,7 @@ function askModal(c) {
   $$('.ask-chips .chip', m).forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
   $('[data-close]', m).addEventListener('click', closeModal);
   $('[data-copylog]', m).addEventListener('click', () => {
-    let t = llmBlock(c.meta, c.sec._head, c.sec._md, c.text).replace(/\n질문: $/, '');
-    if (history.length) t += '\n\n[지금까지 나눈 대화]\n' + history.map((h) => `${h.role === 'user' ? '나' : 'AI'}: ${h.content}`).join('\n\n');
-    copyText(t + '\n\n질문: ', '고른 부분과 대화를 LLM용으로 복사했어요.');
+    copyLater(() => llmWithContext(c.meta, c.sec._head, c.sec._md, c.text, history.slice()), '고른 부분·프로젝트 맥락·대화를 LLM용으로 복사했어요.');
   });
 }
 

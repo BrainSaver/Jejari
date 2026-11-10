@@ -5,6 +5,7 @@ import {
 } from '../../lib/github.js';
 import { pinStatus, currentUser, login, logout, resetPin, sessionCookie, clearCookie } from '../../lib/auth.js';
 import { commitMessage, validMessage, askDoc } from '../../lib/groq.js';
+import { buildContext } from '../../lib/context.js';
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers } });
@@ -361,8 +362,17 @@ export async function onRequest(ctx) {
         const r = await askDoc(env, {
           doc: String(body.doc || ''), path: String(body.path || ''), heading: String(body.heading || ''),
           selection, section: String(body.section || ''), question, history: body.history,
-        });
+        }, buildContext);
         return r.error ? fail(r.status, r.error, r.message) : json(r);
+      }
+      case 'POST /context': {
+        // LLM용 복사: 프로젝트 지도와 전체 문서에서 찾은 관련 부분 (외부 LLM은 길게 받으므로 넉넉히)
+        if (!str(body.selection, 6000)) return fail(400, 'BAD_ASK', '선택한 글(6000자 이하)이 필요해요.');
+        const ctx = await buildContext(env, {
+          path: String(body.path || ''), heading: String(body.heading || ''), selection: body.selection,
+          section: String(body.section || ''), question: String(body.question || ''),
+        }, 16000);
+        return json(ctx);
       }
       case 'POST /save':
         if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');

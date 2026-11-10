@@ -361,3 +361,9 @@ body.no-scroll{overflow:hidden}
 .ask-row{display:flex;gap:8px}
 .ask-row input{flex:1;min-width:0}
 .ask-note{font-size:12.5px;margin:8px 0 0}
+.ask-refs{margin:2px 0 8px;font-size:13px;color:var(--muted)}
+.ask-refs summary{cursor:pointer}
+.ask-refs ul{margin:4px 0 0;padding-left:18px}
+.llm-all{margin-top:20px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+.llm-all h3{margin:0 0 4px;font-size:16px}
+.llm-all p{margin:0;font-size:14px;max-width:640px}
