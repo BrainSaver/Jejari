@@ -75,13 +75,40 @@ function twoStep(btn, label, run) {
 }
 
 // ---------- 마크다운 ----------
-marked.use({ gfm: true, renderer: { html(t) { return esc(typeof t === 'string' ? t : (t && (t.raw || t.text)) || ''); } } });
+marked.use({ gfm: true });
+// 문서 안의 HTML은 안전한 태그·속성만 남긴다 (README의 details·summary·a id 등)
+const SAFE_TAGS = new Set(['A','B','STRONG','I','EM','U','S','DEL','INS','MARK','SMALL','SUB','SUP','KBD','CODE','PRE','BR','HR','P','DIV','SPAN','DETAILS','SUMMARY','BLOCKQUOTE','UL','OL','LI','TABLE','THEAD','TBODY','TR','TH','TD','IMG','H1','H2','H3','H4','H5','H6','DL','DT','DD','INPUT','CENTER']);
+const DROP_TAGS = new Set(['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','FORM','TEXTAREA','SELECT','BUTTON','LINK','META','BASE','SVG','MATH','TEMPLATE','NOSCRIPT']);
+const SAFE_ATTR = { '*': ['align','title','colspan','rowspan'], A: ['href','id','name'], IMG: ['src','alt','width','height'], DETAILS: ['open'], OL: ['start'], INPUT: ['type','checked','disabled'] };
+function sanitize(root) {
+  const walk = (node) => {
+    [...node.children].forEach((el) => {
+      if (DROP_TAGS.has(el.tagName)) { el.remove(); return; }
+      if (!SAFE_TAGS.has(el.tagName)) { walk(el); el.replaceWith(...el.childNodes); return; }
+      const ok = [...SAFE_ATTR['*'], ...(SAFE_ATTR[el.tagName] || [])];
+      [...el.attributes].forEach((at) => { if (!ok.includes(at.name)) el.removeAttribute(at.name); });
+      const href = el.getAttribute('href');
+      if (el.tagName === 'A' && href != null && !/^(https?:|#|mailto:)/i.test(href.trim())) el.removeAttribute('href');
+      if (el.tagName === 'A' && href && /^https?:/i.test(href)) { el.target = '_blank'; el.rel = 'noopener'; }
+      if (el.tagName === 'IMG' && !/^https:/i.test(el.getAttribute('src') || '')) el.removeAttribute('src');
+      if (el.tagName === 'INPUT' && el.getAttribute('type') !== 'checkbox') { el.remove(); return; }
+      if (el.tagName === 'INPUT') el.setAttribute('disabled', '');
+      ['id', 'name'].forEach((k) => { if (el.hasAttribute(k)) el.setAttribute(k, 'h-' + el.getAttribute(k)); });
+      walk(el);
+    });
+  };
+  walk(root);
+}
 const slug = (s) => String(s).trim().toLowerCase().replace(/<[^>]+>/g, '').replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
 function renderMd(text) {
   const div = document.createElement('div');
   div.className = 'md';
-  div.innerHTML = marked.parse(text || '');
+  const tpl = document.createElement('template');
+  tpl.innerHTML = marked.parse(text || '');
+  sanitize(tpl.content);
+  div.appendChild(tpl.content);
   $$('h1,h2,h3,h4', div).forEach((h) => { h.id = 'h-' + slug(h.textContent); });
+  $$('details > summary', div).forEach((sm) => { if (!sm.id) sm.id = 'h-' + slug(sm.textContent); });
   $$('table', div).forEach((t) => { if (!t.parentElement.classList.contains('tbl-wrap')) { const w = document.createElement('div'); w.className = 'tbl-wrap'; t.replaceWith(w); w.appendChild(t); } });
   return div;
 }
@@ -103,13 +130,15 @@ function splitSections(text) {
     const l = lines[i];
     const f = l.match(/^\s*(```|~~~)/);
     if (f) fence = fence ? (fence === f[1] ? null : fence) : f[1];
-    else if (!fence && /^## /.test(l) && off > 0) starts.push(off);
+    else if (!fence && (/^## /.test(l) || /^<a id="sec-[\w-]+"><\/a>\s*$/.test(l)) && off > 0) starts.push(off);
     off += l.length + 1;
   }
   const out = [];
   for (let i = 0; i < starts.length; i++) {
     const t = text.slice(starts[i], i + 1 < starts.length ? starts[i + 1] : text.length);
-    out.push({ text: t, heading: (t.match(/^## .*/m) && /^## /.test(t) ? t.split('\n')[0] : '') });
+    const fl = t.split('\n')[0];
+    const sum = /^<a id=/.test(fl) ? (t.match(/<summary>(.*?)<\/summary>/) || [])[1] : null;
+    out.push({ text: t, heading: /^## /.test(fl) ? fl : (sum != null ? fl + ' ' + sum.replace(/<[^>]+>/g, '') : '') });
   }
   return out.filter((s, i) => s.text.length || i === 0);
 }
@@ -308,7 +337,7 @@ async function docView(root, path, { title, sub, compact } = {}) {
     add.addEventListener('click', () => { const last = secs[secs.length - 1]; const el = body.lastElementChild.previousElementSibling || body.lastElementChild; editSection($$('.sec', body).pop(), path, last, secs, secs.length - 1, true); });
     body.appendChild(add);
   }
-  if (toc) toc.innerHTML = $$('h2,h3', body).map((h) => `<a class="${h.tagName === 'H3' ? 'l3' : ''}" href="#${esc(h.id.slice(2))}">${esc(h.textContent)}</a>`).join('');
+  if (toc) toc.innerHTML = $$('h2,h3,details > summary', body).map((h) => `<a class="${h.tagName === 'H3' ? 'l3' : ''}" href="#${esc(h.id.slice(2))}">${esc(h.textContent)}</a>`).join('');
   if (toc) $$('a', toc).forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); const t = document.getElementById('h-' + a.getAttribute('href').slice(1)); if (t) t.scrollIntoView({ behavior: 'smooth' }); }));
 }
 
