@@ -16,6 +16,9 @@ tools/erd-md.js                 HTML → 종합 ERD 문서 생성
 docs/Jejari_ERD.md              종합 ERD 문서 (erd-md.js가 생성, 직접 고치지 않음)
 docs/concurrency.md             동시성 절차의 원천 (트랜잭션 순서·SQL·Redis Lua·락 순서·테스트 목록)
 docs/작업안내.md                팀원용 안내
+docs/기능설계서.md, docs/DB설계서.md  설계 문서
+docs/ui/                        화면설계: index.json(목록) + {화면ID}.md(설명) + {화면ID}.html(시안)
+site/                           문서 사이트 jejari.pages.dev (Cloudflare Pages + Functions, site/README.md)
 docs/templates/                 트러블슈팅·개인 기여 문서 틀
 docs/{이름}/                    팀원별 contribution.md, features/(기능 문서), troubleshooting/
 .github/pull_request_template.md  PR 틀
