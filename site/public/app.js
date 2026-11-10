@@ -204,11 +204,15 @@ async function loadMe() {
   renderTop();
 }
 async function loadBranches() {
+  if (!S.me) { S.branches = null; renderTop(); return; }
   try { S.branches = await api('/branches' + qs({})); } catch { S.branches = null; }
   renderTop();
 }
 function myAhead() { const b = S.branches && S.branches.branches.find((x) => x.name === S.me); return b ? b.ahead : 0; }
 function renderTop() {
+  document.body.classList.toggle('anon', !S.me);
+  if (!S.me && S.ref !== 'main') S.ref = 'main';
+  $('#sideFoot').textContent = S.me ? '수정은 섹션마다 "수정"을 눌러요. 저장하면 내 이름 브랜치에 커밋돼요.' : '로그인하면 기획서·동시성·수정 기록·소스트리와 브랜치별 내용도 볼 수 있어요.';
   const sel = $('#refSelect');
   const opts = [['main', 'main (합쳐진 최신)'], ...Object.keys(S.members).map((n) => {
     const b = S.branches && S.branches.branches.find((x) => x.name === n);
@@ -263,7 +267,7 @@ $('#userChip').addEventListener('click', (e) => { e.stopPropagation(); $('#userM
 document.addEventListener('click', () => { $('#userMenu').hidden = true; });
 $('#userMenu').addEventListener('click', async (e) => {
   const act = e.target.dataset.act; if (!act) return;
-  if (act === 'logout') { await api('/logout', { body: {} }).catch(() => {}); await loadMe(); toast('로그아웃했어요.'); route(); }
+  if (act === 'logout') { await api('/logout', { body: {} }).catch(() => {}); S.ref = 'main'; store.set('ref', 'main'); await loadMe(); toast('로그아웃했어요.'); route(); }
   if (act === 'mine') setRef(S.me);
   if (act === 'reset') resetModal();
 });
@@ -332,7 +336,7 @@ function branchBanner(ref) {
 }
 function bindBanner(root) { const b = $('[data-main]', root); if (b) b.addEventListener('click', () => setRef('main')); }
 
-async function docView(root, path, { title, sub, compact } = {}) {
+async function docView(root, path, { title, sub, compact, withToc } = {}) {
   const ref = S.ref;
   root.innerHTML = '<p class="loading">불러오는 중…</p>';
   const [file, base] = await Promise.all([fetchFile(path, ref), ref !== 'main' ? fetchFile(path, 'main') : null]);
@@ -343,9 +347,9 @@ async function docView(root, path, { title, sub, compact } = {}) {
   const gh = `https://github.com/brainsaver/jejari/blob/${encodeURIComponent(ref)}/${path.split('/').map(encodeURIComponent).join('/')}`;
   root.innerHTML = `${compact ? '' : `<h1 class="page">${esc(title)}</h1><p class="page-sub">${esc(sub || '')} · <code>${esc(path)}</code> · <a href="${gh}" target="_blank" rel="noopener">GitHub</a></p>`}
     ${branchBanner(ref)}
-    ${!S.me ? '<div class="banner info">보기는 누구나 할 수 있어요. 고치려면 오른쪽 위에서 로그인하세요.</div>' : ''}
+    
     ${S.me && ref !== 'main' && ref !== S.me ? `<div class="banner">다른 사람 브랜치는 볼 수만 있어요. 고치려면 main이나 ${esc(S.me)} 브랜치로 바꿔 주세요.</div>` : ''}
-    <div class="${compact ? '' : 'doc-grid'}"><div class="doc-body"></div>${compact ? '' : '<nav class="toc"></nav>'}</div>`;
+    <div class="${compact && !withToc ? '' : 'doc-grid'}"><div class="doc-body"></div>${compact && !withToc ? '' : '<nav class="toc"></nav>'}</div>`;
   bindBanner(root);
   const body = $('.doc-body', root), toc = $('.toc', root);
   secs.forEach((s, i) => {
@@ -423,7 +427,23 @@ function staleModal(x, myText, path, key) {
 }
 
 // ---------- 페이지 ----------
+function pageHomeAnon() {
+  main.innerHTML = `<div class="wrap"><h1 class="page">제자리 설계 문서</h1>
+    <p class="page-sub">명절 열차 공정 예매 시스템의 설계 문서예요. 팀원은 오른쪽 위에서 로그인하면 문서를 고치고 수정 기록도 볼 수 있어요.</p>
+    <div class="cards">
+      <a class="card" href="#/doc/func"><h3>기능설계</h3><p>기능 목록, 상세, 상태 전이, API, Kafka, 에러 코드</p></a>
+      <a class="card" href="#/db"><h3>DB설계</h3><p>Oracle·MongoDB·Redis·Kafka 역할과 테이블 정의</p></a>
+      <a class="card" href="#/ui"><h3>화면설계</h3><p>사용자 11개, 관리자 7개 화면 설명과 HTML 시안</p></a>
+    </div></div>`;
+}
+function pageLocked() {
+  main.innerHTML = `<div class="wrap"><h1 class="page">로그인이 필요해요</h1>
+    <p class="page-sub">이 페이지는 팀원만 볼 수 있어요. 로그인하지 않으면 기능설계·DB설계·화면설계만 보여요.</p>
+    <p><button class="btn" id="lockLogin">로그인</button> <a class="btn plain" href="#/">처음으로</a></p></div>`;
+  $('#lockLogin').addEventListener('click', () => loginModal(() => route()));
+}
 async function pageHome() {
+  if (!S.me) return pageHomeAnon();
   main.innerHTML = `<div class="wrap"><h1 class="page">제자리 설계 문서</h1>
     <p class="page-sub">명절 열차 공정 예매 시스템. 문서는 누구나 보고, 팀원은 이름과 PIN으로 들어와 섹션 단위로 고쳐요. 고친 내용은 그 사람 이름 브랜치에 커밋되고, "main에 합치기"로 반영돼요.</p>
     <div class="cards">
@@ -465,13 +485,14 @@ async function pageDoc(key) {
 
 async function pageDb(tab) {
   tab = tab || 'doc';
-  main.innerHTML = `<div class="wide"><h1 class="page">DB설계 · ERD</h1>
-    <p class="page-sub">저장소별 역할과 테이블 정의는 DB설계서, 스키마 원본은 ERD 편집기예요.</p>
-    <div class="tabs"><button data-t="doc">DB설계서</button><button data-t="erd">ERD 편집기</button><button data-t="exp">ERD 수정 내보내기</button></div>
+  if (!S.me && tab !== 'doc') return pageLocked();
+  main.innerHTML = `<div class="wide"><h1 class="page">${S.me ? 'DB설계 · ERD' : 'DB설계'}</h1>
+    <p class="page-sub">${S.me ? '저장소별 역할과 테이블 정의는 DB설계서, 스키마 원본은 ERD 편집기예요.' : '저장소별 역할과 테이블 정의예요.'}</p>
+    <div class="tabs"${S.me ? '' : ' hidden'}><button data-t="doc">DB설계서</button><button data-t="erd">ERD 편집기</button><button data-t="exp">ERD 수정 내보내기</button></div>
     <div id="tab"></div></div>`;
   $$('.tabs button', main).forEach((b) => { b.classList.toggle('on', b.dataset.t === tab); b.addEventListener('click', () => { location.hash = '#/db/' + b.dataset.t; }); });
   const root = $('#tab');
-  if (tab === 'doc') return docView(root, DOCS.db.path, { ...DOCS.db, compact: true });
+  if (tab === 'doc') return docView(root, DOCS.db.path, { ...DOCS.db, compact: true, withToc: true });
   if (tab === 'erd') return erdTab(root);
   return exportsTab(root);
 }
@@ -755,7 +776,9 @@ function setNav(key) { $$('.side a').forEach((a) => a.classList.toggle('on', a.d
 async function route() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
   const [p, a] = h;
+  const priv = (p === 'doc' && (a === 'plan' || a === 'conc')) || ['history', 'commit', 'compare', 'tree'].includes(p);
   try {
+    if (!S.me && priv) { setNav(''); pageLocked(); return; }
     if (!p) { setNav('home'); await pageHome(); }
     else if (p === 'doc' && DOCS[a]) { setNav(a); await pageDoc(a); }
     else if (p === 'db') { setNav('db'); await pageDb(a); }

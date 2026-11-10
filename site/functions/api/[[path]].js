@@ -12,6 +12,9 @@ const fail = (status, error, message, extra = {}) => json({ error, message, ...e
 
 const okPath = (p, list) => typeof p === 'string' && !p.includes('..') && list.some((re) => re.test(p));
 const okRef = (r) => REFS.includes(r);
+// 로그인 안 한 사람은 main의 기능설계서·DB설계서·화면설계만 볼 수 있다
+const PUBLIC = [/^docs\/기능설계서\.md$/, /^docs\/DB설계서\.md$/, /^docs\/ui\/[UA]-\d{2}\.(md|html)$/, /^docs\/ui\/index\.json$/];
+const LOGIN_FIRST = () => fail(401, 'LOGIN', '로그인하면 볼 수 있어요.');
 const authorOf = (name) => ({ name, email: `${name}@users.noreply.jejari.pages.dev` });
 
 function kstDate() {
@@ -269,6 +272,7 @@ export async function onRequest(ctx) {
       case 'GET /file': {
         const path = q.get('path'); const ref = q.get('ref') || MAIN;
         if (!okPath(path, READABLE) || !okRef(ref)) return fail(400, 'BAD_PATH', '읽을 수 없는 파일이에요.');
+        if (!me && (ref !== MAIN || !okPath(path, PUBLIC))) return LOGIN_FIRST();
         return cached(req, 10, async () => {
           const f = await getFile(env, path, ref);
           return f ? json(f, 200) : fail(404, 'NOT_FOUND', '파일이 없어요.');
@@ -277,11 +281,14 @@ export async function onRequest(ctx) {
       case 'GET /list': {
         const dir = q.get('dir'); const ref = q.get('ref') || MAIN;
         if (!['docs/ui', 'docs/erd/exports'].includes(dir) || !okRef(ref)) return fail(400, 'BAD_PATH', '볼 수 없는 폴더예요.');
+        if (!me && (ref !== MAIN || dir !== 'docs/ui')) return LOGIN_FIRST();
         return cached(req, 10, async () => json(await listDir(env, dir, ref)));
       }
       case 'GET /branches':
+        if (!me) return LOGIN_FIRST();
         return cached(req, 15, async () => json(await branchesInfo(env)));
       case 'GET /compare': {
+        if (!me) return LOGIN_FIRST();
         const b = q.get('branch');
         if (!NAMES.includes(b)) return fail(400, 'BAD_REF', '이름 브랜치만 볼 수 있어요.');
         return cached(req, 10, async () => {
@@ -294,11 +301,13 @@ export async function onRequest(ctx) {
         });
       }
       case 'GET /commits': {
+        if (!me) return LOGIN_FIRST();
         const path = q.get('path') || undefined;
         if (path && !/^(docs|README\.md)/.test(path)) return fail(400, 'BAD_PATH', '문서 경로만 거를 수 있어요.');
         return cached(req, 15, async () => json(await commitsFeed(env, { path })));
       }
       case 'GET /commit': {
+        if (!me) return LOGIN_FIRST();
         const sha = q.get('sha') || '';
         if (!/^[0-9a-f]{7,40}$/.test(sha)) return fail(400, 'BAD_SHA', '커밋을 찾을 수 없어요.');
         return cached(req, 300, async () => {
@@ -310,6 +319,7 @@ export async function onRequest(ctx) {
         });
       }
       case 'GET /graph':
+        if (!me) return LOGIN_FIRST();
         return cached(req, 20, async () => json(await graph(env)));
 
       // 쓰기

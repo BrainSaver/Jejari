@@ -16,7 +16,7 @@
   <button class="icon-btn only-mobile" id="navToggle" aria-label="메뉴">☰</button>
   <a class="brand" href="#/"><span class="logo" aria-hidden="true"></span>제자리 <span class="muted">설계 문서</span></a>
   <div class="top-mid">
-    <label class="ref-pick" title="볼 브랜치">
+    <label class="ref-pick" title="볼 브랜치" data-priv>
       <span class="muted">보기</span>
       <select id="refSelect" aria-label="볼 브랜치"></select>
     </label>
@@ -37,15 +37,15 @@
 <div class="layout">
   <nav class="side" id="side">
     <a href="#/" data-nav="home">홈</a>
-    <a href="#/doc/plan" data-nav="plan">기획서</a>
+    <a data-priv href="#/doc/plan" data-nav="plan">기획서</a>
     <a href="#/doc/func" data-nav="func">기능설계</a>
-    <a href="#/db" data-nav="db">DB설계 · ERD</a>
+    <a href="#/db" data-nav="db">DB설계<span data-priv> · ERD</span></a>
     <a href="#/ui" data-nav="ui">화면설계</a>
-    <a href="#/doc/conc" data-nav="conc">동시성</a>
-    <div class="side-sep"></div>
-    <a href="#/history" data-nav="history">수정 기록</a>
-    <a href="#/tree" data-nav="tree">소스트리</a>
-    <div class="side-foot muted">보기는 누구나, 수정은 이름 + PIN. 수정은 각자 이름 브랜치에 커밋돼요.</div>
+    <a data-priv href="#/doc/conc" data-nav="conc">동시성</a>
+    <div data-priv class="side-sep"></div>
+    <a data-priv href="#/history" data-nav="history">수정 기록</a>
+    <a data-priv href="#/tree" data-nav="tree">소스트리</a>
+    <div class="side-foot muted" id="sideFoot"></div>
   </nav>
   <main id="main" tabindex="-1"></main>
 </div>

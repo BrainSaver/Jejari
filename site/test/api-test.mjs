@@ -49,7 +49,7 @@ r = await dh('/commit-message', { path: F, heading: '## 6. 화면 후보', befor
 ok(r.data.message === 'docs(기능설계): 6. 화면 후보 수정' && !r.data.ai, 'Groq 키 없으면 기본 메시지');
 r = await dh('/save', { path: F, mode: 'section', oldText: s6, newText: s6new, message: r.data.message, heading: '## 6. 화면 후보' });
 ok(r.status === 200 && r.data.branch === 'DongHyeon', '자기 브랜치에 저장');
-r = await anon(`/file?path=${encodeURIComponent(F)}&ref=DongHyeon&fresh=1`);
+r = await dh(`/file?path=${encodeURIComponent(F)}&ref=DongHyeon&fresh=1`);
 ok(r.data.content.includes('(사이트 테스트)'), '브랜치에 반영됨');
 r = await anon(`/file?path=${encodeURIComponent(F)}&ref=main&fresh=1`);
 ok(!r.data.content.includes('(사이트 테스트)'), 'main은 그대로');
@@ -69,7 +69,7 @@ console.log('main 자동 합치기');
 await mock('/_test/commit', { branch: 'main', path: 'docs/concurrency.md', content: '# 제자리 동시성 절차\n\nmain에서 바뀜\n', message: 'docs: main 변경', author: 'BrainSaver' });
 p = await dh('/prepare', { path: F });
 ok(p.data.sync === 'merged', '저장 전 main을 브랜치에 합침');
-r = await anon('/file?path=docs/concurrency.md&ref=DongHyeon&fresh=1');
+r = await dh('/file?path=docs/concurrency.md&ref=DongHyeon&fresh=1');
 ok(r.data.content.includes('main에서 바뀜'), 'main 변경이 브랜치에 들어옴');
 // 충돌: 동균이 README를 고친 뒤 main도 README를 다르게 고침
 p = await dg('/prepare', { path: 'README.md' });
@@ -91,7 +91,7 @@ r = await dh('/revert', { sha: first.sha });
 ok(r.status === 409 && r.data.error === 'LATER_CHANGES', '뒤에 같은 파일이 바뀌었으면 경고');
 r = await dh('/revert', { sha: mineC.sha });
 ok(r.status === 200, '내 수정 되돌림');
-r = await anon(`/file?path=${encodeURIComponent(F)}&ref=DongHyeon&fresh=3`);
+r = await dh(`/file?path=${encodeURIComponent(F)}&ref=DongHyeon&fresh=3`);
 ok(r.data.content.includes('| 코드 | HTTP | 상황 |') && r.data.content.includes('(사이트 테스트)'), '그 커밋만 되돌아가고 다른 수정은 남음');
 
 console.log('main에 합치기');
@@ -116,8 +116,16 @@ r = await dh('/save', { path: 'site/functions/api/x.js', mode: 'file', newText: 
 ok(r.status === 400, '문서가 아닌 파일 저장 거부');
 r = await anon('/file?path=.github/workflows/site.yml&ref=main');
 ok(r.status === 400, '문서가 아닌 파일 읽기 거부');
-r = await anon('/file?path=README.md&ref=claude/x');
+r = await dh('/file?path=README.md&ref=claude/x');
 ok(r.status === 400, '이름 브랜치가 아닌 ref 거부');
+
+console.log('로그인 안 한 사람');
+r = await anon('/file?path=README.md&ref=main&fresh=7'); ok(r.status === 401, '기획서는 로그인 필요');
+r = await anon('/file?path=docs/concurrency.md&ref=main&fresh=7'); ok(r.status === 401, '동시성 문서는 로그인 필요');
+r = await anon('/file?path=docs/DB%EC%84%A4%EA%B3%84%EC%84%9C.md&ref=main&fresh=7'); ok(r.status === 200, 'main DB설계서는 공개');
+r = await anon(`/file?path=${encodeURIComponent(F)}&ref=DongHyeon&fresh=7`); ok(r.status === 401, '이름 브랜치 보기는 로그인 필요');
+r = await anon('/list?dir=docs/erd/exports&ref=main'); ok(r.status === 401, 'ERD 내보내기 목록은 로그인 필요');
+for (const q of ['/branches', '/commits', '/graph']) { r = await anon(q + '?fresh=7'); ok(r.status === 401, q + ' 로그인 필요'); }
 
 console.log('PIN 초기화');
 r = await dg('/admin/reset-pin', { name: 'DongHyeon' }); ok(r.status === 403, '팀장 아니면 거부');
@@ -126,7 +134,7 @@ r = await anon('/me'); ok(r.data.pins.DongGyun === false, '초기화 후 설정 
 r = await client()('/login', { name: 'DongGyun', pin: '4321' }); ok(r.data.firstSet, '다시 처음처럼 설정 (잠금도 풀림)');
 
 console.log('그래프');
-r = await anon('/graph?fresh=6');
+r = await dh('/graph?fresh=6');
 ok(r.data.commits.length > 3 && r.data.heads.main, `커밋 ${r.data.commits.length}개, 머리 ${Object.keys(r.data.heads).length}개`);
 
 console.log(`\n${pass} 통과, ${failN} 실패`);
