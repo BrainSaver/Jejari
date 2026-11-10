@@ -1,6 +1,8 @@
 # 제자리 — Claude 작업 안내
 
 명절 열차 공정 예매 시스템 팀 프로젝트(5명, 3주). Spring Boot · Kafka · Redis · MongoDB · Oracle · Python.
+**Claude는 항상 한국어로 말합니다** (설명·질문·요약·커밋 메시지 모두).
+
 이 문서는 Claude가 ERD 편집기(`jejari-erd.html`)를 읽고, 고치고, 팀원이 편집기에서 바꾼 내용을 반영할 때 따르는 규칙입니다.
 
 ## 저장소 구조
