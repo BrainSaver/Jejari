@@ -345,7 +345,7 @@ body.no-scroll{overflow:hidden}
 /* 선택해서 AI에게 묻기 · LLM용 복사 */
 .linkish{border:0;background:none;padding:0;font:inherit;color:var(--accent);cursor:pointer}
 .linkish:hover{text-decoration:underline}
-.sel-pop{position:fixed;z-index:40;display:flex;gap:2px;padding:4px;background:var(--fg);border-radius:10px;box-shadow:var(--shadow)}
+.sel-pop{position:fixed;z-index:70;display:flex;gap:2px;padding:4px;background:var(--fg);border-radius:10px;box-shadow:var(--shadow)}
 .sel-pop button{border:0;background:transparent;color:var(--bg);font:inherit;font-size:13.5px;font-weight:600;padding:7px 11px;border-radius:7px;cursor:pointer;white-space:nowrap}
 .sel-pop button:hover{background:color-mix(in srgb,var(--bg) 18%,transparent)}
 .sel-pop.bottom{left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%)}
@@ -361,9 +361,23 @@ body.no-scroll{overflow:hidden}
 .ask-row{display:flex;gap:8px}
 .ask-row input{flex:1;min-width:0}
 .ask-note{font-size:12.5px;margin:8px 0 0}
-.ask-refs{margin:2px 0 8px;font-size:13px;color:var(--muted)}
-.ask-refs summary{cursor:pointer}
-.ask-refs ul{margin:4px 0 0;padding-left:18px}
+.ask-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ask-head h2{margin:0}
+.ask-follow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 10px}
+.ask-follow .chip{font-size:13px;background:var(--accent-soft);border-color:transparent;color:var(--fg)}
+.ask-follow .chip:hover{border-color:var(--accent)}
+.ask-follow > span,.ask-refs > span.muted:first-child{font-size:12.5px;margin-right:2px}
+.ask-refs{display:flex;flex-wrap:wrap;gap:4px 12px;margin:0 0 10px;font-size:13px;color:var(--muted)}
+.ask-refs a{color:var(--accent)}
+.ai-log-list{display:flex;flex-direction:column;gap:8px}
+.ai-log-item{display:flex;gap:8px;align-items:flex-start;background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px}
+.ai-log-open{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;text-align:left;border:0;background:none;font:inherit;color:var(--fg);cursor:pointer;padding:0}
+.ai-log-open:hover b{color:var(--accent)}
+.ai-log-open .muted{font-size:12.5px}
+.ai-log-sel{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.md h1,.md h2,.md h3,.md h4,.md summary{scroll-margin-top:calc(var(--top) + 12px)}
+.sec.flash{animation:secflash 2.2s ease-out}
+@keyframes secflash{0%,40%{background:var(--accent-soft)}100%{background:transparent}}
 .llm-all{margin-top:20px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
 .llm-all h3{margin:0 0 4px;font-size:16px}
 .llm-all p{margin:0;font-size:14px;max-width:640px}

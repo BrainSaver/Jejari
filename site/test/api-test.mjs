@@ -48,7 +48,11 @@ r = await anon('/ask', { selection: 'SKIP LOCKED', question: '쉽게', history: 
 r = await anon('/ask', { doc: '동시성', path: 'docs/concurrency.md', heading: '§9 취소표 제안', selection: 'FOR UPDATE SKIP LOCKED', section: '## §9 …', question: '쉽게 설명해줘' });
 if (AI) {
   ok(r.status === 200 && /메시지 2개/.test(r.data.answer) && /쉽게 설명해줘/.test(r.data.answer), '로그인 없이 질문하면 답변');
-  ok((r.data.refs || []).some((x) => x.doc === '동시성' && /§9|§11/.test(x.heading)), '전체 문서에서 관련 부분을 찾아 함께 보냄: ' + (r.data.refs || []).map((x) => x.heading.split(' > ')[0]).slice(0, 3).join(', '));
+  ok((r.data.followups || []).length === 3 && r.data.followups[0] === '테스트 후속 질문 1' && !/이어서/.test(r.data.answer), '이어서 물어볼 질문 3개를 답과 분리');
+  const refs = r.data.refs || [];
+  ok(refs.length >= 1 && refs.length <= 5 && refs.some((x) => x.doc === '동시성') && !refs.some((x) => /^§9/.test(x.heading))
+    && refs.every((x, i) => refs.findIndex((y) => y.path === x.path && y.heading === x.heading) === i),
+    '전체 문서에서 관련 부분을 찾아 함께 보냄 (5곳 이하, 중복·현재 섹션 제외): ' + refs.map((x) => x.heading.split(' > ')[0]).join(', '));
   r = await anon('/ask', { selection: 'FOR UPDATE SKIP LOCKED', question: '예시는?', history: [{ role: 'user', content: '쉽게 설명해줘' }, { role: 'assistant', content: '답' }] });
   ok(r.status === 200 && /메시지 4개/.test(r.data.answer) && /예시는\?/.test(r.data.answer), '이어서 묻기는 앞 대화를 함께 보냄');
   let limited = false;

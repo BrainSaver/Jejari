@@ -115,13 +115,25 @@ export function validMessage(m) {
 const ASK_SYSTEM = [
   '너는 "제자리" 팀 프로젝트의 설계 문서를 모두 알고 있는 선배 개발자다.',
   '함께 주는 [프로젝트 지도]로 전체 구조를 파악하고, [관련 문서 조각]은 전체 문서에서 질문과 관련 있는 부분을 자동으로 찾아 온 것이다.',
-  '질문하는 사람은 이 부분을 처음 공부하는 팀원이다. 고른 부분만 풀이하지 말고, 프로젝트 전체에서 이 부분이 어디에 쓰이고 어떤 기능·테이블·절차·담당자와 연결되는지까지 짚어 준다.',
-  '한국어로, 쉬운 말로, 핵심부터 설명한다. 모르는 용어는 한 줄로 풀고, 필요하면 짧은 예시나 비유, Java·Spring 기준의 짧은 코드를 든다.',
-  '근거가 되는 곳은 "동시성 §9", "기능설계 RSV-02", "DB설계 waitlist"처럼 문서와 섹션으로 짚어 준다.',
-  '주어진 문서에 없는 우리 팀 설계를 지어내지 않는다. 문서로 알 수 없으면 그렇다고 말하고 일반적인 방식을 설명한다.',
-  '마크다운으로, 보통 20줄 이내로 답한다.',
+  '질문하는 사람은 이 부분을 처음 공부하는 팀원이다. 전체 맥락을 알고 있되, 답은 **짧고 간단하게** 한다.',
+  '형식: 핵심 한두 문장 → 프로젝트에서 어디에 쓰이는지 한 문장(근거는 "동시성 §9", "기능설계 RSV-02", "DB설계 waitlist"처럼 짚기). 전체 3~6줄, 쉬운 한국어.',
+  '표·긴 코드·긴 목록은 질문이 직접 요구할 때만 쓴다. 자세한 내용은 다 설명하지 말고 아래 "이어서" 질문으로 넘긴다.',
+  '주어진 문서에 없는 우리 팀 설계를 지어내지 않는다. 문서로 알 수 없으면 그렇다고 짧게 말한다.',
+  '답 맨 끝에 반드시 아래 형식으로, 이 팀원이 다음에 궁금해할 만한 짧은 질문 3개를 붙인다 (각 30자 이내, 서로 다른 방향: 원리·우리 설계와의 연결·구현 방법 등).',
+  '[[이어서]]',
+  '- 질문 1',
+  '- 질문 2',
+  '- 질문 3',
 ].join('\n');
 
+// 답 끝의 "[[이어서]]" 목록을 떼어 내 버튼용 질문으로 돌려준다
+export function splitFollowups(text) {
+  const m = String(text || '').match(/\n?\s*\**\[\[\s*이어서\s*\]\]\**\s*\n?([\s\S]*)$/);
+  if (!m) return { body: String(text || '').trim(), followups: [] };
+  const followups = m[1].split('\n').map((l) => l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').replace(/^["'“]|["'”]$/g, '').trim())
+    .filter((l) => l && l.length <= 80).slice(0, 4);
+  return { body: String(text).slice(0, m.index).replace(/\n-{3,}\s*$/, '').trim(), followups };
+}
 const clip = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n) + '\n…(생략)' : s; };
 
 export function contextMessage(ctx, { doc, path, heading, selection, section }, sectionChars) {
@@ -182,8 +194,10 @@ export async function askDoc(env, input, buildContext) {
     }
     let answer = '';
     try { const d = JSON.parse(r.text); answer = stripThink((d.choices && d.choices[0] && d.choices[0].message.content) || ''); } catch {}
-    if (!answer) return { error: 'AI_FAIL', status: 502, message: 'AI가 빈 답을 보냈어요.' };
-    return { answer, model: r.model, refs: ctx.related.map((x) => ({ doc: x.doc, heading: x.heading, path: x.path })) };
+    const { body: shortAnswer, followups } = splitFollowups(answer);
+    if (!shortAnswer) return { error: 'AI_FAIL', status: 502, message: 'AI가 빈 답을 보냈어요.' };
+    return { answer: shortAnswer, followups, model: r.model, refs: ctx.related.map((x) => ({ doc: x.doc, heading: x.heading, path: x.path }))
+      .filter((x, i, all) => all.findIndex((y) => y.path === x.path && y.heading === x.heading) === i).slice(0, 5) };
   }
   return { error: 'AI_BUSY', status: 429, message: `질문이 AI 한도보다 커요 (Groq ${last && last.status}). 고른 부분을 줄이거나 1분 뒤에 다시 물어봐 주세요.` };
 }
