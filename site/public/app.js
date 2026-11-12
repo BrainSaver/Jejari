@@ -210,6 +210,7 @@ async function loadBranches() {
 }
 function myAhead() { const b = S.branches && S.branches.branches.find((x) => x.name === S.me); return b ? b.ahead : 0; }
 function renderTop() {
+  aiFabSync();
   document.body.classList.toggle('anon', !S.me);
   if (!S.me && S.ref !== 'main') S.ref = 'main';
   $('#sideFoot').textContent = S.me ? '수정은 섹션마다 "수정"을 눌러요. 저장하면 내 이름 브랜치에 커밋돼요.' : '팀원은 로그인하면 문서를 고치고 수정 기록·소스트리·브랜치별 내용을 볼 수 있어요.';
@@ -923,7 +924,7 @@ function readSelection() {
   if (text.length < 2) return null;
   const range = sel.getRangeAt(0);
   const node = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
-  const ans = node && node.closest('#modal .ask-msg.a');
+  const ans = node && node.closest('#aiPanel .ask-msg.a');
   if (ans && ans._askMore) return { kind: 'answer', text: text.slice(0, 1000), box: ans, rect: range.getBoundingClientRect() };
   const sec = node && node.closest('.doc-body .sec');
   if (!sec || !main.contains(sec) || sec.querySelector('textarea')) return null;
@@ -966,24 +967,46 @@ $('[data-ask]', selPop).addEventListener('click', () => {
 });
 
 const ASK_CHIPS = ['쉽게 설명해줘', '왜 이렇게 설계했어?', '예시로 보여줘', '코드로는 어떻게 구현해?'];
-
-// ---- 질문 기록 (이 기기에만 저장) ----
-const AI_LOG_KEY = 'ai-log';
+const FREE_CHIPS = ['제자리가 어떤 프로젝트야?', '좌석 중복 예약은 어떻게 막아?', '결제가 실패하면 어떻게 돼?', '1차 구현 범위가 뭐야?'];
 const AI_LOG_MAX = 40;
-const aiLog = {
-  all() { const v = store.get(AI_LOG_KEY, []); return Array.isArray(v) ? v : []; },
-  save(conv) {
-    const list = this.all().filter((x) => x.id !== conv.id);
-    list.unshift({ ...conv, at: Date.now() });
-    let out = list.slice(0, AI_LOG_MAX);
-    // 저장 공간이 모자라면 오래된 것부터 줄인다
+
+// ---- 질문 기록: 로그인하면 계정(서버), 아니면 이 기기 ----
+const localLog = {
+  all() { const v = store.get('ai-log', []); return Array.isArray(v) ? v : []; },
+  put(conv) {
+    let out = [conv, ...this.all().filter((x) => x.id !== conv.id)].slice(0, AI_LOG_MAX);
     for (let i = 0; i < 5; i++) {
-      try { localStorage.setItem('jejari-site:' + AI_LOG_KEY, JSON.stringify(out)); return; } catch {}
+      try { localStorage.setItem('jejari-site:ai-log', JSON.stringify(out)); return; } catch {}
       out = out.slice(0, Math.max(1, Math.floor(out.length / 2)));
     }
   },
-  remove(id) { store.set(AI_LOG_KEY, this.all().filter((x) => x.id !== id)); },
-  clear() { store.set(AI_LOG_KEY, []); },
+  remove(id) { store.set('ai-log', this.all().filter((x) => x.id !== id)); },
+  clear() { store.set('ai-log', []); },
+};
+const aiStore = {
+  async list() {
+    if (!S.me) return localLog.all();
+    const loc = localLog.all();
+    if (loc.length) {
+      try { const r = await api('/ai-log/merge', { body: { list: loc } }); localLog.clear(); toast('이 기기의 질문 기록을 계정으로 옮겼어요.'); return r.list; } catch {}
+    }
+    return (await api('/ai-log' + qs({ t: Date.now() }))).list;
+  },
+  async save(conv) {
+    conv.at = Date.now();
+    if (S.me) {
+      try { await api('/ai-log/save', { body: { conv } }); return; } catch { toast('계정에 저장하지 못해 이 기기에 저장했어요.'); }
+    }
+    localLog.put(conv);
+  },
+  async remove(id) {
+    localLog.remove(id);
+    if (S.me) await api('/ai-log/delete', { body: { id } });
+  },
+  async clear() {
+    localLog.clear();
+    if (S.me) await api('/ai-log/delete', { body: { all: true } });
+  },
 };
 
 // ---- 참고한 부분으로 이동 ----
@@ -1014,31 +1037,104 @@ function jumpTo(path, heading) {
   const h = hashOfPath(path); if (!h) return;
   pendingJump = { path, heading };
   closeModal();
+  if (window.innerWidth < 700) aiClose();
   if (location.hash === h) route(); else location.hash = h;
 }
 
+// ---- 오른쪽 아래 채팅 ----
+const aiFab = document.createElement('button');
+aiFab.className = 'ai-fab'; aiFab.type = 'button'; aiFab.hidden = true; aiFab.textContent = 'AI 질문';
+const aiPanel = document.createElement('section');
+aiPanel.className = 'ai-panel'; aiPanel.id = 'aiPanel'; aiPanel.hidden = true; aiPanel.setAttribute('aria-label', 'AI 질문');
+aiPanel.innerHTML = `<header class="ai-head">
+    <button type="button" class="btn sm plain" data-ai-list>목록</button>
+    <b class="ai-title">AI 질문</b>
+    <button type="button" class="btn sm" data-ai-new>새 채팅</button>
+    <button type="button" class="ai-x" data-ai-x aria-label="닫기">✕</button>
+  </header>
+  <div class="ai-body"></div>`;
+document.body.appendChild(aiFab); document.body.appendChild(aiPanel);
+const aiBody = $('.ai-body', aiPanel);
+const AI = { conv: null, view: 'chat', busy: false };
+
 function newConv(c) {
   return {
-    id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    doc: c.meta.title, path: c.meta.path, heading: cleanHead(c.sec._head),
-    selection: c.text, section: String(c.sec._md || '').slice(0, 6000), messages: [],
+    id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(),
+    doc: c ? c.meta.title : '', path: c ? c.meta.path : '', heading: c ? cleanHead(c.sec._head) : '',
+    selection: c ? c.text : '', section: c ? String(c.sec._md || '').slice(0, 6000) : '', messages: [],
   };
 }
-function askModal(c) { openConv(newConv(c)); }
+function aiFabSync() {
+  aiFab.hidden = !S.ai || !aiPanel.hidden;
+  if (!aiPanel.hidden && AI.view === 'list') aiList();
+}
+function aiOpen() { aiPanel.hidden = false; aiFab.hidden = true; document.body.classList.add('ai-open'); }
+function aiClose() { aiPanel.hidden = true; document.body.classList.remove('ai-open'); aiFabSync(); }
+function askModal(c, firstQuestion) { aiOpen(); aiChat(newConv(c), firstQuestion == null ? '쉽게 설명해줘' : firstQuestion); }
 
-function openConv(conv) {
-  const m = openModal(`<div class="ask-head"><h2>AI에게 물어보기</h2><a class="btn sm plain" href="#/ai">질문 기록</a></div>
-    <p class="muted ask-where"><a href="#" data-src>${esc(conv.doc)}${conv.heading ? ' · ' + esc(conv.heading) : ''}</a></p>
-    <blockquote class="ask-quote">${esc(conv.selection)}</blockquote>
-    <div class="ask-log"></div>
-    <div class="ask-chips">${ASK_CHIPS.map((q) => `<button type="button" class="chip">${esc(q)}</button>`).join('')}</div>
-    <form class="ask-row"><input type="text" maxlength="500" value="${conv.messages.length ? '' : '쉽게 설명해줘'}" placeholder="이어서 물어보기" aria-label="질문" autofocus><button class="btn" type="submit">묻기</button></form>
-    <p class="muted ask-note">답 속 문장을 드래그하면 그 부분만 더 물어볼 수 있어요. 질문 기록은 이 기기에만 저장돼요. AI는 프로젝트 지도와 관련 문서를 함께 보고 답하지만 틀릴 수 있으니, 중요한 건 원문이나 담당 팀원에게 확인하세요.</p>
-    <div class="row"><button class="btn plain" type="button" data-copylog>대화까지 LLM용 복사</button><button class="btn plain" type="button" data-close>닫기</button></div>`, { wide: true });
-  const log = $('.ask-log', m), input = $('.ask-row input', m), send = $('.ask-row button', m);
-  const add = (role, html) => { const d = document.createElement('div'); d.className = 'ask-msg ' + role; d.innerHTML = html; log.appendChild(d); return d; };
-  let busy = false;
+aiFab.addEventListener('click', () => { aiOpen(); if (AI.conv && AI.view === 'chat') aiChat(AI.conv); else aiChat(newConv(null), ''); });
+$('[data-ai-x]', aiPanel).addEventListener('click', aiClose);
+$('[data-ai-new]', aiPanel).addEventListener('click', () => aiChat(newConv(null), ''));
+$('[data-ai-list]', aiPanel).addEventListener('click', () => aiList());
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !aiPanel.hidden && $('#modalBack').hidden) aiClose(); });
 
+const convTitle = (c) => ((c.messages.find((x) => x.role === 'user') || {}).content || c.selection || '새 채팅').slice(0, 80);
+
+async function aiList() {
+  AI.view = 'list';
+  aiBody.innerHTML = '<p class="muted ai-pad">불러오는 중…</p>';
+  let list = [];
+  try { list = await aiStore.list(); } catch (x) { aiBody.innerHTML = `<p class="err ai-pad">${esc(x.message)}</p>`; return; }
+  if (AI.view !== 'list') return;
+  aiBody.innerHTML = `<p class="muted ai-pad ai-where-saved">${S.me ? `${esc(S.ko || S.me)} 계정에 저장돼요. 다른 기기에서 로그인해도 보여요.` : '이 기기에만 저장돼요. 로그인하면 계정에 저장돼 다른 기기에서도 볼 수 있어요.'} 최근 ${AI_LOG_MAX}개까지 남아요.</p>
+    ${list.length ? `<div class="ai-list">${list.map((c) => {
+      const n = c.messages.filter((x) => x.role === 'user').length;
+      return `<div class="ai-item" data-id="${esc(c.id)}">
+        <button type="button" class="ai-item-open"><b>${esc(convTitle(c))}</b>
+          <span class="muted">${esc(kst(new Date(c.at).toISOString()))}${c.doc ? ' · ' + esc(c.doc) : ''}${n > 1 ? ` · 질문 ${n}개` : ''}</span></button>
+        <button type="button" class="btn sm plain" data-del>삭제</button></div>`;
+    }).join('')}</div>
+    <p class="ai-pad"><button type="button" class="btn sm plain" data-clear>기록 모두 지우기</button></p>`
+    : '<p class="empty ai-pad">아직 물어본 내용이 없어요. "새 채팅"으로 물어보거나, 문서에서 글을 드래그해 물어보세요.</p>'}`;
+  $$('.ai-item', aiBody).forEach((row) => {
+    const conv = list.find((x) => x.id === row.dataset.id);
+    $('.ai-item-open', row).addEventListener('click', () => aiChat(conv));
+    twoStep($('[data-del]', row), '한 번 더', async () => {
+      try { await aiStore.remove(conv.id); } catch (x) { toast(x.message); }
+      if (AI.conv && AI.conv.id === conv.id) AI.conv = null;
+      aiList();
+    });
+  });
+  const clr = $('[data-clear]', aiBody);
+  if (clr) twoStep(clr, '한 번 더 누르면 모두 삭제', async () => { try { await aiStore.clear(); } catch (x) { toast(x.message); } AI.conv = null; aiList(); });
+}
+
+function aiChat(conv, prefill) {
+  AI.view = 'chat'; AI.conv = conv;
+  const free = !conv.selection;
+  aiBody.innerHTML = `<div class="ai-chat">
+      ${free ? '' : `<div class="ai-src"><a href="#" data-src>${esc(conv.doc)}${conv.heading ? ' · ' + esc(conv.heading) : ''}</a><blockquote class="ask-quote">${esc(conv.selection)}</blockquote></div>`}
+      ${conv.messages.length ? '' : `<p class="muted ai-hello">${free ? '프로젝트에 대해 무엇이든 물어보세요. AI는 프로젝트 지도와 관련 문서를 찾아 보고 짧게 답해요. 문서에서 글을 드래그해 물어볼 수도 있어요.' : '고른 부분에 대해 물어보세요.'}</p>`}
+      <div class="ask-log"></div>
+    </div>
+    <div class="ai-foot">
+      ${conv.messages.length ? '' : `<div class="ask-chips">${(free ? FREE_CHIPS : ASK_CHIPS).map((q) => `<button type="button" class="chip">${esc(q)}</button>`).join('')}</div>`}
+      <form class="ask-row"><input type="text" maxlength="500" placeholder="${conv.messages.length ? '이어서 물어보기' : '질문 입력'}" aria-label="질문"><button class="btn" type="submit">묻기</button></form>
+      <p class="muted ask-note">답 속 문장을 드래그하면 그 부분만 더 물어볼 수 있어요. AI는 틀릴 수 있으니 중요한 건 원문이나 담당 팀원에게 확인하세요.</p>
+    </div>`;
+  const log = $('.ask-log', aiBody), input = $('.ask-row input', aiBody), send = $('.ask-row button', aiBody);
+  if (prefill) input.value = prefill;
+  const scroller = $('.ai-chat', aiBody);
+  const toBottom = () => { scroller.scrollTop = scroller.scrollHeight; };
+
+  function drawQuestion(box, idx) {
+    box.innerHTML = `<span>${esc(conv.messages[idx].content)}</span><button type="button" class="ai-qdel" title="이 질문과 답 삭제">삭제</button>`;
+    twoStep($('.ai-qdel', box), '한 번 더', async () => {
+      conv.messages.splice(idx, conv.messages[idx + 1] && conv.messages[idx + 1].role === 'assistant' ? 2 : 1);
+      if (conv.messages.length) await aiStore.save(conv); else { try { await aiStore.remove(conv.id); } catch {} }
+      aiChat(conv);
+    });
+  }
   function drawAnswer(box, msg) {
     box.innerHTML = '';
     box.appendChild(renderMd(msg.content));
@@ -1052,73 +1148,43 @@ function openConv(conv) {
       const d = document.createElement('div'); d.className = 'ask-refs';
       d.innerHTML = `<span class="muted">참고한 부분</span>${msg.refs.map((x, i) => hashOfPath(x.path)
         ? `<a href="${hashOfPath(x.path)}" data-ref="${i}">${esc(x.doc)} · ${esc(x.heading || '문서 처음')}</a>`
-        : `<span>${esc(x.doc)} · ${esc(x.heading || '문서 처음')}</span>`).join('')}${msg.model ? `<span class="muted">모델 ${esc(msg.model)}</span>` : ''}`;
+        : `<span>${esc(x.doc)} · ${esc(x.heading || '문서 처음')}</span>`).join('')}`;
       $$('a[data-ref]', d).forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); const x = msg.refs[+a.dataset.ref]; jumpTo(x.path, x.heading); }));
       box.appendChild(d);
     }
     box._askMore = (text) => ask(`"${text.slice(0, 300)}" 이 부분을 좀 더 자세히 알려줘`);
   }
-
-  // 저장된 대화 다시 그리기
-  conv.messages.forEach((msg) => {
-    if (msg.role === 'user') add('q', esc(msg.content));
-    else drawAnswer(add('a', ''), msg);
-  });
-  if (conv.messages.length) setTimeout(() => { log.lastElementChild && log.lastElementChild.scrollIntoView({ block: 'nearest' }); }, 30);
+  const add = (cls) => { const d = document.createElement('div'); d.className = 'ask-msg ' + cls; log.appendChild(d); return d; };
+  conv.messages.forEach((m, i) => { if (m.role === 'user') drawQuestion(add('q'), i); else drawAnswer(add('a'), m); });
+  setTimeout(toBottom, 20);
 
   async function ask(q) {
-    q = String(q || '').trim(); if (!q || busy) return;
-    busy = true; send.disabled = true; input.value = '';
-    add('q', esc(q)).scrollIntoView({ block: 'nearest' });
-    const wait = add('a', '<p class="muted">생각하는 중…</p>');
-    wait.scrollIntoView({ block: 'nearest' });
+    q = String(q || '').trim(); if (!q || AI.busy) return;
+    AI.busy = true; send.disabled = true; input.value = '';
+    $$('.ask-chips, .ai-hello', aiBody).forEach((e) => e.remove());
+    const qBox = add('q'); qBox.innerHTML = `<span>${esc(q)}</span>`;
+    const wait = add('a'); wait.innerHTML = '<p class="muted">생각하는 중…</p>';
+    toBottom();
     const history = conv.messages.map((x) => ({ role: x.role, content: x.content }));
     try {
       const r = await api('/ask', { body: { doc: conv.doc, path: conv.path, heading: conv.heading, selection: conv.selection, section: conv.section, question: q, history: history.length ? history : undefined } });
-      const msg = { role: 'assistant', content: r.answer, followups: r.followups || [], refs: r.refs || [], model: r.model };
-      conv.messages.push({ role: 'user', content: q }, msg);
-      aiLog.save(conv);
-      drawAnswer(wait, msg);
-      wait.scrollIntoView({ block: 'nearest' });
+      conv.messages.push({ role: 'user', content: q }, { role: 'assistant', content: r.answer, followups: r.followups || [], refs: r.refs || [], model: r.model });
+      drawQuestion(qBox, conv.messages.length - 2);
+      drawAnswer(wait, conv.messages[conv.messages.length - 1]);
+      input.placeholder = '이어서 물어보기';
+      aiStore.save(conv);
     } catch (x) {
       wait.innerHTML = `<p class="err">${esc(x.message)}</p>`;
-    } finally { busy = false; send.disabled = false; if (document.body.contains(input)) input.focus(); }
+    } finally {
+      AI.busy = false; send.disabled = false;
+      if (AI.conv === conv && document.body.contains(input)) { input.focus(); toBottom(); }
+    }
   }
-  $('.ask-row', m).addEventListener('submit', (e) => { e.preventDefault(); ask(input.value); });
-  $$('.ask-chips .chip', m).forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
-  $('[data-close]', m).addEventListener('click', closeModal);
-  $('[data-src]', m).addEventListener('click', (e) => { e.preventDefault(); jumpTo(conv.path, conv.heading); });
-  $('[data-copylog]', m).addEventListener('click', () => {
-    copyLater(() => llmWithContext({ title: conv.doc, path: conv.path }, conv.heading, conv.section, conv.selection,
-      conv.messages.map((x) => ({ role: x.role, content: x.content }))), '고른 부분·프로젝트 맥락·대화를 LLM용으로 복사했어요.');
-  });
-}
-
-// ---- 질문 기록 페이지 ----
-function pageAiLog() {
-  const list = aiLog.all();
-  main.innerHTML = `<div class="wrap"><h1 class="page">AI 질문 기록</h1>
-    <p class="page-sub">이 기기(브라우저)에만 저장돼요. 다른 기기나 다른 브라우저에서는 보이지 않아요. 최근 ${AI_LOG_MAX}개까지 남아요.</p>
-    ${list.length ? `<div class="ai-log-list">${list.map((c) => {
-      const q = (c.messages.find((x) => x.role === 'user') || {}).content || '';
-      const n = c.messages.filter((x) => x.role === 'user').length;
-      return `<div class="ai-log-item" data-id="${esc(c.id)}">
-        <button class="ai-log-open" type="button">
-          <span class="muted">${esc(kst(new Date(c.at).toISOString()))} · ${esc(c.doc)}${c.heading ? ' · ' + esc(c.heading) : ''}</span>
-          <b>${esc(q)}</b>${n > 1 ? ` <span class="muted">외 ${n - 1}개</span>` : ''}
-          <span class="ai-log-sel">${esc(c.selection.slice(0, 140))}</span>
-        </button>
-        <button class="btn sm plain" type="button" data-del>삭제</button></div>`;
-    }).join('')}</div>
-    <p style="margin-top:16px"><button class="btn sm plain" type="button" data-clear>기록 모두 지우기</button></p>`
-    : '<p class="empty">아직 물어본 내용이 없어요. 문서에서 글을 드래그하고 "AI에게 물어보기"를 눌러 보세요.</p>'}</div>`;
-  $$('.ai-log-item', main).forEach((row) => {
-    const conv = list.find((x) => x.id === row.dataset.id);
-    $('.ai-log-open', row).addEventListener('click', () => openConv(conv));
-    twoStep($('[data-del]', row), '한 번 더 누르면 삭제', async () => { aiLog.remove(conv.id); pageAiLog(); });
-  });
-  const clr = $('[data-clear]', main);
-  if (clr) twoStep(clr, '한 번 더 누르면 모두 삭제', async () => { aiLog.clear(); pageAiLog(); });
+  $('.ask-row', aiBody).addEventListener('submit', (e) => { e.preventDefault(); ask(input.value); });
+  $$('.ask-chips .chip', aiBody).forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
+  const src = $('[data-src]', aiBody);
+  if (src) src.addEventListener('click', (e) => { e.preventDefault(); jumpTo(conv.path, conv.heading); });
+  if (window.innerWidth >= 700) setTimeout(() => input.focus(), 30);
 }
 
 function setNav(key) { $$('.side a').forEach((a) => a.classList.toggle('on', a.dataset.nav === key)); $('#side').classList.remove('open'); }
@@ -1133,7 +1199,7 @@ async function route() {
     else if (p === 'db') { setNav('db'); await pageDb(a); }
     else if (p === 'ui' && a) { setNav('ui'); await pageUiOne(decodeURIComponent(a)); }
     else if (p === 'ui') { setNav('ui'); await pageUi(); }
-    else if (p === 'ai') { setNav('ai'); pageAiLog(); }
+    else if (p === 'ai') { setNav('home'); await pageHome(); aiOpen(); aiList(); }
     else if (p === 'history') { setNav('history'); await pageHistory(); }
     else if (p === 'commit' && a) { setNav('history'); await pageCommit(a); }
     else if (p === 'compare' && a) { setNav(''); await pageCompare(a); }

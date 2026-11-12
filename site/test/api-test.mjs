@@ -42,7 +42,7 @@ r = await fetch(BASE + '/api/save', { method: 'POST', body: 'a=1', headers: { 'C
 
 console.log('AI에게 물어보기');
 const AI = process.env.ASK_AI === '1'; // 가짜 Groq를 붙여 띄웠을 때만 답변까지 검사
-r = await anon('/ask', { selection: '', question: '쉽게' }); ok(r.status === 400, '선택한 글이 없으면 거부');
+r = await anon('/ask', { selection: 'SKIP LOCKED', question: '' }); ok(r.status === 400, '질문이 없으면 거부');
 r = await anon('/ask', { selection: 'x'.repeat(6001), question: '쉽게' }); ok(r.status === 400, '선택한 글이 너무 길면 거부');
 r = await anon('/ask', { selection: 'SKIP LOCKED', question: '쉽게', history: [{ role: 'system', content: 'x' }] }); ok(r.status === 400, '대화 기록 역할이 이상하면 거부');
 r = await anon('/ask', { doc: '동시성', path: 'docs/concurrency.md', heading: '§9 취소표 제안', selection: 'FOR UPDATE SKIP LOCKED', section: '## §9 …', question: '쉽게 설명해줘' });
@@ -55,6 +55,8 @@ if (AI) {
     '전체 문서에서 관련 부분을 찾아 함께 보냄 (5곳 이하, 중복·현재 섹션 제외): ' + refs.map((x) => x.heading.split(' > ')[0]).join(', '));
   r = await anon('/ask', { selection: 'FOR UPDATE SKIP LOCKED', question: '예시는?', history: [{ role: 'user', content: '쉽게 설명해줘' }, { role: 'assistant', content: '답' }] });
   ok(r.status === 200 && /메시지 4개/.test(r.data.answer) && /예시는\?/.test(r.data.answer), '이어서 묻기는 앞 대화를 함께 보냄');
+  r = await anon('/ask', { question: '제자리가 뭐야?' });
+  ok(r.status === 200 && /메시지 2개/.test(r.data.answer), '고른 글 없이 채팅으로 바로 질문');
   let limited = false;
   for (let i = 0; i < 16 && !limited; i++) limited = (await anon('/ask', { selection: 'x', question: 'y' })).status === 429;
   ok(limited, '1분 횟수 제한');
@@ -64,6 +66,17 @@ if (AI) {
 r = await anon('/context', { path: 'docs/기능설계서.md', heading: '4. 기능 상세', selection: '좌석 선점 (매수 제한 포함)', section: '**RSV-02 좌석 선점** — 동시성 §1, §2, §3, §10' });
 ok(r.status === 200 && /\[프로젝트 지도\]/.test(r.data.brief) && /강동균/.test(r.data.brief), 'LLM 복사용 맥락: 프로젝트 지도');
 ok(r.data.related.some((x) => x.doc === '동시성' && /^§2/.test(x.heading)), 'LLM 복사용 맥락: 섹션이 가리키는 동시성 §2를 찾음');
+
+console.log('AI 질문 기록');
+r = await anon('/ai-log'); ok(r.status === 401, '로그인 안 하면 계정 기록 없음');
+const conv = (id, at, q) => ({ id, at, doc: '동시성', path: 'docs/concurrency.md', heading: '§9 취소표 제안', selection: 'SKIP LOCKED', section: '## §9', messages: [{ role: 'user', content: q }, { role: 'assistant', content: '답', followups: ['더?'], refs: [{ doc: '동시성', heading: '§12', path: 'docs/concurrency.md' }], model: 'm' }] });
+r = await dh('/ai-log/save', { conv: conv('cabc123', 1000, '첫 질문') }); ok(r.status === 200, '대화 저장');
+r = await dh('/ai-log/save', { conv: { ...conv('cbad', 1, 'x'), messages: [{ role: 'system', content: 'x' }] } }); ok(r.status === 400, '형식이 이상한 대화는 거부');
+r = await dh('/ai-log/merge', { list: [conv('cabc123', 500, '옛날 것'), conv('cdef456', 2000, '기기에서 한 질문')] });
+ok(r.status === 200 && r.data.list.length === 2 && r.data.list[0].id === 'cdef456' && r.data.list[1].messages[0].content === '첫 질문', '기기 기록을 계정으로 합침 (최근 것 우선)');
+r = await dg('/ai-log'); ok(r.status === 200 && r.data.list.length === 0, '다른 사람 기록은 안 보임');
+r = await dh('/ai-log/delete', { id: 'cabc123' }); r = await dh('/ai-log'); ok(r.data.list.length === 1 && r.data.list[0].id === 'cdef456', '대화 하나 삭제');
+r = await dh('/ai-log/delete', { all: true }); r = await dh('/ai-log'); ok(r.data.list.length === 0, '기록 모두 삭제');
 
 console.log('섹션 저장');
 let p = await dh('/prepare', { path: F });

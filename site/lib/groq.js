@@ -137,18 +137,16 @@ export function splitFollowups(text) {
 const clip = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n) + '\n…(생략)' : s; };
 
 export function contextMessage(ctx, { doc, path, heading, selection, section }, sectionChars) {
-  return [
+  const out = [
     ctx.brief,
     '',
     '[관련 문서 조각 (전체 문서에서 자동 검색)]',
     ...(ctx.related.length ? ctx.related.map((r) => `### ${r.doc} · ${r.heading || '(머리말)'}\n${r.text}`) : ['(찾은 조각 없음)']),
-    '',
-    `[지금 보고 있는 섹션: ${clip(doc, 40)}${path ? ` (${clip(path, 80)})` : ''}${heading ? ' · ' + clip(heading, 120) : ''}]`,
-    clip(section, sectionChars),
-    '',
-    '[고른 부분]',
-    clip(selection, 1500),
-  ].join('\n');
+  ];
+  // 문서에서 글을 골라 물을 때만 지금 섹션과 고른 부분을 붙인다 (채팅으로 바로 물으면 없음)
+  if (String(section || '').trim()) out.push('', `[지금 보고 있는 섹션: ${clip(doc, 40)}${path ? ` (${clip(path, 80)})` : ''}${heading ? ' · ' + clip(heading, 120) : ''}]`, clip(section, sectionChars));
+  if (String(selection || '').trim()) out.push('', '[고른 부분]', clip(selection, 1500));
+  return out.join('\n');
 }
 
 async function callGroq(env, msgs) {
