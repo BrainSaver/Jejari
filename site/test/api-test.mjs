@@ -77,6 +77,9 @@ ok(r.status === 200 && r.data.list.length === 2 && r.data.list[0].id === 'cdef45
 r = await dg('/ai-log'); ok(r.status === 200 && r.data.list.length === 0, '다른 사람 기록은 안 보임');
 r = await dh('/ai-log/delete', { id: 'cabc123' }); r = await dh('/ai-log'); ok(r.data.list.length === 1 && r.data.list[0].id === 'cdef456', '대화 하나 삭제');
 r = await dh('/ai-log/delete', { all: true }); r = await dh('/ai-log'); ok(r.data.list.length === 0, '기록 모두 삭제');
+for (let i = 0; i < 42; i++) await dh('/ai-log/save', { conv: conv('cn' + String(i).padStart(4, '0'), 10000 + i, '질문 ' + i) });
+r = await dh('/ai-log'); ok(r.data.list.length === 40 && r.data.list[0].id === 'cn0041' && !r.data.list.some((x) => x.id === 'cn0000'), '최근 40개만 남김');
+await dh('/ai-log/delete', { all: true });
 
 console.log('섹션 저장');
 let p = await dh('/prepare', { path: F });

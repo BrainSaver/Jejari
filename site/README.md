@@ -12,7 +12,7 @@
   - 관련 조각 분량은 `ASK_CONTEXT_CHARS`(기본 6000자). Groq가 "너무 크다"고 거절하면 3분의 1로 줄여 한 번 더 보냅니다. 모델은 `GROQ_ASK_MODEL`(없으면 `GROQ_MODEL`)로 바꿀 수 있습니다.
   - 답은 3~6줄로 짧게 하고, 끝에 "이어서 물어보기" 질문 3개를 붙입니다(`[[이어서]]` 형식을 서버가 떼어 냄). 답 속 문장을 드래그하면 그 부분만 더 물어볼 수 있습니다. "참고한 부분"(최대 5곳)을 누르면 그 문서의 해당 섹션으로 이동합니다.
   - 오른쪽 아래 **AI 질문** 버튼으로 문서를 고르지 않고 채팅처럼 바로 물을 수 있습니다. 문서에서 드래그해 물어도 같은 채팅 창이 열립니다. "새 채팅"으로 새 대화를, "목록"에서 지난 대화를 다시 열어 이어서 물을 수 있고, 대화·질문 하나씩 삭제할 수 있습니다(두 번 눌러 삭제).
-  - 질문 기록은 로그인하지 않으면 그 기기 브라우저(localStorage)에, 로그인하면 KV `ailog:{이름}`에 최근 40개 저장돼 다른 기기에서도 보입니다. 로그인 전에 그 기기에 쌓인 기록은 처음 목록을 열 때 계정으로 옮겨집니다 (`/api/ai-log`, `/api/ai-log/save`·`merge`·`delete`).
+  - 질문 기록은 로그인하지 않으면 그 기기 브라우저(localStorage)에, 로그인하면 D1 `ai_conv` 테이블(바인딩이 없으면 KV `ailog:{이름}`)에 최근 40개 저장돼 다른 기기에서도 보입니다. `/api/me`의 `aiLog`가 지금 쓰는 저장소(`d1`/`kv`)입니다. 로그인 전에 그 기기에 쌓인 기록은 처음 목록을 열 때 계정으로 옮겨집니다 (`/api/ai-log`, `/api/ai-log/save`·`merge`·`delete`).
   - LLM용 복사도 같은 프로젝트 지도와 관련 조각(최대 16000자)을 붙입니다. 섹션마다 "LLM 복사", 문서 위 "LLM용 전체 복사", 홈의 "프로젝트 전체 LLM용 복사"(문서 전부, 약 14만 자)도 있습니다.
 
 ## 구조
@@ -44,6 +44,7 @@ site/
 | 종류 | 이름 | 값 |
 |---|---|---|
 | KV 바인딩 | `AUTH` | 새 KV 네임스페이스 (예: `jejari-auth`). PIN 해시·로그인 세션 저장 |
+| D1 바인딩 | `AI_DB` | D1 데이터베이스 `jejari-ai`. 로그인한 사람의 AI 질문 기록 (`ai_conv` 테이블은 처음 쓸 때 자동 생성). 없으면 KV `ailog:{이름}`에 저장 (KV는 무료 하루 쓰기 1천, D1은 10만) |
 | 비밀값 | `GITHUB_TOKEN` | fine-grained 토큰. 저장소 `brainsaver/jejari`만, 권한 Contents 읽기·쓰기 + Pull requests 읽기·쓰기 |
 | 비밀값 | `GROQ_API_KEY` | Groq API 키. 커밋 메시지 자동 작성과 "AI에게 물어보기"에 씀. 없으면 기본 형식 메시지로 저장하고 물어보기 버튼은 숨김 |
 | 비밀값 (선택) | `PIN_PEPPER` | 아무 긴 문자열. 넣으려면 **누구도 PIN을 정하기 전에** 넣어야 함 (나중에 넣으면 기존 PIN이 안 맞음) |
@@ -78,6 +79,6 @@ npx wrangler@4.40.0 pages dev public --kv AUTH \
 node test/api-test.mjs http://127.0.0.1:8790 http://127.0.0.1:9100   # API 흐름 검사
 ```
 
-AI 물어보기까지 보려면 `pages dev`에 `--binding GROQ_API_KEY=test-groq --binding GROQ_API=http://127.0.0.1:9100/groq`를 더하고, 검사는 `ASK_AI=1 node test/api-test.mjs …`로 돌립니다 (가짜 Groq가 답함). 실행할 때마다 `--persist-to`로 새 KV 폴더를 주면 지난 PIN이 남지 않습니다.
+D1까지 보려면 `--d1 AI_DB=local-ai-db`를 더합니다. AI 물어보기까지 보려면 `pages dev`에 `--binding GROQ_API_KEY=test-groq --binding GROQ_API=http://127.0.0.1:9100/groq`를 더하고, 검사는 `ASK_AI=1 node test/api-test.mjs …`로 돌립니다 (가짜 Groq가 답함). 실행할 때마다 `--persist-to`로 새 KV 폴더를 주면 지난 PIN이 남지 않습니다.
 
 브라우저로 http://127.0.0.1:8790 을 열면 가짜 GitHub 위에서 로그인·저장·합치기를 해 볼 수 있습니다.
