@@ -210,6 +210,7 @@ async function loadBranches() {
 }
 function myAhead() { const b = S.branches && S.branches.branches.find((x) => x.name === S.me); return b ? b.ahead : 0; }
 function renderTop() {
+  aiFabSync();
   document.body.classList.toggle('anon', !S.me);
   if (!S.me && S.ref !== 'main') S.ref = 'main';
   $('#sideFoot').textContent = S.me ? '수정은 섹션마다 "수정"을 눌러요. 저장하면 내 이름 브랜치에 커밋돼요.' : '팀원은 로그인하면 문서를 고치고 수정 기록·소스트리·브랜치별 내용을 볼 수 있어요.';
@@ -345,21 +346,28 @@ async function docView(root, path, { title, sub, compact, withToc } = {}) {
   const baseMap = new Map(); if (base) splitSections(base.content).forEach((s) => baseMap.set(headOf(s), s.text));
   const canEdit = !!S.me && (ref === 'main' || ref === S.me);
   const gh = `https://github.com/brainsaver/jejari/blob/${encodeURIComponent(ref)}/${path.split('/').map(encodeURIComponent).join('/')}`;
-  root.innerHTML = `${compact ? '' : `<h1 class="page">${esc(title)}</h1><p class="page-sub">${esc(sub || '')} · <code>${esc(path)}</code> · <a href="${gh}" target="_blank" rel="noopener">GitHub</a></p>`}
+  root.innerHTML = `${compact ? '' : `<h1 class="page">${esc(title)}</h1><p class="page-sub">${esc(sub || '')} · <code>${esc(path)}</code> · <a href="${gh}" target="_blank" rel="noopener">GitHub</a> · <button class="linkish" data-copyall title="문서 전체를 ChatGPT·Claude 등에 붙여 넣기 좋은 형태로 복사">LLM용 전체 복사</button></p>`}
     ${branchBanner(ref)}
     
     ${S.me && ref !== 'main' && ref !== S.me ? `<div class="banner">다른 사람 브랜치는 볼 수만 있어요. 고치려면 main이나 ${esc(S.me)} 브랜치로 바꿔 주세요.</div>` : ''}
     <div class="${compact && !withToc ? '' : 'doc-grid'}"><div class="doc-body"></div>${compact && !withToc ? '' : '<nav class="toc"></nav>'}</div>`;
   bindBanner(root);
+  const meta = { path, title: title || path.split('/').pop() };
+  const all = $('[data-copyall]', root);
+  if (all) all.addEventListener('click', () => copyText(llmBlock(meta, null, file.content), '문서 전체를 LLM용으로 복사했어요.'));
   const body = $('.doc-body', root), toc = $('.toc', root);
+  body._meta = meta;
   secs.forEach((s, i) => {
     const el = document.createElement('section'); el.className = 'sec'; el.dataset.i = i;
     const differs = base && baseMap.get(headOf(s)) !== s.text;
     if (differs) el.classList.add('diff');
     const tools = document.createElement('div'); tools.className = 'sec-tools';
     if (differs) tools.innerHTML += '<span class="badge warn">main과 다름</span>';
+    tools.innerHTML += '<button class="btn sm plain" data-copysec title="이 섹션을 LLM에 붙여 넣기 좋은 형태로 복사">LLM 복사</button>';
     if (canEdit) tools.innerHTML += '<button class="btn sm plain" data-edit>수정</button>';
+    el._md = s.text; el._head = headOf(s);
     el.appendChild(tools); el.appendChild(renderMd(s.text));
+    $('[data-copysec]', tools).addEventListener('click', () => copyText(llmBlock(meta, el._head, el._md), '이 섹션을 LLM용으로 복사했어요.'));
     body.appendChild(el);
     const ed = $('[data-edit]', tools); if (ed) ed.addEventListener('click', () => editSection(el, path, s, secs, i));
   });
@@ -370,6 +378,7 @@ async function docView(root, path, { title, sub, compact, withToc } = {}) {
   }
   if (toc) toc.innerHTML = $$('h2,h3,details > summary', body).map((h) => `<a class="${h.tagName === 'H3' ? 'l3' : ''}" href="#${esc(h.id.slice(2))}">${esc(h.textContent)}</a>`).join('');
   if (toc) $$('a', toc).forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); const t = document.getElementById('h-' + a.getAttribute('href').slice(1)); if (t) t.scrollIntoView({ behavior: 'smooth' }); }));
+  applyJump(body, path);
 }
 
 async function editSection(el, path, shown, shownSecs, idx, appendNew) {
@@ -426,6 +435,22 @@ function staleModal(x, myText, path, key) {
   $('[data-reopen]', m).addEventListener('click', () => { closeModal(); bump(); setRef(S.me); });
 }
 
+// 프로젝트 전체 문서 묶음 (main 기준)
+async function projectBundle() {
+  const docs = [['README.md', '기획서'], ['docs/기능설계서.md', '기능설계'], ['docs/concurrency.md', '동시성 절차'], ['docs/DB설계서.md', 'DB설계']];
+  const files = await Promise.all(docs.map(([p]) => fetchFile(p, 'main').catch(() => null)));
+  const list = await uiIndex().catch(() => []);
+  const ui = await Promise.all(list.map((x) => fetchFile(`docs/ui/${x.id}.md`, 'main').catch(() => null)));
+  const out = ['아래는 "제자리" 팀 프로젝트(명절 열차 공정 예매 시스템, 5명·3주, Spring Boot·Kafka·Redis·MongoDB·Oracle·Python)의 설계 문서 전체입니다.',
+    '스키마의 원천은 ERD 편집기, 트랜잭션 순서·SQL·Redis 절차의 원천은 동시성 문서(§번호)입니다. 1차 구현 범위는 기능설계 1.1을 따릅니다.',
+    '이 문서들을 모두 읽은 상태로 답해 주세요.', ''];
+  files.forEach((f, i) => { if (f) out.push(`===== ${docs[i][1]} (${docs[i][0]}) =====`, f.content.trim(), ''); });
+  const uiParts = ui.filter(Boolean).map((f) => f.content.trim());
+  if (uiParts.length) out.push('===== 화면설계 설명 (docs/ui/*.md) =====', uiParts.join('\n\n---\n\n'), '');
+  out.push('질문: ');
+  return out.join('\n');
+}
+
 // ---------- 페이지 ----------
 function pageHomeAnon() {
   main.innerHTML = `<div class="wrap"><h1 class="page">제자리 설계 문서</h1>
@@ -436,7 +461,13 @@ function pageHomeAnon() {
       <a class="card" href="#/db"><h3>DB설계 · ERD</h3><p>Oracle·MongoDB·Redis·Kafka 역할, 테이블 정의, ERD</p></a>
       <a class="card" href="#/ui"><h3>화면설계</h3><p>사용자 11개, 관리자 7개 화면을 눌러 보는 시안과 설명</p></a>
       <a class="card" href="#/doc/conc"><h3>동시성</h3><p>트랜잭션 순서, SQL, Redis Lua, 락 순서, 테스트 목록</p></a>
+    </div>
+    <div class="llm-all">
+      <div><h3>프로젝트 전체를 LLM에 주기</h3>
+      <p class="muted">기획서·기능설계·동시성·DB설계·화면설계 설명을 한 덩어리로 복사해요. Claude·ChatGPT처럼 긴 글을 받는 곳에 붙여 넣고 질문하면 프로젝트 전체를 아는 상태로 답해요. 문서마다 위쪽의 "LLM용 전체 복사", 섹션마다 "LLM 복사", 글을 드래그하면 "AI에게 물어보기"도 있어요.</p></div>
+      <button class="btn" data-copyproject>프로젝트 전체 LLM용 복사</button>
     </div></div>`;
+  $('[data-copyproject]', main).addEventListener('click', () => copyLater(projectBundle, '프로젝트 문서 전체를 LLM용으로 복사했어요.'));
 }
 function pageLocked() {
   main.innerHTML = `<div class="wrap"><h1 class="page">로그인이 필요해요</h1>
@@ -831,6 +862,331 @@ async function pageTree() {
 }
 
 // ---------- 라우터 ----------
+// ---------- 선택해서 AI에게 묻기 · LLM용 복사 ----------
+const PROJECT_LINE = '명절 열차 공정 예매 시스템. 5명이 3주 동안 만드는 팀 프로젝트 (Spring Boot, Kafka, Redis, MongoDB, Oracle, Python)';
+const cleanHead = (h) => String(h || '').replace(/^<a id=[^>]*><\/a>\s*/, '').replace(/^#+\s*/, '').trim();
+function llmBlock(meta, heading, md, selection) {
+  const lines = [`아래는 "제자리" 팀 프로젝트의 설계 문서${heading || selection ? ' 일부' : ''}입니다.`, '', `- 프로젝트: ${PROJECT_LINE}`, `- 문서: ${meta.title} (${meta.path})`];
+  if (heading) lines.push(`- 섹션: ${cleanHead(heading)}`);
+  if (selection) lines.push('', '[내가 고른 부분]', '<<<', selection, '>>>');
+  lines.push('', selection ? '[그 부분이 들어 있는 섹션 원문]' : '[원문]', '<<<', String(md || '').trim(), '>>>', '', '질문: ');
+  return lines.join('\n');
+}
+async function copyLater(makeText, msg) {
+  const job = Promise.resolve().then(makeText);
+  let done = false;
+  try {
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      await navigator.clipboard.write([new ClipboardItem({ 'text/plain': job.then((t) => new Blob([t], { type: 'text/plain' })) })]);
+      done = true;
+    }
+  } catch {}
+  if (done) { toast(msg || '복사했어요.'); return; }
+  return copyText(await job, msg);
+}
+// 맥락 포함 LLM용 글: 프로젝트 지도 + 전체 문서에서 찾은 관련 부분 + 지금 섹션 + 고른 부분
+async function llmWithContext(meta, heading, md, selection, history) {
+  let ctx = null;
+  try { ctx = await api('/context', { body: { path: meta.path, heading: cleanHead(heading), selection, section: md } }); } catch {}
+  const lines = [`아래는 "제자리" 팀 프로젝트의 설계 문서에서 고른 부분과, 이해에 필요한 프로젝트 맥락입니다.`, ''];
+  if (ctx && ctx.brief) lines.push(ctx.brief, '');
+  if (ctx && ctx.related && ctx.related.length) {
+    lines.push('[관련 문서 조각 (전체 문서에서 자동 검색)]');
+    ctx.related.forEach((r) => lines.push(`### ${r.doc} · ${r.heading || '(머리말)'}`, r.text, ''));
+  }
+  lines.push(`[지금 보고 있는 섹션: ${meta.title} (${meta.path})${heading ? ' · ' + cleanHead(heading) : ''}]`, '<<<', String(md || '').trim(), '>>>', '',
+    '[내가 고른 부분]', '<<<', selection, '>>>');
+  if (history && history.length) lines.push('', '[지금까지 나눈 대화]', history.map((h) => `${h.role === 'user' ? '나' : 'AI'}: ${h.content}`).join('\n\n'));
+  lines.push('', '프로젝트 전체 맥락에서 이 부분이 어디에 쓰이고 무엇과 연결되는지까지 쉽게 설명해 주세요.', '질문: ');
+  return lines.join('\n');
+}
+async function copyText(text, msg) {
+  let done = false;
+  try { await navigator.clipboard.writeText(text); done = true; } catch {}
+  if (!done) {
+    const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { done = document.execCommand('copy'); } catch {}
+    document.body.removeChild(ta);
+  }
+  toast(done ? (msg || '복사했어요.') : '복사하지 못했어요. 브라우저의 클립보드 권한을 확인해 주세요.');
+}
+
+const selPop = document.createElement('div');
+selPop.className = 'sel-pop'; selPop.hidden = true;
+selPop.innerHTML = '<button type="button" data-ask>AI에게 물어보기</button><button type="button" data-copysel>LLM용 복사</button>';
+document.body.appendChild(selPop);
+let selCtx = null;
+function readSelection() {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+  const text = sel.toString().trim();
+  if (text.length < 2) return null;
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+  const ans = node && node.closest('#aiPanel .ask-msg.a');
+  if (ans && ans._askMore) return { kind: 'answer', text: text.slice(0, 1000), box: ans, rect: range.getBoundingClientRect() };
+  const sec = node && node.closest('.doc-body .sec');
+  if (!sec || !main.contains(sec) || sec.querySelector('textarea')) return null;
+  const body = sec.closest('.doc-body');
+  return { text: text.slice(0, 6000), sec, meta: body._meta, rect: range.getBoundingClientRect() };
+}
+function placePop() {
+  selCtx = readSelection();
+  if (!selCtx) { selPop.hidden = true; return; }
+  const inAnswer = selCtx.kind === 'answer';
+  $('[data-ask]', selPop).hidden = !S.ai;
+  $('[data-ask]', selPop).textContent = inAnswer ? '이 부분 더 물어보기' : 'AI에게 물어보기';
+  $('[data-copysel]', selPop).hidden = inAnswer;
+  selPop.hidden = false;
+  if (window.innerWidth < 700) { selPop.classList.add('bottom'); selPop.style.left = ''; selPop.style.top = ''; return; }
+  selPop.classList.remove('bottom');
+  const r = selCtx.rect, w = selPop.offsetWidth, h = selPop.offsetHeight;
+  const top = r.top - h - 8 > 64 ? r.top - h - 8 : r.bottom + 8;
+  selPop.style.top = Math.round(top) + 'px';
+  selPop.style.left = Math.round(Math.min(Math.max(8, r.left + r.width / 2 - w / 2), window.innerWidth - w - 8)) + 'px';
+}
+let selTimer;
+const schedulePop = () => { clearTimeout(selTimer); selTimer = setTimeout(placePop, 120); };
+document.addEventListener('mouseup', (e) => { if (!selPop.contains(e.target)) schedulePop(); });
+document.addEventListener('keyup', (e) => { if (e.shiftKey || e.key === 'Shift') schedulePop(); });
+document.addEventListener('selectionchange', () => { if (window.innerWidth < 700 || !selPop.hidden) schedulePop(); });
+window.addEventListener('scroll', () => { if (!selPop.hidden && !selPop.classList.contains('bottom')) placePop(); }, { passive: true });
+selPop.addEventListener('mousedown', (e) => e.preventDefault());
+$('[data-copysel]', selPop).addEventListener('click', () => {
+  if (!selCtx || selCtx.kind === 'answer') return;
+  const c = selCtx;
+  copyLater(() => llmWithContext(c.meta, c.sec._head, c.sec._md, c.text), '고른 부분을 프로젝트 맥락과 함께 LLM용으로 복사했어요.');
+  selPop.hidden = true;
+});
+$('[data-ask]', selPop).addEventListener('click', () => {
+  if (!selCtx) return;
+  const c = selCtx; selPop.hidden = true; window.getSelection().removeAllRanges();
+  if (c.kind === 'answer') { c.box._askMore(c.text); return; }
+  askModal(c);
+});
+
+const ASK_CHIPS = ['쉽게 설명해줘', '왜 이렇게 설계했어?', '예시로 보여줘', '코드로는 어떻게 구현해?'];
+const FREE_CHIPS = ['제자리가 어떤 프로젝트야?', '좌석 중복 예약은 어떻게 막아?', '결제가 실패하면 어떻게 돼?', '1차 구현 범위가 뭐야?'];
+const AI_LOG_MAX = 40;
+
+// ---- 질문 기록: 로그인하면 계정(서버), 아니면 이 기기 ----
+const localLog = {
+  all() { const v = store.get('ai-log', []); return Array.isArray(v) ? v : []; },
+  put(conv) {
+    let out = [conv, ...this.all().filter((x) => x.id !== conv.id)].slice(0, AI_LOG_MAX);
+    for (let i = 0; i < 5; i++) {
+      try { localStorage.setItem('jejari-site:ai-log', JSON.stringify(out)); return; } catch {}
+      out = out.slice(0, Math.max(1, Math.floor(out.length / 2)));
+    }
+  },
+  remove(id) { store.set('ai-log', this.all().filter((x) => x.id !== id)); },
+  clear() { store.set('ai-log', []); },
+};
+const aiStore = {
+  async list() {
+    if (!S.me) return localLog.all();
+    const loc = localLog.all();
+    if (loc.length) {
+      try { const r = await api('/ai-log/merge', { body: { list: loc } }); localLog.clear(); toast('이 기기의 질문 기록을 계정으로 옮겼어요.'); return r.list; } catch {}
+    }
+    return (await api('/ai-log' + qs({ t: Date.now() }))).list;
+  },
+  async save(conv) {
+    conv.at = Date.now();
+    if (S.me) {
+      try { await api('/ai-log/save', { body: { conv } }); return; } catch { toast('계정에 저장하지 못해 이 기기에 저장했어요.'); }
+    }
+    localLog.put(conv);
+  },
+  async remove(id) {
+    localLog.remove(id);
+    if (S.me) await api('/ai-log/delete', { body: { id } });
+  },
+  async clear() {
+    localLog.clear();
+    if (S.me) await api('/ai-log/delete', { body: { all: true } });
+  },
+};
+
+// ---- 참고한 부분으로 이동 ----
+const DOC_HASH = { 'README.md': '#/doc/plan', 'docs/기능설계서.md': '#/doc/func', 'docs/concurrency.md': '#/doc/conc', 'docs/DB설계서.md': '#/db/doc' };
+function hashOfPath(path) {
+  if (DOC_HASH[path]) return DOC_HASH[path];
+  const m = String(path || '').match(/^docs\/ui\/([UA]-\d{2})\.md$/);
+  return m ? '#/ui/' + m[1] : null;
+}
+let pendingJump = null;
+const normHead = (t) => String(t || '').replace(/[`*]/g, '').replace(/\s+/g, ' ').trim();
+function applyJump(root, path) {
+  if (!pendingJump || pendingJump.path !== path) return;
+  const parts = String(pendingJump.heading || '').split(' > ').map(normHead).filter(Boolean);
+  pendingJump = null;
+  const heads = $$('h1,h2,h3,h4,details > summary', root);
+  let target = null;
+  for (let i = parts.length - 1; i >= 0 && !target; i--) {
+    target = heads.find((h) => normHead(h.textContent) === parts[i]) || heads.find((h) => normHead(h.textContent).startsWith(parts[i]));
+  }
+  const el = target || root;
+  setTimeout(() => {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const sec = el.closest('.sec') || el; sec.classList.add('flash'); setTimeout(() => sec.classList.remove('flash'), 2200);
+  }, 60);
+}
+function jumpTo(path, heading) {
+  const h = hashOfPath(path); if (!h) return;
+  pendingJump = { path, heading };
+  closeModal();
+  if (window.innerWidth < 700) aiClose();
+  if (location.hash === h) route(); else location.hash = h;
+}
+
+// ---- 오른쪽 아래 채팅 ----
+const aiFab = document.createElement('button');
+aiFab.className = 'ai-fab'; aiFab.type = 'button'; aiFab.hidden = true; aiFab.textContent = 'AI 질문';
+const aiPanel = document.createElement('section');
+aiPanel.className = 'ai-panel'; aiPanel.id = 'aiPanel'; aiPanel.hidden = true; aiPanel.setAttribute('aria-label', 'AI 질문');
+aiPanel.innerHTML = `<header class="ai-head">
+    <button type="button" class="btn sm plain" data-ai-list>목록</button>
+    <b class="ai-title">AI 질문</b>
+    <button type="button" class="btn sm" data-ai-new>새 채팅</button>
+    <button type="button" class="ai-x" data-ai-x aria-label="닫기">✕</button>
+  </header>
+  <div class="ai-body"></div>`;
+document.body.appendChild(aiFab); document.body.appendChild(aiPanel);
+const aiBody = $('.ai-body', aiPanel);
+const AI = { conv: null, view: 'chat', busy: false };
+
+function newConv(c) {
+  return {
+    id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(),
+    doc: c ? c.meta.title : '', path: c ? c.meta.path : '', heading: c ? cleanHead(c.sec._head) : '',
+    selection: c ? c.text : '', section: c ? String(c.sec._md || '').slice(0, 6000) : '', messages: [],
+  };
+}
+function aiFabSync() {
+  aiFab.hidden = !S.ai || !aiPanel.hidden;
+  if (!aiPanel.hidden && AI.view === 'list') aiList();
+}
+function aiOpen() { aiPanel.hidden = false; aiFab.hidden = true; document.body.classList.add('ai-open'); }
+function aiClose() { aiPanel.hidden = true; document.body.classList.remove('ai-open'); aiFabSync(); }
+function askModal(c, firstQuestion) { aiOpen(); aiChat(newConv(c), firstQuestion == null ? '쉽게 설명해줘' : firstQuestion); }
+
+aiFab.addEventListener('click', () => { aiOpen(); if (AI.conv && AI.view === 'chat') aiChat(AI.conv); else aiChat(newConv(null), ''); });
+$('[data-ai-x]', aiPanel).addEventListener('click', aiClose);
+$('[data-ai-new]', aiPanel).addEventListener('click', () => aiChat(newConv(null), ''));
+$('[data-ai-list]', aiPanel).addEventListener('click', () => aiList());
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !aiPanel.hidden && $('#modalBack').hidden) aiClose(); });
+
+const convTitle = (c) => ((c.messages.find((x) => x.role === 'user') || {}).content || c.selection || '새 채팅').slice(0, 80);
+
+async function aiList() {
+  AI.view = 'list';
+  aiBody.innerHTML = '<p class="muted ai-pad">불러오는 중…</p>';
+  let list = [];
+  try { list = await aiStore.list(); } catch (x) { aiBody.innerHTML = `<p class="err ai-pad">${esc(x.message)}</p>`; return; }
+  if (AI.view !== 'list') return;
+  aiBody.innerHTML = `<p class="muted ai-pad ai-where-saved">${S.me ? `${esc(S.ko || S.me)} 계정에 저장돼요. 다른 기기에서 로그인해도 보여요.` : '이 기기에만 저장돼요. 로그인하면 계정에 저장돼 다른 기기에서도 볼 수 있어요.'} 최근 ${AI_LOG_MAX}개까지 남아요.</p>
+    ${list.length ? `<div class="ai-list">${list.map((c) => {
+      const n = c.messages.filter((x) => x.role === 'user').length;
+      return `<div class="ai-item" data-id="${esc(c.id)}">
+        <button type="button" class="ai-item-open"><b>${esc(convTitle(c))}</b>
+          <span class="muted">${esc(kst(new Date(c.at).toISOString()))}${c.doc ? ' · ' + esc(c.doc) : ''}${n > 1 ? ` · 질문 ${n}개` : ''}</span></button>
+        <button type="button" class="btn sm plain" data-del>삭제</button></div>`;
+    }).join('')}</div>
+    <p class="ai-pad"><button type="button" class="btn sm plain" data-clear>기록 모두 지우기</button></p>`
+    : '<p class="empty ai-pad">아직 물어본 내용이 없어요. "새 채팅"으로 물어보거나, 문서에서 글을 드래그해 물어보세요.</p>'}`;
+  $$('.ai-item', aiBody).forEach((row) => {
+    const conv = list.find((x) => x.id === row.dataset.id);
+    $('.ai-item-open', row).addEventListener('click', () => aiChat(conv));
+    twoStep($('[data-del]', row), '한 번 더', async () => {
+      try { await aiStore.remove(conv.id); } catch (x) { toast(x.message); }
+      if (AI.conv && AI.conv.id === conv.id) AI.conv = null;
+      aiList();
+    });
+  });
+  const clr = $('[data-clear]', aiBody);
+  if (clr) twoStep(clr, '한 번 더 누르면 모두 삭제', async () => { try { await aiStore.clear(); } catch (x) { toast(x.message); } AI.conv = null; aiList(); });
+}
+
+function aiChat(conv, prefill) {
+  AI.view = 'chat'; AI.conv = conv;
+  const free = !conv.selection;
+  aiBody.innerHTML = `<div class="ai-chat">
+      ${free ? '' : `<div class="ai-src"><a href="#" data-src>${esc(conv.doc)}${conv.heading ? ' · ' + esc(conv.heading) : ''}</a><blockquote class="ask-quote">${esc(conv.selection)}</blockquote></div>`}
+      ${conv.messages.length ? '' : `<p class="muted ai-hello">${free ? '프로젝트에 대해 무엇이든 물어보세요. AI는 프로젝트 지도와 관련 문서를 찾아 보고 짧게 답해요. 문서에서 글을 드래그해 물어볼 수도 있어요.' : '고른 부분에 대해 물어보세요.'}</p>`}
+      <div class="ask-log"></div>
+    </div>
+    <div class="ai-foot">
+      ${conv.messages.length ? '' : `<div class="ask-chips">${(free ? FREE_CHIPS : ASK_CHIPS).map((q) => `<button type="button" class="chip">${esc(q)}</button>`).join('')}</div>`}
+      <form class="ask-row"><input type="text" maxlength="500" placeholder="${conv.messages.length ? '이어서 물어보기' : '질문 입력'}" aria-label="질문"><button class="btn" type="submit">묻기</button></form>
+      <p class="muted ask-note">답 속 문장을 드래그하면 그 부분만 더 물어볼 수 있어요. AI는 틀릴 수 있으니 중요한 건 원문이나 담당 팀원에게 확인하세요.</p>
+    </div>`;
+  const log = $('.ask-log', aiBody), input = $('.ask-row input', aiBody), send = $('.ask-row button', aiBody);
+  if (prefill) input.value = prefill;
+  const scroller = $('.ai-chat', aiBody);
+  const toBottom = () => { scroller.scrollTop = scroller.scrollHeight; };
+
+  function drawQuestion(box, idx) {
+    box.innerHTML = `<span>${esc(conv.messages[idx].content)}</span><button type="button" class="ai-qdel" title="이 질문과 답 삭제">삭제</button>`;
+    twoStep($('.ai-qdel', box), '한 번 더', async () => {
+      conv.messages.splice(idx, conv.messages[idx + 1] && conv.messages[idx + 1].role === 'assistant' ? 2 : 1);
+      if (conv.messages.length) await aiStore.save(conv); else { try { await aiStore.remove(conv.id); } catch {} }
+      aiChat(conv);
+    });
+  }
+  function drawAnswer(box, msg) {
+    box.innerHTML = '';
+    box.appendChild(renderMd(msg.content));
+    if (msg.followups && msg.followups.length) {
+      const f = document.createElement('div'); f.className = 'ask-follow';
+      f.innerHTML = '<span class="muted">이어서 물어보기</span>' + msg.followups.map((q) => `<button type="button" class="chip">${esc(q)}</button>`).join('');
+      $$('button', f).forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
+      box.appendChild(f);
+    }
+    if (msg.refs && msg.refs.length) {
+      const d = document.createElement('div'); d.className = 'ask-refs';
+      d.innerHTML = `<span class="muted">참고한 부분</span>${msg.refs.map((x, i) => hashOfPath(x.path)
+        ? `<a href="${hashOfPath(x.path)}" data-ref="${i}">${esc(x.doc)} · ${esc(x.heading || '문서 처음')}</a>`
+        : `<span>${esc(x.doc)} · ${esc(x.heading || '문서 처음')}</span>`).join('')}`;
+      $$('a[data-ref]', d).forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); const x = msg.refs[+a.dataset.ref]; jumpTo(x.path, x.heading); }));
+      box.appendChild(d);
+    }
+    box._askMore = (text) => ask(`"${text.slice(0, 300)}" 이 부분을 좀 더 자세히 알려줘`);
+  }
+  const add = (cls) => { const d = document.createElement('div'); d.className = 'ask-msg ' + cls; log.appendChild(d); return d; };
+  conv.messages.forEach((m, i) => { if (m.role === 'user') drawQuestion(add('q'), i); else drawAnswer(add('a'), m); });
+  setTimeout(toBottom, 20);
+
+  async function ask(q) {
+    q = String(q || '').trim(); if (!q || AI.busy) return;
+    AI.busy = true; send.disabled = true; input.value = '';
+    $$('.ask-chips, .ai-hello', aiBody).forEach((e) => e.remove());
+    const qBox = add('q'); qBox.innerHTML = `<span>${esc(q)}</span>`;
+    const wait = add('a'); wait.innerHTML = '<p class="muted">생각하는 중…</p>';
+    toBottom();
+    const history = conv.messages.map((x) => ({ role: x.role, content: x.content }));
+    try {
+      const r = await api('/ask', { body: { doc: conv.doc, path: conv.path, heading: conv.heading, selection: conv.selection, section: conv.section, question: q, history: history.length ? history : undefined } });
+      conv.messages.push({ role: 'user', content: q }, { role: 'assistant', content: r.answer, followups: r.followups || [], refs: r.refs || [], model: r.model });
+      drawQuestion(qBox, conv.messages.length - 2);
+      drawAnswer(wait, conv.messages[conv.messages.length - 1]);
+      input.placeholder = '이어서 물어보기';
+      aiStore.save(conv);
+    } catch (x) {
+      wait.innerHTML = `<p class="err">${esc(x.message)}</p>`;
+    } finally {
+      AI.busy = false; send.disabled = false;
+      if (AI.conv === conv && document.body.contains(input)) { input.focus(); toBottom(); }
+    }
+  }
+  $('.ask-row', aiBody).addEventListener('submit', (e) => { e.preventDefault(); ask(input.value); });
+  $$('.ask-chips .chip', aiBody).forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
+  const src = $('[data-src]', aiBody);
+  if (src) src.addEventListener('click', (e) => { e.preventDefault(); jumpTo(conv.path, conv.heading); });
+  if (window.innerWidth >= 700) setTimeout(() => input.focus(), 30);
+}
+
 function setNav(key) { $$('.side a').forEach((a) => a.classList.toggle('on', a.dataset.nav === key)); $('#side').classList.remove('open'); }
 async function route() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
@@ -843,6 +1199,7 @@ async function route() {
     else if (p === 'db') { setNav('db'); await pageDb(a); }
     else if (p === 'ui' && a) { setNav('ui'); await pageUiOne(decodeURIComponent(a)); }
     else if (p === 'ui') { setNav('ui'); await pageUi(); }
+    else if (p === 'ai') { setNav('home'); await pageHome(); aiOpen(); aiList(); }
     else if (p === 'history') { setNav('history'); await pageHistory(); }
     else if (p === 'commit' && a) { setNav('history'); await pageCommit(a); }
     else if (p === 'compare' && a) { setNav(''); await pageCompare(a); }
@@ -851,7 +1208,7 @@ async function route() {
   } catch (x) {
     main.innerHTML = `<div class="wrap"><p class="empty">불러오지 못했어요: ${esc(x.message)}</p></div>`;
   }
-  if (!/^#\/(doc|db)/.test(location.hash)) window.scrollTo(0, 0);
+  if (!/^#\/(doc|db)/.test(location.hash) && !pendingJump) window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', () => { closeModal(); route(); });
 $('#navToggle').addEventListener('click', (e) => { e.stopPropagation(); $('#side').classList.toggle('open'); });
