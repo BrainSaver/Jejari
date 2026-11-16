@@ -45,7 +45,7 @@ K6=$(which k6) ./run-penalty-order.sh
 
 앱은 정책값(`queue.admit_per_sec` 등)을 최대 1초 들고 있어서(`jejari.queue.policy-cache-ms`), Redis에서 정책을 바꾼 뒤 1초쯤 지나야 반영됩니다. 정책을 바꾼 직후 바로 시나리오를 시작하면 이전 값이 섞일 수 있습니다.
 
-시나리오를 다시 돌리기 전에는 `./reset.sh`로 대기열 키를 지웁니다 (개발 DB에서만).
+시나리오를 다시 돌리기 전에는 `./reset.sh`로 대기열 키를 지웁니다 (개발 DB에서만). `entry-burst.js`는 한 번에 키를 수십만 개 남기는데, `reset`은 Redis 안에서 한 번에 지워서 몇 초 안에 끝납니다.
 
 ## Windows (PowerShell)
 

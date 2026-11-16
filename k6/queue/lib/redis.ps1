@@ -7,11 +7,19 @@ $script:RedisContainer = if ($env:REDIS_CONTAINER) { $env:REDIS_CONTAINER } else
 $script:RedisHost = if ($env:REDIS_HOST) { $env:REDIS_HOST } else { 'localhost' }
 $script:RedisPort = if ($env:REDIS_PORT) { $env:REDIS_PORT } else { '6379' }
 
+# 컨테이너 확인은 처음 한 번만 한다. 명령마다 `docker ps`를 부르면 Windows에서 호출당 0.5초 안팎이 더 든다.
+$script:UseContainer = $null
+
 function Test-RedisContainer {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
-    $filter = 'name=^{0}$' -f $script:RedisContainer
-    $id = docker ps -q --filter $filter 2>$null
-    return [bool]$id
+    if ($null -eq $script:UseContainer) {
+        $script:UseContainer = $false
+        if (Get-Command docker -ErrorAction SilentlyContinue) {
+            $filter = 'name=^{0}$' -f $script:RedisContainer
+            $id = docker ps -q --filter $filter 2>$null
+            $script:UseContainer = [bool]$id
+        }
+    }
+    return $script:UseContainer
 }
 
 # 사용: Invoke-Redis @('hset', 'policy:cache', 'queue.admit_per_sec', '10')
