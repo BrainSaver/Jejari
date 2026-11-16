@@ -93,7 +93,7 @@ class App:
         self.key = tk.StringVar()
         self.rdir = tk.StringVar(value="~/jejari-loadtest")
         self.url = tk.StringVar(value="http://localhost:8080")
-        self.run_id = tk.StringVar(value="1001")   # queue 앱 개발 모드의 판매 중 운행(--jejari.queue.dev-on-sale-runs=1001)
+        self.run_id = tk.StringVar(value="9001")   # 시드(db/seed)의 판매 중 운행. 개발 모드 앱은 --jejari.queue.dev-on-sale-runs=9001)
         self.own = tk.BooleanVar(value=False)
         self.prom = tk.BooleanVar(value=False)
         self.prom_url = tk.StringVar(value="http://localhost:9090/api/v1/write")

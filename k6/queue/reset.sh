@@ -15,4 +15,6 @@ for pattern in 'queue:*' 'risk:*'; do
   $REDIS eval "$DELETE_BY_PATTERN" 0 "$pattern" > /dev/null
 done
 $REDIS del policy:cache > /dev/null
+# 개발 모드는 위험 점수가 "동기화된 상태"여야 진입이 Oracle 조회 경로를 타지 않는다
+$REDIS set risk:meta:synced_at dev > /dev/null
 echo "대기열·위험 점수·정책 캐시 키를 지웠습니다 (DB ${REDIS_DB:-0})"
