@@ -475,7 +475,7 @@ function pageHomeAnon() {
   main.innerHTML = `<div class="wrap"><h1 class="page">제자리 설계 문서</h1>
     <p class="page-sub">명절 열차 공정 예매 시스템의 설계 문서예요.${S.me ? '' : ' 팀원은 오른쪽 위에서 로그인하면 문서를 고칠 수 있어요.'}</p>
     <div class="cards">
-      <a class="card" href="#/roadmap"><h3>로드맵</h3><p>파트별 진행률, 누가 무엇을 끝냈는지, 파트 간 의존 관계, 진행 메모</p></a>
+      <a class="card" href="#/roadmap"><h3>로드맵</h3><p>기능 영역별 보드, A~E 파트별 했다·안 했다, 개발자에게 남길 말</p></a>
       <a class="card" href="#/doc/plan"><h3>기획서</h3><p>프로젝트 목표, 팀 역할, 일정, 기술 선택 이유</p></a>
       <a class="card" href="#/doc/func"><h3>기능설계</h3><p>기능 목록, 상세, 상태 전이, API, Kafka, 에러 코드</p></a>
       <a class="card" href="#/db"><h3>DB설계 · ERD</h3><p>Oracle·MongoDB·Redis·Kafka 역할, 테이블 정의, ERD</p></a>
@@ -1415,24 +1415,31 @@ async function newPersonDoc(name, kind) {
   });
 }
 
-// ---------- 로드맵 (모두 같은 로드맵, 로그인하면 추가·수정·삭제·완료 표시·진행 메모) ----------
-const RM_ST = { todo: '할 일', doing: '진행 중', blocked: '막힘', done: '완료' };
-const RM_ORDER = ['A', 'B', 'C', 'D', 'E', 'ALL'];
-const RM_FIELD = { title: '제목', code: '코드', part: '파트', owner: '담당', status: '상태', prio: '우선', week: '주차', due: '마감일', note: '설명', deps: '선행 작업', with: '함께 하는 파트', doneBy: '완료한 사람' };
-const RM = { data: null, rev: 0, timer: null, stale: false, f: store.get('rm-f', { q: '', prio: '', week: '', mine: false, hideDone: false }) };
+// ---------- 로드맵 보드 (기능 영역별 칸, 카드 안에 A~E 파트별 했다/안 했다, 개발자에게 남길 말) ----------
+const RM_PARTS = ['A', 'B', 'C', 'D', 'E'];
+const RM_FIELD = { title: '제목', code: '코드', area: '영역', blocked: '막힘', prio: '우선', week: '주차', due: '마감일', note: '설명', deps: '선행 작업' };
+const RM = { data: null, rev: 0, timer: null, stale: false, f: store.get('rm-f2', { q: '', part: '', prio: '', hideDone: false }) };
 const rmById = () => new Map((RM.data ? RM.data.items : []).map((x) => [x.id, x]));
-const partColor = (p) => (p === 'ALL' ? 'var(--m-main)' : colorOf(RM.data.parts[p].owner));
-const partName = (p) => (p === 'ALL' ? '공통' : `${p} ${S.members[RM.data.parts[p].owner] || ''}`);
-const rmWho = (n) => (n === 'seed' ? '기능설계서' : S.members[n] ? `${S.members[n]}` : esc(n || ''));
+const areaLabel = (k) => { const a = RM.data.areas.find((x) => x.k === k); return a ? a.label : k; };
+const partOwner = (p) => RM.data.parts[p].owner;
+const partColor = (p) => colorOf(partOwner(p));
+const partName = (p) => `${p} ${S.members[partOwner(p)] || ''}`;
+const myPart = () => RM_PARTS.find((p) => partOwner(p) === S.me) || '';
+const rmWho = (n) => (n === 'seed' ? '기능설계서' : esc(S.members[n] || n || ''));
 const ago = (t) => {
   const s = (Date.now() - t) / 1000;
   if (s < 60) return '방금'; if (s < 3600) return `${Math.floor(s / 60)}분 전`; if (s < 86400) return `${Math.floor(s / 3600)}시간 전`;
   return kst(new Date(t).toISOString());
 };
-const stPill = (s) => `<span class="rm-st st-${s}">${RM_ST[s]}</span>`;
-// 아직 안 끝난 선행 작업
-const waitingOn = (it, by) => (it.deps || []).map((d) => by.get(d)).filter((d) => d && d.status !== 'done');
+const rolesOf = (it) => RM_PARTS.filter((p) => it.roles && it.roles[p]);
+const doneN = (it) => rolesOf(it).filter((p) => it.roles[p].done).length;
+const isDone = (it) => rolesOf(it).length > 0 && doneN(it) === rolesOf(it).length;
+const stateOf = (it) => (isDone(it) ? 'done' : it.blocked ? 'blocked' : doneN(it) ? 'doing' : 'todo');
+const ST_LABEL = { todo: '안 함', doing: '하는 중', blocked: '막힘', done: '다 함' };
+const stPill = (it) => { const s = stateOf(it); return `<span class="rm-st st-${s}">${ST_LABEL[s]}</span>`; };
+const waitingOn = (it, by) => (it.deps || []).map((d) => by.get(d)).filter((d) => d && !isDone(d));
 const sortItems = (a, b) => (a.week || 9) - (b.week || 9) || (a.prio < b.prio ? -1 : a.prio > b.prio ? 1 : 0) || (a.order || 0) - (b.order || 0);
+const roleTip = (it, p) => { const r = it.roles[p]; return r.done ? `${partName(p)}: 했음 (${S.members[r.by] || r.by || ''} · ${kst(new Date(r.at || it.updatedAt).toISOString())})` : `${partName(p)}: 아직 안 함`; };
 
 async function rmLoad() {
   const d = await api('/roadmap' + qs({}));
@@ -1455,85 +1462,125 @@ function rmPoll() {
 
 function rmFiltered() {
   const f = RM.f; const q = f.q.trim().toLowerCase();
-  return RM.data.items.filter((it) => (!f.prio || it.prio === f.prio) && (!f.week || String(it.week) === f.week)
-    && (!f.mine || it.owner === S.me) && (!f.hideDone || it.status !== 'done')
-    && (!q || `${it.code} ${it.title} ${it.note}`.toLowerCase().includes(q)));
+  return RM.data.items.filter((it) => (!f.prio || it.prio === f.prio) && (!f.part || (it.roles && it.roles[f.part]))
+    && (!f.hideDone || !isDone(it)) && (!q || `${it.code} ${it.title} ${it.note}`.toLowerCase().includes(q)));
 }
+
+// 파트 칩: 누르면 그 파트 칸을 했다/안 했다로 바꾼다
+const roleChip = (it, p, big) => {
+  const r = it.roles[p];
+  return `<button class="rm-chip${r.done ? ' on' : ''}${big ? ' big' : ''}" data-chk="${it.id}" data-p="${p}" style="--pc:${partColor(p)}" title="${esc(roleTip(it, p))}"${S.me ? '' : ' disabled'}>
+    <span class="rm-chip-box">${r.done ? '✓' : ''}</span>${p}${big ? ` <span class="rm-chip-name">${esc(S.members[partOwner(p)])}</span>` : ''}</button>`;
+};
 
 function rmCard(it, by) {
   const wait = waitingOn(it, by);
-  return `<button class="rm-card st-${it.status}" data-id="${it.id}">
-    <span class="rm-top">${it.code ? `<span class="rm-code">${esc(it.code)}</span>` : ''}${stPill(it.status)}${it.prio !== 'P1' ? `<span class="badge">${it.prio}</span>` : ''}${it.week ? `<span class="muted">${it.week}주차</span>` : ''}</span>
-    <span class="rm-title">${esc(it.title)}</span>
-    <span class="rm-meta">${it.owner ? `<span><span class="dot" style="background:${colorOf(it.owner)}"></span> ${esc(S.members[it.owner])}</span>` : '<span class="muted">담당 없음</span>'}
-      ${(it.with || []).length ? `<span class="muted">+ ${it.with.join('·')}</span>` : ''}
-      ${it.notes ? `<span class="muted">메모 ${it.notes}</span>` : ''}</span>
-    ${it.status === 'done' ? `<span class="rm-done">✓ ${esc(S.members[it.doneBy] || it.doneBy || '')} 완료 · ${kst(new Date(it.doneAt || it.updatedAt).toISOString())}</span>`
-      : wait.length ? `<span class="rm-wait">기다리는 중: ${wait.slice(0, 3).map((d) => `${esc(d.code || d.title)}${d.part !== it.part ? `(${d.part})` : ''}`).join(', ')}${wait.length > 3 ? ` 외 ${wait.length - 3}` : ''}</span>`
-      : it.status === 'todo' ? '<span class="rm-ready">바로 시작 가능</span>' : ''}
-  </button>`;
+  const st = stateOf(it);
+  const n = rolesOf(it).length, d = doneN(it);
+  return `<div class="rm-card st-${st}" data-open="${it.id}" tabindex="0" role="button">
+    <div class="rm-card-top">${it.code ? `<span class="rm-code">${esc(it.code)}</span>` : ''}${it.prio !== 'P1' ? `<span class="badge">${it.prio}</span>` : ''}${it.blocked && st !== 'done' ? '<span class="rm-st st-blocked">막힘</span>' : ''}${it.week ? `<span class="muted">${it.week}주차</span>` : ''}<span class="rm-frac">${d}/${n}</span></div>
+    <div class="rm-title">${esc(it.title)}</div>
+    <div class="rm-chips">${rolesOf(it).map((p) => roleChip(it, p)).join('')}</div>
+    ${(it.notes || wait.length) ? `<div class="rm-card-foot">${it.notes ? `<span class="rm-msgs" title="남긴 말">💬 ${it.notes}</span>` : ''}${wait.length && st !== 'done' ? `<span class="rm-wait">기다림: ${wait.slice(0, 2).map((x) => esc(x.code || x.title)).join(', ')}${wait.length > 2 ? ` 외 ${wait.length - 2}` : ''}</span>` : ''}</div>` : ''}
+  </div>`;
 }
 
-function rmSummary(by) {
+function rmPartStrip() {
   const items = RM.data.items;
-  return `<div class="rm-sum">${RM_ORDER.map((p) => {
-    const list = items.filter((x) => x.part === p);
-    if (!list.length) return '';
-    const n = (s) => list.filter((x) => x.status === s).length;
-    const done = n('done'), pct = Math.round((done / list.length) * 100);
-    const waitOther = list.filter((x) => x.status !== 'done' && waitingOn(x, by).some((d) => d.part !== p)).length;
-    return `<button class="rm-sum-card" data-part="${p}" style="--pc:${partColor(p)}">
-      <span class="rm-sum-head"><b>${esc(partName(p))}</b><span class="muted">${esc(RM.data.parts[p].label)}</span></span>
+  return `<div class="rm-parts">${RM_PARTS.map((p) => {
+    const mine = items.filter((x) => x.roles && x.roles[p]);
+    const done = mine.filter((x) => x.roles[p].done).length;
+    const pct = mine.length ? Math.round((done / mine.length) * 100) : 0;
+    const msgs = (RM.data.msgs || []).filter((m) => m.to === p).length;
+    return `<button class="rm-part${RM.f.part === p ? ' on' : ''}" data-fpart="${p}" style="--pc:${partColor(p)}" title="누르면 ${esc(partName(p))} 카드만 보여요">
+      <span class="rm-part-head"><b>${esc(partName(p))}</b><span class="muted">${esc(RM.data.parts[p].label)}</span></span>
       <span class="rm-bar"><i style="width:${pct}%"></i></span>
-      <span class="rm-sum-nums"><b>${pct}%</b> <span>${done}/${list.length} 완료</span>${n('doing') ? `<span class="st-c-doing">진행 ${n('doing')}</span>` : ''}${n('blocked') ? `<span class="st-c-blocked">막힘 ${n('blocked')}</span>` : ''}${waitOther ? `<span class="muted">다른 파트 대기 ${waitOther}</span>` : ''}</span>
+      <span class="rm-part-nums"><b>${pct}%</b><span>${done}/${mine.length} 했음</span>${msgs ? `<span class="rm-to">💬 받은 말 ${msgs}</span>` : ''}</span>
     </button>`;
   }).join('')}</div>`;
 }
 
+function rmBoard(list, by) {
+  return `<div class="rm-areas">${RM.data.areas.map(({ k, label }) => {
+    const all = RM.data.items.filter((x) => x.area === k);
+    const col = list.filter((x) => x.area === k).sort(sortItems);
+    if (!all.length && k !== 'etc') return '';
+    if (!col.length && (RM.f.part || RM.f.q || RM.f.prio || RM.f.hideDone) && !S.me) return '';
+    const done = all.filter(isDone).length;
+    const pct = all.length ? Math.round((done / all.length) * 100) : 0;
+    return `<section class="rm-area" data-area="${k}">
+      <div class="rm-area-head"><b>${esc(label)}</b><span class="muted">${done}/${all.length}</span>${S.me ? `<button class="btn sm plain" data-add="${k}" title="${esc(label)}에 할 일 추가">+ 할 일</button>` : ''}</div>
+      <span class="rm-bar area"><i style="width:${pct}%"></i></span>
+      <div class="rm-cards">${col.map((x) => rmCard(x, by)).join('') || '<p class="muted rm-none">조건에 맞는 카드가 없어요.</p>'}</div>
+    </section>`;
+  }).join('')}</div>`;
+}
+
+function rmPartsView(by) {
+  // 파트마다: 아직 안 한 칸, 받은 말
+  return `<div class="rm-partcols">${RM_PARTS.map((p) => {
+    const todo = RM.data.items.filter((x) => x.roles && x.roles[p] && !x.roles[p].done).sort(sortItems);
+    const msgs = (RM.data.msgs || []).filter((m) => m.to === p).slice(0, 8);
+    return `<section class="rm-partcol" style="--pc:${partColor(p)}"><div class="rm-partcol-head"><b>${esc(partName(p))}</b> <span class="muted">남은 ${todo.length}개</span></div>
+      ${msgs.length ? `<div class="rm-inbox"><div class="rm-rel-h">💬 받은 말</div>${msgs.map((m) => `<button class="rm-msg" data-open="${m.item}"><span class="muted">${rmWho(m.who)} · ${ago(m.at)} · ${esc(m.code || m.title || '')}</span><span>${esc((m.text || '(사진)').slice(0, 120))}</span></button>`).join('')}</div>` : ''}
+      ${todo.map((x) => { const w = waitingOn(x, by); return `<div class="rm-todo" data-open="${x.id}">${roleChip(x, p)}<span class="rm-todo-t"><b>${esc(x.code)}</b> ${esc(x.title)}<small class="muted">${esc(areaLabel(x.area))}${x.week ? ` · ${x.week}주차` : ''}${w.length ? ` · 기다림 ${w.length}` : ''}</small></span></div>`; }).join('') || '<p class="muted">다 했어요.</p>'}
+    </section>`;
+  }).join('')}</div>`;
+}
+
 function rmDepsView(by) {
-  // 파트 간 의존: 행 = 기다리는 파트, 열 = 먼저 끝내야 하는 파트. 칸 숫자 = 아직 안 끝난 연결 수
-  const items = RM.data.items.filter((x) => x.status !== 'done');
+  // 행 = 기다리는 파트, 열 = 먼저 끝내야 하는 파트. 칸 숫자 = 아직 안 끝난 연결 수
   const edges = [];
-  items.forEach((it) => waitingOn(it, by).forEach((d) => { if (d.part !== it.part) edges.push({ it, d }); }));
-  const parts = RM_ORDER.filter((p) => RM.data.items.some((x) => x.part === p));
-  const cnt = (a, b) => edges.filter((e) => e.it.part === a && e.d.part === b).length;
-  const ready = parts.map((p) => [p, RM.data.items.filter((x) => x.part === p && x.status === 'todo' && !waitingOn(x, by).length).sort(sortItems)]);
+  RM.data.items.forEach((it) => {
+    if (isDone(it)) return;
+    waitingOn(it, by).forEach((d) => {
+      const need = rolesOf(d).filter((q) => !d.roles[q].done);
+      rolesOf(it).filter((p) => !it.roles[p].done).forEach((p) => need.forEach((q) => { if (p !== q) edges.push({ it, d, p, q }); }));
+    });
+  });
+  const cnt = (a, b) => new Set(edges.filter((e) => e.p === a && e.q === b).map((e) => e.it.id + e.d.id)).size;
   const groups = {};
-  edges.forEach((e) => { (groups[e.d.id] = groups[e.d.id] || { d: e.d, list: [] }).list.push(e.it); });
-  const hot = Object.values(groups).sort((a, b) => b.list.length - a.list.length);
-  return `<p class="muted" style="margin:0 0 10px">다른 파트의 작업이 끝나야 시작할 수 있는 연결만 셉니다. 숫자를 누르면 아래 목록이 그 칸만 보여요.</p>
-  <div class="tbl-wrap"><table class="rm-matrix"><thead><tr><th>기다리는 파트 ↓ / 먼저 끝낼 파트 →</th>${parts.map((p) => `<th style="color:${partColor(p)}">${esc(partName(p))}</th>`).join('')}</tr></thead>
-  <tbody>${parts.map((a) => `<tr><th style="color:${partColor(a)}">${esc(partName(a))}</th>${parts.map((b) => {
+  edges.forEach((e) => { const g = (groups[e.d.id] = groups[e.d.id] || { d: e.d, list: new Map(), q: new Set(), p: new Set() }); g.list.set(e.it.id, e.it); g.q.add(e.q); g.p.add(e.p); });
+  const hot = Object.values(groups).sort((a, b) => b.list.size - a.list.size);
+  const ready = RM_PARTS.map((p) => [p, RM.data.items.filter((x) => x.roles && x.roles[p] && !x.roles[p].done && !waitingOn(x, by).length).sort(sortItems)]);
+  return `<p class="muted" style="margin:0 0 10px">다른 파트가 먼저 끝내야 시작할 수 있는 카드 수예요. 숫자를 누르면 아래 목록이 그 칸만 보여요.</p>
+  <div class="tbl-wrap"><table class="rm-matrix"><thead><tr><th>기다리는 파트 ↓ / 먼저 끝낼 파트 →</th>${RM_PARTS.map((p) => `<th style="color:${partColor(p)}">${esc(partName(p))}</th>`).join('')}</tr></thead>
+  <tbody>${RM_PARTS.map((a) => `<tr><th style="color:${partColor(a)}">${esc(partName(a))}</th>${RM_PARTS.map((b) => {
     const c = a === b ? 0 : cnt(a, b);
     return `<td>${a === b ? '<span class="muted">-</span>' : c ? `<button class="rm-cell" data-a="${a}" data-b="${b}" style="--heat:${Math.min(1, c / 6)}">${c}</button>` : '<span class="muted">0</span>'}</td>`;
   }).join('')}</tr>`).join('')}</tbody></table></div>
-  <div class="section-title">많이 기다리는 작업 <span class="muted" style="font-weight:500">(끝나면 다른 파트가 풀리는 순서)</span></div>
-  <div id="rmEdges">${hot.length ? hot.map((g) => `<div class="rm-edge" data-from="${g.d.part}" data-to="${[...new Set(g.list.map((x) => x.part))].join(' ')}">
-      <button class="rm-link" data-id="${g.d.id}"><span class="rm-pdot" style="background:${partColor(g.d.part)}"></span><b>${esc(g.d.code)}</b> ${esc(g.d.title)} ${stPill(g.d.status)}</button>
-      <span class="muted">→ 기다리는 ${g.list.length}개:</span>
-      ${g.list.map((x) => `<button class="rm-link sm" data-id="${x.id}" data-part="${x.part}"><span class="rm-pdot" style="background:${partColor(x.part)}"></span>${esc(x.code || x.title)}</button>`).join('')}
-    </div>`).join('') : '<p class="empty">다른 파트를 기다리는 작업이 없어요.</p>'}</div>
-  <div class="section-title">지금 바로 시작할 수 있는 작업 <span class="muted" style="font-weight:500">(할 일 + 선행 작업 모두 완료)</span></div>
-  <div class="rm-ready-grid">${ready.map(([p, list]) => `<div><div class="rm-col-head" style="--pc:${partColor(p)}">${esc(partName(p))} <span class="muted">${list.length}</span></div>
-    ${list.slice(0, 8).map((x) => `<button class="rm-link" data-id="${x.id}"><b>${esc(x.code)}</b> ${esc(x.title)}</button>`).join('') || '<p class="muted" style="margin:4px 0">없음</p>'}${list.length > 8 ? `<p class="muted" style="margin:4px 0">외 ${list.length - 8}개</p>` : ''}</div>`).join('')}</div>`;
+  <div class="section-title">먼저 끝내면 여러 카드가 풀리는 작업</div>
+  <div>${hot.length ? hot.map((g) => `<div class="rm-edge" data-q="${[...g.q].join(' ')}" data-p="${[...g.p].join(' ')}">
+      <button class="rm-link" data-open="${g.d.id}"><b>${esc(g.d.code)}</b> ${esc(g.d.title)} ${stPill(g.d)}</button>
+      <span class="muted">→ 기다리는 ${g.list.size}개:</span>
+      ${[...g.list.values()].map((x) => `<button class="rm-link sm" data-open="${x.id}" data-parts="${rolesOf(x).join(' ')}">${esc(x.code || x.title)}</button>`).join('')}
+    </div>`).join('') : '<p class="empty">다른 파트를 기다리는 카드가 없어요.</p>'}</div>
+  <div class="section-title">지금 바로 할 수 있는 것 <span class="muted" style="font-weight:500">(내 칸이 안 됐고 선행 작업이 다 끝남)</span></div>
+  <div class="rm-ready-grid">${ready.map(([p, list]) => `<div><div class="rm-partcol-head" style="--pc:${partColor(p)}"><b>${esc(partName(p))}</b> <span class="muted">${list.length}</span></div>
+    ${list.slice(0, 8).map((x) => `<button class="rm-link" data-open="${x.id}"><b>${esc(x.code)}</b> ${esc(x.title)}</button>`).join('') || '<p class="muted" style="margin:4px 0">없음</p>'}${list.length > 8 ? `<p class="muted" style="margin:4px 0">외 ${list.length - 8}개</p>` : ''}</div>`).join('')}</div>`;
 }
 
 function rmLogLine(e, by, withTitle = true) {
   const it = by.get(e.item);
-  const name = withTitle ? (it ? `<button class="rm-link sm" data-id="${it.id}">${esc(e.code || '')} ${esc(e.title || '')}</button>` : `<b>${esc(e.code || '')} ${esc(e.title || '')}</b>`) : '';
+  const name = withTitle ? (it ? `<button class="rm-link sm" data-open="${it.id}">${esc(e.code || '')} ${esc(e.title || '')}</button>` : `<b>${esc(e.code || '')} ${esc(e.title || '')}</b>`) : '';
   let what = '';
   if (e.act === 'seed') what = esc(e.text);
   else if (e.act === 'add') what = `${name} 추가`;
   else if (e.act === 'delete') what = `${name} 삭제`;
-  else if (e.act === 'note') what = `${name} 진행 메모${e.text ? `: <span class="rm-note-text">${esc(e.text.length > 140 ? e.text.slice(0, 140) + '…' : e.text)}</span>` : ''}${e.img ? ' <span class="badge">사진</span>' : ''}`;
+  else if (e.act === 'note') what = `${name} ${e.to ? `<b>→ ${esc(partName(e.to))}</b>에게` : ''} 남긴 말${e.text ? `: <span class="rm-note-text">${esc(e.text.length > 140 ? e.text.slice(0, 140) + '…' : e.text)}</span>` : ''}${e.img ? ' <span class="badge">사진</span>' : ''}`;
   else {
     const ch = (e.changes || []).map(([f, a, b]) => {
-      if (f === 'status') return `${stPill(a)} → ${stPill(b)}`;
+      if (f === 'check') return b ? `<span class="rm-chg ok">${esc(a)} 했음 ✓</span>` : `<span class="rm-chg">${esc(a)} 체크 풂</span>`;
+      if (f === 'role+') return `${esc(a)} 파트 추가`;
+      if (f === 'role-') return `${esc(a)} 파트 뺌`;
+      if (f === 'status') return `상태 ${esc(a)} → ${esc(b)}`;
       if (f === 'note') return '설명 고침';
       if (f === 'deps') return `선행 작업 ${a}→${b}개`;
-      if (f === 'owner' || f === 'doneBy') return `${RM_FIELD[f]} ${esc(S.members[a] || a || '없음')} → ${esc(S.members[b] || b || '없음')}`;
+      if (f === 'blocked') return b ? '막힘 표시' : '막힘 풂';
+      if (f === 'area') return `영역 ${esc(areaLabel(a))} → ${esc(areaLabel(b))}`;
       if (f === 'week') return `주차 ${a || '미정'} → ${b || '미정'}`;
-      if (f === 'with') return `함께 ${esc((a || []).join('·') || '없음')} → ${esc((b || []).join('·') || '없음')}`;
+      if (f === 'owner' || f === 'doneBy') return `${f === 'owner' ? '담당' : '완료한 사람'} ${esc(S.members[a] || a || '없음')} → ${esc(S.members[b] || b || '없음')}`;
+      if (f === 'with') return '함께 하는 파트 바뀜';
       return `${RM_FIELD[f] || f} ${esc(String(a || '없음'))} → ${esc(String(b || '없음'))}`;
     }).join(', ');
     what = `${name} ${ch}`;
@@ -1544,7 +1591,7 @@ function rmLogLine(e, by, withTitle = true) {
 async function pageRoadmap(view) {
   main.innerHTML = '<div class="wide"><p class="loading">로드맵 불러오는 중…</p></div>';
   await rmLoad();
-  RM.view = ['part', 'status', 'deps', 'log'].includes(view) ? view : 'part';
+  RM.view = ['board', 'parts', 'deps', 'log'].includes(view) ? view : 'board';
   rmRender();
   rmPoll();
 }
@@ -1553,72 +1600,80 @@ function rmRender() {
   if (!RM.data || !/^#\/roadmap/.test(location.hash)) return;
   const by = rmById();
   const f = RM.f;
-  const total = RM.data.items.length, done = RM.data.items.filter((x) => x.status === 'done').length;
-  const list = rmFiltered().sort(sortItems);
+  const items = RM.data.items;
+  const checks = items.reduce((s, x) => s + rolesOf(x).length, 0), checked = items.reduce((s, x) => s + doneN(x), 0);
+  const cardsDone = items.filter(isDone).length;
+  const list = rmFiltered();
   let body = '';
-  if (RM.view === 'part') {
-    body = `<div class="rm-board">${RM_ORDER.map((p) => {
-      const col = list.filter((x) => x.part === p);
-      if (!RM.data.items.some((x) => x.part === p)) return '';
-      return `<section class="rm-col" data-col="${p}"><div class="rm-col-head" style="--pc:${partColor(p)}">${esc(partName(p))} <span class="muted">${col.length}</span>
-        ${S.me ? `<button class="btn sm plain" data-add="${p}" title="${esc(partName(p))}에 항목 추가">+</button>` : ''}</div>
-        ${col.map((x) => rmCard(x, by)).join('') || '<p class="muted" style="margin:6px 4px">조건에 맞는 항목이 없어요.</p>'}</section>`;
-    }).join('')}</div>`;
-  } else if (RM.view === 'status') {
-    body = `<div class="rm-board st">${Object.keys(RM_ST).map((s) => {
-      const col = list.filter((x) => x.status === s);
-      return `<section class="rm-col"><div class="rm-col-head">${stPill(s)} <span class="muted">${col.length}</span></div>${col.map((x) => rmCard(x, by)).join('') || '<p class="muted" style="margin:6px 4px">없음</p>'}</section>`;
-    }).join('')}</div>`;
-  } else if (RM.view === 'deps') {
-    body = rmDepsView(by);
-  } else {
+  if (RM.view === 'board') body = rmBoard(list, by);
+  else if (RM.view === 'parts') body = rmPartsView(by);
+  else if (RM.view === 'deps') body = rmDepsView(by);
+  else {
     const log = RM.data.log;
-    body = log.length ? `<div class="rm-logs">${log.map((e) => rmLogLine(e, by)).join('')}</div><p class="muted">최근 ${log.length}건까지 보여요. 항목을 열면 그 항목의 전체 기록이 있어요.</p>` : '<p class="empty">아직 기록이 없어요.</p>';
+    body = log.length ? `<div class="rm-logs">${log.map((e) => rmLogLine(e, by)).join('')}</div><p class="muted">최근 ${log.length}건까지 보여요. 카드를 열면 그 카드의 전체 기록이 있어요.</p>` : '<p class="empty">아직 기록이 없어요.</p>';
   }
-  const showFilters = RM.view === 'part' || RM.view === 'status';
   main.innerHTML = `<div class="wide rm">
-    <div class="rm-head"><div><h1 class="page">로드맵</h1>
-      <p class="page-sub" style="margin:0">모두 같은 로드맵을 봐요. 전체 ${total}개 중 <b>${done}개 완료</b> (${total ? Math.round(done / total * 100) : 0}%). ${S.me ? '항목을 눌러 상태를 바꾸거나 진행 메모·스크린샷을 남겨요.' : '로그인하면 추가·수정·완료 표시를 할 수 있어요.'}</p></div>
-      <div class="rm-head-acts">${S.me ? '<button class="btn" data-add="">+ 항목 추가</button>' : '<button class="btn" data-login>로그인</button>'}</div></div>
-    ${rmSummary(by)}
-    <div class="tabs">${[['part', '파트별'], ['status', '상태별'], ['deps', '의존 관계'], ['log', '최근 변경']].map(([k, l]) => `<button data-v="${k}" class="${RM.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-    ${showFilters ? `<div class="filters rm-filters">
+    <div class="rm-head"><div><h1 class="page">로드맵 보드</h1>
+      <p class="page-sub" style="margin:0">카드 ${items.length}장 중 <b>${cardsDone}장 끝</b> · 파트 칸 ${checks}개 중 ${checked}개 체크 (${checks ? Math.round(checked / checks * 100) : 0}%). ${S.me ? '카드 안 A~E 칸을 누르면 했다·안 했다가 바뀌어요.' : '로그인하면 체크하고 할 일을 추가할 수 있어요.'}</p></div>
+      <div class="rm-head-acts">${S.me ? '<button class="btn" data-add="">+ 할 일 추가</button>' : '<button class="btn" data-login>로그인</button>'}</div></div>
+    ${rmPartStrip()}
+    <div class="tabs">${[['board', '보드'], ['parts', '파트별 할 일·받은 말'], ['deps', '의존 관계'], ['log', '최근 변경']].map(([k, l]) => `<button data-v="${k}" class="${RM.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    ${RM.view === 'board' ? `<div class="filters rm-filters">
       <input type="search" id="rmQ" placeholder="코드·제목 검색" value="${esc(f.q)}">
+      <select id="rmPart"><option value="">모든 파트</option>${RM_PARTS.map((p) => `<option value="${p}"${f.part === p ? ' selected' : ''}>${esc(partName(p))}</option>`).join('')}</select>
       <select id="rmPrio"><option value="">우선 전체</option>${['P1', 'P2', 'P3'].map((p) => `<option${f.prio === p ? ' selected' : ''}>${p}</option>`).join('')}</select>
-      <select id="rmWeek"><option value="">주차 전체</option>${[1, 2, 3].map((w) => `<option value="${w}"${f.week === String(w) ? ' selected' : ''}>${w}주차</option>`).join('')}<option value="0"${f.week === '0' ? ' selected' : ''}>주차 미정</option></select>
-      ${S.me ? `<label class="chk"><input type="checkbox" id="rmMine"${f.mine ? ' checked' : ''}> 내 것만</label>` : ''}
-      <label class="chk"><input type="checkbox" id="rmHide"${f.hideDone ? ' checked' : ''}> 완료 숨기기</label>
-      <span class="muted">${list.length}개</span></div>` : ''}
+      <label class="chk"><input type="checkbox" id="rmHide"${f.hideDone ? ' checked' : ''}> 끝난 카드 숨기기</label>
+      <span class="muted">${list.length}장</span>
+      <span class="rm-legend"><span class="rm-chip on" style="--pc:var(--muted)"><span class="rm-chip-box">✓</span>A</span> 했음 <span class="rm-chip" style="--pc:var(--muted)"><span class="rm-chip-box"></span>A</span> 아직</span></div>` : ''}
     ${body}</div>`;
+  rmBind(main);
+}
 
-  $$('.tabs button', main).forEach((b) => b.addEventListener('click', () => { location.hash = '#/roadmap/' + b.dataset.v; }));
-  $$('[data-id]', main).forEach((b) => b.addEventListener('click', () => rmOpen(b.dataset.id)));
-  $$('[data-add]', main).forEach((b) => b.addEventListener('click', () => rmEdit(null, b.dataset.add)));
-  const lg = $('[data-login]', main); if (lg) lg.addEventListener('click', () => loginModal(() => rmRender()));
-  $$('.rm-sum-card', main).forEach((b) => b.addEventListener('click', () => {
-    if (RM.view !== 'part') { location.hash = '#/roadmap/part'; return; }
-    const col = $(`.rm-col[data-col="${b.dataset.part}"]`, main);
-    if (col) col.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'start' });
+function rmBind(root) {
+  const save = () => store.set('rm-f2', RM.f);
+  $$('.tabs button', root).forEach((b) => b.addEventListener('click', () => { location.hash = '#/roadmap/' + b.dataset.v; }));
+  $$('[data-chk]', root).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); rmCheck(b.dataset.chk, b.dataset.p); }));
+  $$('[data-open]', root).forEach((b) => {
+    b.addEventListener('click', () => rmOpen(b.dataset.open));
+    b.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === b) rmOpen(b.dataset.open); });
+  });
+  $$('[data-add]', root).forEach((b) => b.addEventListener('click', () => rmEdit(null, b.dataset.add)));
+  const lg = $('[data-login]', root); if (lg) lg.addEventListener('click', () => loginModal(() => rmRender()));
+  $$('[data-fpart]', root).forEach((b) => b.addEventListener('click', () => {
+    RM.f.part = RM.f.part === b.dataset.fpart ? '' : b.dataset.fpart; save();
+    if (RM.view !== 'board') location.hash = '#/roadmap/board'; else rmRender();
   }));
-  $$('.rm-cell', main).forEach((b) => b.addEventListener('click', () => {
+  $$('.rm-cell', root).forEach((b) => b.addEventListener('click', () => {
     const on = b.classList.toggle('on');
-    $$('.rm-cell', main).forEach((x) => { if (x !== b) x.classList.remove('on'); });
-    $$('.rm-edge', main).forEach((r) => {
-      if (!on) { r.hidden = false; $$('[data-part]', r).forEach((x) => { x.hidden = false; }); return; }
-      const hit = r.dataset.from === b.dataset.b && r.dataset.to.split(' ').includes(b.dataset.a);
+    $$('.rm-cell', root).forEach((x) => { if (x !== b) x.classList.remove('on'); });
+    $$('.rm-edge', root).forEach((r) => {
+      const hit = !on || (r.dataset.q.split(' ').includes(b.dataset.b) && r.dataset.p.split(' ').includes(b.dataset.a));
       r.hidden = !hit;
-      if (hit) $$('[data-part]', r).forEach((x) => { x.hidden = x.dataset.part !== b.dataset.a; });
+      $$('[data-parts]', r).forEach((x) => { x.hidden = on && !x.dataset.parts.split(' ').includes(b.dataset.a); });
     });
   }));
-  const save = () => store.set('rm-f', RM.f);
-  const q = $('#rmQ');
+  const q = $('#rmQ', root);
   if (q) {
     q.addEventListener('input', () => { RM.f.q = q.value; save(); clearTimeout(RM.qt); RM.qt = setTimeout(() => { rmRender(); const n = $('#rmQ'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 250); });
-    $('#rmPrio').addEventListener('change', (e) => { RM.f.prio = e.target.value; save(); rmRender(); });
-    $('#rmWeek').addEventListener('change', (e) => { RM.f.week = e.target.value; save(); rmRender(); });
-    const mine = $('#rmMine'); if (mine) mine.addEventListener('change', (e) => { RM.f.mine = e.target.checked; save(); rmRender(); });
-    $('#rmHide').addEventListener('change', (e) => { RM.f.hideDone = e.target.checked; save(); rmRender(); });
+    $('#rmPart', root).addEventListener('change', (e) => { RM.f.part = e.target.value; save(); rmRender(); });
+    $('#rmPrio', root).addEventListener('change', (e) => { RM.f.prio = e.target.value; save(); rmRender(); });
+    $('#rmHide', root).addEventListener('change', (e) => { RM.f.hideDone = e.target.checked; save(); rmRender(); });
   }
+}
+
+async function rmCheck(id, p) {
+  if (!needLogin(() => rmRender())) return;
+  const it = rmById().get(id); if (!it || !it.roles[p]) return;
+  const done = !it.roles[p].done;
+  it.roles[p] = done ? { done: true, by: S.me, at: Date.now() } : { done: false, by: null, at: null }; // 바로 보이게
+  const inModal = !$('#modalBack').hidden;
+  if (inModal) rmOpen(id); else rmRender();
+  try {
+    const r = await api('/roadmap/check', { body: { id, part: p, done } });
+    toast(`${it.code || it.title}: ${partName(p)} ${done ? '했음 ✓' : '체크 풂'}`);
+    await rmLoad();
+    if (inModal && !$('#modalBack').hidden) { rmRender(); rmOpen(r.item.id); } else rmRender();
+  } catch (x) { toast(x.message); await rmLoad(); rmRender(); }
 }
 
 function rmAfterClose() { if (RM.stale) rmLoad().then(rmRender).catch(() => {}); }
@@ -1635,52 +1690,45 @@ async function rmSave(item, v) {
     throw x;
   }
 }
-const rmPlain = (it) => ({ id: it.id, code: it.code, title: it.title, part: it.part, owner: it.owner, status: it.status, prio: it.prio, week: it.week, due: it.due, note: it.note, deps: it.deps || [], with: it.with || [], doneBy: it.doneBy });
+const rmPlain = (it) => ({ id: it.id, code: it.code, title: it.title, area: it.area, roles: it.roles, blocked: !!it.blocked, prio: it.prio, week: it.week, due: it.due, note: it.note, deps: it.deps || [] });
 
-async function rmOpen(id) {
+function rmOpen(id) {
   const by = rmById();
   const it = by.get(id);
-  if (!it) { toast('그 사이 지워진 항목이에요.'); return; }
+  if (!it) { toast('그 사이 지워진 카드예요.'); return; }
   const wait = waitingOn(it, by);
   const deps = (it.deps || []).map((d) => by.get(d)).filter(Boolean);
   const after = RM.data.items.filter((x) => (x.deps || []).includes(it.id));
-  const link = (x) => `<button class="rm-link" data-go="${x.id}"><span class="rm-pdot" style="background:${partColor(x.part)}"></span><b>${esc(x.code)}</b> ${esc(x.title)} ${stPill(x.status)}</button>`;
+  const link = (x) => `<button class="rm-link" data-go="${x.id}"><b>${esc(x.code)}</b> ${esc(x.title)} ${stPill(x)}</button>`;
   const m = openModal(`<div class="rm-detail">
-    <div class="rm-detail-head"><span class="rm-pdot" style="background:${partColor(it.part)}"></span><span class="muted">${esc(partName(it.part))}</span>${it.code ? `<span class="rm-code">${esc(it.code)}</span>` : ''}<span class="badge">${it.prio}</span>${it.week ? `<span class="muted">${it.week}주차</span>` : ''}${it.due ? `<span class="muted">마감 ${esc(it.due)}</span>` : ''}</div>
+    <div class="rm-detail-head"><span class="muted">${esc(areaLabel(it.area))}</span>${it.code ? `<span class="rm-code">${esc(it.code)}</span>` : ''}<span class="badge">${it.prio}</span>${it.week ? `<span class="muted">${it.week}주차</span>` : ''}${it.due ? `<span class="muted">마감 ${esc(it.due)}</span>` : ''}${stPill(it)}</div>
     <h2>${esc(it.title)}</h2>
-    <div class="rm-statusbar">${Object.keys(RM_ST).map((s) => `<button class="rm-sbtn st-${s}${it.status === s ? ' on' : ''}" data-s="${s}"${S.me ? '' : ' disabled'}>${RM_ST[s]}</button>`).join('')}</div>
-    <p class="rm-facts">담당 <b>${it.owner ? esc(S.members[it.owner]) : '없음'}</b>${(it.with || []).length ? ` · 함께 ${esc(it.with.join('·'))}` : ''}
-      ${it.status === 'done' ? ` · <span class="rm-done-inline">✓ ${esc(S.members[it.doneBy] || '')} 완료 (${kst(new Date(it.doneAt || it.updatedAt).toISOString())})</span>
-        ${S.me ? `<select id="rmDoneBy" title="완료한 사람 바꾸기">${Object.keys(S.members).map((n) => `<option value="${n}"${n === it.doneBy ? ' selected' : ''}>${esc(S.members[n])}</option>`).join('')}</select>` : ''}` : ''}
-      <br><span class="muted">마지막 수정 ${rmWho(it.updatedBy)} · ${ago(it.updatedAt)}</span></p>
+    <div class="rm-rel-h">파트별로 했나요? ${S.me ? '<span class="muted" style="font-weight:500">누르면 바뀌어요</span>' : ''}</div>
+    <div class="rm-rolelist">${rolesOf(it).map((p) => { const r = it.roles[p]; return `<div class="rm-role">${roleChip(it, p, true)}<span class="muted">${r.done ? `${esc(S.members[r.by] || r.by || '')} · ${kst(new Date(r.at || it.updatedAt).toISOString())}` : '아직 안 함'}</span></div>`; }).join('')}</div>
+    ${S.me ? `<label class="chk" style="margin:6px 0"><input type="checkbox" id="rmBlocked"${it.blocked ? ' checked' : ''}> 막힘 (도움이 필요해요)</label>` : it.blocked ? '<p><span class="rm-st st-blocked">막힘</span></p>' : ''}
     ${it.note ? `<div class="md rm-note">${renderMd(it.note)}</div>` : ''}
     ${wait.length ? `<div class="banner" style="margin:10px 0">아직 안 끝난 선행 작업 ${wait.length}개가 있어요.</div>` : ''}
     <div class="rm-rel"><div><div class="rm-rel-h">먼저 끝나야 하는 작업 (${deps.length})</div>${deps.map(link).join('') || '<p class="muted">없음</p>'}</div>
       <div><div class="rm-rel-h">이 작업을 기다리는 작업 (${after.length})</div>${after.map(link).join('') || '<p class="muted">없음</p>'}</div></div>
-    <div class="section-title" style="margin-top:18px">진행 메모 <span class="muted" style="font-weight:500">카톡 대신 여기에 남겨요 (사진 붙여넣기 가능)</span></div>
-    ${S.me ? `<div class="rm-noteform"><textarea id="rmNote" rows="3" maxlength="2000" placeholder="오늘 한 것, 막힌 것, 다른 파트에 부탁할 것…  (Ctrl+V로 스크린샷 붙여넣기)"></textarea>
+    <div class="section-title" style="margin-top:18px">개발자에게 남길 말 <span class="muted" style="font-weight:500">사진은 Ctrl+V로 붙여 넣어요</span></div>
+    ${S.me ? `<div class="rm-noteform">
+      <div class="rm-noteto"><span class="muted">받는 사람</span><select id="rmTo"><option value="">모두</option>${(() => { const oth = rolesOf(it).filter((x) => x !== myPart()); const def = oth.length === 1 ? oth[0] : ''; return RM_PARTS.filter((p) => p !== myPart()).map((p) => `<option value="${p}"${p === def ? ' selected' : ''}>${esc(partName(p))}</option>`).join(''); })()}</select></div>
+      <textarea id="rmNote" rows="3" maxlength="2000" placeholder="예: 응답에 seat_no 꼭 넣어 주세요 / 오늘 여기까지 했어요 / 이거 막혔어요"></textarea>
       <div class="rm-noteacts"><label class="btn sm plain">사진 고르기<input type="file" id="rmFile" accept="image/*" hidden></label><span id="rmImgInfo" class="muted"></span><span style="flex:1"></span><button class="btn sm" id="rmNoteGo">남기기</button></div>
-      <img id="rmImgPrev" class="rm-img-prev" hidden alt="붙일 사진 미리보기"></div>` : '<p class="muted">로그인하면 메모를 남길 수 있어요.</p>'}
-    <div id="rmNotes"><p class="loading">기록 불러오는 중…</p></div>
+      <img id="rmImgPrev" class="rm-img-prev" hidden alt="붙일 사진 미리보기"></div>` : '<p class="muted">로그인하면 말을 남길 수 있어요.</p>'}
+    <div id="rmNotes"><p class="loading">불러오는 중…</p></div>
     <div class="row">${S.me ? '<button class="btn sm danger" id="rmDel">삭제</button><span style="flex:1"></span><button class="btn plain" id="rmEditBtn">고치기</button>' : ''}<button class="btn plain" data-x>닫기</button></div>
   </div>`, { wide: true });
-  const close = () => { closeModal(); rmAfterClose(); };
-  $('[data-x]', m).addEventListener('click', close);
+  $('[data-x]', m).addEventListener('click', () => { closeModal(); rmAfterClose(); });
   $$('[data-go]', m).forEach((b) => b.addEventListener('click', () => rmOpen(b.dataset.go)));
+  $$('[data-chk]', m).forEach((b) => b.addEventListener('click', () => rmCheck(b.dataset.chk, b.dataset.p)));
   if (S.me) {
-    $$('.rm-sbtn', m).forEach((b) => b.addEventListener('click', async () => {
-      if (b.dataset.s === it.status) return;
-      const next = { ...rmPlain(it), status: b.dataset.s, doneBy: b.dataset.s === 'done' ? S.me : null };
-      if (b.dataset.s === 'doing' && !it.owner) next.owner = S.me;
-      $$('.rm-sbtn', m).forEach((x) => { x.disabled = true; });
-      try { const r = await rmSave(next, it.v); if (r) { toast(`${it.code || it.title}: ${RM_ST[r.status]}${r.status === 'done' ? ` (${S.members[r.doneBy]})` : ''}`); rmOpen(r.id); } }
-      catch (x) { toast(x.message); $$('.rm-sbtn', m).forEach((y) => { y.disabled = false; }); }
-    }));
-    const db = $('#rmDoneBy', m);
-    if (db) db.addEventListener('change', async () => { try { const r = await rmSave({ ...rmPlain(it), doneBy: db.value }, it.v); if (r) rmOpen(r.id); } catch (x) { toast(x.message); } });
+    $('#rmBlocked', m).addEventListener('change', async (e) => {
+      try { const r = await rmSave({ ...rmPlain(it), blocked: e.target.checked }, it.v); if (r) { toast(r.blocked ? '막힘으로 표시했어요.' : '막힘을 풀었어요.'); rmOpen(r.id); } } catch (x) { toast(x.message); }
+    });
     $('#rmEditBtn', m).addEventListener('click', () => rmEdit(it));
     twoStep($('#rmDel', m), '한 번 더 누르면 삭제', async () => {
-      try { await api('/roadmap/delete', { body: { id: it.id } }); closeModal(); toast(`${it.code || it.title} 항목을 지웠어요.`); await rmLoad(); rmRender(); }
+      try { await api('/roadmap/delete', { body: { id: it.id } }); closeModal(); toast(`${it.code || it.title} 카드를 지웠어요.`); await rmLoad(); rmRender(); }
       catch (x) { toast(x.message); }
     });
     rmNoteForm(m, it);
@@ -1726,12 +1774,13 @@ function rmNoteForm(m, it) {
   });
   const go = $('#rmNoteGo', m);
   go.addEventListener('click', async () => {
-    if (!ta.value.trim() && !img) { toast('메모나 사진을 넣어 주세요.'); return; }
+    if (!ta.value.trim() && !img) { toast('할 말이나 사진을 넣어 주세요.'); return; }
     go.disabled = true;
+    const to = $('#rmTo', m).value;
     try {
-      await api('/roadmap/note', { body: { id: it.id, text: ta.value, img } });
+      await api('/roadmap/note', { body: { id: it.id, text: ta.value, img, to } });
       ta.value = ''; img = null; prev.hidden = true; info.textContent = '';
-      toast('진행 메모를 남겼어요.'); RM.stale = true; rmNotes(m, it);
+      toast(to ? `${partName(to)}에게 남겼어요.` : '남겼어요.'); RM.stale = true; rmNotes(m, it);
     } catch (x) { toast(x.message); } finally { go.disabled = false; }
   });
 }
@@ -1745,60 +1794,58 @@ async function rmNotes(m, it) {
   const notes = log.filter((e) => e.act === 'note');
   const rest = log.filter((e) => e.act !== 'note');
   box.innerHTML = `${notes.map((e) => `<div class="rm-noteitem">
-      <div class="rm-noteitem-h"><span class="dot" style="background:${colorOf(e.who)}"></span> <b>${rmWho(e.who)}</b> <span class="muted">${kst(new Date(e.at).toISOString())}</span>
+      <div class="rm-noteitem-h"><span class="dot" style="background:${colorOf(e.who)}"></span> <b>${rmWho(e.who)}</b>${e.to ? ` <span class="rm-to">→ ${esc(partName(e.to))}</span>` : ''} <span class="muted">${kst(new Date(e.at).toISOString())}</span>
       ${e.who === S.me ? `<button class="btn sm plain" data-ndel="${e.seq}">지우기</button>` : ''}</div>
       ${e.text ? `<div class="rm-note-body">${esc(e.text)}</div>` : ''}
       ${e.img ? (S.me ? `<a href="/api/roadmap/img?id=${e.img}" target="_blank" rel="noopener"><img class="rm-img" loading="lazy" src="/api/roadmap/img?id=${e.img}" alt="${esc(rmWho(e.who))}의 스크린샷"></a>` : '<p class="muted">로그인하면 사진이 보여요.</p>') : ''}
-    </div>`).join('') || '<p class="muted">아직 메모가 없어요.</p>'}
+    </div>`).join('') || '<p class="muted">아직 남긴 말이 없어요.</p>'}
     ${rest.length ? `<details class="rm-hist"><summary>바뀐 기록 ${rest.length}건</summary>${rest.map((e) => rmLogLine(e, by, false)).join('')}</details>` : ''}`;
   $$('[data-ndel]', box).forEach((b) => twoStep(b, '한 번 더', async () => {
     try { await api('/roadmap/note-delete', { body: { seq: Number(b.dataset.ndel) } }); RM.stale = true; rmNotes(m, it); } catch (x) { toast(x.message); }
   }));
 }
 
-function rmEdit(it, part) {
-  if (!needLogin(() => rmEdit(it, part))) return;
+function rmEdit(it, area) {
+  if (!needLogin(() => rmEdit(it, area))) return;
   const isNew = !it;
-  const p0 = it ? it.part : (part || (Object.keys(RM.data.parts).find((k) => RM.data.parts[k].owner === S.me) || 'ALL'));
-  const cur = it ? rmPlain(it) : { code: '', title: '', part: p0, owner: RM.data.parts[p0].owner, status: 'todo', prio: 'P1', week: 0, due: '', note: '', deps: [], with: [] };
-  let deps = new Set(cur.deps);
-  const others = RM.data.items.filter((x) => !it || x.id !== it.id).sort((a, b) => RM_ORDER.indexOf(a.part) - RM_ORDER.indexOf(b.part) || sortItems(a, b));
-  const m = openModal(`<h2>${isNew ? '항목 추가' : '항목 고치기'}</h2>
+  const cur = it ? rmPlain(it) : { code: '', title: '', area: area || 'etc', roles: myPart() ? { [myPart()]: { done: false } } : {}, blocked: false, prio: 'P1', week: 0, due: '', note: '', deps: [] };
+  const deps = new Set(cur.deps);
+  const others = RM.data.items.filter((x) => !it || x.id !== it.id).sort((a, b) => RM.data.areas.findIndex((z) => z.k === a.area) - RM.data.areas.findIndex((z) => z.k === b.area) || sortItems(a, b));
+  const m = openModal(`<h2>${isNew ? '할 일 추가' : '카드 고치기'}</h2>
     <form id="rmForm" class="rm-form">
+      <div class="field"><label>할 일</label><input type="text" name="title" maxlength="200" required value="${esc(cur.title)}" placeholder="예: 좌석 선점 API에 매수 제한 붙이기" autofocus></div>
+      <div class="field"><label>맡을 파트 <span class="muted">(카드 안에 체크칸이 생겨요)</span></label><div class="rm-with">${RM_PARTS.map((p) => `<label class="chk rm-pick" style="--pc:${partColor(p)}"><input type="checkbox" name="role" value="${p}"${cur.roles[p] ? ' checked' : ''}> <b>${p}</b> ${esc(S.members[partOwner(p)])}</label>`).join('')}</div></div>
       <div class="rm-grid">
-        <div class="field"><label>코드 <span class="muted">(선택, 예: QUE-06)</span></label><input type="text" name="code" maxlength="24" value="${esc(cur.code)}"></div>
-        <div class="field" style="grid-column:span 2"><label>제목</label><input type="text" name="title" maxlength="200" required value="${esc(cur.title)}" autofocus></div>
-        <div class="field"><label>파트</label><select name="part">${RM_ORDER.map((p) => `<option value="${p}"${cur.part === p ? ' selected' : ''}>${esc(partName(p))}</option>`).join('')}</select></div>
-        <div class="field"><label>담당</label><select name="owner"><option value="">없음</option>${Object.keys(S.members).map((n) => `<option value="${n}"${cur.owner === n ? ' selected' : ''}>${esc(S.members[n])}</option>`).join('')}</select></div>
-        <div class="field"><label>상태</label><select name="status">${Object.keys(RM_ST).map((s) => `<option value="${s}"${cur.status === s ? ' selected' : ''}>${RM_ST[s]}</option>`).join('')}</select></div>
+        <div class="field"><label>영역</label><select name="area">${RM.data.areas.map((a) => `<option value="${a.k}"${cur.area === a.k ? ' selected' : ''}>${esc(a.label)}</option>`).join('')}</select></div>
+        <div class="field"><label>코드 <span class="muted">(선택)</span></label><input type="text" name="code" maxlength="24" value="${esc(cur.code)}" placeholder="RSV-06"></div>
         <div class="field"><label>우선</label><select name="prio">${['P1', 'P2', 'P3'].map((p) => `<option${cur.prio === p ? ' selected' : ''}>${p}</option>`).join('')}</select></div>
         <div class="field"><label>주차</label><select name="week">${[0, 1, 2, 3, 4].map((w) => `<option value="${w}"${Number(cur.week) === w ? ' selected' : ''}>${w ? w + '주차' : '미정'}</option>`).join('')}</select></div>
         <div class="field"><label>마감일 <span class="muted">(선택)</span></label><input type="date" name="due" value="${esc(cur.due || '')}"></div>
       </div>
-      <div class="field"><label>함께 하는 파트</label><div class="rm-with">${['A', 'B', 'C', 'D', 'E'].map((p) => `<label class="chk"><input type="checkbox" name="with" value="${p}"${cur.with.includes(p) ? ' checked' : ''}> ${esc(partName(p))}</label>`).join('')}</div></div>
       <div class="field"><label>설명 <span class="muted">(마크다운, 선택)</span></label><textarea name="note" rows="3" maxlength="2000">${esc(cur.note)}</textarea></div>
-      <div class="field"><label>먼저 끝나야 하는 작업 <span class="muted" id="rmDepN">${deps.size}개</span></label>
+      <details class="rm-depbox"${deps.size ? ' open' : ''}><summary>먼저 끝나야 하는 작업 <span class="muted" id="rmDepN">${deps.size}개</span></summary>
         <input type="search" id="rmDepQ" placeholder="코드·제목으로 찾기">
-        <div class="rm-deppick">${others.map((x) => `<label class="rm-depopt" data-t="${esc(`${x.code} ${x.title} ${partName(x.part)}`.toLowerCase())}"><input type="checkbox" value="${x.id}"${deps.has(x.id) ? ' checked' : ''}><span class="rm-pdot" style="background:${partColor(x.part)}"></span><b>${esc(x.code)}</b> ${esc(x.title)} ${stPill(x.status)}</label>`).join('')}</div></div>
+        <div class="rm-deppick">${others.map((x) => `<label class="rm-depopt" data-t="${esc(`${x.code} ${x.title} ${areaLabel(x.area)}`.toLowerCase())}"><input type="checkbox" value="${x.id}"${deps.has(x.id) ? ' checked' : ''}><b>${esc(x.code)}</b> ${esc(x.title)} ${stPill(x)}</label>`).join('')}</div></details>
       <p class="err" id="rmErr"></p>
       <div class="row"><button type="button" class="btn plain" data-x>취소</button><button class="btn" id="rmGo">${isNew ? '추가' : '저장'}</button></div>
     </form>`, { wide: true });
   $('[data-x]', m).addEventListener('click', () => (it ? rmOpen(it.id) : (closeModal(), rmAfterClose())));
   const form = $('#rmForm', m);
-  form.part.addEventListener('change', () => { if (isNew) form.owner.value = RM.data.parts[form.part.value].owner; });
   $('#rmDepQ', m).addEventListener('input', (e) => { const q = e.target.value.trim().toLowerCase(); $$('.rm-depopt', m).forEach((o) => { o.hidden = q && !o.dataset.t.includes(q); }); });
   $$('.rm-depopt input', m).forEach((c) => c.addEventListener('change', () => { if (c.checked) deps.add(c.value); else deps.delete(c.value); $('#rmDepN', m).textContent = `${deps.size}개`; }));
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const parts = $$('input[name=role]:checked', m).map((x) => x.value);
+    if (!parts.length) { $('#rmErr', m).textContent = '맡을 파트를 하나 이상 골라 주세요.'; return; }
     const item = {
-      ...(it ? { id: it.id } : {}), code: form.code.value.trim(), title: form.title.value.trim(), part: form.part.value, owner: form.owner.value,
-      status: form.status.value, prio: form.prio.value, week: Number(form.week.value), due: form.due.value, note: form.note.value,
-      deps: [...deps], with: $$('input[name=with]:checked', m).map((x) => x.value), doneBy: it && it.status === 'done' && form.status.value === 'done' ? it.doneBy : null,
+      ...(it ? { id: it.id } : {}), code: form.code.value.trim(), title: form.title.value.trim(), area: form.area.value,
+      roles: Object.fromEntries(parts.map((p) => [p, { done: !!(cur.roles[p] && cur.roles[p].done) }])),
+      blocked: cur.blocked, prio: form.prio.value, week: Number(form.week.value), due: form.due.value, note: form.note.value, deps: [...deps],
     };
     const btn = $('#rmGo', m); btn.disabled = true;
     try {
       const r = await rmSave(item, it ? it.v : undefined);
-      if (r) { toast(isNew ? '항목을 추가했어요.' : '저장했어요.'); rmOpen(r.id); }
+      if (r) { toast(isNew ? '할 일을 추가했어요.' : '저장했어요.'); rmOpen(r.id); }
     } catch (x) { $('#rmErr', m).textContent = x.message; } finally { btn.disabled = false; }
   });
 }
