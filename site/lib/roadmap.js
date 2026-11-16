@@ -36,6 +36,8 @@ const AREA_KEYS = AREAS.map((a) => a[0]);
 const areaOf = (code) => { const p = String(code || '').split('-')[0]; const a = AREAS.find((x) => x[2].includes(p)); return a ? a[0] : 'etc'; };
 // 흐름도 기본 모양. 팀이 사이트에서 고치면 roadmap_meta 'flow'에 저장되고 그게 우선한다.
 // 노드 kind: start(이용자처럼 칸이 아닌 시작점) / area(기능 영역 = 보드의 칸). 선의 방향(위·아래·옆)은 위치를 보고 화면이 정한다
+// 예전에 이모지로 저장된 흐름도는 같은 뜻의 선 아이콘 이름으로 바꿔 저장
+const EMOJI_ICON = { '🙋': 'user', '🔐': 'lock', '🚆': 'train', '⏳': 'hourglass', '💺': 'seat', '💳': 'card', '↩️': 'undo', '🎫': 'ticket', '📨': 'send', '🛡️': 'shield', '🖥️': 'monitor', '🗂️': 'database', '🧱': 'server', '🧪': 'flask', '📌': 'pin', '📊': 'chart', '🔔': 'bell', '⚙️': 'gear', '🧾': 'receipt', '🗺️': 'map', '🤖': 'bot', '📱': 'phone', '🧠': 'cpu', '🚀': 'rocket' };
 // 아이콘은 화면(public/app.js ICON_PATHS)의 선 아이콘 이름
 const ICON = { auth: 'lock', train: 'train', queue: 'hourglass', seat: 'seat', pay: 'card', cancel: 'undo', wait: 'ticket', event: 'send', risk: 'shield', admin: 'monitor', data: 'database', infra: 'server', test: 'flask', etc: 'pin' };
 const POS = {
@@ -197,7 +199,7 @@ function cleanFlow(f) {
     const x = Math.round(Number(n.x)), y = Math.round(Number(n.y));
     if (!(x >= 0 && x <= 1800 && y >= 0 && y <= 4000)) return '칸 위치가 화면을 벗어났어요.';
     keys.add(n.k);
-    nodes.push({ k: n.k, kind: n.kind === 'start' ? 'start' : 'area', label: n.label.trim(), icon: /^[a-z]{1,16}$/.test(n.icon || '') ? n.icon : 'pin', x, y });
+    nodes.push({ k: n.k, kind: n.kind === 'start' ? 'start' : 'area', label: n.label.trim(), icon: /^[a-z]{1,16}$/.test(n.icon || '') ? n.icon : (EMOJI_ICON[n.icon] || 'pin'), x, y });
   }
   const edges = [];
   for (const e of f.edges) {
