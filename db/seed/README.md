@@ -6,6 +6,23 @@
 `docs/erd/jejari-erd.html`이고, 이 폴더는 **그 스키마에 들어갈 값**만 담습니다.
 스키마가 바뀌면 이 SQL도 같이 고칩니다.
 
+## 평소에는 직접 실행할 일이 없습니다
+
+`docker compose up -d` 로 Oracle을 처음 띄우면 `docker/oracle/init/02-seed.sh` 가
+DDL 다음으로 01~05를 자동 실행합니다. 확인:
+
+```bash
+docker compose logs oracle | grep "jejari seed loaded"
+```
+
+스키마나 시드를 고친 뒤 다시 넣으려면 Oracle 볼륨을 지우고 다시 띄웁니다 (데이터 삭제됨):
+
+```bash
+docker compose rm -sf oracle && docker volume rm jejari_oracle-data && docker compose up -d oracle
+```
+
+아래는 compose 없이 직접 돌릴 때입니다.
+
 ## 실행 순서
 
 ```bash

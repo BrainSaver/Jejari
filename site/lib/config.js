@@ -17,6 +17,18 @@ export const PIN_LOCK_SEC = 600;
 export const SESSION_SEC = 7 * 24 * 3600;
 export const PBKDF2_ITER = 100000; // Workers의 PBKDF2 최대 반복 수
 
+// 팀원별 폴더: docs/{한글이름}/ 아래 기여 정리, 개발일지, 기능 문서, 트러블슈팅
+export const PERSON_KINDS = ['devlog', 'features', 'troubleshooting'];
+const KO = Object.values(MEMBERS).join('|');
+export const PERSON_FILE = new RegExp(`^docs/(${KO})/(contribution\\.md|(devlog|features|troubleshooting)/[^/]+\\.md)$`);
+export const PERSON_DIR = new RegExp(`^docs/(${KO})/(devlog|features|troubleshooting)$`);
+// 팀원 폴더 파일은 그 사람만 고친다 (다른 문서는 누구나)
+export function ownerOk(me, path) {
+  const m = /^docs\/([^/]+)\//.exec(path || '');
+  if (!m || !Object.values(MEMBERS).includes(m[1])) return true;
+  return MEMBERS[me] === m[1];
+}
+
 // 사이트에서 읽고 고칠 수 있는 경로. 이 밖의 파일은 저장을 거부한다.
 export const EDITABLE = [
   /^README\.md$/,
@@ -25,8 +37,9 @@ export const EDITABLE = [
   /^docs\/concurrency\.md$/,
   /^docs\/ui\/[UA]-\d{2}\.(md|html)$/,
   /^docs\/erd\/exports\/[A-Za-z]+-\d{8}\.json$/,
+  PERSON_FILE,
 ];
-export const READABLE = [...EDITABLE, /^docs\/erd\/jejari-erd\.html$/, /^docs\/ui\/index\.json$/];
+export const READABLE = [...EDITABLE, /^docs\/erd\/jejari-erd\.html$/, /^docs\/ui\/index\.json$/, /^docs\/templates\/[^/]+\.md$/];
 
 // 커밋 메시지 범위 (경로 → 범위 이름)
 export function scopeOf(path) {
@@ -36,6 +49,10 @@ export function scopeOf(path) {
   if (path.includes('concurrency')) return '동시성';
   if (path.startsWith('docs/ui/')) return '화면설계';
   if (path.startsWith('docs/erd/')) return 'erd';
+  if (/\/devlog\//.test(path)) return '개발일지';
+  if (/\/features\//.test(path)) return '기능문서';
+  if (/\/troubleshooting\//.test(path)) return '트러블슈팅';
+  if (path.endsWith('/contribution.md')) return '기여';
   return '문서';
 }
 

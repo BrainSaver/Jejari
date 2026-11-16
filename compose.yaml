@@ -17,6 +17,7 @@ services:
       - oracle-data:/opt/oracle/oradata
       - ./docker/oracle/init:/container-entrypoint-initdb.d:ro   # 첫 기동 때만 실행
       - ./docs/erd/jejari-erd.ddl.sql:/schema/jejari-erd.ddl.sql:ro
+      - ./db/seed:/seed:ro                                       # 기준 데이터 (DATA-01)
     healthcheck:
       test: ["CMD", "healthcheck.sh"]
       interval: 10s
