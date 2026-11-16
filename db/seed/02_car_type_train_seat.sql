@@ -2,16 +2,22 @@
 -- 선행: 01_station_route.sql
 -- 다시 실행해도 결과가 같습니다 (MERGE).
 --
+-- 차량 유형은 공공데이터포털 원본에서 가져왔습니다 (db/seed/data/).
+--   한국철도공사_차세대예약발매_차량유형코드_20260922 (차량유형코드 8자리 · 차량유형명 · 좌석수)
+--   일반실 50554101 'KTX일반55,간이2' 55석 / 특실 60303101 'KTXⅡ,특30(3)' 30석
+--   247건 중 차량유형명에 등급이 분명히 적힌 둘을 골랐습니다.
+--   seat_grade·seat_columns는 원본에 없는 값이라 우리가 정합니다 (DB설계서에 '생성'으로 표기).
+--
 -- seat은 ADM-01 설계대로 "train_car × car_type.seat_count"로 자동 생성합니다.
 -- seat_id는 시퀀스가 아니라 train_id*100000 + car_no*1000 + 좌석순번으로 계산합니다.
 -- 동시성 테스트(T1 등)가 좌석 ID를 코드에 고정해 쓰기 때문에 매번 같은 값이어야 합니다.
 
 MERGE INTO car_type t
 USING (
-  SELECT 'KTX-GEN' AS car_type_code, 'KTX 일반실' AS car_type_name, 56 AS seat_count,
-         'GENERAL'  AS seat_grade,   'ABCD'        AS seat_columns FROM dual UNION ALL
-  SELECT 'KTX-FST',                  'KTX 특실',                    36,
-         'FIRST',                     'ABC'                         FROM dual
+  SELECT '50554101' AS car_type_code, 'KTX일반55,간이2' AS car_type_name, 55 AS seat_count,
+         'GENERAL'   AS seat_grade,     'ABCD'             AS seat_columns FROM dual UNION ALL
+  SELECT '60303101',                   'KTXⅡ,특30(3)',                   30,
+         'FIRST',                       'ABC'                              FROM dual
 ) s ON (t.car_type_code = s.car_type_code)
 WHEN MATCHED THEN
   UPDATE SET t.car_type_name = s.car_type_name, t.seat_count = s.seat_count,
@@ -34,12 +40,12 @@ WHEN NOT MATCHED THEN
   INSERT (train_id, train_no, train_kind, route_id, direction)
   VALUES (s.train_id, s.train_no, s.train_kind, s.route_id, s.direction);
 
--- 10량 편성: 1호차 특실(36석), 2~10호차 일반실(56석) = 열차당 540석
+-- 10량 편성: 1호차 특실(30석), 2~10호차 일반실(55석) = 열차당 525석
 MERGE INTO train_car t
 USING (
   SELECT tr.train_id,
          c.car_no,
-         CASE WHEN c.car_no = 1 THEN 'KTX-FST' ELSE 'KTX-GEN' END AS car_type_code
+         CASE WHEN c.car_no = 1 THEN '60303101' ELSE '50554101' END AS car_type_code
     FROM train tr
    CROSS JOIN (SELECT LEVEL AS car_no FROM dual CONNECT BY LEVEL <= 10) c
    WHERE tr.train_id IN (1, 2)
@@ -51,6 +57,8 @@ WHEN NOT MATCHED THEN
 
 -- 물리 좌석: 좌석 번호는 "열번호 + 열문자" (예: 14D)
 --   열번호 = CEIL(순번 / 열문자 수), 창측 = 열문자가 양 끝(A 또는 D/C)
+--   좌석 수가 열문자 수로 나누어떨어지지 않으면 마지막 열이 모자랍니다
+--   (일반실 55석 = 13열 ABCD + 14열 ABC). 실제 차량도 그렇습니다.
 MERGE INTO seat t
 USING (
   SELECT tc.train_id * 100000 + tc.car_no * 1000 + n.i                        AS seat_id,
