@@ -1,11 +1,13 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v13)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v15)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
 
 -- 시퀀스
+CREATE SEQUENCE member_seq;
 CREATE SEQUENCE outbox_seq CACHE 1000;
 CREATE SEQUENCE risk_score_history_seq;
+CREATE SEQUENCE identity_verification_seq;
 
 CREATE TABLE station (
   station_id                 VARCHAR2(10) NOT NULL,
@@ -246,7 +248,7 @@ CREATE TABLE member (
   CONSTRAINT ck_member_status CHECK (status IN ('ACTIVE', 'RESTRICTED', 'BANNED'))
 );
 COMMENT ON TABLE member IS '회원 - 회원 계정. ci_hash가 위험 점수·매수 제한의 묶음 단위. 비밀번호는 member_credential로 분리.';
-COMMENT ON COLUMN member.member_id IS '회원 ID';
+COMMENT ON COLUMN member.member_id IS '회원 ID (member_seq.NEXTVAL) / 가입 때 먼저 발급. 개인정보 암호문의 AAD에 들어가므로 INSERT 전에 필요';
 COMMENT ON COLUMN member.email IS '로그인 ID';
 COMMENT ON COLUMN member.ci_hash IS '모의 본인인증 CI 해시 / 위험 점수·매수 제한의 묶음 단위. 다계정이어도 같은 값';
 COMMENT ON COLUMN member.name IS '이름 / 회원가입·예매자 확인';
@@ -764,6 +766,7 @@ CREATE TABLE identity_verification (
   CONSTRAINT ck_identity_verificatio_14v838 CHECK (result IN ('SUCCESS', 'FAIL'))
 );
 COMMENT ON TABLE identity_verification IS '본인인증 이력 - 모의 본인인증 이력. 같은 CI로 여러 계정을 인증하는 다계정 신호를 잡는다.';
+COMMENT ON COLUMN identity_verification.verification_id IS '인증 이력 ID (identity_verification_seq.NEXTVAL)';
 COMMENT ON COLUMN identity_verification.member_id IS '인증한 계정';
 COMMENT ON COLUMN identity_verification.ci_hash IS '인증 결과 CI 해시 / 같은 CI로 짧은 기간 여러 계정 인증 = 다계정 신호';
 COMMENT ON COLUMN identity_verification.provider IS 'MOCK_PASS / MOCK_PHONE / 모의 본인인증';
@@ -1252,7 +1255,10 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.batch_interval_sec', '60', 1, 'NUMBER', '위험 점수 배치 주기(초). 각 운행 sale_open_at 전 1회는 반드시 실행');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('login_attempt.retention_days', '30', 1, 'NUMBER', 'login_attempt 보관 기간 (expire_at 계산)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('queue.entry_ttl_sec', '3600', 1, 'NUMBER', '대기 기록(queue:member)이 남는 최대 시간(초). 이탈 없이 사라진 회원의 기록 정리');
-INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('waitlist.penalty_ms_per_point', '60000', 1, 'NUMBER', '위험 점수 1점당 취소표 대기 순서를 미루는 ms (대기열보다 크게, 80점 = 80분)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('waitlist.penalty_ms_per_point', '180000', 1, 'NUMBER', '위험 점수 1점당 취소표 대기 순서를 미루는 ms. 1점 = 3분 (80점 = 4시간, 팀 확정)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.login_rate_per_min', '20', 1, 'NUMBER', 'IP당 분당 로그인 시도 한도 (rate:login)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.signup_rate_per_hour', '10', 1, 'NUMBER', 'IP당 시간당 본인인증·가입 시도 한도 (rate:signup)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.verify_token_ttl_sec', '600', 1, 'NUMBER', '본인인증 1회용 토큰 유효 시간(초) (verify:{tokenHash})');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (1, 1, 'PER_RESERVATION', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (2, 1, 'PER_RUN', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (3, 1, 'PER_HOLIDAY', 8, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');

@@ -2,7 +2,7 @@
 
 예매·결제·취소·취소표·이벤트 발행에서 **트랜잭션 경계, 실행 순서, SQL·Redis 명령**의 원천 문서입니다. 스키마(테이블·컬럼·제약)의 원천은 ERD 편집기(`docs/erd/jejari-erd.html`)이고, 테이블 비고에는 이 문서의 절 번호만 적습니다. 구현과 테스트는 이 문서를 그대로 따릅니다.
 
-- 기준 스키마: v13
+- 기준 스키마: v15
 - 표기: `:이름`은 바인드 변수, `app_policy`의 값은 `policy(키)`로 적습니다. Redis 키의 `{runId}` 같은 중괄호는 **자리표시자**이고 실제 키에는 중괄호가 없습니다 (`seat:hold:1001:57:0`). 클러스터 해시 태그와는 다릅니다 (§14.4).
 - §16에 테스트로 옮길 시나리오, §17에 비교 실험과 지표 정의가 있습니다.
 
@@ -437,12 +437,14 @@ SELECT payment_id, reservation_id, requested_at FROM payment
 
 신청(WL-01) 때 한 번 계산해 저장합니다.
 
-1. 위험 점수: 대기열 진입(QUE-01)과 같은 규칙입니다. 회원의 CI·결제 수단·기기 해시로 `risk:{CI|PAYMENT|DEVICE}:{해시}`를 읽어 **최댓값**(`policy(risk.member_penalty_rule)`)을 쓰고, 없으면 0점입니다. `member.status = 'RESTRICTED'`는 100점, `BANNED`는 신청할 수 없습니다.
-2. `penalty_ms = round(점수 × policy(waitlist.penalty_ms_per_point))`. **대기열의 `risk.penalty_ms_per_point`(기본 1점 = 1초)를 그대로 쓰지 않습니다.** 대기열은 몇 분 안에 줄이 빠지지만 취소표 대기는 몇 시간~며칠 이어지므로, 같은 단위면 80점이 80초라 순서가 사실상 바뀌지 않습니다. 팀이 **180000(1점 = 3분, 80점 = 240분)으로 확정**했습니다.
+0. 신청 자격: `member.status = 'RESTRICTED'`면 `WAITLIST_RESTRICTED`(403)로 거절합니다 (기능설계서 2장·WL-02, 미정 사항 3). RESTRICTED는 관리자가 판정해 제한한 회원이라, 최대 패널티(100점 = 5시간)로 뒤로 미뤄도 결국 취소표를 가져가므로 신청 자체를 막습니다. `BANNED`는 로그인에서 `AUTH_BANNED`로 막혀 여기까지 오지 않습니다.
+
+1. 위험 점수: 대기열 진입(QUE-01)과 같은 규칙입니다. 회원의 CI·결제 수단·기기 해시로 `risk:{CI|PAYMENT|DEVICE}:{해시}`를 읽어 **최댓값**(`policy(risk.member_penalty_rule)`)을 쓰고, 없으면 0점입니다. (대기열과 달리 RESTRICTED 100점 규칙은 쓰지 않습니다: 0번에서 이미 거절)
+2. `penalty_ms = round(점수 × policy(waitlist.penalty_ms_per_point))`. **대기열의 `risk.penalty_ms_per_point`(기본 1점 = 1초)를 그대로 쓰지 않습니다.** 대기열은 몇 분 안에 줄이 빠지지만 취소표 대기는 몇 시간~며칠 이어지므로, 같은 단위면 80점이 80초라 순서가 사실상 바뀌지 않습니다. 값은 **180000(1점 = 3분, 80점 = 4시간, 100점 = 5시간)**으로 정했습니다 (기능설계서 미정 사항 7). 봇은 매진 직후 바로 신청하므로 판매 첫날 오전 신청자 뒤로 밀리게 하고, 오탐(목표 5% 이하)된 정상 사용자도 몇 시간 뒤면 차례가 오도록 고른 값입니다. 20점 이하 약한 신호는 1시간 이내라 영향이 작습니다. k6 봇 시나리오 결과를 보고 `app_policy`에서 조정합니다.
 3. `priority_at = requested_at + penalty_ms`. `requested_at`은 앱 시계(§0.7)로 한 번 계산하고, 신청 이후 점수가 바뀌어도 다시 계산하지 않습니다 (대기열과 같음).
 4. 같은 `priority_at`이면 `waitlist_id` 순서입니다.
 
-신청을 막지는 않습니다. 위험 사용자도 대기열에 설 수 있듯 취소표 신청도 할 수 있고, 정상 사용자 뒤로 밀릴 뿐입니다. 대기자가 적어 앞에 아무도 없으면 패널티가 있어도 바로 제안받습니다 (대기열과 같은 성질).
+위험 점수 때문에 신청을 막지는 않습니다 (막는 것은 0번의 RESTRICTED뿐). 위험 점수가 있는 사용자도 대기열에 설 수 있듯 취소표 신청도 할 수 있고, 정상 사용자 뒤로 밀릴 뿐입니다. 대기자가 적어 앞에 아무도 없으면 패널티가 있어도 바로 제안받습니다 (대기열과 같은 성질).
 
 ---
 
@@ -639,7 +641,7 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 |---|---|---|
 | `idem:{memberId}:{key}`, `idem:pay:{reservationId}:{key}` | reservation_id / payment_id | `idem.ttl_sec` |
 | `queue:{runId}`, `queue:seq:{runId}` | 대기 순번 ZSET (member = `{12자리 seq}:{memberId}`), 진입 시퀀스 | 운행 판매 마감 |
-| `queue:member:{memberId}`, `queue:ci:{ciHash}` | 회원당·CI당 동시 대기 1개 | 입장 토큰 만료 / 멤버별 score |
+| `queue:member:{memberId}`, `queue:ci:{ciHash}` | 회원당·CI당 동시 대기 1개. `queue:member` 값은 `{runId}\|{queue member}\|{ciHash}` | `queue.entry_ttl_sec` / 멤버별 score |
 | `queue:active:{runId}`, `queue:throughput:{runId}` | 입장한 회원 (score = 토큰 만료 시각), 초당 입장 수 | |
 | `queue:pass:{runId}:{memberId}` | 입장 토큰 | `queue.pass_ttl_sec` |
 | `seat:hold:{runId}:{seatId}:{segNo}` | `R`(HOLD), `SOLD:R`(확정), `REOFFER:R`(대기자 제안 대기) | `pay_deadline_at` / 운행 출발 시각 / `waitlist.reoffer_hold_sec` |
@@ -647,7 +649,9 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | `limit:day:{yyyymmdd}:{ciHash}` | 그 날 구매한 매수 | 그 날 24:00 + 1시간 |
 | `limit:dec:{reservationId}` | 1 (이 예약의 한도 감소를 이미 했다는 표시) | 운행 출발·행사 종료 중 늦은 쪽 |
 | `relay:shard:{n}` | 릴레이 인스턴스 ID | `relay.lease_sec` |
-| `rate:login:{ipHash}`, `rate:api:{memberId}` | 횟수 | 짧은 창 |
+| `rate:login:{ipHash}`, `rate:signup:{ipHash}`, `rate:api:{memberId}` | 횟수 | 1분 / 1시간 / 1초 |
+| `login:fail:{emailHash}` | 연속 로그인 실패 수 | `auth.lock_minutes` |
+| `verify:{tokenHash}` | 본인인증 결과 (1회용, 가입 때 GETDEL) | `auth.verify_token_ttl_sec` |
 | `risk:{subjectType}:{hash}`, `policy:cache`, `seatmap:{runId}` | 캐시 | |
 
 ### 14.2 스크립트
@@ -706,12 +710,13 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | `payment.pg_recheck_sec` | 60 | §6.2 PG 결과를 모를 때 다음 조회까지 |
 | `payment.pg_unknown_max_min` | 30 | §6.2 결과 모름 알림 |
 | `idem.ttl_sec` | 600 | §1 |
+| `queue.entry_ttl_sec` | 3600 | §14.1 대기 기록(`queue:member`)이 남는 최대 시간. 이탈 없이 사라진 회원 정리 |
 | `relay.lease_sec` | 15 | §11.2 |
 | `relay.lock_wait_sec` | 5 | §11.3 |
 | `outbox.max_retry` | 5 | §11.3 |
 | `inbox.retention_days` | 8 | §12 (Kafka 보관 7일보다 길게) |
 | `waitlist.reoffer_hold_sec` | 60 | §9 대기자 우선 보류 시간 |
-| `waitlist.penalty_ms_per_point` | 180000 | §9.3 위험 점수 1점당 대기 순서를 뒤로 미루는 ms (대기열보다 크게). 팀 확정 (1점 = 3분) |
+| `waitlist.penalty_ms_per_point` | 180000 | §9.3 위험 점수 1점당 대기 순서를 뒤로 미루는 ms (대기열보다 크게). 1점 = 3분 (팀 확정) |
 | `behavior.retention_days` | 180 | §13.2 (팀 확정) |
 | `replay.hold_cache_sec` | 30 | §13.2 legal_hold 캐시 TTL, 두 번째 `$unset` 지연 |
 | `queue_log.retention_days` | 30 | §13.2 |
@@ -763,8 +768,9 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | T35 | 같은 대기자에게 이벤트 재전달 | 제안 예약 1건 (`wl:` 키 UNIQUE) | §1, §9 |
 | T36 | 같은 CI가 하루에 1일 한도를 넘겨 예약 | 한도까지만 성공, 초과분 거절 (운행이 달라도 합산) | §10.1, §10.6 |
 | T37 | 자정 직전 선점한 예약이 자정 뒤 만료 | 어제 날짜 `PER_DAY` 행이 감소 (오늘 행은 그대로) | §10.2 |
-| T38 | 위험 점수 80인 회원 A(패널티 240분)가 10:00에, 정상 회원 B가 10:30에 신청한 뒤 좌석 1개가 빔 | B에게 먼저 제안, A는 WAITING 유지 | §9.3 |
-| T39 | 같은 조건에서 B가 14:30(패널티 240분이 지난 뒤)에 신청 | A에게 먼저 제안 | §9.3 |
+| T38 | 위험 점수 80인 회원 A(패널티 4시간, `priority_at` 14:00)가 10:00에, 정상 회원 B가 10:30에 신청한 뒤 좌석 1개가 빔 | B에게 먼저 제안, A는 WAITING 유지 | §9.3 |
+| T39 | 같은 조건에서 B가 14:30(A의 `priority_at` 14:00이 지난 뒤)에 신청 | A에게 먼저 제안 | §9.3 |
+| T40 | `member.status = RESTRICTED`인 회원이 취소표 대기 신청 | `WAITLIST_RESTRICTED`(403), `waitlist` 행 없음. 같은 회원을 ACTIVE로 되돌리면 신청 가능 | §9.3 |
 
 ---
 

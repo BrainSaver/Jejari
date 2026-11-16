@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v13 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-16
+> 스키마 v15 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-16
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -39,7 +39,7 @@
 | 테이블 | 60개 (운영 56 + 확장 예정 4) |
 | 저장소 | Oracle 44 · MongoDB 11 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 514개 |
+| 컬럼 | 517개 |
 | 관계 (FK) | 85개 (Oracle 제약 60 · 논리 참조 20) |
 
 | 영역 | 저장소 | 테이블 |
@@ -72,6 +72,7 @@
 | 대기열 입장 처리량 | 초당 200명 · 입장 토큰 300초 | app_policy queue.* | 부하 테스트로 조정 | 예시 |
 | 회원 패널티 결합 규칙 | MAX (최댓값) | app_policy risk.member_penalty_rule | 다계정 중 하나라도 위험하면 묶음 전체 후순위 | 예시 |
 | 위험 점수 → 대기 지연 | 1점당 1초 | app_policy risk.penalty_ms_per_point | 점수 80이면 80초 뒤로 | 예시 |
+| 위험 점수 → 취소표 대기 순서 | 1점당 3분 (80점 = 4시간) | app_policy waitlist.penalty_ms_per_point | 봇은 매진 직후 신청하므로 판매 첫날 오전 신청자 뒤로, 오탐 사용자도 몇 시간 뒤면 차례가 오도록 (concurrency.md §9.3) | 확정 |
 | 케이스 자동 생성 임계값 | 80점 | model_run.threshold | 모델 버전별로 다르게 둘 수 있게 model_run에 저장 | 예시 |
 | 점수 감쇠 | 반감기 30일 | model_run.decay_half_life_days | 운영 원칙: 기간 경과 시 점수 감소 | 예시 |
 | 녹화 샘플링 | 위험 상위 10% 전체 녹화, 70점 이상 무조건 | app_policy replay.* | 저장량과 개인정보 부담 사이 절충 | 예시 |
@@ -569,7 +570,10 @@ Oracle
 | risk.batch_interval_sec | 60 | 1 | NUMBER | 위험 점수 배치 주기(초). 각 운행 sale_open_at 전 1회는 반드시 실행 |
 | login_attempt.retention_days | 30 | 1 | NUMBER | login_attempt 보관 기간 (expire_at 계산) |
 | queue.entry_ttl_sec | 3600 | 1 | NUMBER | 대기 기록(queue:member)이 남는 최대 시간(초). 이탈 없이 사라진 회원의 기록 정리 |
-| waitlist.penalty_ms_per_point | 60000 | 1 | NUMBER | 위험 점수 1점당 취소표 대기 순서를 미루는 ms (대기열보다 크게, 80점 = 80분) |
+| waitlist.penalty_ms_per_point | 180000 | 1 | NUMBER | 위험 점수 1점당 취소표 대기 순서를 미루는 ms. 1점 = 3분 (80점 = 4시간, 팀 확정) |
+| auth.login_rate_per_min | 20 | 1 | NUMBER | IP당 분당 로그인 시도 한도 (rate:login) |
+| auth.signup_rate_per_hour | 10 | 1 | NUMBER | IP당 시간당 본인인증·가입 시도 한도 (rate:signup) |
+| auth.verify_token_ttl_sec | 600 | 1 | NUMBER | 본인인증 1회용 토큰 유효 시간(초) (verify:{tokenHash}) |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -704,7 +708,7 @@ Oracle
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
-| `member_id` | NUMBER | PK | 생성 | 회원 ID |  |
+| `member_id` | NUMBER | PK | 생성 | 회원 ID (member_seq.NEXTVAL) | 가입 때 먼저 발급. 개인정보 암호문의 AAD에 들어가므로 INSERT 전에 필요 |
 | `email` | VARCHAR2(100) | UQ, NN | 생성 | 로그인 ID |  |
 | `ci_hash` | VARCHAR2(64) | NN | 생성 | 모의 본인인증 CI 해시 | 위험 점수·매수 제한의 묶음 단위. 다계정이어도 같은 값 |
 | `name` | VARCHAR2(50) | NN | 생성 | 이름 | 회원가입·예매자 확인 |
@@ -715,7 +719,7 @@ Oracle
 | `created_at` | TIMESTAMP |  | 생성 | 가입 시각 | 신규 계정 판별 (기본 신뢰도 낮음) |
 | `withdrawn_at` | TIMESTAMP |  | 시스템 | 탈퇴 시각 | 소프트 삭제. 위험 이력은 보존 기간 후 파기 |
 
-> **제약·비고** ci_hash는 UNIQUE를 걸지 않음. 다계정 어뷰저를 재현하려면 같은 CI가 여러 계정에 있어야 함. · ci_hash는 변경 불가 (본인인증 결과가 바뀌면 신규 회원으로 처리). 그래서 reservation.ci_hash 비정규화가 안전함
+> **제약·비고** ci_hash는 UNIQUE를 걸지 않음. 다계정 어뷰저를 재현하려면 같은 CI가 여러 계정에 있어야 함. · ci_hash는 변경 불가 (본인인증 결과가 바뀌면 신규 회원으로 처리). 그래서 reservation.ci_hash 비정규화가 안전함 · CREATE SEQUENCE member_seq;
 
 **관계** [`payment_method`](#payment-method).member_id → 이 테이블 · [`member_device`](#member-device).member_id → 이 테이블 · [`reservation`](#reservation).member_id → 이 테이블 · [`waitlist`](#waitlist).member_id → 이 테이블 · [`notification`](#notification).member_id → 이 테이블 · [`behavior_log`](#behavior-log).member_id → 이 테이블 · [`queue_log`](#queue-log).member_id → 이 테이블 · [`synthetic_label`](#synthetic-label).member_id → 이 테이블 · [`member_credential`](#member-credential).member_id → 이 테이블 · [`identity_verification`](#identity-verification).member_id → 이 테이블 · [`auth_session`](#auth-session).member_id → 이 테이블 · [`login_attempt`](#login-attempt).member_id → 이 테이블 · [`replay_session`](#replay-session).member_id → 이 테이블 · [`case_session`](#case-session).member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).from_member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).to_member_id → 이 테이블 · [`member_push_token`](#member-push-token).member_id → 이 테이블 · [`password_reset_token`](#password-reset-token).member_id → 이 테이블
 
@@ -894,12 +898,14 @@ Oracle
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
-| `verification_id` | NUMBER | PK | 생성 |  |  |
+| `verification_id` | NUMBER | PK | 생성 | 인증 이력 ID (identity_verification_seq.NEXTVAL) |  |
 | `member_id` | NUMBER | FK, NN → member | 생성 | 인증한 계정 |  |
 | `ci_hash` | VARCHAR2(64) |  | 생성 | 인증 결과 CI 해시 | 같은 CI로 짧은 기간 여러 계정 인증 = 다계정 신호 |
 | `provider` | VARCHAR2(20) | NN | 생성 | MOCK_PASS / MOCK_PHONE | 모의 본인인증 |
 | `result` | VARCHAR2(10) | NN | 시스템 | SUCCESS / FAIL |  |
 | `verified_at` | TIMESTAMP |  | 생성 | 인증 시각 |  |
+
+> **제약·비고** CREATE SEQUENCE identity_verification_seq;
 
 **관계** member_id → [`member`](#member)
 
@@ -944,7 +950,7 @@ MongoDB · 🅱 빅데이터
 | `actor_type` | String |  | 시스템 | MEMBER / ADMIN | 관리자 로그인도 같은 방식으로 기록 |
 | `admin_id` | Long | FK → admin_user | 시스템 | 관리자 로그인일 때 | 관리자 계정 무차별 대입 탐지 |
 | `email_hash` | String |  | 생성 | 입력한 이메일 해시 | 없는 계정 대상 시도도 추적 → 크리덴셜 스터핑 탐지 |
-| `result` | String |  | 생성 | SUCCESS / WRONG_PASSWORD / LOCKED / NOT_FOUND / RATE_LIMITED |  |
+| `result` | String |  | 생성 | SUCCESS / WRONG_PASSWORD / LOCKED / NOT_FOUND / RATE_LIMITED / BANNED | BANNED = 비밀번호는 맞았지만 정지 회원. 비밀번호를 모르면 WRONG_PASSWORD로 남아 정지 사실이 드러나지 않음 |
 | `ip_hash` | String |  | 생성 |  | 한 IP에서 여러 계정 시도 탐지 |
 | `device_hash` | String |  | 생성 |  |  |
 | `user_agent` | String |  | 생성 |  |  |
@@ -1962,7 +1968,10 @@ Redis
 | `risk:{subjectType}:{hash}` | STRING |  | 시스템 | final_score 캐시 (0~100 숫자 문자열). TTL 없음 | 대기열 진입 시 DB 미조회. TTL을 두면 시간이 지나 패널티가 저절로 풀려 "쉬었다 오면 통과"가 된다. 0점이 되는 순간 지운다 |
 | `risk:meta:synced_at` | STRING |  | 시스템 | Oracle → Redis 재동기화 완료 시각 | 이 키가 있을 때만 risk:* 캐시를 믿는다. 없으면 대기열이 캐시 대신 Oracle risk_score를 직접 조회하고, 조회가 실패하면 100점(안전한 쪽). 재동기화는 risk:*를 모두 쓴 다음에 이 키를 SET |
 | `seatmap:{runId}` | HASH |  | 시스템 | seatId → 상태 | 조회 트래픽을 DB에서 분리 |
-| `rate:login:{ipHash}` | STRING+TTL |  | 시스템 | 로그인 시도 카운터 | Argon2 연산 남용·크리덴셜 스터핑 차단 |
+| `rate:login:{ipHash}` | STRING+TTL |  | 시스템 | IP당 분당 로그인 시도 수 | Argon2 연산 남용·크리덴셜 스터핑 차단. 한도 app_policy auth.login_rate_per_min, 넘으면 해시 계산 없이 AUTH_RATE_LIMITED |
+| `rate:signup:{ipHash}` | STRING+TTL |  | 시스템 | IP당 시간당 본인인증·가입 시도 수 | 가입 남용·대량 계정 생성 차단. 한도 app_policy auth.signup_rate_per_hour |
+| `login:fail:{emailHash}` | STRING+TTL |  | 시스템 | 이메일별 연속 로그인 실패 수 | auth.lock_after_failures에 닿으면 auth.lock_minutes 동안 잠금(AUTH_LOCKED). 없는 이메일도 똑같이 세어 잠금 응답으로 계정 존재를 알 수 없게 |
+| `verify:{tokenHash}` | STRING+TTL |  | 시스템 | 본인인증 결과 (1회용, 휴대폰 번호는 AES-256-GCM 암호문) | 본인인증 → 가입을 잇는 토큰. 키는 토큰의 SHA-256 해시, 가입 때 GETDEL로 읽으며 삭제(두 번 가입 불가). 만료 auth.verify_token_ttl_sec |
 | `rate:api:{memberId}` | STRING+TTL |  | 시스템 | 초당 API 호출 수 | 매크로 요청 폭주 1차 차단 |
 | `policy:cache` | HASH |  | 시스템 | app_policy 캐시 | 매 요청마다 DB 조회 방지 |
 
@@ -2310,6 +2319,8 @@ Oracle
 | v11 | 코레일 실제 규칙 반영: 1일 매수 제한 PER_DAY(구매일 기준, 하루 20매)를 purchase_limit_policy·purchase_counter·Redis limit:day 키에 추가, 일반 예매 오픈은 출발 2개월 전 07:00(명절은 행사 오픈 시각), 상시 정책 기본값 열차당 10매 |
 | v12 | 위험 점수 캐시 읽기 규칙: risk:* 에 TTL을 두지 않는다는 것(0점이 되면 삭제)과 재동기화 완료 표시 키 risk:meta:synced_at 추가. 표시 키가 없으면 대기열이 캐시 대신 Oracle risk_score를 조회 |
 | v13 | 대기열·취소표 맞춤 (김성원 요청): queue:member 값에 ciHash 추가, app_policy queue.entry_ttl_sec(3600초)·waitlist.penalty_ms_per_point(60000), waitlist에 priority_at·penalty_ms 추가하고 대기 순서·ix_waitlist_next를 priority_at 기준으로 (concurrency.md §9.3). risk_score_history.history_id 시퀀스 추가 (강다인 요청) |
+| v14 | 취소표 대기 위험 패널티 확정 (강다인): app_policy waitlist.penalty_ms_per_point 60000 → 180000 (1점 = 3분, 80점 = 4시간) |
+| v15 | 회원가입·로그인 (강다인 요청): member·identity_verification ID 시퀀스, Redis 키 rate:signup·login:fail·verify, app_policy auth.login_rate_per_min(20)·signup_rate_per_hour(10)·verify_token_ttl_sec(600), login_attempt.result에 BANNED |
 
 ## 참고 자료
 

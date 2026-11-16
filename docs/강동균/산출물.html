@@ -149,7 +149,7 @@ rect.b:hover{opacity:.82}
     <a href="#DATA-01">DATA-01 기준 데이터</a>
     <a href="#RSV-02">RSV-02 좌석 선점</a>
     <a href="#LOCK">§17.1 락 비교</a>
-    <a href="#ERD">ERD v11</a>
+    <a href="#ERD">ERD v15</a>
   </nav>
 </div></header>
 
@@ -189,7 +189,7 @@ rect.b:hover{opacity:.82}
   <table>
     <tr><th>업무</th><th>상태</th><th>내용</th></tr>
     <tr><td>ERD 반영 담당</td><td><span class="tag ok">유지 중</span></td>
-        <td>스키마 v11까지 반영. 검사 FAIL 0 · WARN 0, 반영 대기 JSON 없음</td></tr>
+        <td>스키마 v15까지 반영 (v12 위험 점수 캐시, v13 김성원·강다인 요청, v14 취소표 패널티 확정, v15 회원가입·로그인). 검사 FAIL 0 · WARN 0, 반영 대기 JSON 없음</td></tr>
     <tr><td>§17.1 락 방식 비교</td><td><span class="tag ok">실측 완료</span></td>
         <td>A·B·C 3전략 × 3시나리오. 뼈대 올라온 뒤 k6로 재측정 필요</td></tr>
   </table>
@@ -470,18 +470,46 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
 
 <!-- ───────────────────────────── ERD -->
 <section id="ERD">
-  <h2>ERD v11 <span class="tag ok">반영 완료</span></h2>
+  <h2>ERD v15 <span class="tag ok">반영 완료</span></h2>
   <p>ERD 반영은 담당자 한 명만 합니다. 팀원이 편집기에서 내보낸 JSON을 패치로 바꿔 HTML에 넣고,
      DDL·종합 문서를 다시 만듭니다.</p>
 
   <div class="grid">
     <div class="kpi"><b>60</b><span>테이블</span></div>
-    <div class="kpi"><b>511</b><span>컬럼</span></div>
+    <div class="kpi"><b>514</b><span>컬럼</span></div>
     <div class="kpi"><b>85</b><span>관계</span></div>
     <div class="kpi"><b>0</b><span>검사 FAIL · WARN</span></div>
   </div>
 
-  <h3>v11에서 한 것 — 1일 매수 제한(<code>PER_DAY</code>) 추가</h3>
+  <h3>v15 — 회원가입·로그인 (강다인 요청)</h3>
+  <p>ID 시퀀스 <code>member_seq</code>·<code>identity_verification_seq</code>, Redis 키 <code>rate:signup</code>·<code>login:fail</code>·<code>verify:{tokenHash}</code>,
+     <code>app_policy</code> 한도 3개(로그인 분당 20회, 가입 시간당 10회, 인증 토큰 600초), <code>login_attempt.result</code>에 <code>BANNED</code>를 넣었습니다.</p>
+
+  <h3>v13에서 한 것 — 팀원 요청 반영</h3>
+  <p>다른 팀원은 ERD를 직접 고치지 않으므로, 구현하다 스키마가 필요해지면 저에게 요청합니다.
+     v13은 그 요청 4건을 한 패치로 묶었습니다.</p>
+  <table>
+    <tr><th>요청</th><th>바꾼 것</th><th>왜</th></tr>
+    <tr><td>김성원(A)</td><td><code>queue:member</code> 값에 <code>ciHash</code> 추가</td>
+        <td>입장·이탈 Lua가 회원 ID만으로 그 회원의 <code>queue:ci</code> 항목을 찾아야 함</td></tr>
+    <tr><td>김성원(A)</td><td><code>app_policy</code> <code>queue.entry_ttl_sec</code> = 3600</td>
+        <td>이탈 없이 사라진 회원의 대기 기록 상한. 코드에 박힌 기본값을 설정으로</td></tr>
+    <tr><td>김성원(A)</td><td><code>waitlist.priority_at</code>·<code>penalty_ms</code>, 인덱스 <code>(run_id, status, priority_at, waitlist_id)</code></td>
+        <td>대기열에서 뒤로 밀린 위험 사용자가 취소표 신청으로 우회하지 못하게 (§9.3)</td></tr>
+    <tr><td>강다인(D)</td><td><code>risk_score_history_seq</code> 시퀀스</td>
+        <td>점수 저장 때 이력 행을 남길 ID가 없어 이력 저장이 막혀 있었음</td></tr>
+  </table>
+  <div class="note">
+    <b>왜 <code>priority_at</code>을 저장하나</b> — 조회할 때마다 "신청 시각 + 패널티"를 계산하면 인덱스를 못 탑니다.
+    신청 때 한 번 계산해 저장하고, 인덱스 순서를 <code>ORDER BY priority_at, waitlist_id</code>와 같게 둬서
+    Oracle이 정렬 없이 앞에서부터 읽게 했습니다. 패널티 단위는 v14에서 강다인 확정값 1점 = 3분(80점 = 4시간)으로 바꿨습니다.
+  </div>
+
+  <h3>v12 — 위험 점수 캐시 읽기 규칙</h3>
+  <p><code>risk:*</code> 캐시에 TTL을 두지 않고(0점이면 삭제), 재동기화가 끝났다는 표시 키
+     <code>risk:meta:synced_at</code>을 추가했습니다. 표시 키가 없으면 대기열이 캐시 대신 Oracle을 조회합니다.</p>
+
+  <h3>v11 — 1일 매수 제한(<code>PER_DAY</code>) 추가</h3>
   <p>코레일 개인 구입 제한은 <b>열차당 10석 · 하루 20석</b>인데, 매수 제한 scope가
      <code>PER_RESERVATION</code>/<code>PER_RUN</code>/<code>PER_HOLIDAY</code>뿐이라
      <b>하루 한도를 담을 자리가 없었습니다.</b> 1인 매수 제한이 제 핵심 수치라 그대로 두면 검증할 기준이 없습니다.</p>
