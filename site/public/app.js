@@ -1451,6 +1451,10 @@ async function newPersonDoc(name, kind) {
 
 // ---------- 선 아이콘 (SVG, 24칸 기준, 글자색을 따름) ----------
 const ICON_PATHS = {
+  play: '<path d="M7 4.5v15l12-7.5z"/>',
+  pause: '<path d="M8 5v14M16 5v14"/>',
+  skip: '<path d="M5 5l9 7-9 7z"/><path d="M18 5v14"/>',
+  prev: '<path d="M19 5l-9 7 9 7z"/><path d="M6 5v14"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/>',
   lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/><path d="M12 15v2"/>',
   train: '<rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 10h14"/><path d="M9 21l1.5-4M15 21l-1.5-4"/><path d="M9 13.5h.01M15 13.5h.01"/>',
@@ -1557,7 +1561,7 @@ function rmPoll() {
     try {
       const { rev } = await api('/roadmap/rev' + qs({ t: Date.now() }));
       if (rev === RM.rev) return;
-      if (!$('#modalBack').hidden || RM.edit) { RM.stale = true; return; } // 편집 중이면 닫은 뒤에
+      if (!$('#modalBack').hidden || RM.edit || SIM.on) { RM.stale = true; return; } // 편집 중이면 닫은 뒤에
       await rmLoad(); rmRender();
     } catch {}
   }, 20000);
@@ -1799,8 +1803,8 @@ function rmFlow() {
         <button class="btn sm plain fl-tb" data-fact="cancel">${svgI('x', 16)} 취소</button>
         <button class="btn sm fl-tb" data-fact="save">${svgI('save', 16)} 저장</button></div>`
     : `<div class="fl-bar"><span class="muted fl-bar-txt"><b>이름</b>을 누르면 지금 하는 일을 적고, <b>칸</b>을 누르면 할 일을 보고 추가해요.</span>
-        <span class="fl-bar-acts">${askBtn('')}${mineBtn()}<button class="btn sm plain fl-tb" data-fact="edit">${svgI('pencil', 16)} 다이어그램 수정</button></span></div>`)
-    : `<div class="fl-bar"><span class="muted fl-bar-txt">칸을 누르면 그 기능의 할 일이 보여요. 로그인하면 지금 하는 일을 적고 다이어그램도 고칠 수 있어요.</span><span class="fl-bar-acts">${askBtn('')}</span></div>`;
+        <span class="fl-bar-acts"><button class="btn sm fl-tb" data-simstart title="흐름도 선을 따라가며 칸마다 하는 일을 보여 줘요">${svgI('play', 15)} 흐름 따라가기</button>${askBtn('')}${mineBtn()}<button class="btn sm plain fl-tb" data-fact="edit">${svgI('pencil', 16)} 다이어그램 수정</button></span></div>`)
+    : `<div class="fl-bar"><span class="muted fl-bar-txt">칸을 누르면 그 기능의 할 일이 보여요. 로그인하면 지금 하는 일을 적고 다이어그램도 고칠 수 있어요.</span><span class="fl-bar-acts"><button class="btn sm fl-tb" data-simstart title="흐름도 선을 따라가며 칸마다 하는 일을 보여 줘요">${svgI('play', 15)} 흐름 따라가기</button>${askBtn('')}</span></div>`;
   return `${bar}<div class="fl-wrap"><div class="fl${ed ? ' editing' : ''}${ed && ed.link ? ' linking' : ''}" id="flow">
     <svg class="fl-svg" id="flowSvg" aria-hidden="true"></svg>${f.nodes.map(flowNode).join('')}<div id="flowLabs"></div></div></div>
     ${RM.data.flow.by ? `<p class="muted" style="font-size:12px;margin:6px 0 0">다이어그램 마지막 수정: ${rmWho(RM.data.flow.by)} · ${ago(RM.data.flow.at)}</p>` : ''}`;
@@ -1835,7 +1839,7 @@ function drawFlow() {
     const [x1, y1] = pt(A, sa), [x2, y2] = pt(B, sb);
     const d = Math.max(30, Math.min(150, Math.hypot(x2 - x1, y2 - y1) / 2.5));
     const c1 = [x1 + dir[sa][0] * d, y1 + dir[sa][1] * d], c2 = [x2 + dir[sb][0] * d, y2 + dir[sb][1] * d];
-    out += `<path d="M${x1},${y1} C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${x2},${y2}" class="fl-edge${e.dash ? ' dash' : ''}" marker-end="url(#flArrow)"/>`;
+    out += `<path data-e="${i}" d="M${x1},${y1} C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${x2},${y2}" class="fl-edge${e.dash ? ' dash' : ''}" marker-end="url(#flArrow)"/>`;
     const mx = (x1 + 3 * c1[0] + 3 * c2[0] + x2) / 8, my = (y1 + 3 * c1[1] + 3 * c2[1] + y2) / 8;
     if (e.label || RM.edit) labs += `<button class="fl-lab${e.label ? '' : ' empty'}" data-edge="${i}" style="left:${mx}px;top:${my}px"${RM.edit ? '' : ' tabindex="-1"'}>${e.label ? esc(e.label) : svgI('pencil', 12)}</button>`;
   });
@@ -1847,6 +1851,7 @@ function drawFlow() {
 function bindFlow(root) {
   const ed = RM.edit;
   $$('[data-fact]', root).forEach((b) => b.addEventListener('click', () => flowAct(b.dataset.fact)));
+  $$('[data-simstart]', root).forEach((b) => b.addEventListener('click', simStart));
   if (!ed) {
     $$('.fl-node[data-k]', root).forEach((n) => {
       const node = RM.data.flow.nodes.find((x) => x.k === n.dataset.k);
@@ -1870,6 +1875,196 @@ function bindFlow(root) {
   if (!RM.flowResize) { RM.flowResize = true; window.addEventListener('resize', () => { clearTimeout(RM.frt); RM.frt = setTimeout(drawFlow, 120); }); }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawFlow);
 }
+
+// ---- 흐름 따라가기: 흐름도 선을 따라 점이 움직이며 칸마다 하는 일을 보여 준다 ----
+// 끝난 칸은 빠르게 지나가고, 안 끝난 칸은 해야 할 일을 보여 주며 멈춘다(건너뛰기·자동 넘김 가능)
+function simRoute() {
+  const f = RM.data.flow;
+  const nodes = f.nodes; const edges = f.edges;
+  const start = nodes.find((n) => n.kind === 'start') || nodes[0];
+  const seen = new Set([start.k]); const steps = [{ k: start.k, edge: -1 }];
+  let cur = start.k;
+  while (seen.size < nodes.length) {
+    const cand = edges.map((e, i) => ({ e, i })).filter(({ e }) => seen.has(e.a) && !seen.has(e.b));
+    const pick = cand.find(({ e }) => e.a === cur && !e.dash) || cand.find(({ e }) => e.a === cur)
+      || cand.find(({ e }) => !e.dash) || cand[0];
+    let next, edge = -1;
+    if (pick) { next = pick.e.b; edge = pick.i; } else { const n = nodes.find((x) => !seen.has(x.k)); next = n.k; }
+    seen.add(next); steps.push({ k: next, edge }); cur = next;
+  }
+  return steps;
+}
+const SIM = { on: false };
+function simStart() {
+  if (RM.edit) return;
+  if (RM.view !== 'flow') { location.hash = '#/roadmap/flow'; setTimeout(simStart, 300); return; }
+  simStop(true);
+  Object.assign(SIM, { on: true, steps: simRoute(), i: 0, paused: false, auto: store.get('sim-auto', false), speed: store.get('sim-speed', 1), token: 0, timer: null, wait: null });
+  $('#flow').classList.add('sim'); document.body.classList.add('sim-on');
+  let tok = $('#flowTok'); if (!tok) { tok = document.createElement('div'); tok.id = 'flowTok'; tok.className = 'fl-token'; tok.innerHTML = svgI('user', 16); $('#flow').appendChild(tok); }
+  simPanel(); simGo(0);
+}
+function simStop(silent) {
+  if (!SIM.on) return;
+  SIM.on = false; SIM.token++; clearTimeout(SIM.timer); clearInterval(SIM.wait); document.body.classList.remove('sim-on');
+  const fl = $('#flow'); if (fl) { fl.classList.remove('sim'); $$('.fl-node', fl).forEach((n) => n.classList.remove('sim-cur', 'sim-ok', 'sim-todo')); $$('.fl-edge', fl).forEach((p) => p.classList.remove('run', 'went')); }
+  const t = $('#flowTok'); if (t) t.remove();
+  const p = $('#simPanel'); if (p) p.remove();
+  if (!silent && RM.stale) rmLoad().then(rmRender).catch(() => {});
+}
+const simDur = (ms) => ms / (SIM.speed || 1);
+const simItems = (k) => { const st = rmStages(); return RM.data.items.filter((x) => x.area === k).sort((x, y) => (st.get(x.id) || 99) - (st.get(y.id) || 99) || sortItems(x, y)); };
+// 점을 선 path를 따라 움직인다 (선이 없으면 다음 칸으로 바로 미끄러지듯)
+function simMove(step, done) {
+  const tok = $('#flowTok'); const fl = $('#flow'); const my = SIM.token;
+  const node = $(`.fl-node[data-k="${step.k}"]`, fl);
+  if (!tok || !node) { done(); return; }
+  const target = [node.offsetLeft + node.offsetWidth / 2, node.offsetTop + 14];
+  const path = step.edge >= 0 ? $(`#flowSvg path[data-e="${step.edge}"]`) : null;
+  const visible = path && getComputedStyle($('#flowSvg')).display !== 'none';
+  const t0 = performance.now(); const dur = simDur(visible ? 1100 : 500);
+  const from = [parseFloat(tok.style.left) || target[0], parseFloat(tok.style.top) || target[1]];
+  if (path) path.classList.add('run');
+  const len = visible ? path.getTotalLength() : 0;
+  const frame = (t) => {
+    if (my !== SIM.token) return;
+    const r = Math.min(1, (t - t0) / dur); const e = r < 0.5 ? 2 * r * r : 1 - Math.pow(-2 * r + 2, 2) / 2;
+    let x, y;
+    if (visible) { const pt = path.getPointAtLength(len * e); x = pt.x; y = pt.y; }
+    else { x = from[0] + (target[0] - from[0]) * e; y = from[1] + (target[1] - from[1]) * e; }
+    tok.style.left = x + 'px'; tok.style.top = y + 'px';
+    if (r < 1) requestAnimationFrame(frame); else { if (path) { path.classList.remove('run'); path.classList.add('went'); } done(); }
+  };
+  requestAnimationFrame(frame);
+}
+function simGo(i) {
+  if (!SIM.on) return;
+  clearTimeout(SIM.timer); clearInterval(SIM.wait); SIM.token++;
+  SIM.i = i;
+  const step = SIM.steps[i];
+  if (!step) { simEnd(); return; }
+  const fl = $('#flow');
+  $$('.fl-node', fl).forEach((n) => n.classList.remove('sim-cur'));
+  const node = $(`.fl-node[data-k="${step.k}"]`, fl);
+  if (node) {
+    simReveal(node, 240);
+    const wrap = $('.fl-wrap'); if (wrap && wrap.scrollWidth > wrap.clientWidth) wrap.scrollTo({ left: Math.max(0, node.offsetLeft - wrap.clientWidth / 2 + node.offsetWidth / 2), behavior: 'smooth' });
+  }
+  simPanel('moving');
+  const arrive = () => {
+    if (!SIM.on) return;
+    if (node) node.classList.add('sim-cur');
+    simArrive(step);
+  };
+  if (i === 0) { const tok = $('#flowTok'); if (tok && node) { tok.style.left = (node.offsetLeft + node.offsetWidth / 2) + 'px'; tok.style.top = (node.offsetTop + 14) + 'px'; } arrive(); }
+  else simMove(step, arrive);
+}
+// 지금 칸이 아래 안내 창에 가리지 않게 스크롤
+function simReveal(node, panelH) {
+  const p = $('#simPanel'); const ph = panelH || (p ? p.offsetHeight : 240);
+  const r = node.getBoundingClientRect();
+  const room = window.innerHeight - ph - 32;
+  if (r.top < 64 || r.bottom > room) window.scrollBy({ top: r.bottom > room && r.height < room - 64 ? r.bottom - room + 12 : r.top - 72, behavior: 'smooth' });
+}
+function simArrive(step) {
+  const n = RM.data.flow.nodes.find((x) => x.k === step.k);
+  const node = $(`.fl-node[data-k="${step.k}"]`);
+  const items = n.kind === 'start' ? [] : simItems(step.k);
+  const open = items.filter((x) => !isDone(x));
+  const ok = n.kind === 'start' || !open.length;
+  if (node) node.classList.add(ok ? 'sim-ok' : 'sim-todo');
+  SIM.cur = { n, items, open, ok, step };
+  simPanel('here');
+  if (node) simReveal(node);
+  // 할 일을 하나씩 체크해 보이는 연출
+  const rows = $$('#simPanel .sim-item');
+  rows.forEach((r, j) => setTimeout(() => r.classList.add('show'), simDur(120 + j * 140)));
+  const show = simDur(300 + rows.length * 140);
+  if (SIM.paused) return;
+  if (ok) SIM.timer = setTimeout(() => simGo(SIM.i + 1), show + simDur(n.kind === 'start' ? 900 : 1300));
+  else if (SIM.auto) simCountdown(show);
+}
+function simCountdown(after) {
+  let left = 5;
+  const tick = () => { const c = $('#simCount'); if (c) c.textContent = `${left}초 뒤 다음 칸`; if (left-- <= 0) { clearInterval(SIM.wait); simGo(SIM.i + 1); } };
+  SIM.timer = setTimeout(() => { tick(); SIM.wait = setInterval(tick, 1000 / (SIM.speed || 1)); }, after);
+}
+function simEnd() {
+  const areas = SIM.steps.map((s) => RM.data.flow.nodes.find((n) => n.k === s.k)).filter((n) => n && n.kind === 'area');
+  const left = areas.filter((n) => simItems(n.k).some((x) => !isDone(x)));
+  SIM.cur = { end: true, areas, left };
+  $('#flowTok') && $('#flowTok').classList.add('end');
+  simPanel('end');
+}
+function simPanel(mode) {
+  let p = $('#simPanel');
+  if (!p) { p = document.createElement('div'); p.id = 'simPanel'; p.className = 'sim-panel'; document.body.appendChild(p); }
+  const total = SIM.steps.length; const i = SIM.i;
+  const step = SIM.steps[i];
+  const node = step && RM.data.flow.nodes.find((x) => x.k === step.k);
+  const edge = step && step.edge >= 0 ? RM.data.flow.edges[step.edge] : null;
+  const from = edge ? RM.data.flow.nodes.find((x) => x.k === edge.a) : null;
+  const ctrl = `<div class="sim-ctrl">
+      <span class="sim-prog"><b>${Math.min(i + 1, total)}</b>/${total}</span>
+      <span class="sim-bar"><i style="width:${Math.round(((mode === 'end' ? total : i + 1) / total) * 100)}%"></i></span>
+      <button class="fl-ibtn" data-sim="prev" title="이전 칸" aria-label="이전 칸"${i ? '' : ' disabled'}>${svgI('prev', 15)}</button>
+      <button class="fl-ibtn" data-sim="pause" title="${SIM.paused ? '계속' : '잠깐 멈춤'}" aria-label="${SIM.paused ? '계속' : '잠깐 멈춤'}">${svgI(SIM.paused ? 'play' : 'pause', 15)}</button>
+      <button class="fl-ibtn" data-sim="next" title="건너뛰기" aria-label="건너뛰기">${svgI('skip', 15)}</button>
+      <button class="btn sm plain sim-speed" data-sim="speed" title="빠르기">${SIM.speed}배</button>
+      <label class="chk sim-auto" title="안 끝난 칸에서도 5초 뒤 자동으로 넘어가요"><input type="checkbox" data-sim="auto"${SIM.auto ? ' checked' : ''}> 안 끝난 칸도 계속</label>
+      <button class="fl-ibtn" data-sim="stop" title="끝내기" aria-label="끝내기">${svgI('x', 15)}</button></div>`;
+  let body = '';
+  if (mode === 'end') {
+    const { areas, left } = SIM.cur;
+    body = `<div class="sim-head"><span class="sim-ic ok">${svgI('check', 18)}</span><div><b class="sim-title">흐름 끝까지 왔어요</b><div class="muted">기능 칸 ${areas.length}개 중 <b>${areas.length - left.length}개 완료</b>${left.length ? `, ${left.length}개 남음` : ''}</div></div></div>
+      ${left.length ? `<div class="sim-left">${left.map((n) => `<button class="rm-link sm" data-simgo="${n.k}">${esc(n.label)} <span class="muted">${simItems(n.k).filter((x) => !isDone(x)).length}개</span></button>`).join('')}</div>` : '<p class="muted">모든 칸이 끝났어요.</p>'}
+      <div class="sim-acts"><button class="btn sm plain" data-sim="again">${svgI('reset', 14)} 처음부터</button><button class="btn sm" data-sim="stop">닫기</button></div>`;
+  } else if (mode === 'moving' || !SIM.cur || SIM.cur.step !== step) {
+    body = `<div class="sim-head"><span class="sim-ic">${nodeIcon(node.icon, 18)}</span><div><span class="muted">${from ? `${esc(from.label)}${edge.label ? ` → <b>${esc(edge.label)}</b> →` : ' →'}` : '다음 칸으로'}</span><b class="sim-title">${esc(node.label)}</b></div></div>`;
+  } else {
+    const { n, items, open, ok } = SIM.cur;
+    const intro = n.kind === 'start' ? '이용자가 사이트에 들어와 예매를 시작해요. 아래 칸들을 순서대로 지나가요.'
+      : edge && edge.label ? `${esc(from.label)}에서 <b>${esc(edge.label)}</b>을(를) 받아 이 칸이 일해요.` : '이 칸에서 하는 일이에요.';
+    const st = rmStages();
+    const list = items.slice(0, 7).map((x) => `<div class="sim-item${isDone(x) ? ' done' : ''}"><span class="sim-chk">${isDone(x) ? svgI('check', 12) : ''}</span><span class="sim-it">${esc(x.title)}</span><span class="muted sim-who">${rolesOf(x).map((p) => esc(S.members[partOwner(p)] || p)).join('·')}${isDone(x) ? '' : ` · ${st.get(x.id)}단계`}</span></div>`).join('');
+    const more = items.length > 7 ? `<div class="muted sim-more">외 ${items.length - 7}개</div>` : '';
+    const nextOpen = open.filter((x) => !waitingOn(x, rmById()).length);
+    body = `<div class="sim-head"><span class="sim-ic${ok ? ' ok' : ' todo'}">${nodeIcon(n.icon, 18)}</span><div><span class="muted">${intro}</span><b class="sim-title">${esc(n.label)} ${n.kind === 'start' ? '' : ok ? '<span class="rm-st st-done">완료</span>' : `<span class="rm-st st-todo">${items.length - open.length}/${items.length}</span>`}</b></div></div>
+      ${list ? `<div class="sim-list">${list}${more}</div>` : n.kind === 'start' ? '' : '<p class="muted">아직 이 칸에 할 일이 없어요.</p>'}
+      ${!ok ? `<div class="sim-todo-box"><b>여기서 할 일</b> ${nextOpen.length ? `지금 바로 시작할 수 있는 것: ${nextOpen.slice(0, 3).map((x) => `<button class="rm-link sm" data-open="${x.id}">${esc(x.code || x.title)}</button>`).join('')}` : `먼저 다른 칸 일이 끝나야 해요: ${[...new Set(open.flatMap((x) => waitingOn(x, rmById())).map((d) => d.code || d.title))].slice(0, 4).map(esc).join(', ')}`}</div>
+        <div class="sim-acts"><span id="simCount" class="muted"></span><span style="flex:1"></span><button class="btn sm plain" data-simopen="${n.k}">칸 열기</button><button class="btn sm" data-sim="next">건너뛰고 계속 ${svgI('skip', 14)}</button></div>` : ''}`;
+  }
+  p.innerHTML = body + ctrl;
+  $$('[data-sim]', p).forEach((b) => b.addEventListener(b.type === 'checkbox' ? 'change' : 'click', () => simCtl(b.dataset.sim, b)));
+  $$('[data-simgo]', p).forEach((b) => b.addEventListener('click', () => { const j = SIM.steps.findIndex((s) => s.k === b.dataset.simgo); simGo(j); }));
+  $$('[data-simopen]', p).forEach((b) => b.addEventListener('click', () => { SIM.paused = true; clearTimeout(SIM.timer); clearInterval(SIM.wait); simPanel('here'); rmArea(b.dataset.simopen); }));
+  $$('[data-open]', p).forEach((b) => b.addEventListener('click', () => { SIM.paused = true; clearTimeout(SIM.timer); clearInterval(SIM.wait); simPanel('here'); rmOpen(b.dataset.open); }));
+  // 이미 보인 체크 연출은 다시 그릴 때 그대로
+  if (mode !== 'here' || SIM.shown === SIM.i) $$('.sim-item', p).forEach((r) => r.classList.add('show'));
+  if (mode === 'here') SIM.shown = SIM.i;
+}
+function simCtl(act, el) {
+  if (act === 'stop') return simStop();
+  if (act === 'again') { const t = $('#flowTok'); if (t) t.classList.remove('end'); $$('.fl-node').forEach((n) => n.classList.remove('sim-ok', 'sim-todo')); $$('.fl-edge').forEach((x) => x.classList.remove('went')); return simGo(0); }
+  if (act === 'next') { SIM.paused = false; return simGo(SIM.i + 1); }
+  if (act === 'prev') { SIM.paused = false; return simGo(Math.max(0, SIM.i - 1)); }
+  if (act === 'speed') { SIM.speed = SIM.speed === 1 ? 2 : SIM.speed === 2 ? 0.5 : 1; store.set('sim-speed', SIM.speed); return simPanel('here'); }
+  if (act === 'auto') { SIM.auto = el.checked; store.set('sim-auto', SIM.auto); if (SIM.auto && SIM.cur && !SIM.cur.ok && !SIM.paused) simCountdown(0); else { clearTimeout(SIM.timer); clearInterval(SIM.wait); const c = $('#simCount'); if (c) c.textContent = ''; if (SIM.cur && SIM.cur.ok && !SIM.paused) SIM.timer = setTimeout(() => simGo(SIM.i + 1), simDur(900)); } return; }
+  if (act === 'pause') {
+    SIM.paused = !SIM.paused;
+    clearTimeout(SIM.timer); clearInterval(SIM.wait);
+    if (!SIM.paused && SIM.cur && SIM.cur.step === SIM.steps[SIM.i]) { if (SIM.cur.ok) SIM.timer = setTimeout(() => simGo(SIM.i + 1), simDur(500)); else if (SIM.auto) simCountdown(0); }
+    simPanel('here');
+  }
+}
+document.addEventListener('keydown', (e) => {
+  if (!SIM.on || !$('#modalBack').hidden || /INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || '')) return;
+  if (e.key === 'Escape') simStop();
+  else if (e.key === 'ArrowRight') simCtl('next');
+  else if (e.key === 'ArrowLeft') simCtl('prev');
+  else if (e.key === ' ') { e.preventDefault(); simCtl('pause'); }
+});
+window.addEventListener('hashchange', () => { if (SIM.on && !/^#\/roadmap\/?(flow)?$/.test(location.hash)) simStop(true); });
 
 // ---- 다이어그램 수정 ----
 function flowAct(act) {
@@ -2052,6 +2247,7 @@ async function pageRoadmap(view) {
 
 function rmRender() {
   if (!RM.data || !/^#\/roadmap/.test(location.hash)) return;
+  if (SIM.on && RM.view === 'flow' && $('#flow')) { RM.stale = true; return; }
   const by = rmById();
   const f = RM.f;
   const items = RM.data.items;
