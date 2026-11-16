@@ -20,7 +20,14 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+// 소스에 한글이 있으므로 인코딩을 명시한다. 지정하지 않으면 Windows(JDK 17 이하)는 MS949로 읽어
+// 한글이 깨지거나 컴파일이 실패한다 (JDK 18 이상은 기본이 UTF-8).
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
 tasks.withType(Test).configureEach {
+    defaultCharacterEncoding = 'UTF-8'
     useJUnitPlatform()
     testLogging { events 'failed'; exceptionFormat 'full' }
 }
