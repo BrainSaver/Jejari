@@ -140,7 +140,7 @@ r = await dh('/branches?fresh=4');
 const me = r.data.branches.find((b) => b.name === 'DongHyeon');
 ok(me.ahead > 0, `브랜치 현황 ahead=${me.ahead}`);
 r = await dh('/merge', {});
-ok(r.status === 200 && r.data.pr, 'PR 만들고 바로 합침');
+ok(r.status === 200 && r.data.ok && r.data.commits > 0, `PR 없이 바로 합침 (${r.data.mode})`);
 r = await anon(`/file?path=${encodeURIComponent(F)}&ref=main&fresh=5`);
 ok(r.data.content.includes('(사이트 테스트)'), 'main에 반영됨');
 r = await dh('/merge', {});
