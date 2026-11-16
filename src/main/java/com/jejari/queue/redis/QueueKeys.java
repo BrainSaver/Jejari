@@ -15,5 +15,8 @@ public final class QueueKeys {
 	/** risk:{subjectType}:{hash}. subjectType은 CI / PAYMENT / DEVICE */
 	public static String risk(String subjectType, String hash) { return "risk:" + subjectType + ":" + hash; }
 
+	/** 위험 점수 배치(D)가 Redis 전체 재동기화를 끝낼 때마다 갱신하는 표시 키. 없으면 risk:* 캐시를 믿지 않는다. */
+	public static final String RISK_SYNCED_AT = "risk:meta:synced_at";
+
 	public static final String POLICY_CACHE = "policy:cache";
 }

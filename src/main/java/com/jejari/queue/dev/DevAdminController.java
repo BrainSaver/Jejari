@@ -53,6 +53,7 @@ public class DevAdminController {
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("queue", redis.execute(deleteByPattern, List.of(), "queue:*"));
 		out.put("risk", redis.execute(deleteByPattern, List.of(), "risk:*"));
+		redis.opsForValue().set(QueueKeys.RISK_SYNCED_AT, "dev"); // 개발 모드는 항상 동기화된 상태로 둔다 (Oracle 조회 경로를 타지 않게)
 		redis.delete(QueueKeys.POLICY_CACHE);
 		out.put("policyCache", "cleared");
 		return out;

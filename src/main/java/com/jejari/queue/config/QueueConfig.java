@@ -24,8 +24,10 @@ import com.jejari.queue.port.LoggingQueueLogSink;
 import com.jejari.queue.port.MemberIdentityPort;
 import com.jejari.queue.port.OnSaleRunProvider;
 import com.jejari.queue.port.QueueLogSink;
+import com.jejari.queue.port.RiskScoreFallbackPort;
 import com.jejari.queue.port.UnavailableMemberIdentityPort;
 import com.jejari.queue.port.UnavailableOnSaleRunProvider;
+import com.jejari.queue.port.UnavailableRiskScoreFallbackPort;
 
 /**
  * 대기열(QUE-01~05) 빈 조립. 시계는 공통 ClockConfig의 Clock을 씁니다.
@@ -75,8 +77,10 @@ public class QueueConfig {
 	}
 
 	@Bean
-	RiskPenaltyService queueRiskPenaltyService(StringRedisTemplate redis, PolicyProvider queuePolicyProvider) {
-		return new RiskPenaltyService(redis, queuePolicyProvider);
+	RiskPenaltyService queueRiskPenaltyService(StringRedisTemplate redis, PolicyProvider queuePolicyProvider,
+			ObjectProvider<RiskScoreFallbackPort> fallback) {
+		return new RiskPenaltyService(redis, queuePolicyProvider,
+				fallback.orderedStream().findFirst().orElseGet(UnavailableRiskScoreFallbackPort::new));
 	}
 
 	@Bean

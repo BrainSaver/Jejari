@@ -15,4 +15,6 @@ foreach ($pattern in @('queue:*', 'risk:*')) {
     Write-Host "$pattern : $n 개 삭제"
 }
 Invoke-Redis @('del', 'policy:cache') | Out-Null
+# 개발 모드는 위험 점수가 '동기화된 상태'여야 진입이 Oracle 조회 경로를 타지 않는다
+Invoke-Redis @('set', 'risk:meta:synced_at', 'dev') | Out-Null
 Write-Host "대기열·위험 점수·정책 캐시 키를 지웠습니다 (DB $($script:RedisDb))"

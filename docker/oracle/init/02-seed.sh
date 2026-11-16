@@ -13,6 +13,7 @@ for f in 01_station_route.sql 02_car_type_train_seat.sql 03_sale_event_run.sql \
   sqlplus -s "${APP_USER}/${APP_USER_PASSWORD}@//localhost:1521/FREEPDB1" <<SQL
 WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
 SET DEFINE OFF
+SET SQLBLANKLINES ON   -- 문장 중간 빈 줄에서 입력이 끊기지 않게 (기본값 OFF)
 ALTER SESSION SET TIME_ZONE = 'Asia/Seoul';
 @${f}
 EXIT
