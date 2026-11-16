@@ -2,7 +2,9 @@
 """동시성 §14.2 Lua 스크립트 검증.
 
 Spring 뼈대가 아직 없어서 스크립트만 따로 돌려 본다. 나중에 통합 테스트로 옮긴다.
-실행: python redis/test/lua_test.py   (Redis가 localhost:6379에 떠 있어야 함)
+실행: python redis/test/lua_test.py
+접속 정보는 저장소 루트 .env 에서 읽는다 (REDIS_HOST/PORT/PASSWORD).
+docker compose up -d 로 띄운 Redis에 그대로 붙는다.
 """
 import os, sys, time, pathlib
 from concurrent.futures import ThreadPoolExecutor
@@ -14,11 +16,31 @@ try:
 except Exception:
     pass
 
+def _load_env():
+    """저장소 루트 .env 를 읽는다 (compose·Spring이 쓰는 같은 파일). 없으면 넘어간다."""
+    here = pathlib.Path(__file__).resolve()
+    p = next((d / ".env" for d in here.parents if (d / ".env").exists()), None)
+    if p is None:
+        return
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip())
+
+
+_load_env()
+
 HOST = os.environ.get("REDIS_HOST", "localhost")
 PORT = int(os.environ.get("REDIS_PORT", "6379"))
+PW   = os.environ.get("REDIS_PASSWORD") or None   # compose가 requirepass를 건다
 LUA  = pathlib.Path(__file__).resolve().parents[1] / "lua"
 
-r = redis.Redis(host=HOST, port=PORT, decode_responses=True)
+def rconn():
+    return redis.Redis(host=HOST, port=PORT, password=PW, decode_responses=True)
+
+r = rconn()
 S = {p.stem: r.register_script(p.read_text(encoding="utf-8")) for p in LUA.glob("*.lua")}
 
 ok_n, fail_n = 0, 0
@@ -65,7 +87,7 @@ print("\n[T1] 같은 좌석에 100명 동시 선점")
 reset()
 k = seats(9001, [2001, 2002])
 def grab(i):
-    cli = redis.Redis(host=HOST, port=PORT, decode_responses=True)
+    cli = rconn()
     return cli.register_script((LUA / "hold.lua").read_text(encoding="utf-8"))(
         keys=k, args=["R%d" % i, ms(600), ""])
 with ThreadPoolExecutor(max_workers=50) as ex:
@@ -160,7 +182,7 @@ check("  복원된 키에 TTL이 걸림", r.pttl(RUN) > 0)
 print("\n[limit_incr.lua] 같은 CI 10명이 동시에 (한도 4)")
 reset()
 def inc(_):
-    cli = redis.Redis(host=HOST, port=PORT, decode_responses=True)
+    cli = rconn()
     sc = cli.register_script((LUA / "limit_incr.lua").read_text(encoding="utf-8"))
     return sc(keys=K, args=A(1, (4, 20, 8)))[0]
 with ThreadPoolExecutor(max_workers=10) as ex:
