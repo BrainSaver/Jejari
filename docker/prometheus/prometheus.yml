@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 5s        # k6 부하 중 짧은 변화를 보려고 5초
+  evaluation_interval: 15s
+
+scrape_configs:
+  # 호스트(IDE)에서 실행 중인 Spring Boot. 앱을 컨테이너로 옮기거나 여러 대로 늘리면 targets만 바꿉니다
+  - job_name: jejari-app
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+        labels:
+          instance: app-1
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
