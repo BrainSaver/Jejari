@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v10 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-10
+> 스키마 v11 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-16
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -39,7 +39,7 @@
 | 테이블 | 60개 (운영 56 + 확장 예정 4) |
 | 저장소 | Oracle 44 · MongoDB 11 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 510개 |
+| 컬럼 | 511개 |
 | 관계 (FK) | 85개 (Oracle 제약 60 · 논리 참조 20) |
 
 | 영역 | 저장소 | 테이블 |
@@ -403,11 +403,11 @@ Oracle
 | `train_id` | NUMBER | FK, NN → train | 생성 | 열차 |  |
 | `sale_event_id` | NUMBER | FK → sale_event | 생성 | 명절 예매 행사 | 오픈 일정·정책을 행사 단위로 묶음 |
 | `run_date` | DATE | NN | 생성 | 운행일 | 명절 기간 |
-| `sale_open_at` | TIMESTAMP | NN | 생성 | 예매 오픈 시각 | 트래픽 폭증 시점. 부하 테스트 시나리오 기준 |
+| `sale_open_at` | TIMESTAMP | NN | 생성 | 예매 오픈 시각 | 트래픽 폭증 시점. 부하 테스트 시나리오 기준. 일반은 출발 2개월 전 07:00, 명절은 행사 오픈 시각 |
 | `sale_close_at` | TIMESTAMP |  | 생성 | 판매 마감 |  |
 | `status` | VARCHAR2(10) | NN | 시스템 | SCHEDULED / ON_SALE / CLOSED / DEPARTED | 판매 가능 여부 판단 |
 
-> **제약·비고** UNIQUE(train_id, run_date) · UNIQUE(run_id, train_id) — seat_inventory 복합 FK의 참조 대상
+> **제약·비고** UNIQUE(train_id, run_date) · UNIQUE(run_id, train_id) — seat_inventory 복합 FK의 참조 대상 · 일반 예매 오픈은 코레일 규칙대로 출발일 2개월 전 07:00: sale_open_at = run_date - 2개월 + 07:00. 명절 운행은 sale_event.sale_open_at을 그대로 복사합니다 (특별예매 일괄 오픈)
 
 **관계** train_id → [`train`](#train) · sale_event_id → [`sale_event`](#sale-event) · [`train_stop`](#train-stop).run_id → 이 테이블 · [`seat_inventory`](#seat-inventory).run_id → 이 테이블 · [`reservation`](#reservation).run_id → 이 테이블 · [`waitlist`](#waitlist).run_id → 이 테이블 · [`behavior_log`](#behavior-log).run_id → 이 테이블 · [`queue_log`](#queue-log).run_id → 이 테이블
 
@@ -459,12 +459,12 @@ Oracle
 |---|---|---|---|---|---|
 | `policy_id` | NUMBER | PK | 생성 |  |  |
 | `sale_event_id` | NUMBER | FK → sale_event | 생성 | 적용 행사 (null이면 상시) | PER_HOLIDAY 범위 정의 |
-| `scope` | VARCHAR2(20) | NN | 생성 | PER_RESERVATION / PER_RUN / PER_HOLIDAY | 1회·열차별·명절 전체 제한을 코드 수정 없이 조정 |
+| `scope` | VARCHAR2(20) | NN | 생성 | PER_RESERVATION / PER_RUN / PER_DAY / PER_HOLIDAY | 1회·열차당·1일·명절 전체 제한을 코드 수정 없이 조정 |
 | `max_seats` | NUMBER(3) | NN | 생성 | 최대 매수 |  |
 | `valid_from` | TIMESTAMP |  | 생성 | 적용 시작 | 설·추석별 다른 정책 |
 | `valid_to` | TIMESTAMP |  | 생성 | 적용 종료 |  |
 
-> **제약·비고** 매수 집계 대상: HOLD·PAYMENT_PENDING·CONFIRMED (CANCELED·EXPIRED 제외) · 값은 예시 · 한도 값 고르기: 기간 안의 행사 정책 우선, 없으면 상시, 여러 개면 가장 작은 값. PER_RESERVATION은 요청 매수와 값 비교만 (concurrency.md §10.6)
+> **제약·비고** 매수 집계 대상: HOLD·PAYMENT_PENDING·CONFIRMED (CANCELED·EXPIRED 제외) · 값은 예시 · 한도 값 고르기: 기간 안의 행사 정책 우선, 없으면 상시, 여러 개면 가장 작은 값. PER_RESERVATION은 요청 매수와 값 비교만 (concurrency.md §10.6) · PER_DAY는 구매일(선점 시각) 기준 1일 매수. 상시 정책 기본값은 코레일 공시 기준 열차당 10매·1일 20매, 명절 행사 정책은 1회 4매·열차당 4매·명절 전체 8매 (concurrency.md §10.6)
 
 **관계** sale_event_id → [`sale_event`](#sale-event)
 
@@ -1294,12 +1294,12 @@ CI별 보유 매수. 매수 제한의 최종 판정을 조건부 UPDATE 한 번�
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
-| `scope` | VARCHAR2(20) | PK | 시스템 | PER_RUN / PER_HOLIDAY | 열차별·명절 전체 제한을 한 테이블에서 |
-| `scope_ref_id` | NUMBER | PK | 시스템 | run_id 또는 sale_event_id | scope에 따라 가리키는 대상이 달라 FK 미설정 |
+| `scope` | VARCHAR2(20) | PK | 시스템 | PER_RUN / PER_DAY / PER_HOLIDAY | 열차당·1일·명절 전체 제한을 한 테이블에서 |
+| `scope_ref_id` | NUMBER | PK | 시스템 | run_id · 구매일 YYYYMMDD · sale_event_id | scope에 따라 가리키는 대상이 달라 FK 미설정. PER_DAY는 구매일을 숫자로 (예: 20270106) |
 | `ci_hash` | VARCHAR2(64) | PK | 시스템 | CI 해시 | 계정이 아닌 사람 단위 합산 |
 | `seat_count` | NUMBER(3) | NN | 시스템 | 현재 보유 매수 | 조건부 UPDATE로 한도 초과 차단 |
 
-> **제약·비고** CHECK(seat_count >= 0) · 증가는 reservation INSERT와 같은 트랜잭션, 감소는 예약 상태 UPDATE가 1행일 때만, 한 트랜잭션의 카운터 행은 (scope, scope_ref_id, ci_hash) 정렬 순서로 갱신, sale_event_id가 NULL이면 PER_HOLIDAY 미적용 · 절차: concurrency.md §10
+> **제약·비고** CHECK(seat_count >= 0) · 증가는 reservation INSERT와 같은 트랜잭션, 감소는 예약 상태 UPDATE가 1행일 때만, 한 트랜잭션의 카운터 행은 (scope, scope_ref_id, ci_hash) 정렬 순서로 갱신, sale_event_id가 NULL이면 PER_HOLIDAY 미적용 · 절차: concurrency.md §10 · PER_DAY의 scope_ref_id는 구매일 YYYYMMDD 숫자. 증가는 선점 시각(앱 시계)의 날짜, 감소는 그 예약의 created_at 날짜를 씁니다 — 자정을 넘겨 만료·취소되는 예약이 다른 날 카운터를 깎지 않게 하려는 것입니다
 
 <a id="g-event"></a>
 ### 이벤트 신뢰성
@@ -1951,6 +1951,7 @@ Redis
 | `seat:hold:{runId}:{seatId}:{segNo}` | STRING+TTL |  | 시스템 | 값: reservation_id (HOLD), SOLD:reservation_id (확정), REOFFER:reservation_id (대기자 제안 대기) | 만료 = pay_deadline_at, SOLD는 출발 시각, REOFFER는 waitlist.reoffer_hold_sec. 해제·연장은 값이 일치할 때만 (compare-and-delete) |
 | `limit:{runId}:{ciHash}` | STRING |  | 시스템 | 구매 매수 | DB 조회 없이 1차 차단 |
 | `limit:event:{saleEventId}:{ciHash}` | STRING |  | 시스템 | 명절 전체 구매 매수 | PER_HOLIDAY 제한의 빠른 체크 |
+| `limit:day:{yyyymmdd}:{ciHash}` | STRING |  | 시스템 | 구매일별 구매 매수 | PER_DAY 제한의 빠른 체크. 만료는 그 날 24:00 + 1시간 |
 | `limit:dec:{reservationId}` | STRING+TTL |  | 시스템 | 값: 1 (이 예약의 한도 감소 완료 표시) | limit_decr.lua가 SET NX에 성공할 때만 감소 → 커밋 직후 앱과 outbox 소비자가 둘 다 실행해도 한 번만 감소 |
 | `risk:{subjectType}:{hash}` | STRING |  | 시스템 | final_score 캐시 | 대기열 진입 시 DB 미조회 |
 | `seatmap:{runId}` | HASH |  | 시스템 | seatId → 상태 | 조회 트래픽을 DB에서 분리 |
@@ -2298,6 +2299,7 @@ Oracle
 | v8 | 동시성 4차 검토 반영: 결제 결과 갈래(늦은 승인 환불·실패 시 EXPIRED), 스캐너 분리(ix_resv_hold_due, payment.next_check_at·ix_pay_recheck), ix_seatinv_hold 제거, cancellation 유형 정리(EXPIRED 제거)·resold_yn 배치, saga 단계 정리, 취소표 대기자 우선(REOFFER)·제안 기한 연장·wl 멱등 키, 한도 값 규칙·자가 복구, Redis 보상 outbox 보장·limit:dec, ORA_HASH 문자열, inbox 8일, 행동 로그 180일 확정, 시간대·Redis 설정 결정 |
 | v9 | 기능설계서 맞춤: admin_action에 reservation_id·예약 대상 조치(강제 취소·결제 수동 처리·마스킹 해제), 알림 종류(취소표 건너뜀·환불 완료), 대기열 중복 진입 차단(queue:member·queue:ci)·같은 시각 진입 순서(queue:seq), 운영 값 8개(취소표 한도·출발 후 취소·스캐너·알림·위험 점수 주기) |
 | v10 | MongoDB 인덱스·보관 정리: behavior_log {member_id, ts}(타임라인), queue_log {run_id, entered_at}(순번 검증) 인덱스, login_attempt에 expire_at·TTL과 app_policy login_attempt.retention_days(30일) |
+| v11 | 코레일 실제 규칙 반영: 1일 매수 제한 PER_DAY(구매일 기준, 하루 20매)를 purchase_limit_policy·purchase_counter·Redis limit:day 키에 추가, 일반 예매 오픈은 출발 2개월 전 07:00(명절은 행사 오픈 시각), 상시 정책 기본값 열차당 10매 |
 
 ## 참고 자료
 
