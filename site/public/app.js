@@ -209,6 +209,7 @@ async function loadBranches() {
   renderTop();
 }
 function myAhead() { const b = S.branches && S.branches.branches.find((x) => x.name === S.me); return b ? b.ahead : 0; }
+function myBehind() { const b = S.branches && S.branches.branches.find((x) => x.name === S.me); return b ? b.behind : 0; }
 function renderTop() {
   aiFabSync();
   document.body.classList.toggle('anon', !S.me);
@@ -226,6 +227,8 @@ function renderTop() {
   $('#resetMenu').hidden = !S.admin;
   $('#mergeBtn').hidden = !(S.me && myAhead() > 0);
   if (S.me) $('#mergeBtn').textContent = `main에 합치기 (${myAhead()})`;
+  $('#syncBtn').hidden = !(S.me && myBehind() > 0);
+  if (S.me) $('#syncBtn').textContent = `main 가져오기 (${myBehind()})`;
 }
 $('#refSelect').addEventListener('change', (e) => { setRef(e.target.value); });
 function setRef(r) { S.ref = r; store.set('ref', r); renderTop(); route(); }
@@ -333,9 +336,25 @@ function branchBanner(ref) {
   const b = S.branches && S.branches.branches.find((x) => x.name === ref);
   const st = b ? `main보다 ${b.ahead}개 앞, ${b.behind}개 뒤` : '';
   return `<div class="banner info">${nameTag(ref)} 브랜치를 보고 있어요. <span class="muted">${st}</span>
-    <span class="acts"><a class="btn sm ghost" href="#/compare/${ref}">main과 다른 부분</a><button class="btn sm plain" data-main>main 보기</button></span></div>`;
+    <span class="acts">${ref === S.me && b && b.behind ? '<button class="btn sm" data-sync>main 가져오기</button>' : ''}<a class="btn sm ghost" href="#/compare/${ref}">main과 다른 부분</a><button class="btn sm plain" data-main>main 보기</button></span></div>`;
 }
-function bindBanner(root) { const b = $('[data-main]', root); if (b) b.addEventListener('click', () => setRef('main')); }
+function bindBanner(root) {
+  const b = $('[data-main]', root); if (b) b.addEventListener('click', () => setRef('main'));
+  const s = $('[data-sync]', root); if (s) s.addEventListener('click', syncFromMain);
+}
+// main 가져오기: main에 새로 합쳐진 커밋을 내 브랜치로 받는다. 내 브랜치에만 있는 커밋이 없으면 빨리 감기, 있으면 합치기 커밋을 만든다.
+async function syncFromMain() {
+  if (!needLogin()) return;
+  const btns = $$('#syncBtn, [data-sync]'); btns.forEach((b) => { b.disabled = true; });
+  try {
+    const r = await api('/sync', { body: {} });
+    bump(); await loadBranches();
+    toast(r.sync === 'uptodate' ? '이미 main의 최신 내용이 들어 있어요.' : `main의 커밋 ${r.commits}개를 ${S.me} 브랜치로 가져왔어요.`, 4000);
+    route();
+  } catch (x) {
+    if (x.error === 'MAIN_CONFLICT') conflictModal(x); else toast(x.message);
+  } finally { btns.forEach((b) => { b.disabled = false; }); }
+}
 
 async function docView(root, path, { title, sub, compact, withToc } = {}) {
   const ref = S.ref;
@@ -796,6 +815,7 @@ async function mergeModal() {
   });
 }
 $('#mergeBtn').addEventListener('click', mergeModal);
+$('#syncBtn').addEventListener('click', syncFromMain);
 
 // 소스트리
 function layoutGraph(commits, parentsOf) {

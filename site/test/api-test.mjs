@@ -187,6 +187,13 @@ r = await dh('/file?path=' + encodeURIComponent(HT) + '&ref=DongHyeon&fresh=8');
 r = await dg('/save', { path: HT, mode: 'file', oldText: null, newText: 'x', message: 'docs: x' }); ok(r.status === 403, '남의 폴더 HTML은 못 씀');
 r = await dh('/save', { path: 'docs/길동현/features/x.js', mode: 'file', oldText: null, newText: 'x', message: 'docs: x' }); ok(r.status === 400, 'md·html 말고는 거부');
 
+console.log('main 가져오기');
+r = await anon('/sync', {}); ok(r.status === 401, '로그인 없이 거부');
+await mock('/_test/commit', { branch: 'main', path: 'docs/concurrency.md', content: '# 제자리 동시성 절차\n\n가져오기 시험\n', message: 'docs: 동기화 시험', author: 'BrainSaver' });
+r = await dh('/sync', {}); ok(r.status === 200 && r.data.sync === 'merged' && r.data.commits >= 1, `main 가져오기 (${r.data.sync}, ${r.data.commits}개)`);
+r = await dh('/file?path=docs/concurrency.md&ref=DongHyeon&fresh=10'); ok(r.status === 200 && r.data.content.includes('가져오기 시험'), 'main 파일이 내 브랜치에 들어옴');
+r = await dh('/sync', {}); ok(r.status === 200 && r.data.sync === 'uptodate', '다시 누르면 이미 최신');
+
 console.log('PIN 초기화');
 r = await dg('/admin/reset-pin', { name: 'DongHyeon' }); ok(r.status === 403, '팀장 아니면 거부');
 r = await dh('/admin/reset-pin', { name: 'DongGyun' }); ok(r.status === 200, '팀장이 초기화');
