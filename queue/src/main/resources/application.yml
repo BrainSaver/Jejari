@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: jejari-queue
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DB:0}
+
+jejari:
+  # 개발용 대용품(X-Member-Id 헤더 인증, 가짜 회원·운행)을 켠다. 운영에서는 반드시 false.
+  dev-mode: false
+  queue:
+    scheduler-enabled: true
+    # 개발용 판매 중 운행 (OnSaleRunProvider 실제 구현이 붙으면 쓰지 않음)
+    dev-on-sale-runs: ""
