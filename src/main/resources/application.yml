@@ -91,6 +91,14 @@ jejari:
     secrets:                  # kid: Base64 키(32바이트 이상). 키 교체 방법은 JwtProperties 주석
       k1: ${JWT_SECRET_K1:}
     refresh-cookie-secure: ${JWT_REFRESH_COOKIE_SECURE:true}
+  event:
+    # Outbox 릴레이 (EVT-02). 1차는 인스턴스 1대가 샤드 0~15를 혼자 처리하므로 여러 대를 띄우면 한 대에서만 켭니다
+    relay:
+      enabled: true
+      interval-ms: 200        # 한 바퀴 끝나고 쉬는 시간
+      send-timeout: 10s       # Kafka 확인(acks=all) 대기 한도
+    cleanup-enabled: true     # 발행 끝난 outbox·오래된 processed_event 정리 (매일 04:10)
+    policy-cache-ms: 10000    # app_policy 값을 앱에서 들고 있는 시간
 
 server:
   error:
