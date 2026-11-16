@@ -10,7 +10,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.core.Cursor;
@@ -35,7 +35,8 @@ import com.jejari.risk.SubjectType;
  * 같은 실행기를 쓰는 점수 배치와 동시에 돌지 않아 서로의 값을 덮어쓰지 않는다.
  */
 @Component
-@ConditionalOnProperty(name = "jejari.risk.cache-resync-enabled", havingValue = "true", matchIfMissing = true)
+// 개발 모드는 Oracle 점수 원본 없이 risk:*를 Redis에 직접 넣으므로(부하 테스트) 재동기화가 그 키를 지우지 않게 끈다
+@ConditionalOnExpression("${jejari.risk.cache-resync-enabled:true} and !${jejari.dev-mode:false}")
 public class RiskCacheResync {
 	private static final Logger log = LoggerFactory.getLogger(RiskCacheResync.class);
 	private static final int BATCH = 1000;
@@ -45,20 +46,39 @@ public class RiskCacheResync {
 	private final RiskScoreCache cache;
 	private final RiskJobRunner runner;
 	private final Duration resyncInterval;
+	private final Duration markerCheckInterval;
 
 	public RiskCacheResync(JdbcTemplate jdbc, StringRedisTemplate redis, RiskScoreCache cache, RiskJobRunner runner,
-			@Value("${jejari.risk.cache-resync-interval:10m}") Duration resyncInterval) {
+			@Value("${jejari.risk.cache-resync-interval:10m}") Duration resyncInterval,
+			@Value("${jejari.risk.cache-marker-check-interval:30s}") Duration markerCheckInterval) {
 		this.jdbc = jdbc;
 		this.redis = redis;
 		this.cache = cache;
 		this.runner = runner;
 		this.resyncInterval = resyncInterval;
+		this.markerCheckInterval = markerCheckInterval;
 	}
 
-	/** 앱이 요청을 받기 시작할 때 바로 한 번, 그 뒤 주기마다 */
+	/**
+	 * 앱이 요청을 받기 시작할 때 바로 한 번, 그 뒤 주기마다 전체 재동기화.
+	 * 그와 별도로 표시 키를 짧은 간격으로 확인해, Redis가 재시작·초기화돼 키가 사라졌으면 주기를 기다리지 않고 바로 재동기화한다.
+	 * 표시 키가 없는 동안 대기열은 요청마다 Oracle을 읽으므로 그 시간을 짧게 줄이기 위해서다.
+	 */
 	@EventListener(ApplicationReadyEvent.class)
 	public void start() {
 		runner.scheduleWithFixedDelay(this::runOnce, resyncInterval);
+		runner.scheduleWithFixedDelay(this::resyncIfMarkerMissing, markerCheckInterval);
+	}
+
+	void resyncIfMarkerMissing() {
+		try {
+			if (!Boolean.TRUE.equals(redis.hasKey(RiskScoreCache.SYNCED_AT_KEY))) {
+				log.warn("위험 점수 동기화 표시 키가 없음 (Redis 재시작·초기화?) → 즉시 재동기화");
+				runOnce();
+			}
+		} catch (RuntimeException e) {
+			log.error("위험 점수 동기화 표시 키 확인 실패", e);
+		}
 	}
 
 	void runOnce() {

@@ -28,8 +28,11 @@ import com.jejari.risk.SubjectType;
 @Component
 public class RiskScoreCache {
 
-	/** 재동기화가 한 번이라도 끝났다는 표시. 값은 마지막 완료 시각(ISO-8601). risk:* 정리 대상과 겹치지 않게 접두어를 다르게 둔다 */
-	public static final String SYNCED_AT_KEY = "riskcache:synced_at";
+	/**
+	 * 재동기화가 끝났다는 표시. 값은 마지막 완료 시각(ISO-8601). 대기열(A)이 이 키가 없으면 캐시를 믿지 않고 Oracle을 직접 읽으므로
+	 * 반드시 A와 같은 키를 쓴다. 재동기화의 정리 대상(risk:CI|PAYMENT|DEVICE:*)과는 겹치지 않는다.
+	 */
+	public static final String SYNCED_AT_KEY = QueueKeys.RISK_SYNCED_AT;
 
 	private static final Pattern HASH = Pattern.compile("^[0-9a-f]{64}$");
 	private static final BigDecimal MAX = BigDecimal.valueOf(100);

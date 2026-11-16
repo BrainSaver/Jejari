@@ -3,6 +3,7 @@ package com.jejari.risk.cache;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
@@ -19,9 +20,14 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.jejari.queue.domain.RiskPenaltyService;
+import com.jejari.queue.port.MemberIdentityPort.MemberIdentity;
+import com.jejari.queue.port.RiskScoreFallbackPort;
+import com.jejari.queue.redis.QueueKeys;
 import com.jejari.risk.RiskResult;
 import com.jejari.risk.RiskSignals;
 import com.jejari.risk.SubjectType;
+import com.jejari.risk.store.OracleRiskScoreFallback;
 import com.jejari.risk.store.RiskScoreStore;
 
 /**
@@ -59,7 +65,72 @@ class RiskCacheInfraTest {
 		h2 = hash();
 		stray = hash();
 		// 재동기화는 앱 시작 때 자동으로 돌지 않게 꺼 두고, 테스트에서 직접 부른다
-		resync = new RiskCacheResync(jdbc, redis, cache, null, java.time.Duration.ofMinutes(10));
+		resync = new RiskCacheResync(jdbc, redis, cache, null, Duration.ofMinutes(10), Duration.ofSeconds(30));
+	}
+
+	// ---- 대기열(A)의 실제 읽기 코드와 맞물리는지 ----
+
+	@Autowired
+	RiskPenaltyService queue;
+	@Autowired
+	RiskScoreFallbackPort fallback;
+
+	MemberIdentity member() {
+		return new MemberIdentity(1L, "ACTIVE", h1, List.of(h2), List.of());
+	}
+
+	@Test
+	void 재동기화_뒤_대기열은_Redis_점수를_그대로_읽는다() {
+		store.save(result(SubjectType.CI, h1, "60"));
+		store.save(result(SubjectType.PAYMENT, h2, "75.5"));
+		resync.resync();
+
+		// 표시 키 이름이 A와 다르면 대기열은 캐시를 안 믿고 Oracle 조회로 빠진다 → 여기서 잡힌다
+		assertThat(redis.hasKey(QueueKeys.RISK_SYNCED_AT)).isTrue();
+		assertThat(queue.score(member())).isEqualTo(75.5);
+	}
+
+	@Test
+	void 표시_키가_없으면_대기열은_Oracle에서_읽는다_100점_아님() {
+		store.save(result(SubjectType.CI, h1, "60"));
+		store.save(result(SubjectType.PAYMENT, h2, "75.5"));
+		redis.execute((RedisCallback<Object>) c -> {
+			c.serverCommands().flushDb(); // Redis 초기화 상황
+			return null;
+		});
+
+		assertThat(fallback).isInstanceOf(OracleRiskScoreFallback.class);
+		assertThat(queue.score(member())).isEqualTo(75.5);
+	}
+
+	@Test
+	void 점수가_없는_회원은_Oracle_조회로도_0점() {
+		assertThat(fallback.maxScore(member())).isZero();
+	}
+
+	@Test
+	void 잘못된_해시면_Oracle_조회가_예외_대기열은_100점() {
+		MemberIdentity bad = new MemberIdentity(1L, "ACTIVE", "01012345678", List.of(), List.of());
+		assertThat(queue.score(bad)).isEqualTo(100.0);
+	}
+
+	@Test
+	void 표시_키가_사라지면_감시가_바로_재동기화() {
+		store.save(result(SubjectType.CI, h1, "60"));
+		redis.execute((RedisCallback<Object>) c -> {
+			c.serverCommands().flushDb();
+			return null;
+		});
+		resync.resyncIfMarkerMissing();
+		assertThat(redis.hasKey(QueueKeys.RISK_SYNCED_AT)).isTrue();
+		assertThat(redis.opsForValue().get("risk:CI:" + h1)).isEqualTo("60.00");
+	}
+
+	@Test
+	void 재동기화는_표시_키를_정리_대상으로_지우지_않는다() {
+		resync.resync();
+		resync.resync();
+		assertThat(redis.hasKey(QueueKeys.RISK_SYNCED_AT)).isTrue();
 	}
 
 	@AfterEach
