@@ -174,7 +174,7 @@ export function preflight(runId = RUN_ID) {
     404: '다른 서버가 이 포트를 쓰고 있을 수 있습니다. 포트를 확인하세요 (Windows: netstat -ano | findstr :8080).',
     409: `운행 ${runId}이 판매 중이 아닙니다. 서버를 --jejari.queue.dev-on-sale-runs=${runId} 로 띄우거나 RUN_ID를 맞추세요.`,
     500: '서버 오류입니다. 서버 콘솔의 오류 메시지를 확인하세요.',
-    503: 'Redis에 연결되지 않았습니다. Redis가 켜져 있는지 확인하세요 (docker start jejari-redis).',
+    503: 'Redis에 연결되지 않았습니다. Redis가 켜져 있는지 확인하세요 (docker compose up -d redis).',
   };
   throw new Error(`사전 점검 실패: 진입 요청이 ${res.status}를 돌려줬습니다. ${hints[res.status] || ''} 응답: ${String(res.body || '').slice(0, 200)}`);
 }

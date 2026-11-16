@@ -718,7 +718,7 @@ LOG_RULES = [
      r"(no such file|cannot find|could not).*users\.csv",
      "테스트 계정 파일(data/users.csv)을 읽지 못했습니다 — 환경 설정에서 '만들기'로 계정을 먼저 만드세요."),
     (r"Redis에 연결되지 않았습니다|사전 점검 실패: 진입 요청이 503",
-     "서버는 떠 있지만 Redis에 연결하지 못합니다 — Redis를 켜세요 (docker start jejari-redis)."),
+     "서버는 떠 있지만 Redis에 연결하지 못합니다 — Redis를 켜세요 (docker compose up -d redis)."),
     (r"개발 모드가 아닙니다",
      "서버가 개발 모드가 아닙니다 — --jejari.dev-mode=true 로 서버를 다시 띄우세요."),
     (r"운행 \S+이 판매 중이 아닙니다",

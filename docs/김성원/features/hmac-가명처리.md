@@ -1,13 +1,14 @@
 # 식별정보 가명처리 (HMAC)
 
-> 담당 김성원 · 코드 `hmac/` · 근거 DB설계서 2장(식별 해시), 기획서 6장(묶음 기준)
+> 담당 김성원 · 코드 `src/main/java/com/jejari/common/hmac/` · 근거 DB설계서 2장(식별 해시), 기획서 6장(묶음 기준)
 
 ## 한눈에
 
 전화번호·CI·카드번호·기기 지문·IP 같은 식별정보는 원문을 저장하지 않고 **HMAC-SHA256 값(소문자 16진수 64자)** 으로만 다룹니다. 같은 값은 항상 같은 해시라서, 원문 없이도 "같은 CI의 여러 계정", "같은 카드를 쓰는 계정"을 묶을 수 있습니다.
 
 ```java
-Pseudonymizer p = Pseudonymizer.fromEnv();      // 환경변수 JEJARI_HMAC_KEY
+// 스프링 빈으로 주입받습니다 (키는 .env의 JEJARI_HMAC_KEY, 없으면 빈이 만들어지지 않음)
+// 직접 만들 때: Pseudonymizer p = Pseudonymizer.fromEnv();
 p.phone("+82 10-1234-5678");                    // 010-1234-5678과 같은 해시
 p.mockCiHash("김성원", "010-1234-5678");         // 모의 본인인증의 CI 해시 (AUTH-02)
 p.paymentMethod("4111-1111-1111-1111");

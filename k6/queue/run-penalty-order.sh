@@ -3,7 +3,13 @@
 #   K6=/path/to/k6 BOTS=20 NORMALS=100 ./run-penalty-order.sh
 set -euo pipefail
 cd "$(dirname "$0")"
-REDIS="redis-cli -h ${REDIS_HOST:-localhost} -p ${REDIS_PORT:-6379} -n ${REDIS_DB:-0}"
+# Redis 접속: REDIS_CONTAINER가 있으면 그 컨테이너 안의 redis-cli(비밀번호는 컨테이너 환경에서 자동 사용),
+# 없으면 로컬 redis-cli (비밀번호가 있으면 REDISCLI_AUTH=<.env의 REDIS_PASSWORD> 를 먼저 설정)
+if [ -n "${REDIS_CONTAINER:-}" ]; then
+  REDIS="docker exec -i ${REDIS_CONTAINER} redis-cli -n ${REDIS_DB:-0}"
+else
+  REDIS="redis-cli -h ${REDIS_HOST:-localhost} -p ${REDIS_PORT:-6379} -n ${REDIS_DB:-0}"
+fi
 K6=${K6:-k6}
 RELEASE_AFTER=${RELEASE_AFTER:-6}      # 줄이 다 찰 때까지 기다리는 시간(초)
 ADMIT_PER_SEC=${ADMIT_PER_SEC:-10}     # 입장 시작 후 초당 입장 인원

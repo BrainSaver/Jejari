@@ -13,14 +13,20 @@
 
 ## 준비
 
-```bash
-# 1) Redis
-redis-server --port 6379 --daemonize yes
+팀 로컬 인프라(`docker/README.md`)를 쓰므로 `.env`가 먼저 있어야 합니다 (`.env.example`을 복사해 비밀번호를 채움, `.env`는 저장소에 올라가지 않음).
 
-# 2) 앱 (개발 모드, 운행 1001 판매 중)
-cd queue
+```bash
+# 1) 인프라 (Oracle·Mongo·Redis·Kafka). 첫 기동은 몇 분 걸립니다
+docker compose up -d
+
+# 2) 앱 (개발 모드, 운행 1001 판매 중). 저장소 루트에서
 ./gradlew bootRun --args='--jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=1001'
+#    IDE에서 JejariApplication을 실행한다면 프로그램 인자에 --jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=1001
 ```
+
+개발 모드에서는 로그인(JWT) 없이 `X-Member-Id` 헤더로 회원을 구분합니다. 이 스크립트의 요청이 그 방식입니다. 운영(`jejari.dev-mode=false`)에서는 동작하지 않습니다.
+
+`reset.sh` 등 bash 스크립트가 Redis에 접속하려면 `REDIS_CONTAINER=jejari-redis-1`(compose 컨테이너 이름)을 주거나, 로컬 `redis-cli`에 `REDISCLI_AUTH=<.env의 REDIS_PASSWORD>`를 설정합니다. (앱에 `POST /api/v1/dev/reset`도 있어 Redis 접속 없이 같은 초기화를 할 수 있습니다.)
 
 k6 설치는 https://grafana.com/docs/k6/latest/set-up/install-k6/ 를 참고합니다.
 
@@ -51,7 +57,7 @@ K6=$(which k6) ./run-penalty-order.sh
 
 ## Windows (PowerShell)
 
-`reset.sh`, `seed-penalty.sh`, `run-penalty-order.sh`와 같은 일을 하는 `.ps1`이 있어 Git Bash나 WSL 없이 PowerShell에서 바로 돌릴 수 있습니다. Redis는 Docker 컨테이너 `jejari-redis`가 켜져 있으면 `docker exec`로, 아니면 로컬 `redis-cli`로 접근합니다.
+`reset.sh`, `seed-penalty.sh`, `run-penalty-order.sh`와 같은 일을 하는 `.ps1`이 있어 Git Bash나 WSL 없이 PowerShell에서 바로 돌릴 수 있습니다. Redis는 Docker 컨테이너 `jejari-redis-1`(compose) 또는 `jejari-redis`가 켜져 있으면 `docker exec`로, 아니면 로컬 `redis-cli`로 접근합니다.
 
 ```powershell
 cd F:\Jejari\k6\queue

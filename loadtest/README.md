@@ -6,7 +6,7 @@
 
 ## 실제 구현과의 관계 (2026-11 반영)
 
-이 폴더는 **저장소에 들어와 있고, 구현된 대기열(`queue/`)에 맞춰 고쳤습니다.**
+이 폴더는 **저장소에 들어와 있고, 구현된 대기열(`src/main/java/com/jejari/queue/`)에 맞춰 고쳤습니다.**
 
 | 구분 | 상태 | 시나리오 |
 |---|---|---|
@@ -17,7 +17,7 @@
 - **API 경로·응답 필드**는 `config.js`에 실제(`[실제]`)와 가정(`[가정]`)으로 나눠 적어 두었습니다. 가정 부분은 해당 파트가 구현하면 이 파일만 고치면 됩니다.
 - **`k6/queue/`와의 관계**: 같은 대기열을 CLI 위주로 검증하는 별도 시나리오 모음이고 문서(`k6/queue/README.md`)의 수치가 그쪽 기준입니다. 이쪽은 같은 검증을 창(앱)으로 조작하고 결과를 비교하기 위한 것입니다. 한쪽 시나리오를 고치면 다른 쪽도 확인하세요.
 - **사전 점검**: 모든 시나리오는 시작 전에 진입 요청을 한 번 해 보고, 서버가 안 떠 있음·개발 모드 아님·다른 서버가 포트를 씀·운행이 판매 중이 아님·Redis가 꺼짐을 구분해 알려 주고 멈춥니다.
-- **개발용 관리 API**(`queue` 앱의 개발 모드 전용, 인증 없음): 시나리오가 Redis에 직접 접속하지 않고 준비를 합니다. 앱은 로컬 서버에 실행하기 전에 `POST /api/v1/dev/reset`(대기열·위험 점수·정책 캐시 초기화)을 자동으로 부릅니다.
+- **개발용 관리 API**(앱의 개발 모드 전용, 인증 없음): 시나리오가 Redis에 직접 접속하지 않고 준비를 합니다. 앱은 로컬 서버에 실행하기 전에 `POST /api/v1/dev/reset`(대기열·위험 점수·정책 캐시 초기화)을 자동으로 부릅니다.
 
   | API | 하는 일 |
   |---|---|
@@ -25,17 +25,22 @@
   | `PUT /api/v1/dev/risk/dev-members?from=&count=&score=` | 개발용 회원 N명에게 같은 위험 점수 |
   | `PUT /api/v1/dev/policy/{key}` | 정책 값 설정 (앱은 최대 1초 뒤 반영) |
 
-**실제 queue 앱으로 돌리기**
+**실제 앱으로 돌리기** (팀 로컬 인프라 사용 — `docker/README.md`)
 
 ```bash
-# 1) Redis (예: docker run -d --name jejari-redis -p 6379:6379 redis:7) 를 켜고
-# 2) 앱을 개발 모드로 띄운다 (운행 1001이 판매 중)
-cd queue && ./gradlew bootRun --args="--jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=1001"
+# 1) .env 준비(.env.example 복사 후 비밀번호 채우기, .env는 커밋 금지) 뒤 인프라를 켠다
+docker compose up -d
+# 2) 앱을 개발 모드로 띄운다 (저장소 루트에서. 운행 1001이 판매 중)
+./gradlew bootRun --args="--jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=1001"
 # 3) 이 앱(데스크톱) 또는 CLI로 실행. 환경 설정의 대상 URL은 http://localhost:8080, RUN_ID는 1001
 ./app.sh            # Windows는 app.bat
 ./run.sh 8 -e PEAK_RATE=4000 -e STEPS=4        # 진입 처리 한계
 ./run.sh 9                                       # 순번 조정 정확도
 ```
+
+IDE에서 `JejariApplication`을 실행한다면 프로그램 인자에 `--jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=1001`을 넣습니다.
+개발 모드는 로그인 없이 `X-Member-Id` 헤더로 회원을 구분하고 `/api/v1/dev/**`를 엽니다. 운영(`jejari.dev-mode=false`)에서는 존재하지 않습니다.
+좌석 선점·결제·취소표 API는 다른 파트가 구현하기 전이라 실제 앱에는 없습니다(시나리오 2~5, 7은 Mock 서버로).
 
 ## 데스크톱 앱 (창으로 조작 · 내 PC 또는 VM에서 실행)
 
