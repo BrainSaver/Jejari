@@ -753,7 +753,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 저장소: Oracle · 기능: WL 전체, PAY-01·02
 
 
-취소 발생 시 신청 순서대로 배정 → 알림 → 제한 시간 내 결제.
+취소 발생 시 대기 순서(priority_at = 신청 시각 + 위험 패널티)대로 배정 → 알림 → 제한 시간 내 결제.
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
@@ -764,13 +764,15 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `to_station_id` | VARCHAR2(10) | FK, NN → station | 공공 | 희망 하차역 |  |
 | `seat_grade` | VARCHAR2(10) | NN | 생성 | GENERAL / FIRST | 희망 등급. 좌석 등급 코드 통일 |
 | `seat_count` | NUMBER(2) | NN | 생성 | 희망 매수 |  |
-| `requested_at` | TIMESTAMP | NN | 생성 | 신청 시각 | 대기 순서 기준 |
+| `requested_at` | TIMESTAMP | NN | 생성 | 신청 시각 | priority_at 계산의 시작 시각 (앱 시계, 신청 때 한 번) |
+| `priority_at` | TIMESTAMP | NN | 시스템 | 대기 순서 기준 시각 = requested_at + penalty_ms | 위험 점수가 높은 대기자는 뒤로 (동시성 §9.3). 신청 후 다시 계산하지 않음 |
+| `penalty_ms` | NUMBER(12) | NN | 시스템 | 위험 점수로 미룬 시간(ms), 패널티 없으면 0 | 순서 조정 근거 기록 |
 | `offered_at` | TIMESTAMP |  | 시스템 | 배정 제안 시각 |  |
 | `offer_deadline_at` | TIMESTAMP |  | 시스템 | 결제 기한 | = 제안 예약의 pay_deadline_at 복사. 결제 시작 때 함께 연장 |
 | `offered_reservation_id` | NUMBER | FK → reservation | 시스템 | 제안된 예약 |  |
 | `status` | VARCHAR2(10) | NN | 시스템 | WAITING / OFFERED / ACCEPTED / EXPIRED / CANCELED / SKIPPED | SKIPPED = 제안 시 매수 한도 초과로 건너뜀 |
 
-> **제약·비고** CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, requested_at); 다음 대기자 조회용 · 제안 예약의 idempotency_key = 'wl:' || waitlist_id (신청 하나에 제안 하나) · 대기자 우선: 취소로 풀린 좌석은 seat:hold를 REOFFER 값으로 잠시 막고 먼저 제안 · 제안 예약도 purchase_counter 증가, 한도에 걸리면 SKIPPED
+> **제약·비고** CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, priority_at, waitlist_id); 다음 대기자 조회용 (ORDER BY priority_at, waitlist_id) · CHECK(penalty_ms >= 0) · 제안 예약의 idempotency_key = 'wl:' || waitlist_id (신청 하나에 제안 하나) · 대기자 우선: 취소로 풀린 좌석은 seat:hold를 REOFFER 값으로 잠시 막고 먼저 제안 · 제안 예약도 purchase_counter 증가, 한도에 걸리면 SKIPPED
 
 #### `notification` 알림
 
@@ -1088,7 +1090,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 |---|---|---|---|---|
 | `queue:{runId}` | ZSET | member=`{12자리 seq}:{memberId}`, score=진입시각ms + penalty_ms | 운행 판매 마감 | QUE-01 |
 | `queue:seq:{runId}` | STRING | 진입 시퀀스 (INCR) | 운행 판매 마감 | QUE-01 |
-| `queue:member:{memberId}` | STRING | `{runId}\|{queue member}` (회원당 대기 1개) | 토큰 만료 | QUE-01·05 |
+| `queue:member:{memberId}` | STRING | `{runId}\|{queue member}\|{ciHash}` (회원당 대기 1개, 이탈 시 queue:ci 항목 찾기) | `queue.entry_ttl_sec` (3600초) | QUE-01·05 |
 | `queue:ci:{ciHash}` | ZSET | memberId, score=만료 시각 (CI당 대기 1개) | 멤버별 score | QUE-01·05 |
 | `queue:active:{runId}` | ZSET | 입장한 회원, score=토큰 만료 시각 | | QUE-03 |
 | `queue:throughput:{runId}` | STRING | 초당 입장 수 | | QUE-02 |
