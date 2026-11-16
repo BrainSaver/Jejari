@@ -3,7 +3,7 @@ import http from 'k6/http';
 import { sleep } from 'k6';
 
 export const BASE = __ENV.BASE_URL || 'http://localhost:8080';
-export const RUN = __ENV.RUN_ID || '1001';
+export const RUN = __ENV.RUN_ID || '9001';
 
 export function headers(memberId, token) {
   const h = { 'X-Member-Id': String(memberId) };
