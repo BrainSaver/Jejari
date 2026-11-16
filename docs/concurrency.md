@@ -403,10 +403,10 @@ SELECT payment_id, reservation_id, requested_at FROM payment
 4. 대기자 조회 (인덱스 `ix_waitlist_next`):
    ```sql
    SELECT waitlist_id, member_id, from_station_id, to_station_id, seat_grade, seat_count FROM waitlist
-    WHERE run_id = :r AND status = 'WAITING' ORDER BY requested_at
+    WHERE run_id = :r AND status = 'WAITING' ORDER BY priority_at, waitlist_id
       FOR UPDATE SKIP LOCKED
    ```
-   한 건씩 fetch합니다. `SKIP LOCKED`는 fetch할 때 행을 잠그므로 읽은 행만 잠깁니다. 다른 인스턴스가 잡은 대기자는 건너뜁니다.
+   순서는 신청 시각이 아니라 `priority_at`(= 신청 시각 + 위험 패널티)입니다 (§9.3). 한 건씩 fetch합니다. `SKIP LOCKED`는 fetch할 때 행을 잠그므로 읽은 행만 잠깁니다. 다른 인스턴스가 잡은 대기자는 건너뜁니다.
 5. 대기자마다:
    - 구간·등급·매수가 빈 좌석에 맞지 않으면 다음 대기자로 넘어갑니다 (변경 없음).
    - 매수 한도(§10.6의 `PER_RUN`·`PER_HOLIDAY`, `limit_incr.lua`)에 걸리면 `UPDATE waitlist SET status = 'SKIPPED', updated_at = SYSTIMESTAMP WHERE waitlist_id = :w AND status = 'WAITING'`(T 안)을 하고 다음 대기자로 넘어갑니다.
@@ -430,6 +430,19 @@ SELECT payment_id, reservation_id, requested_at FROM payment
 ### 9.2 수락과 만료
 
 수락은 결제(§4, §5)입니다. 결제 시작 때 `offer_deadline_at`도 함께 연장됩니다(§4-5). 기한이 지나면 §6 → §7이 예약을 만료시키고 `waitlist`는 `EXPIRED`가 됩니다. 그 빈 좌석 이벤트로 다음 대기자에게 다시 제안합니다.
+
+### 9.3 대기 순서와 위험 패널티
+
+대기열에서 위험 점수로 뒤로 밀린 사용자가 취소표 대기에서 정상 사용자와 같은 순서로 취소표를 가져가면 위험 점수 후순위가 우회됩니다. 그래서 대기 순서를 **신청 시각에 패널티를 더한 시각**으로 정합니다. (스키마: `waitlist.priority_at`, `waitlist.penalty_ms` — ERD 반영 예정)
+
+신청(WL-01) 때 한 번 계산해 저장합니다.
+
+1. 위험 점수: 대기열 진입(QUE-01)과 같은 규칙입니다. 회원의 CI·결제 수단·기기 해시로 `risk:{CI|PAYMENT|DEVICE}:{해시}`를 읽어 **최댓값**(`policy(risk.member_penalty_rule)`)을 쓰고, 없으면 0점입니다. `member.status = 'RESTRICTED'`는 100점, `BANNED`는 신청할 수 없습니다.
+2. `penalty_ms = round(점수 × policy(waitlist.penalty_ms_per_point))`. **대기열의 `risk.penalty_ms_per_point`(기본 1점 = 1초)를 그대로 쓰지 않습니다.** 대기열은 몇 분 안에 줄이 빠지지만 취소표 대기는 몇 시간~며칠 이어지므로, 같은 단위면 80점이 80초라 순서가 사실상 바뀌지 않습니다. 기본값은 60000(1점 = 1분, 80점 = 80분)이며 팀이 정합니다.
+3. `priority_at = requested_at + penalty_ms`. `requested_at`은 앱 시계(§0.7)로 한 번 계산하고, 신청 이후 점수가 바뀌어도 다시 계산하지 않습니다 (대기열과 같음).
+4. 같은 `priority_at`이면 `waitlist_id` 순서입니다.
+
+신청을 막지는 않습니다. 위험 사용자도 대기열에 설 수 있듯 취소표 신청도 할 수 있고, 정상 사용자 뒤로 밀릴 뿐입니다. 대기자가 적어 앞에 아무도 없으면 패널티가 있어도 바로 제안받습니다 (대기열과 같은 성질).
 
 ---
 
@@ -682,6 +695,7 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | `outbox.max_retry` | 5 | §11.3 |
 | `inbox.retention_days` | 8 | §12 (Kafka 보관 7일보다 길게) |
 | `waitlist.reoffer_hold_sec` | 60 | §9 대기자 우선 보류 시간 |
+| `waitlist.penalty_ms_per_point` | 60000 | §9.3 위험 점수 1점당 대기 순서를 뒤로 미루는 ms (대기열보다 크게). 예시, 팀 확정 전 |
 | `behavior.retention_days` | 180 | §13.2 (팀 확정) |
 | `replay.hold_cache_sec` | 30 | §13.2 legal_hold 캐시 TTL, 두 번째 `$unset` 지연 |
 | `queue_log.retention_days` | 30 | §13.2 |
@@ -731,6 +745,8 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | T33 | limit:*가 DB 카운터보다 큼 (보상 유실 흉내) | 다음 요청에서 자가 복구 후 정상 판정 | §10.7 |
 | T34 | 기동 점검 | SESSIONTIMEZONE·SYSTIMESTAMP가 +09:00 | §0.7 |
 | T35 | 같은 대기자에게 이벤트 재전달 | 제안 예약 1건 (`wl:` 키 UNIQUE) | §1, §9 |
+| T36 | 위험 점수 80인 회원 A(패널티 80분)가 10:00에, 정상 회원 B가 10:30에 신청한 뒤 좌석 1개가 빔 | B에게 먼저 제안, A는 WAITING 유지 | §9.3 |
+| T37 | 같은 조건에서 B가 11:30(패널티 80분이 지난 뒤)에 신청 | A에게 먼저 제안 | §9.3 |
 
 ---
 
@@ -767,4 +783,4 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | 좌석 복구율 | 자동 복구 대상(PG 결과가 실패·없음으로 확정됐거나 기한이 지난 HOLD) 중 좌석 행·Redis 키·한도가 모두 복구된 비율. 목표 100% |
 | PG 결과 모름 | 복구율 분모에서 빼고, 건수와 관리자 처리까지 걸린 시간으로 따로 보고 |
 | 중복 예약·중복 결제 | 같은 좌석·구간의 SOLD 행 2개 이상 / 예약당 APPROVED 2개 이상. 목표 0 |
-| 재배정 순서 보장 | 대기자 제안 순서가 `requested_at` 순서와 다른 건수 (SKIPPED·조건 불일치 제외). 목표 0 |
+| 재배정 순서 보장 | 대기자 제안 순서가 `priority_at` 순서와 다른 건수 (SKIPPED·조건 불일치 제외). 목표 0 |
