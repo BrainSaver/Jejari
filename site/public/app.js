@@ -1415,6 +1415,52 @@ async function newPersonDoc(name, kind) {
   });
 }
 
+// ---------- 선 아이콘 (SVG, 24칸 기준, 글자색을 따름) ----------
+const ICON_PATHS = {
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/><path d="M12 15v2"/>',
+  train: '<rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 10h14"/><path d="M9 21l1.5-4M15 21l-1.5-4"/><path d="M9 13.5h.01M15 13.5h.01"/>',
+  hourglass: '<path d="M6 3h12M6 21h12"/><path d="M7 3v2.5a5 5 0 0 0 10 0V3"/><path d="M7 21v-2.5a5 5 0 0 1 10 0V21"/>',
+  seat: '<path d="M7 4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v8H7z"/><path d="M4 12h16v4H4z"/><path d="M7 16v5M17 16v5"/>',
+  card: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  ticket: '<path d="M3 7h18v3a2 2 0 0 0 0 4v3H3v-3a2 2 0 0 0 0-4z"/><path d="M14 7v2M14 11v2M14 15v2"/>',
+  send: '<path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>',
+  shield: '<path d="M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
+  monitor: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  database: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+  server: '<rect x="3" y="3" width="18" height="8" rx="2"/><rect x="3" y="13" width="18" height="8" rx="2"/><path d="M7 7h.01M7 17h.01"/>',
+  flask: '<path d="M9 3h6M10 3v6L4.2 19a1.4 1.4 0 0 0 1.2 2h13.2a1.4 1.4 0 0 0 1.2-2L14 9V3"/><path d="M7 15h10"/>',
+  pin: '<path d="M12 22s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
+  chart: '<path d="M3 21h18"/><path d="M6 17v-6M11 17V5M16 17v-9M21 17v-3"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 20a2 2 0 0 0 4 0"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+  receipt: '<path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h4"/>',
+  map: '<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/>',
+  bot: '<rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4"/><path d="M9 13h.01M15 13h.01M9 17h6"/>',
+  phone: '<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>',
+  cpu: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
+  rocket: '<path d="M9 15l-3-3c2-6 7-10 14-10 0 7-4 12-10 14z"/><path d="M5 15c-1.5 1.5-2 5-2 5s3.5-.5 5-2"/><circle cx="15" cy="9" r="1.5"/>',
+  // 버튼용
+  pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13 7 4 4"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  reset: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  save: '<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3"/><path d="M8 21v-7h8v7"/>',
+  trash: '<path d="M4 7h16"/><path d="M6 7l1 14h10l1-14"/><path d="M9 7V4h6v3"/><path d="M10 11v6M14 11v6"/>',
+  swap: '<path d="M7 4 3 8l4 4"/><path d="M3 8h14"/><path d="m17 20 4-4-4-4"/><path d="M21 16H7"/>',
+  msg: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+  check: '<path d="m5 12 5 5 9-10"/>',
+};
+// 예전에 이모지로 저장된 칸도 같은 아이콘으로
+const EMOJI_ICON = { '🙋': 'user', '🔐': 'lock', '🚆': 'train', '⏳': 'hourglass', '💺': 'seat', '💳': 'card', '↩️': 'undo', '🎫': 'ticket', '📨': 'send', '🛡️': 'shield', '🖥️': 'monitor', '🗂️': 'database', '🧱': 'server', '🧪': 'flask', '📌': 'pin', '📊': 'chart', '🔔': 'bell', '⚙️': 'gear', '🧾': 'receipt', '🗺️': 'map', '🤖': 'bot', '📱': 'phone', '🧠': 'cpu', '🚀': 'rocket' };
+const svgI = (name, size = 18) => {
+  const d = ICON_PATHS[EMOJI_ICON[name] || name];
+  return d ? `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>` : '';
+};
+const nodeIcon = (name, size = 20) => `<span class="fl-icon">${svgI(name || 'pin', size)}</span>`;
+
 // ---------- 로드맵 보드 (기능 영역별 칸, 카드 안에 A~E 파트별 했다/안 했다, 개발자에게 남길 말) ----------
 const RM_PARTS = ['A', 'B', 'C', 'D', 'E'];
 const RM_FIELD = { title: '제목', code: '코드', area: '영역', blocked: '막힘', prio: '우선', week: '주차', due: '마감일', note: '설명', deps: '선행 작업' };
@@ -1470,7 +1516,7 @@ function rmFiltered() {
 const roleChip = (it, p, big) => {
   const r = it.roles[p];
   return `<button class="rm-chip${r.done ? ' on' : ''}${big ? ' big' : ''}" data-chk="${it.id}" data-p="${p}" style="--pc:${partColor(p)}" title="${esc(roleTip(it, p))}"${S.me ? '' : ' disabled'}>
-    <span class="rm-chip-box">${r.done ? '✓' : ''}</span>${p}${big ? ` <span class="rm-chip-name">${esc(S.members[partOwner(p)])}</span>` : ''}</button>`;
+    <span class="rm-chip-box">${r.done ? svgI('check', 12) : ''}</span>${p}${big ? ` <span class="rm-chip-name">${esc(S.members[partOwner(p)])}</span>` : ''}</button>`;
 };
 
 function rmCard(it, by) {
@@ -1481,7 +1527,7 @@ function rmCard(it, by) {
     <div class="rm-card-top">${it.code ? `<span class="rm-code">${esc(it.code)}</span>` : ''}${it.prio !== 'P1' ? `<span class="badge">${it.prio}</span>` : ''}${it.blocked && st !== 'done' ? '<span class="rm-st st-blocked">막힘</span>' : ''}${it.week ? `<span class="muted">${it.week}주차</span>` : ''}<span class="rm-frac">${d}/${n}</span></div>
     <div class="rm-title">${esc(it.title)}</div>
     <div class="rm-chips">${rolesOf(it).map((p) => roleChip(it, p)).join('')}</div>
-    ${(it.notes || wait.length) ? `<div class="rm-card-foot">${it.notes ? `<span class="rm-msgs" title="남긴 말">💬 ${it.notes}</span>` : ''}${wait.length && st !== 'done' ? `<span class="rm-wait">기다림: ${wait.slice(0, 2).map((x) => esc(x.code || x.title)).join(', ')}${wait.length > 2 ? ` 외 ${wait.length - 2}` : ''}</span>` : ''}</div>` : ''}
+    ${(it.notes || wait.length) ? `<div class="rm-card-foot">${it.notes ? `<span class="rm-msgs" title="남긴 말">${svgI('msg', 14)} ${it.notes}</span>` : ''}${wait.length && st !== 'done' ? `<span class="rm-wait">기다림: ${wait.slice(0, 2).map((x) => esc(x.code || x.title)).join(', ')}${wait.length > 2 ? ` 외 ${wait.length - 2}` : ''}</span>` : ''}</div>` : ''}
   </div>`;
 }
 
@@ -1495,7 +1541,7 @@ function rmPartStrip() {
     return `<button class="rm-part${RM.f.part === p ? ' on' : ''}" data-fpart="${p}" style="--pc:${partColor(p)}" title="누르면 ${esc(partName(p))} 카드만 보여요">
       <span class="rm-part-head"><b>${esc(partName(p))}</b><span class="muted">${esc(RM.data.parts[p].label)}</span></span>
       <span class="rm-bar"><i style="width:${pct}%"></i></span>
-      <span class="rm-part-nums"><b>${pct}%</b><span>${done}/${mine.length} 했음</span>${msgs ? `<span class="rm-to">💬 받은 말 ${msgs}</span>` : ''}</span>
+      <span class="rm-part-nums"><b>${pct}%</b><span>${done}/${mine.length} 했음</span>${msgs ? `<span class="rm-to">${svgI('msg', 14)} 받은 말 ${msgs}</span>` : ''}</span>
     </button>`;
   }).join('')}</div>`;
 }
@@ -1509,7 +1555,7 @@ function rmBoard(list, by) {
     const done = all.filter(isDone).length;
     const pct = all.length ? Math.round((done / all.length) * 100) : 0;
     return `<section class="rm-area" data-area="${k}">
-      <div class="rm-area-head"><span class="fl-icon">${esc(areaIcon(k))}</span><b>${esc(label)}</b><span class="muted">${done}/${all.length}</span>${S.me ? `<button class="btn sm plain" data-add="${k}" title="${esc(label)}에 할 일 추가">+ 할 일</button>` : ''}</div>
+      <div class="rm-area-head">${nodeIcon(areaIcon(k), 17)}<b>${esc(label)}</b><span class="muted">${done}/${all.length}</span>${S.me ? `<button class="btn sm plain" data-add="${k}" title="${esc(label)}에 할 일 추가">${svgI('plus', 14)} 할 일</button>` : ''}</div>
       <span class="rm-bar area"><i style="width:${pct}%"></i></span>
       <div class="rm-cards">${col.map((x) => rmCard(x, by)).join('') || '<p class="muted rm-none">조건에 맞는 카드가 없어요.</p>'}</div>
     </section>`;
@@ -1522,7 +1568,7 @@ function rmPartsView(by) {
     const todo = RM.data.items.filter((x) => x.roles && x.roles[p] && !x.roles[p].done).sort(sortItems);
     const msgs = (RM.data.msgs || []).filter((m) => m.to === p).slice(0, 8);
     return `<section class="rm-partcol" style="--pc:${partColor(p)}"><div class="rm-partcol-head"><b>${esc(partName(p))}</b> <span class="muted">남은 ${todo.length}개</span></div>
-      ${msgs.length ? `<div class="rm-inbox"><div class="rm-rel-h">💬 받은 말</div>${msgs.map((m) => `<button class="rm-msg" data-open="${m.item}"><span class="muted">${rmWho(m.who)} · ${ago(m.at)} · ${esc(m.code || m.title || '')}</span><span>${esc((m.text || '(사진)').slice(0, 120))}</span></button>`).join('')}</div>` : ''}
+      ${msgs.length ? `<div class="rm-inbox"><div class="rm-rel-h">${svgI('msg', 14)} 받은 말</div>${msgs.map((m) => `<button class="rm-msg" data-open="${m.item}"><span class="muted">${rmWho(m.who)} · ${ago(m.at)} · ${esc(m.code || m.title || '')}</span><span>${esc((m.text || '(사진)').slice(0, 120))}</span></button>`).join('')}</div>` : ''}
       ${todo.map((x) => { const w = waitingOn(x, by); return `<div class="rm-todo" data-open="${x.id}">${roleChip(x, p)}<span class="rm-todo-t"><b>${esc(x.code)}</b> ${esc(x.title)}<small class="muted">${esc(areaLabel(x.area))}${x.week ? ` · ${x.week}주차` : ''}${w.length ? ` · 기다림 ${w.length}` : ''}</small></span></div>`; }).join('') || '<p class="muted">다 했어요.</p>'}
     </section>`;
   }).join('')}</div>`;
@@ -1572,7 +1618,7 @@ function rmLogLine(e, by, withTitle = true) {
   else if (e.act === 'note') what = `${name} ${e.to ? `<b>→ ${esc(partName(e.to))}</b>에게` : ''} 남긴 말${e.text ? `: <span class="rm-note-text">${esc(e.text.length > 140 ? e.text.slice(0, 140) + '…' : e.text)}</span>` : ''}${e.img ? ' <span class="badge">사진</span>' : ''}`;
   else {
     const ch = (e.changes || []).map(([f, a, b]) => {
-      if (f === 'check') return b ? `<span class="rm-chg ok">${esc(a)} 했음 ✓</span>` : `<span class="rm-chg">${esc(a)} 체크 풂</span>`;
+      if (f === 'check') return b ? `<span class="rm-chg ok">${svgI('check', 13)} ${esc(a)} 했음</span>` : `<span class="rm-chg">${esc(a)} 체크 풂</span>`;
       if (f === 'role+') return `${esc(a)} 파트 추가`;
       if (f === 'role-') return `${esc(a)} 파트 뺌`;
       if (f === 'status') return `상태 ${esc(a)} → ${esc(b)}`;
@@ -1592,7 +1638,7 @@ function rmLogLine(e, by, withTitle = true) {
 
 // ---------- 흐름도 (예매 흐름 위에 기능 영역을 놓고, 칸마다 맡은 사람·진행률·지금 하는 일) ----------
 // 모양은 서버의 flow(노드 위치·이름·아이콘, 연결선). 로그인하면 "다이어그램 수정"으로 끌어 옮기고 추가·삭제한다
-const FLOW_ICONS = ['🙋', '🔐', '🚆', '⏳', '💺', '💳', '↩️', '🎫', '📨', '🛡️', '🖥️', '🗂️', '🧱', '🧪', '📌', '📊', '🔔', '⚙️', '🧾', '🗺️', '🤖', '📱', '🧠', '🚀'];
+const FLOW_ICONS = ['user', 'lock', 'train', 'hourglass', 'seat', 'card', 'undo', 'ticket', 'send', 'shield', 'monitor', 'database', 'server', 'flask', 'pin', 'chart', 'bell', 'gear', 'receipt', 'map', 'bot', 'phone', 'cpu', 'rocket'];
 const curFlow = () => (RM.edit ? RM.edit.flow : RM.data.flow);
 function areaParts(k) {
   // 이 영역 카드에 칸이 있는 파트 = 맡은 사람 (역할 분담 그대로)
@@ -1607,9 +1653,9 @@ const areaIcon = (k) => { const n = RM.data.flow.nodes.find((x) => x.k === k); c
 
 function flowNode(n) {
   const ed = !!RM.edit;
-  const tools = ed ? `<span class="fl-tools"><button class="fl-ibtn" data-fedit="${n.k}" title="이름·아이콘 바꾸기">✏️</button><button class="fl-ibtn" data-fdel="${n.k}" title="칸 지우기">🗑️</button></span>` : '';
+  const tools = ed ? `<span class="fl-tools"><button class="fl-ibtn" data-fedit="${n.k}" title="이름·아이콘 바꾸기" aria-label="이름·아이콘 바꾸기">${svgI('pencil', 15)}</button><button class="fl-ibtn del" data-fdel="${n.k}" title="칸 지우기" aria-label="칸 지우기">${svgI('trash', 15)}</button></span>` : '';
   const pos = `style="left:${n.x}px;top:${n.y}px"`;
-  if (n.kind === 'start') return `<div class="fl-node fl-user" data-k="${n.k}" ${pos}><span class="fl-icon">${esc(n.icon || '')}</span>${esc(n.label)}${tools}</div>`;
+  if (n.kind === 'start') return `<div class="fl-node fl-user" data-k="${n.k}" ${pos}>${nodeIcon(n.icon, 18)}${esc(n.label)}${tools}</div>`;
   const items = RM.data.items.filter((it) => it.area === n.k);
   const done = items.filter(isDone).length;
   const pct = items.length ? Math.round((done / items.length) * 100) : 0;
@@ -1617,12 +1663,12 @@ function flowNode(n) {
   const blocked = items.filter((it) => it.blocked && !isDone(it)).length;
   const msgs = items.reduce((s, it) => s + (it.notes || 0), 0);
   return `<div class="fl-node${pct === 100 && items.length ? ' all' : ''}" data-k="${n.k}" ${pos} tabindex="0" role="button" title="${ed ? '끌어서 옮기기' : `눌러서 ${esc(n.label)} 열기`}">
-    <div class="fl-head"><span class="fl-icon">${esc(n.icon || '')}</span><b>${esc(n.label)}</b><span class="fl-pct">${done}/${items.length}</span>${tools}</div>
+    <div class="fl-head">${nodeIcon(n.icon)}<b>${esc(n.label)}</b><span class="fl-pct">${done}/${items.length}</span>${tools}</div>
     <span class="rm-bar area"><i style="width:${pct}%"></i></span>
     <div class="fl-people">${parts.map(({ p, total, done: d }) => { const nw = nowOf(n.k, p); return `<button class="fl-who" data-now="${n.k}" data-p="${p}" style="--pc:${partColor(p)}" title="${esc(partName(p))}: ${d}/${total}${nw ? ` · 지금: ${esc(nw.text)}` : ''} (누르면 지금 하는 일 적기)"${ed ? ' disabled' : ''}>
       <span class="fl-who-name"><b>${p}</b> ${esc(S.members[partOwner(p)])}</span><span class="fl-who-n">${d}/${total}</span>
       ${nw ? `<span class="fl-now">${esc(nw.text)}</span>` : ''}</button>`; }).join('') || '<span class="muted" style="font-size:12.5px">맡은 사람 없음 · 칸을 눌러 할 일을 추가해요</span>'}</div>
-    ${blocked || msgs ? `<div class="fl-foot">${blocked ? `<span class="rm-st st-blocked">막힘 ${blocked}</span>` : ''}${msgs ? `<span class="rm-msgs">💬 ${msgs}</span>` : ''}</div>` : ''}
+    ${blocked || msgs ? `<div class="fl-foot">${blocked ? `<span class="rm-st st-blocked">막힘 ${blocked}</span>` : ''}${msgs ? `<span class="rm-msgs">${svgI('msg', 14)} ${msgs}</span>` : ''}</div>` : ''}
   </div>`;
 }
 
@@ -1630,16 +1676,16 @@ function rmFlow() {
   const f = curFlow();
   const ed = RM.edit;
   const bar = S.me ? (ed
-    ? `<div class="fl-bar editing"><span class="fl-bar-t">✏️ 다이어그램 수정 중</span>
-        <button class="btn sm plain fl-tb" data-fact="add">➕ 칸 추가</button>
-        <button class="btn sm plain fl-tb${ed.link ? ' on' : ''}" data-fact="link">🔗 ${ed.link ? (ed.link.a ? '이을 칸을 누르세요' : '시작 칸을 누르세요') : '연결선 추가'}</button>
+    ? `<div class="fl-bar editing"><span class="fl-bar-t">${svgI('pencil', 16)} 다이어그램 수정 중</span>
+        <button class="btn sm plain fl-tb" data-fact="add">${svgI('plus', 16)} 칸 추가</button>
+        <button class="btn sm plain fl-tb${ed.link ? ' on' : ''}" data-fact="link">${svgI('link', 16)} ${ed.link ? (ed.link.a ? '이을 칸을 누르세요' : '시작 칸을 누르세요') : '연결선 추가'}</button>
         <span class="muted fl-hint">칸은 끌어서 옮기고, 선 위 글을 누르면 고치거나 지워요.</span>
         <span style="flex:1"></span>
-        <button class="btn sm plain fl-tb" data-fact="reset" title="처음 모양으로">↺ 처음 모양</button>
-        <button class="btn sm plain fl-tb" data-fact="cancel">✖ 취소</button>
-        <button class="btn sm fl-tb" data-fact="save">💾 저장</button></div>`
+        <button class="btn sm plain fl-tb" data-fact="reset" title="처음 모양으로">${svgI('reset', 16)} 처음 모양</button>
+        <button class="btn sm plain fl-tb" data-fact="cancel">${svgI('x', 16)} 취소</button>
+        <button class="btn sm fl-tb" data-fact="save">${svgI('save', 16)} 저장</button></div>`
     : `<div class="fl-bar"><span class="muted">예매 흐름 위에 기능을 놓았어요. <b>이름</b>을 누르면 지금 하는 일을 적고, <b>칸</b>을 누르면 할 일을 보고 추가해요.</span><span style="flex:1"></span>
-        <button class="btn sm plain fl-tb" data-fact="edit">✏️ 다이어그램 수정</button></div>`)
+        <button class="btn sm plain fl-tb" data-fact="edit">${svgI('pencil', 16)} 다이어그램 수정</button></div>`)
     : '<p class="muted" style="margin:0 0 10px">예매 흐름 위에 기능을 놓았어요. 칸을 누르면 그 기능의 할 일이 보여요. 로그인하면 지금 하는 일을 적고 다이어그램도 고칠 수 있어요.</p>';
   return `${bar}<div class="fl-wrap"><div class="fl${ed ? ' editing' : ''}${ed && ed.link ? ' linking' : ''}" id="flow">
     <svg class="fl-svg" id="flowSvg" aria-hidden="true"></svg>${f.nodes.map(flowNode).join('')}<div id="flowLabs"></div></div></div>
@@ -1677,7 +1723,7 @@ function drawFlow() {
     const c1 = [x1 + dir[sa][0] * d, y1 + dir[sa][1] * d], c2 = [x2 + dir[sb][0] * d, y2 + dir[sb][1] * d];
     out += `<path d="M${x1},${y1} C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${x2},${y2}" class="fl-edge${e.dash ? ' dash' : ''}" marker-end="url(#flArrow)"/>`;
     const mx = (x1 + 3 * c1[0] + 3 * c2[0] + x2) / 8, my = (y1 + 3 * c1[1] + 3 * c2[1] + y2) / 8;
-    if (e.label || RM.edit) labs += `<button class="fl-lab${e.label ? '' : ' empty'}" data-edge="${i}" style="left:${mx}px;top:${my}px"${RM.edit ? '' : ' tabindex="-1"'}>${e.label ? esc(e.label) : '✏️'}</button>`;
+    if (e.label || RM.edit) labs += `<button class="fl-lab${e.label ? '' : ' empty'}" data-edge="${i}" style="left:${mx}px;top:${my}px"${RM.edit ? '' : ' tabindex="-1"'}>${e.label ? esc(e.label) : svgI('pencil', 12)}</button>`;
   });
   svg.innerHTML = out;
   $('#flowLabs').innerHTML = labs;
@@ -1699,7 +1745,11 @@ function bindFlow(root) {
     $$('[data-fedit]', root).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); flowNodeEdit(b.dataset.fedit); }));
     $$('[data-fdel]', root).forEach((b) => b.addEventListener('pointerdown', (e) => e.stopPropagation()));
     $$('[data-fedit]', root).forEach((b) => b.addEventListener('pointerdown', (e) => e.stopPropagation()));
-    $$('[data-fdel]', root).forEach((b) => twoStep(b, '❗', async () => { flowDelNode(b.dataset.fdel); }));
+    $$('[data-fdel]', root).forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!b.classList.contains('armed')) { b.classList.add('armed'); b.title = '한 번 더 누르면 지워요'; toast('한 번 더 누르면 칸을 지워요.'); setTimeout(() => { b.classList.remove('armed'); b.title = '칸 지우기'; }, 4000); return; }
+      flowDelNode(b.dataset.fdel);
+    }));
     $$('.fl-node[data-k]', root).forEach((n) => flowDrag(n));
   }
   requestAnimationFrame(drawFlow);
@@ -1754,10 +1804,10 @@ function flowDelNode(k) {
 function flowNodeEdit(k) {
   const ed = RM.edit;
   const n = k ? ed.flow.nodes.find((x) => x.k === k) : null;
-  let icon = n ? n.icon : '📌';
+  let icon = n ? (EMOJI_ICON[n.icon] || n.icon || 'pin') : 'pin';
   const m = openModal(`<h2>${n ? '칸 고치기' : '칸 추가'}</h2>
     <div class="field"><label>이름</label><input type="text" id="fnLabel" maxlength="30" value="${esc(n ? n.label : '')}" placeholder="예: 알림" autofocus></div>
-    <div class="field"><label>아이콘</label><div class="fl-iconpick">${FLOW_ICONS.map((ic) => `<button type="button" class="fl-ipick${ic === icon ? ' on' : ''}" data-ic="${ic}">${ic}</button>`).join('')}</div></div>
+    <div class="field"><label>아이콘</label><div class="fl-iconpick">${FLOW_ICONS.map((ic) => `<button type="button" class="fl-ipick${ic === icon ? ' on' : ''}" data-ic="${ic}" title="${ic}">${svgI(ic, 20)}</button>`).join('')}</div></div>
     ${n ? '' : '<p class="muted" style="font-size:13px">새 칸은 할 일 카드를 넣을 수 있는 기능 칸이 돼요. 만든 뒤 끌어서 자리를 잡아요.</p>'}
     <p class="err" id="fnErr"></p>
     <div class="row"><button class="btn plain" data-x>취소</button><button class="btn" id="fnGo">${n ? '바꾸기' : '추가'}</button></div>`);
@@ -1777,11 +1827,11 @@ function flowNodeEdit(k) {
 }
 function flowEdgeEdit(i) {
   const ed = RM.edit; const e = ed.flow.edges[i]; if (!e) return;
-  const lab = (k) => { const n = ed.flow.nodes.find((x) => x.k === k); return n ? `${n.icon || ''} ${n.label}` : k; };
+  const lab = (k) => { const n = ed.flow.nodes.find((x) => x.k === k); return n ? n.label : k; };
   const m = openModal(`<h2>연결선</h2><p class="muted" style="margin:0 0 6px">${esc(lab(e.a))} → ${esc(lab(e.b))}</p>
     <div class="field"><label>선 위 글 <span class="muted">(비워도 돼요)</span></label><input type="text" id="feLabel" maxlength="30" value="${esc(e.label)}" autofocus></div>
     <label class="chk"><input type="checkbox" id="feDash"${e.dash ? ' checked' : ''}> 점선 (곁가지·비동기 흐름)</label>
-    <div class="row"><button class="btn sm danger" id="feDel">🗑️ 선 지우기</button><button class="btn sm plain" id="feRev">⇄ 방향 바꾸기</button><span style="flex:1"></span><button class="btn plain" data-x>취소</button><button class="btn" id="feGo">바꾸기</button></div>`);
+    <div class="row"><button class="btn sm danger" id="feDel">${svgI('trash', 15)} 선 지우기</button><button class="btn sm plain" id="feRev">${svgI('swap', 15)} 방향 바꾸기</button><span style="flex:1"></span><button class="btn plain" data-x>취소</button><button class="btn" id="feGo">바꾸기</button></div>`);
   $('[data-x]', m).addEventListener('click', closeModal);
   $('#feDel', m).addEventListener('click', () => { ed.flow.edges.splice(i, 1); closeModal(); rmRender(); });
   $('#feRev', m).addEventListener('click', () => { [e.a, e.b] = [e.b, e.a]; closeModal(); rmRender(); });
@@ -1843,13 +1893,13 @@ function rmArea(k) {
   const done = items.filter(isDone).length;
   const m = openModal(`<div class="rm-detail">
     <div class="rm-detail-head"><span class="muted">기능 영역</span><span class="rm-frac">${done}/${items.length} 끝</span></div>
-    <h2><span class="fl-icon">${esc(areaIcon(k))}</span> ${esc(areaLabel(k))}</h2>
+    <h2 class="fl-h2">${nodeIcon(areaIcon(k), 20)} ${esc(areaLabel(k))}</h2>
     <div class="rm-rel-h">맡은 사람</div>
     <div class="fl-team">${parts.map(({ p, total, done: d }) => { const n = nowOf(k, p); return `<div class="fl-team-row" style="--pc:${partColor(p)}">
       <span class="fl-team-who"><span><b>${p}</b> ${esc(S.members[partOwner(p)])}</span><small class="muted">${d}/${total} 했음</small></span>
       <span class="fl-team-now">${n ? `${esc(n.text)} <small class="muted">${rmWho(n.who)} · ${ago(n.at)}</small>` : '<span class="muted">지금 하는 일 없음</span>'}</span>
       ${S.me ? `<button class="btn sm plain" data-nowp="${p}">${n ? '고치기' : '적기'}</button>` : ''}</div>`; }).join('') || '<p class="muted">아직 맡은 사람이 없어요. 할 일을 추가하면서 파트를 고르면 생겨요.</p>'}</div>
-    <div class="fl-cards-head"><span class="rm-rel-h" style="margin:0">할 일 ${items.length}개</span>${S.me ? `<button class="btn sm" data-add="${k}">+ 할 일 추가</button>` : ''}</div>
+    <div class="fl-cards-head"><span class="rm-rel-h" style="margin:0">할 일 ${items.length}개</span>${S.me ? `<button class="btn sm" data-add="${k}">${svgI('plus', 14)} 할 일 추가</button>` : ''}</div>
     <div class="rm-cards">${items.map((x) => rmCard(x, by)).join('') || '<p class="muted">할 일이 없어요.</p>'}</div>
     <div class="row"><button class="btn plain" data-x>닫기</button></div></div>`, { wide: true });
   $('[data-x]', m).addEventListener('click', () => { RM.modal = null; closeModal(); rmAfterClose(); });
@@ -1887,7 +1937,7 @@ function rmRender() {
   main.innerHTML = `<div class="wide rm">
     <div class="rm-head"><div><h1 class="page">로드맵</h1>
       <p class="page-sub" style="margin:0">카드 ${items.length}장 중 <b>${cardsDone}장 끝</b> · 파트 칸 ${checks}개 중 ${checked}개 체크 (${checks ? Math.round(checked / checks * 100) : 0}%). ${S.me ? '카드 안 A~E 칸을 누르면 했다·안 했다가 바뀌어요.' : '로그인하면 체크하고 할 일을 추가할 수 있어요.'}</p></div>
-      <div class="rm-head-acts">${S.me ? '<button class="btn" data-add="">+ 할 일 추가</button>' : '<button class="btn" data-login>로그인</button>'}</div></div>
+      <div class="rm-head-acts">${S.me ? `<button class="btn" data-add="">${svgI('plus', 16)} 할 일 추가</button>` : '<button class="btn" data-login>로그인</button>'}</div></div>
     ${rmPartStrip()}
     <div class="tabs">${[['flow', '흐름도'], ['board', '보드'], ['parts', '파트별 할 일·받은 말'], ['deps', '의존 관계'], ['log', '최근 변경']].map(([k, l]) => `<button data-v="${k}" class="${RM.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     ${RM.view === 'board' ? `<div class="filters rm-filters">
@@ -1896,7 +1946,7 @@ function rmRender() {
       <select id="rmPrio"><option value="">우선 전체</option>${['P1', 'P2', 'P3'].map((p) => `<option${f.prio === p ? ' selected' : ''}>${p}</option>`).join('')}</select>
       <label class="chk"><input type="checkbox" id="rmHide"${f.hideDone ? ' checked' : ''}> 끝난 카드 숨기기</label>
       <span class="muted">${list.length}장</span>
-      <span class="rm-legend"><span class="rm-chip on" style="--pc:var(--muted)"><span class="rm-chip-box">✓</span>A</span> 했음 <span class="rm-chip" style="--pc:var(--muted)"><span class="rm-chip-box"></span>A</span> 아직</span></div>` : ''}
+      <span class="rm-legend"><span class="rm-chip on" style="--pc:var(--muted)"><span class="rm-chip-box">${svgI('check', 12)}</span>A</span> 했음 <span class="rm-chip" style="--pc:var(--muted)"><span class="rm-chip-box"></span>A</span> 아직</span></div>` : ''}
     ${body}</div>`;
   rmBind(main);
   if (RM.view === 'flow') bindFlow(main);
@@ -1944,7 +1994,7 @@ async function rmCheck(id, p) {
   if (inModal) again(); else rmRender();
   try {
     const r = await api('/roadmap/check', { body: { id, part: p, done } });
-    toast(`${it.code || it.title}: ${partName(p)} ${done ? '했음 ✓' : '체크 풂'}`);
+    toast(`${it.code || it.title}: ${partName(p)} ${done ? '했음' : '체크 풂'}`);
     await rmLoad();
     rmRender();
     if (inModal && !$('#modalBack').hidden) again();
