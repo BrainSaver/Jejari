@@ -16,7 +16,7 @@
 |---|---|---|---|
 | 중복 예약 | 0건 | **0건** (T1: 같은 좌석 100명 동시 → 성공 1, 거절 99, DB 예약·재고 행 1개) | `SeatHoldInfraTest` (실제 Oracle·Redis), Lua 단독은 `python redis/test/lua_test.py` |
 | 락 방식별 TPS | 비교 수치 확보 | 같은 좌석 100명: A 255 / B 1,457 / **C 2,732** TPS. DB 왕복 201 → **2회** | `python bench/lock_compare.py` (워밍업 1회 + 5회 중앙값) |
-| 기한 초과 좌석 반환율 | 100% | | |
+| 기한 초과 좌석 반환율 | 100% | **100%** (기한 지난 HOLD 20건 → 20건 만료, 좌석 행·카운터·Redis 한도 전부 반환) | `SeatReleaseInfraTest` (실제 Oracle·Redis) |
 
 ## 3. 설계 결정
 
@@ -108,6 +108,7 @@
 | RSV-02 좌석 선점·매수 한도 1차 판정 (Redis Lua 8개) | [좌석선점-lua](features/좌석선점-lua.md) |
 | §17.1 락 방식 비교 + SeatHoldStrategy 설계 | [락방식-비교](features/락방식-비교.md) |
 | RSV-02 좌석 선점 API (멱등·재선점·매수 카운터) + 판매 중 운행 제공 | [좌석선점-api](features/좌석선점-api.md) |
+| RSV-03 만료 스캐너 · RSV-05 결제 전 취소 · 결제 실패 해제(Saga용) | [좌석해제-만료-취소](features/좌석해제-만료-취소.md) |
 
 ## 5. 다른 파트와의 연결
 
@@ -117,6 +118,7 @@
 | D 강다인 | 취소 수수료 정책 | `cancel_fee_policy` 예시 5건이 모두 지난 행사(1번)에 묶여 있어 상시 정책 세트가 필요 — CNL 담당이 정함 |
 | E 조영준 | Oracle 컨테이너 | `TZ=Asia/Seoul` 필수 (동시성 §0.7, 시드 검증 20번) |
 | A 김성원 | 테스트용 운행 | 지금 `ON_SALE`인 운행은 `run_id = 9001` 하나 |
+| C 길동현 | 좌석 해제 | 결제 실패(§5.2)는 `SeatReleaseService.releaseInCurrentTx(R, ReleaseReason.PAY_FAILED)`를 payment FAILED 기록과 같은 트랜잭션에서 호출. 두 번 불러도 결과가 같고, Redis 보상은 커밋 뒤 자동 |
 | A 김성원 | 판매 중 운행·입장 토큰 | `JdbcOnSaleRunProvider`가 `train_run`을 읽음 (개발 모드는 대용품 유지), 선점 API가 `QueuePassService.verify` 호출 (팀-확인-요청 3·4번) |
 | A 김성원 | ERD v13 | `queue:member` 값에 ciHash, `queue.entry_ttl_sec`, 취소표 대기 `priority_at`·`penalty_ms` 반영 (팀-확인-요청 1·2·12번) |
 | D 강다인 | ERD v13 | `risk_score_history_seq` 시퀀스 추가 → 점수 저장 때 이력도 기록 |
