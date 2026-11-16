@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대기열 동작 시각화</title>
+<style>
+:root{
+  --bg:#ffffff; --fg:#1f2430; --muted:#667085; --line:#e3e6ec; --card:#f6f7f9;
+  --ok:#2563eb; --okbg:#e8f0ff; --risk:#d92d20; --riskbg:#fdeceb; --acc:#0f766e; --accbg:#e3f5f2; --warn:#b54708; --warnbg:#fff4e0;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#14171d; --fg:#e6e8ee; --muted:#9aa3b2; --line:#2b303b; --card:#1c2029;
+    --ok:#6ea1ff; --okbg:#1b2a4a; --risk:#ff7b72; --riskbg:#3a1d1c; --acc:#4fd1c0; --accbg:#16322e; --warn:#f5b365; --warnbg:#3a2c14; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif}
+main{max-width:860px;margin:0 auto;padding:20px 16px 56px}
+h1{font-size:22px;margin:0 0 4px}
+h2{font-size:17px;margin:34px 0 10px;padding-top:6px;border-top:1px solid var(--line)}
+p{margin:6px 0}.sub{color:var(--muted)}
+code{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:0 5px;font-size:.92em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:10px 0}
+.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch;margin:10px 0}
+.step{flex:1 1 150px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px}
+.step b{display:block;color:var(--acc);margin-bottom:2px}
+.arrow{align-self:center;color:var(--muted)}
+@media (max-width:700px){.arrow{display:none}}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.ctrl{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 18px;margin:10px 0}
+.ctrl label{display:block;font-size:13px;color:var(--muted)}
+.ctrl input[type=range]{width:100%}
+.ctrl output{color:var(--fg);font-weight:600}
+button{font:inherit;background:var(--ok);color:#fff;border:0;border-radius:8px;padding:7px 14px;cursor:pointer}
+button.plain{background:var(--card);color:var(--fg);border:1px solid var(--line)}
+.strip{display:flex;flex-wrap:wrap;gap:3px;margin:8px 0}
+.dot{width:22px;height:22px;border-radius:5px;font-size:10px;line-height:22px;text-align:center;color:#fff}
+.dot.n{background:var(--ok)}.dot.b{background:var(--risk)}
+.legend{font-size:13px;color:var(--muted)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin:0 3px 0 8px}
+.res{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:10px 0}
+.res div{border-radius:10px;padding:10px 12px}
+.res .n{background:var(--okbg)}.res .b{background:var(--riskbg)}
+.res strong{font-size:22px}
+.note{border-left:4px solid var(--warn);background:var(--warnbg);padding:8px 12px;border-radius:0 8px 8px 0;margin:10px 0;font-size:14px}
+.tl{max-height:260px;overflow:auto;font-size:13px;border:1px solid var(--line);border-radius:8px}
+.tl table{margin:0}.tl td,.tl th{padding:4px 8px}
+</style>
+</head>
+<body>
+<main>
+<h1>대기열 동작 시각화</h1>
+<p class="sub">제자리 · 김성원 · QUE-01~05. 줄을 서는 방식, 위험 점수가 순번에 반영되는 방식, 입장 토큰이 발급·검증되는 흐름을 한 장으로 봅니다. (설명은 <code>features/대기열.md</code>)</p>
+
+<h2>1. 전체 흐름</h2>
+<div class="flow">
+  <div class="step"><b>① 진입</b><code>POST /runs/{id}/queue</code><br>로그인한 회원이 줄을 섭니다</div><div class="arrow">▶</div>
+  <div class="step"><b>② 순번 계산 (Lua 한 번)</b>번호표 발급 + 점수<br><code>score = Redis 시각(ms) + 위험점수 × 1000</code></div><div class="arrow">▶</div>
+  <div class="step"><b>③ 줄 (ZSET)</b>score가 작은 사람이 앞<br>같으면 번호표(seq) 순</div><div class="arrow">▶</div>
+  <div class="step"><b>④ 입장 (1초마다)</b>맨 앞 N명(<code>queue.admit_per_sec</code>)에게 토큰 발급 (300초)</div><div class="arrow">▶</div>
+  <div class="step"><b>⑤ 좌석 API</b><code>X-Queue-Token</code> 없거나 틀리면 컨트롤러 앞에서 403</div>
+</div>
+
+<h2>2. 순번이 정해지는 규칙</h2>
+<table>
+<tr><th>상황</th><th>순서는 이렇게 정해집니다</th></tr>
+<tr><td>일반 사용자</td><td>점수 = 진입 시각(Redis 시계). 먼저 온 사람이 앞.</td></tr>
+<tr><td>위험 점수 80점</td><td>점수 = 진입 시각 + 80초. 요청은 늦추지 않고 <b>순번만</b> 80초 뒤로.</td></tr>
+<tr><td>같은 밀리초에 진입</td><td>번호표(seq 12자리)가 작은 쪽이 앞. 회원 ID 크기는 영향 없음.</td></tr>
+<tr><td>점수가 여러 개 (CI·결제·기기)</td><td>최댓값 하나만 사용. <code>RESTRICTED</code> 회원은 100점.</td></tr>
+<tr><td>줄이 비어 있을 때</td><td>위험 사용자도 앞에 아무도 없으므로 바로 입장 (패널티는 "붐빌 때 뒤로 밀림").</td></tr>
+</table>
+
+<h2>3. 직접 해 보기: 봇이 먼저 몰려와도 뒤로 밀릴까?</h2>
+<p class="sub">봇(위험 점수 높음)이 정상 사용자보다 <b>먼저</b> 줄을 서는 상황입니다. 입장은 오픈 후 지정한 초부터 1초마다 맨 앞 N명씩 진행됩니다. 진입 시각은 봇 0~2초, 정상 1~3초에 고르게 분포한다고 가정합니다.</p>
+<div class="card">
+  <div class="ctrl">
+    <div><label>정상 사용자 <output id="oN"></output>명</label><input type="range" id="nN" min="5" max="60" value="30"></div>
+    <div><label>봇 <output id="oB"></output>명</label><input type="range" id="nB" min="0" max="60" value="30"></div>
+    <div><label>봇 위험 점수 <output id="oS"></output>점 (1점 = 1초)</label><input type="range" id="nS" min="0" max="100" value="80"></div>
+    <div><label>입장 속도 <output id="oR"></output>명/초</label><input type="range" id="nR" min="1" max="20" value="5"></div>
+    <div><label>입장 시작 시각 <output id="oD"></output>초</label><input type="range" id="nD" min="0" max="10" value="4"></div>
+  </div>
+  <button id="run">다시 계산</button>
+  <p class="legend"><i style="background:var(--ok)"></i>정상 <i style="background:var(--risk)"></i>봇 — 입장한 순서 (왼쪽부터)</p>
+  <div class="strip" id="strip"></div>
+  <div class="res">
+    <div class="n"><span>정상 사용자 평균 입장</span><br><strong id="avgN">-</strong></div>
+    <div class="b"><span>봇 평균 입장</span><br><strong id="avgB">-</strong></div>
+    <div class="card" style="margin:0"><span>마지막 입장</span><br><strong id="last">-</strong></div>
+  </div>
+  <div class="note" id="msg"></div>
+  <details><summary>초별 진행 보기</summary>
+    <div class="tl"><table><thead><tr><th>시각(초)</th><th>대기 중</th><th>입장 (정상/봇)</th></tr></thead><tbody id="tl"></tbody></table></div>
+  </details>
+</div>
+<p class="sub">시뮬레이션은 설명용 단순 모델입니다(시각을 초 단위로 계산). 실제 구현은 Redis <code>TIME</code>과 Lua 스크립트로 같은 규칙을 적용하며, 검증은 <code>k6/queue/penalty-order.js</code>와 통합 테스트가 합니다.</p>
+
+<h2>4. 입장 토큰</h2>
+<table>
+<tr><th>상황</th><th>결과</th></tr>
+<tr><td>입장 처리됨</td><td>(운행, 회원) 쌍마다 256비트 무작위 토큰 1개, 300초 유효</td></tr>
+<tr><td>토큰 없음·가짜·남의 것·다른 운행·이탈 후·만료 후로 좌석 API 호출</td><td>전부 403 (<code>QueueSeatTokenInterceptor</code>)</td></tr>
+<tr><td>입장 뒤 토큰이 만료</td><td>대기 기록도 같이 사라져 다시 줄을 설 수 있음</td></tr>
+<tr><td>같은 CI의 다른 계정이 이미 대기·입장 중</td><td><code>QUEUE_DUPLICATED</code> (한 사람이 여러 계정으로 줄 서기 방지)</td></tr>
+</table>
+
+<h2>5. 위험 점수를 읽을 때의 안전장치</h2>
+<p>"모르면 막는 쪽으로" 동작합니다. 점수 캐시가 비거나 오염돼도 위험 사용자가 패널티 없이 통과하지 못하게 하려는 것입니다.</p>
+<table>
+<tr><th>상황</th><th>동작</th></tr>
+<tr><td><code>risk:meta:synced_at</code> 있음 + 점수 키 없음</td><td>0점 (정상 사용자)</td></tr>
+<tr><td><code>risk:meta:synced_at</code> 없음 (Redis 재시작 등)</td><td>캐시를 믿지 않고 Oracle <code>risk_score</code>를 직접 조회</td></tr>
+<tr><td>위 조회 실패</td><td>100점</td></tr>
+<tr><td>값이 0~100 숫자 문자열이 아님 (<code>abc</code>, <code>NaN</code>, 101, JSON…)</td><td>100점 + 경고 로그</td></tr>
+</table>
+<div class="note">Redis 재시작 직후에는 다음 재동기화 전까지(최대 10분) 모든 진입이 Oracle을 조회합니다. 부하 제한 방식은 팀 협의 중입니다 (<code>팀-확인-요청.md</code> 17번).</div>
+
+<h2>6. Redis 장애</h2>
+<p>Redis 연결이 끊기면 요청이 60초씩 매달리지 않고 즉시 <code>503 SERVICE_UNAVAILABLE</code>로 응답하고, 복구되면 자동으로 다시 동작합니다.</p>
+</main>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var ids=['N','B','S','R','D'];
+  function val(k){return +$('n'+k).value}
+  function sim(){
+    var nN=val('N'),nB=val('B'),score=val('S'),rate=val('R'),start=val('D');
+    ids.forEach(function(k){$('o'+k).textContent=val(k)});
+    var u=[],i;
+    for(i=0;i<nB;i++){var t=nB>1?i*2/(nB-1):0;u.push({type:'b',t:t,s:t+score,seq:0})}
+    for(i=0;i<nN;i++){var t2=1+(nN>1?i*2/(nN-1):0);u.push({type:'n',t:t2,s:t2,seq:0})}
+    u.sort(function(a,b){return a.t-b.t||(a.type==='b'?-1:1)});           // 진입 순서 = 번호표 순서
+    u.forEach(function(x,k){x.seq=k+1});
+    var waiting=[],pending=u.slice(),admitted=[],rows=[],T=0,guard=0;
+    while((pending.length||waiting.length)&&guard++<400){
+      while(pending.length&&pending[0].t<=T)waiting.push(pending.shift());
+      if(T>=start&&waiting.length){
+        waiting.sort(function(a,b){return a.s-b.s||a.seq-b.seq});          // score, 같으면 seq
+        var take=waiting.splice(0,rate),c={n:0,b:0};
+        take.forEach(function(x){x.at=T;admitted.push(x);c[x.type]++});
+        rows.push([T,waiting.length,c.n+' / '+c.b]);
+      }else if(T<=start+10||waiting.length||pending.length){
+        rows.push([T,waiting.length,'- (입장 전)']);
+      }
+      T++;
+    }
+    var strip=$('strip');strip.innerHTML='';
+    admitted.forEach(function(x){var d=document.createElement('div');d.className='dot '+x.type;d.title=(x.type==='b'?'봇':'정상')+' · 입장 '+x.at+'초';d.textContent=x.at;strip.appendChild(d)});
+    function avg(t){var a=admitted.filter(function(x){return x.type===t});return a.length?a.reduce(function(s,x){return s+x.at},0)/a.length:null}
+    var aN=avg('n'),aB=avg('b');
+    $('avgN').textContent=aN==null?'-':aN.toFixed(1)+'초';
+    $('avgB').textContent=aB==null?'-':aB.toFixed(1)+'초';
+    $('last').textContent=admitted.length?admitted[admitted.length-1].at+'초':'-';
+    var m=$('msg');
+    if(!nB||aN==null){m.textContent='봇이 없거나 정상 사용자가 없습니다. 둘 다 있게 조절해 보세요.'}
+    else if(aB>aN){m.textContent='봇이 평균 '+(aB-aN).toFixed(1)+'초 늦게 입장했습니다. 먼저 줄을 섰어도 위험 점수만큼 뒤로 밀렸습니다.'}
+    else{m.textContent='봇이 정상 사용자보다 먼저(또는 같이) 입장했습니다. 입장 시작이 너무 빠르면 줄이 차기 전에 봇이 먼저 나갑니다. 패널티는 줄이 쌓여 있을 때 순서를 바꾸는 장치입니다. 입장 시작 시각을 늦추거나 위험 점수를 올려 보세요.'}
+    var tb=$('tl');tb.innerHTML='';
+    rows.forEach(function(r){var tr=document.createElement('tr');r.forEach(function(c){var td=document.createElement('td');td.textContent=c;tr.appendChild(td)});tb.appendChild(tr)});
+  }
+  ids.forEach(function(k){$('n'+k).addEventListener('input',sim)});
+  $('run').addEventListener('click',sim);
+  sim();
+})();
+</script>
+</body>
+</html>

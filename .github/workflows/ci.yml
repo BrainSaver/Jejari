@@ -53,3 +53,8 @@ jobs:
       # 스키마 커밋은 FAIL 0이어야 합니다 (CLAUDE.md)
       - name: check-erd
         run: node tools/check-erd.js docs/erd/jejari-erd.html
+
+      # 기준 데이터 시드가 공공데이터 원본 CSV와 일치하는지 (DATA-01)
+      # 손으로 옮겨 적다 틀리는 것을 막습니다. 고치려면 --write 로 다시 생성합니다
+      - name: check public data
+        run: node tools/load-public-data.js

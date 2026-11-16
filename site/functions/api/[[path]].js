@@ -1,5 +1,5 @@
 // 문서 사이트 API. 읽기는 누구나, 쓰기는 이름+PIN 로그인 후 자기 이름 브랜치에만.
-import { MEMBERS, NAMES, MAIN, REFS, EDITABLE, READABLE, adminOf } from '../../lib/config.js';
+import { MEMBERS, NAMES, MAIN, REFS, EDITABLE, READABLE, PERSON_FILE, PERSON_DIR, ownerOk, adminOf } from '../../lib/config.js';
 import {
   gh, GhError, getFile, listDir, putFile, syncMain, compare, conflictFiles, listCommits, slimCommit,
 } from '../../lib/github.js';
@@ -15,7 +15,7 @@ const fail = (status, error, message, extra = {}) => json({ error, message, ...e
 const okPath = (p, list) => typeof p === 'string' && !p.includes('..') && list.some((re) => re.test(p));
 const okRef = (r) => REFS.includes(r);
 // 로그인 안 한 사람은 main의 기획서·기능설계서·DB설계서(ERD 포함)·화면설계·동시성 문서만 볼 수 있다
-const PUBLIC = [/^README\.md$/, /^docs\/concurrency\.md$/, /^docs\/기능설계서\.md$/, /^docs\/DB설계서\.md$/, /^docs\/ui\/[UA]-\d{2}\.(md|html)$/, /^docs\/ui\/index\.json$/, /^docs\/erd\/jejari-erd\.html$/];
+const PUBLIC = [/^README\.md$/, /^docs\/concurrency\.md$/, /^docs\/기능설계서\.md$/, /^docs\/DB설계서\.md$/, /^docs\/ui\/[UA]-\d{2}\.(md|html)$/, /^docs\/ui\/index\.json$/, /^docs\/erd\/jejari-erd\.html$/, PERSON_FILE, /^docs\/templates\/[^/]+\.md$/];
 const LOGIN_FIRST = () => fail(401, 'LOGIN', '로그인하면 볼 수 있어요.');
 const authorOf = (name) => ({ name, email: `${name}@users.noreply.jejari.pages.dev` });
 
@@ -137,6 +137,7 @@ async function prepare(env, me) {
 async function save(env, me, body) {
   const { path, mode, oldText, newText, message, heading } = body;
   if (!okPath(path, EDITABLE)) return fail(400, 'BAD_PATH', '사이트에서 고칠 수 없는 파일이에요.');
+  if (!ownerOk(me, path)) return fail(403, 'NOT_MINE', '다른 팀원의 폴더는 그 사람만 고칠 수 있어요.');
   if (typeof newText !== 'string') return fail(400, 'BAD_BODY', '내용이 비었어요.');
   if (!validMessage(message)) return fail(400, 'BAD_MESSAGE', '커밋 메시지는 한 줄로 써 주세요.');
 
@@ -310,8 +311,9 @@ export async function onRequest(ctx) {
       }
       case 'GET /list': {
         const dir = q.get('dir'); const ref = q.get('ref') || MAIN;
-        if (!['docs/ui', 'docs/erd/exports'].includes(dir) || !okRef(ref)) return fail(400, 'BAD_PATH', '볼 수 없는 폴더예요.');
-        if (!me && (ref !== MAIN || dir !== 'docs/ui')) return LOGIN_FIRST();
+        const personDir = PERSON_DIR.test(dir || '');
+        if (!(['docs/ui', 'docs/erd/exports'].includes(dir) || personDir) || !okRef(ref)) return fail(400, 'BAD_PATH', '볼 수 없는 폴더예요.');
+        if (!me && (ref !== MAIN || !(dir === 'docs/ui' || personDir))) return LOGIN_FIRST();
         return cached(req, 10, async () => json(await listDir(env, dir, ref)));
       }
       case 'GET /branches':
@@ -357,6 +359,7 @@ export async function onRequest(ctx) {
         if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
         const path = body.path;
         if (!okPath(path, EDITABLE)) return fail(400, 'BAD_PATH', '사이트에서 고칠 수 없는 파일이에요.');
+        if (!ownerOk(me, path)) return fail(403, 'NOT_MINE', '다른 팀원의 폴더는 그 사람만 고칠 수 있어요.');
         const p = await prepare(env, me);
         if (p.error) return json(p, 409);
         const f = await getFile(env, path, me);
@@ -416,6 +419,14 @@ export async function onRequest(ctx) {
       case 'POST /revert':
         if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
         return await revert(env, me, body);
+      case 'POST /sync': {
+        // main의 최신 내용을 내 브랜치로 가져온다 (저장 전 자동으로 하던 일을 버튼으로)
+        if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
+        const before = await compare(env, me, MAIN);
+        const p = await prepare(env, me);
+        if (p.error) return json(p, 409);
+        return json({ ok: true, branch: me, sync: p.sync, commits: before.ahead_by || 0 });
+      }
       case 'POST /merge':
         if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
         return await mergeToMain(env, me);
