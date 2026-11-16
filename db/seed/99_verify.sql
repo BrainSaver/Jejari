@@ -21,22 +21,30 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
   UNION ALL
   SELECT '6. 편성 20호차',                     CASE WHEN COUNT(*) = 20  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_car
   UNION ALL
-  SELECT '7. 좌석 1080석 (540 × 2)',           CASE WHEN COUNT(*) = 1080 THEN 1 ELSE 0 END,     '실제 ' || COUNT(*) FROM seat
+  SELECT '7. 좌석 1050석 (525 × 2)',           CASE WHEN COUNT(*) = 1050 THEN 1 ELSE 0 END,     '실제 ' || COUNT(*) FROM seat
   UNION ALL
-  SELECT '8. 열차당 특실 36 · 일반 504',       CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,
-         '규격에 어긋난 (열차,등급) ' || COUNT(*) || '건'
-    FROM (SELECT train_id, seat_grade, COUNT(*) c FROM seat GROUP BY train_id, seat_grade
-           HAVING NOT ((seat_grade = 'FIRST' AND COUNT(*) = 36) OR (seat_grade = 'GENERAL' AND COUNT(*) = 504)))
+  SELECT '8. 호차 좌석수 = car_type.seat_count', CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END,
+         '어긋난 호차 ' || COUNT(*) || '건'
+    FROM (SELECT s.train_id, s.car_no, COUNT(*) AS c, MAX(ct.seat_count) AS want
+            FROM seat s
+            JOIN train_car tc ON tc.train_id = s.train_id AND tc.car_no = s.car_no
+            JOIN car_type  ct ON ct.car_type_code = tc.car_type_code
+           GROUP BY s.train_id, s.car_no
+          HAVING COUNT(*) <> MAX(ct.seat_count))
   UNION ALL
   SELECT '9. 좌석번호 중복 없음',              CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,      '중복 ' || COUNT(*) || '건'
     FROM (SELECT train_id, car_no, seat_no FROM seat GROUP BY train_id, car_no, seat_no HAVING COUNT(*) > 1)
   UNION ALL
-  SELECT '10. 창측 비율 일반 1/2 · 특실 2/3',  CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,
-         '어긋난 (열차,등급) ' || COUNT(*) || '건'
-    FROM (SELECT train_id, seat_grade, COUNT(*) c, SUM(CASE WHEN is_window = 'Y' THEN 1 ELSE 0 END) w
-            FROM seat GROUP BY train_id, seat_grade
-           HAVING NOT ((seat_grade = 'GENERAL' AND SUM(CASE WHEN is_window = 'Y' THEN 1 ELSE 0 END) * 2 = COUNT(*))
-                    OR (seat_grade = 'FIRST'   AND SUM(CASE WHEN is_window = 'Y' THEN 1 ELSE 0 END) * 3 = COUNT(*) * 2)))
+  SELECT '10. 창측 수 = CEIL(n/k) + FLOOR(n/k)', CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END,
+         '어긋난 호차 ' || COUNT(*) || '건'
+    FROM (SELECT s.train_id, s.car_no
+            FROM seat s
+            JOIN train_car tc ON tc.train_id = s.train_id AND tc.car_no = s.car_no
+            JOIN car_type  ct ON ct.car_type_code = tc.car_type_code
+           GROUP BY s.train_id, s.car_no
+          HAVING SUM(CASE WHEN s.is_window = 'Y' THEN 1 ELSE 0 END)
+                 <> CEIL(MAX(ct.seat_count) / LENGTH(MAX(ct.seat_columns)))
+                  + FLOOR(MAX(ct.seat_count) / LENGTH(MAX(ct.seat_columns))))
   UNION ALL
   SELECT '11. 운행 11건 (명절 8 + 평시 3)',    CASE WHEN COUNT(*) = 11  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_run
   UNION ALL
