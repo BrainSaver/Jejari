@@ -10,6 +10,8 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
@@ -45,7 +47,8 @@ public class QueueAdmitter {
         int count = (int) Math.min(perSec, waiting == null ? 0 : waiting);
         if (count == 0) {
             // 입장한 사람이 없어도 만료된 active 항목은 정리한다
-            redis.opsForZSet().removeRangeByScore(QueueKeys.active(runId), Double.NEGATIVE_INFINITY, clock.millis());
+            Long redisNow = redis.execute((RedisCallback<Long>) c -> c.serverCommands().time(TimeUnit.MILLISECONDS));
+            redis.opsForZSet().removeRangeByScore(QueueKeys.active(runId), Double.NEGATIVE_INFINITY, redisNow);
             return 0;
         }
 
@@ -53,7 +56,6 @@ public class QueueAdmitter {
         List<String> args = new ArrayList<>();
         args.add(String.valueOf(runId));
         args.add(String.valueOf(count));
-        args.add(String.valueOf(clock.millis()));
         args.add(String.valueOf(passTtlMs));
         for (int i = 0; i < count; i++) {
             args.add(newToken());

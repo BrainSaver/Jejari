@@ -34,9 +34,7 @@ class QueueServiceTest extends RedisIntegrationTest {
     @Test
     void 먼저_온_순서대로_번호표를_받는다() {
         QueueStatus a = queue.enter(1, RUN);
-        clock.advanceMs(10);
         QueueStatus b = queue.enter(2, RUN);
-        clock.advanceMs(10);
         QueueStatus c = queue.enter(3, RUN);
 
         assertThat(List.of(a.rank(), b.rank(), c.rank())).containsExactly(1L, 2L, 3L);
@@ -46,8 +44,8 @@ class QueueServiceTest extends RedisIntegrationTest {
     }
 
     @Test
-    void 같은_밀리초에_온_사람은_진입_순서대로_정렬된다() {
-        // 시계를 안 움직이면 score가 같다 → member 문자열(12자리 seq)이 순서를 결정
+    void 회원_ID와_상관없이_진입_순서대로_정렬된다() {
+        // 같은 밀리초면 score가 같고, 그때는 member 문자열 앞의 12자리 seq가 순서를 결정한다 (ID는 비교에 쓰이지 않음)
         queue.enter(30, RUN);
         queue.enter(4, RUN);
         queue.enter(100, RUN);
@@ -57,38 +55,39 @@ class QueueServiceTest extends RedisIntegrationTest {
     }
 
     @Test
-    void 위험_점수만큼_순번이_뒤로_밀리고_기록이_남는다() {
-        // 회원 9: CI 점수 80 → 80초 뒤. 이후 79초 안에 온 사람들은 회원 9보다 앞선다.
+    void 위험_점수만큼_순번이_뒤로_밀리고_기록이_남는다() throws Exception {
+        // 진입 시각은 Redis 시계라 테스트에서 시간을 건너뛸 수 없다 → 단가를 10ms/점으로 줄여 80점 = 800ms 뒤
+        setPolicy("risk.penalty_ms_per_point", "10");
         members.register(new MemberIdentity(9, "ACTIVE", "ci-9", List.of(), List.of()));
         setRisk("CI", "ci-9", "80.00");
 
         QueueStatus risky = queue.enter(9, RUN);
         assertThat(risky.rank()).isEqualTo(1); // 아직 아무도 없으니 1번
-        clock.advanceMs(1_000);
         queue.enter(1, RUN);
-        clock.advanceMs(78_000);
-        queue.enter(2, RUN); // 진입 후 79초 경과: 회원 9의 score(+80초)보다 이르다
+        queue.enter(2, RUN); // 800ms 안에 온 사람들은 회원 9보다 앞선다
 
         assertThat(queue.status(1, RUN).rank()).isEqualTo(1);
         assertThat(queue.status(2, RUN).rank()).isEqualTo(2);
         assertThat(queue.status(9, RUN).rank()).isEqualTo(3);
 
+        Thread.sleep(1_000); // 패널티 시간이 지난 뒤에 온 사람은 회원 9보다 뒤
+        queue.enter(3, RUN);
+        assertThat(queue.status(9, RUN).rank()).isEqualTo(3);
+        assertThat(queue.status(3, RUN).rank()).isEqualTo(4);
+
         QueueLogEvent entered = sink.events.stream()
                 .filter(e -> e.memberId() == 9 && e.type() == QueueLogEvent.Type.ENTERED).findFirst().orElseThrow();
-        assertThat(entered.penaltyMs()).isEqualTo(80_000);
+        assertThat(entered.penaltyMs()).isEqualTo(800);
         assertThat(entered.riskScore()).isEqualTo(80.0);
     }
 
     @Test
     void 조정_전_순번과_조정_후_순번을_기록한다() {
         queue.enter(1, RUN);
-        clock.advanceMs(10);
         queue.enter(2, RUN);
-        clock.advanceMs(10);
         members.register(new MemberIdentity(3, "ACTIVE", "ci-3", List.of(), List.of()));
         setRisk("CI", "ci-3", "50");
-        queue.enter(3, RUN);
-        clock.advanceMs(10);
+        queue.enter(3, RUN);   // 패널티 50초
         queue.enter(4, RUN);
 
         QueueLogEvent e = sink.events.stream()
@@ -141,14 +140,28 @@ class QueueServiceTest extends RedisIntegrationTest {
         assertCode(() -> queue.enter(1, RUN), ErrorCode.RUN_NOT_ON_SALE);
     }
 
+    @Test
+    void 진입_시각은_앱_시계가_아니라_Redis_시계를_쓴다() {
+        // 테스트 시계는 2026-11-20으로 고정돼 있다. score가 Redis 현재 시각 근처면 Redis TIME을 쓴 것이다.
+        long before = redisNowMs();
+        queue.enter(1, RUN);
+        long after = redisNowMs();
+        double score = redis.opsForZSet().score("queue:" + RUN, "000000000001:1");
+        assertThat(score).isBetween((double) before, (double) after);
+        assertThat(sink.events.get(0).at().toEpochMilli()).isBetween(before, after);
+    }
+
+    private long redisNowMs() {
+        return redis.execute((org.springframework.data.redis.core.RedisCallback<Long>) c ->
+                c.serverCommands().time(java.util.concurrent.TimeUnit.MILLISECONDS));
+    }
+
     // ---------- 중복 진입 ----------
 
     @Test
     void 새로고침해도_순번은_그대로다() {
         queue.enter(1, RUN);
-        clock.advanceMs(10);
         QueueStatus first = queue.enter(2, RUN);
-        clock.advanceMs(60_000);
         QueueStatus again = queue.enter(2, RUN);
 
         assertThat(again.ticketNo()).isEqualTo(first.ticketNo());
@@ -192,9 +205,9 @@ class QueueServiceTest extends RedisIntegrationTest {
         members.register(new MemberIdentity(1, "ACTIVE", "same-ci", List.of(), List.of()));
         members.register(new MemberIdentity(2, "ACTIVE", "same-ci", List.of(), List.of()));
         queue.enter(1, RUN);
-        // 1번의 대기 기록이 사라지고(Redis 만료) CI 항목의 만료 시각도 지났다고 가정
+        // 1번의 대기 기록이 사라지고(Redis 만료) CI 항목의 만료 시각도 한참 지났다고 가정
         redis.delete("queue:member:1");
-        redis.opsForZSet().add("queue:ci:same-ci", "1", clock.millis() - 1);
+        redis.opsForZSet().add("queue:ci:same-ci", "1", 1);
         assertThat(queue.enter(2, RUN)).isNotNull();
     }
 
@@ -227,7 +240,6 @@ class QueueServiceTest extends RedisIntegrationTest {
         setPolicy("queue.admit_per_sec", "3");
         for (long m = 1; m <= 5; m++) {
             queue.enter(m, RUN);
-            clock.advanceMs(1);
         }
         assertThat(admitter.admit(RUN)).isEqualTo(3);
 
@@ -251,9 +263,7 @@ class QueueServiceTest extends RedisIntegrationTest {
         members.register(new MemberIdentity(1, "ACTIVE", "ci-1", List.of(), List.of()));
         setRisk("CI", "ci-1", "100");
         queue.enter(1, RUN);          // 가장 먼저 왔지만 100초 뒤로
-        clock.advanceMs(10);
         queue.enter(2, RUN);
-        clock.advanceMs(10);
         queue.enter(3, RUN);
 
         admitter.admit(RUN);
@@ -396,7 +406,7 @@ class QueueServiceTest extends RedisIntegrationTest {
 
         assertThat(tickets).hasSize(n);
         assertThat(redis.opsForZSet().zCard("queue:" + RUN)).isEqualTo(n);
-        // 같은 밀리초라 score가 모두 같으므로, 순번은 번호표 순서와 일치해야 한다
+        // 시각을 Redis가 스크립트 안에서 찍으므로, 순번은 번호표 순서와 항상 일치해야 한다
         for (long m = 1; m <= n; m++) {
             QueueStatus s = queue.status(m, RUN);
             assertThat(s.rank()).isEqualTo(s.ticketNo());

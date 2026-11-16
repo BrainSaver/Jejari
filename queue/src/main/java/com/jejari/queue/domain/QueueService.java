@@ -55,7 +55,6 @@ public class QueueService {
 
         double score = risk.score(identity);
         long penaltyMs = risk.penaltyMs(score);
-        long now = clock.millis();
         long entryTtlMs = policy.getLong(PolicyProvider.ENTRY_TTL_SEC) * 1000;
         long closeAtMs = run.saleCloseAt() == null ? 0 : run.saleCloseAt().toEpochMilli();
 
@@ -63,10 +62,11 @@ public class QueueService {
                 List.of(QueueKeys.queue(runId), QueueKeys.seq(runId),
                         QueueKeys.member(memberId), QueueKeys.ci(identity.ciHash())),
                 String.valueOf(runId), String.valueOf(memberId), identity.ciHash(),
-                String.valueOf(now), String.valueOf(penaltyMs), String.valueOf(entryTtlMs),
-                String.valueOf(closeAtMs));
+                String.valueOf(penaltyMs), String.valueOf(entryTtlMs), String.valueOf(closeAtMs));
 
         long status = ((Number) r.get(0)).longValue();
+        // 진입 시각은 Redis TIME 값 (스크립트가 돌려준다)
+        long now = ((Number) r.get(4)).longValue();
         if (status < 0) {
             logSink.record(new QueueLogEvent(Type.REJECTED_DUPLICATE, memberId, runId, null,
                     Instant.ofEpochMilli(now), score, null, null, null, "REJECTED_DUPLICATE"));
