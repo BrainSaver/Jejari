@@ -9,24 +9,29 @@
   --bg:#f4f5f7;--card:#fff;--fg:#1d1f24;--mut:#6b7079;--line:#e4e5e8;
   --pri:#2f5bd3;--pri2:#e8eefc;--ok:#1d6b33;--okb:#e3f4e6;--bad:#a12c2c;--badb:#fbe9e9;
   --warn:#7a5600;--warnb:#fff5db;--code:#f0f1f4;--hl:#fff8e1;
+  --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;        /* 전략 A·B·C (dataviz 검증 통과) */
+  --grid:#e4e5e8;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     --bg:#15171b;--card:#1d2026;--fg:#e7e9ee;--mut:#9aa0ab;--line:#2c3038;
     --pri:#7ea2f5;--pri2:#20283c;--ok:#7bd194;--okb:#17301d;--bad:#f09a9a;--badb:#331a1a;
     --warn:#e8c06a;--warnb:#32280f;--code:#24272e;--hl:#2a2512;
+    --s1:#3987e5;--s2:#d95926;--s3:#199e70;
+    --grid:#2c3038;
   }
 }
 :root[data-theme="dark"]{
   --bg:#15171b;--card:#1d2026;--fg:#e7e9ee;--mut:#9aa0ab;--line:#2c3038;
   --pri:#7ea2f5;--pri2:#20283c;--ok:#7bd194;--okb:#17301d;--bad:#f09a9a;--badb:#331a1a;
   --warn:#e8c06a;--warnb:#32280f;--code:#24272e;--hl:#2a2512;
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--grid:#2c3038;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);
   font:15px/1.65 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
 .wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
-header{border-bottom:1px solid var(--line);background:var(--card);margin-bottom:22px}
+header{border-bottom:1px solid var(--line);background:var(--card)}
 header .wrap{padding-top:20px;padding-bottom:0}
 h1{font-size:21px;margin:0 0 2px}
 .sub{color:var(--mut);font-size:13.5px;margin:0 0 14px}
@@ -36,16 +41,17 @@ nav a{flex:0 0 auto;padding:9px 13px;border-radius:9px 9px 0 0;text-decoration:n
   color:var(--mut);font-size:14px;font-weight:600;border-bottom:2px solid transparent;white-space:nowrap}
 nav a:hover{color:var(--fg)}
 nav a.on{color:var(--pri);border-bottom-color:var(--pri);background:var(--pri2)}
+main{padding-top:22px}
 section{display:none}
 section.on{display:block}
 h2{font-size:18px;margin:26px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
 h2:first-child{margin-top:4px}
-h3{font-size:15px;margin:20px 0 7px}
+h3{font-size:15px;margin:22px 0 7px}
 p{margin:0 0 10px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 16px;margin:0 0 14px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 14px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px}
-.kpi b{display:block;font-size:23px;line-height:1.25;font-variant-numeric:tabular-nums}
+.kpi b{display:block;font-size:23px;line-height:1.25}
 .kpi span{color:var(--mut);font-size:12.5px}
 table{width:100%;border-collapse:collapse;margin:0 0 14px;font-size:14px}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
@@ -67,10 +73,70 @@ pre{background:var(--code);border-radius:10px;padding:12px 14px;overflow-x:auto;
 ul{margin:0 0 12px;padding-left:19px}
 li{margin:0 0 5px}
 a{color:var(--pri)}
-.bar{height:7px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:6px}
-.bar i{display:block;height:100%;background:var(--pri)}
 .muted{color:var(--mut)}
 footer{color:var(--mut);font-size:12.5px;border-top:1px solid var(--line);padding-top:14px;margin-top:30px}
+
+/* ── 버튼 ── */
+.btn{font:inherit;font-size:13.5px;font-weight:700;border:1px solid var(--line);background:var(--card);
+  color:var(--fg);border-radius:9px;padding:7px 13px;cursor:pointer}
+.btn:hover{border-color:var(--pri);color:var(--pri)}
+.btn.go{background:var(--pri);border-color:var(--pri);color:#fff}
+.btn.go:hover{opacity:.88;color:#fff}
+.ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px}
+
+/* ── 적재 파이프라인 ── */
+.pipe{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:0 0 6px}
+.step{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:11px 10px;
+  text-align:center;position:relative;opacity:.4;transition:opacity .3s,border-color .3s,transform .3s}
+.step .ic{font-size:19px;line-height:1.2}
+.step b{display:block;font-size:13px;margin-top:3px}
+.step span{display:block;color:var(--mut);font-size:11.5px;font-variant-numeric:tabular-nums}
+.step.live{opacity:1;border-color:var(--pri);transform:translateY(-2px)}
+.step.done{opacity:1;border-color:var(--ok)}
+.step.done .ic::after{content:" ✓";color:var(--ok)}
+.pipe-bar{height:4px;border-radius:3px;background:var(--line);overflow:hidden;margin:0 0 14px}
+.pipe-bar i{display:block;height:100%;width:0;background:var(--pri);transition:width .4s ease}
+@media(max-width:640px){.pipe{grid-template-columns:repeat(2,1fr)}}
+
+/* ── 검증 23항목 ── */
+.vlist{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card);margin:0 0 6px}
+.vrow{display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--line);
+  font-size:13.5px;opacity:.32;transition:opacity .25s,background .25s}
+.vrow:last-child{border-bottom:0}
+.vrow.on{opacity:1}
+.vrow.flash{background:var(--okb)}
+.vrow .no{color:var(--mut);font-variant-numeric:tabular-nums;width:22px;text-align:right;flex:0 0 auto}
+.vrow .nm{flex:1;min-width:0}
+.vrow .dt{color:var(--mut);font-size:12px;text-align:right;flex:0 0 auto}
+.vrow .st{flex:0 0 auto;width:34px;text-align:center;font-weight:800;font-size:12px;color:var(--mut)}
+.vrow.on .st{color:var(--ok)}
+.vsum{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--mut);margin:0 0 14px}
+.vsum b{color:var(--ok);font-variant-numeric:tabular-nums}
+
+/* ── T1 동시 선점 ── */
+.t1{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 0 6px}
+.t1 svg{display:block;width:100%;height:auto}
+.t1-sum{display:flex;gap:16px;font-size:13.5px;color:var(--mut);flex-wrap:wrap;margin:0 0 14px}
+.t1-sum b{font-variant-numeric:tabular-nums;color:var(--fg)}
+
+/* ── 차트 ── */
+.chart{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 14px 8px;margin:0 0 12px}
+.chart h4{margin:0 0 2px;font-size:14px}
+.chart .cap{margin:0 0 10px;color:var(--mut);font-size:12.5px}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--mut);margin:8px 0 0}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.bar-l{font-size:11.5px;font-variant-numeric:tabular-nums;fill:var(--mut)}
+.bar-l.best{fill:var(--fg);font-weight:700}
+.ax{font-size:11.5px;fill:var(--mut)}
+.gl{stroke:var(--grid);stroke-width:1}
+rect.b{transition:height .7s cubic-bezier(.22,1,.36,1),y .7s cubic-bezier(.22,1,.36,1)}
+rect.b:hover{opacity:.82}
+
+@media (prefers-reduced-motion:reduce){
+  .step,.vrow,.pipe-bar i,rect.b{transition:none!important}
+  .step{opacity:1}.vrow{opacity:1}
+}
 @media(max-width:560px){.wrap{padding:0 12px 48px}h1{font-size:19px}table{font-size:13px}th,td{padding:7px 7px}}
 </style>
 </head>
@@ -87,7 +153,7 @@ footer{color:var(--mut);font-size:12.5px;border-top:1px solid var(--line);paddin
   </nav>
 </div></header>
 
-<div class="wrap">
+<main class="wrap">
 
 <!-- ───────────────────────────── 진행 현황 -->
 <section id="overview">
@@ -149,14 +215,35 @@ footer{color:var(--mut);font-size:12.5px;border-top:1px solid var(--line);paddin
 <!-- ───────────────────────────── DATA-01 -->
 <section id="DATA-01">
   <h2>DATA-01 · 기준 데이터 적재 <span class="tag ok">완료</span></h2>
-  <p>예매에 필요한 바뀌지 않는 데이터를 Oracle에 넣습니다. 값은 전부 공공데이터포털 원본에서 나옵니다.</p>
+  <p>공공데이터포털 CSV가 Oracle에 들어가 검증까지 통과하는 과정입니다. 아래 수치는 전부 실제 실행 결과입니다.</p>
 
-  <div class="grid">
-    <div class="kpi"><b>1,050</b><span>좌석 (525석 × 2편)</span></div>
-    <div class="kpi"><b>11</b><span>운행 (명절 8 + 평시 3)</span></div>
-    <div class="kpi"><b>40</b><span>운임 (순서쌍 20 × 등급 2)</span></div>
-    <div class="kpi"><b>23 / 23</b><span>검증 항목 통과</span></div>
+  <div class="ctl">
+    <button class="btn go" id="runPipe">▶ 적재 과정 재생</button>
+    <button class="btn" id="skipPipe">끝까지 보기</button>
+    <span class="muted" id="pipeState">누르면 시작합니다</span>
   </div>
+
+  <div class="pipe" id="pipe">
+    <div class="step" data-k="0"><div class="ic">📄</div><b>공공데이터 CSV</b><span id="p0">4개 파일</span></div>
+    <div class="step" data-k="1"><div class="ic">⚙️</div><b>적재 스크립트</b><span id="p1">값 블록 생성</span></div>
+    <div class="step" data-k="2"><div class="ic">🗒️</div><b>시드 SQL</b><span id="p2">01 ~ 05</span></div>
+    <div class="step" data-k="3"><div class="ic">🛢️</div><b>Oracle</b><span id="p3">MERGE 적재</span></div>
+    <div class="step" data-k="4"><div class="ic">✅</div><b>검증</b><span id="p4">23항목</span></div>
+  </div>
+  <div class="pipe-bar"><i id="pipeBar"></i></div>
+
+  <div class="vlist" id="vlist"></div>
+  <div class="vsum"><span>통과 <b id="vok">0</b> / 23</span><span id="vmsg"></span></div>
+
+  <h3>단계마다 실제로 들어간 것</h3>
+  <table>
+    <tr><th>단계</th><th>명령·파일</th><th class="n">결과</th></tr>
+    <tr><td>1. CSV</td><td><code>db/seed/data/*.csv</code> (cp949 원본 그대로 보관)</td><td class="n">4개</td></tr>
+    <tr><td>2. 적재 스크립트</td><td><code>node tools/load-public-data.js --write</code></td><td class="n">값 블록 3개 생성</td></tr>
+    <tr><td>3. 시드 SQL</td><td><code>db/seed/01~05.sql</code> (전부 <code>MERGE</code>)</td><td class="n">5개</td></tr>
+    <tr><td>4. Oracle 적재</td><td><code>docker/oracle/init/02-seed.sh</code> (첫 기동 시 자동)</td><td class="n">역 5 · 좌석 1,050 · 운행 11 · 정차 55 · 운임 40</td></tr>
+    <tr><td>5. 검증</td><td><code>db/seed/99_verify.sql</code></td><td class="n">23 / 23 OK</td></tr>
+  </table>
 
   <h3>쓴 공공데이터 4건</h3>
   <table>
@@ -174,11 +261,11 @@ footer{color:var(--mut);font-size:12.5px;border-top:1px solid var(--line);paddin
         <td><a href="https://www.data.go.kr/data/15137680/fileData.do">15137680</a></td>
         <td>차량유형코드 · 차량유형명 · 좌석수</td><td><code>car_type</code></td></tr>
   </table>
-  <p class="muted">네 건 모두 이용허락범위 제한 없음. 원본 CSV는 <code>db/seed/data/</code>에 받은 바이트 그대로 보관합니다.</p>
+  <p class="muted">네 건 모두 이용허락범위 제한 없음.</p>
 
   <h3>적용한 값</h3>
   <table>
-    <tr><th>역</th><th>역코드</th><th class="n">순번</th><th class="n">서울 기준 누적</th><th class="n">일반실 운임</th><th class="n">특실 운임</th></tr>
+    <tr><th>역</th><th>역코드</th><th class="n">순번</th><th class="n">서울 기준 누적</th><th class="n">일반실</th><th class="n">특실</th></tr>
     <tr><td>서울</td><td><code>3900023</code></td><td class="n">1</td><td class="n">0.0 km</td><td class="n">—</td><td class="n">—</td></tr>
     <tr><td>광명</td><td><code>3900883</code></td><td class="n">2</td><td class="n">22.0 km</td><td class="n">5,600원</td><td class="n">7,800원</td></tr>
     <tr><td>대전</td><td><code>3900073</code></td><td class="n">3</td><td class="n">159.8 km</td><td class="n">22,800원</td><td class="n">31,900원</td></tr>
@@ -193,21 +280,13 @@ footer{color:var(--mut);font-size:12.5px;border-top:1px solid var(--line);paddin
     <tr><td><code>50554101</code></td><td>KTX일반55,간이2</td><td class="n">55</td><td>GENERAL</td><td><code>ABCD</code></td></tr>
     <tr><td><code>60303101</code></td><td>KTXⅡ,특30(3)</td><td class="n">30</td><td>FIRST</td><td><code>ABC</code></td></tr>
   </table>
-  <p class="muted">등급·열 배치는 원본에 없어 우리가 정합니다 (DB설계서에 '생성'으로 표기).
-     10량 편성 = 1호차 특실 30 + 2~10호차 일반 55×9 = <b>525석</b>.</p>
-
-  <h3>CSV에서 SQL을 생성한다</h3>
-  <pre>node tools/load-public-data.js            # 검사 (CI가 매 push마다 실행)
-node tools/load-public-data.js --write    # SQL 값 블록 재생성</pre>
-  <p>시드 SQL의 <code>-- @generated:…</code> ~ <code>-- @end:…</code> 사이가 CSV에서 생성되는 구역입니다.
-     거리 원본이 역×역 매트릭스인 것도, 공공 순번(서울 2·광명 4·대전 8·동대구 11·부산 19)을
-     우리 노선 안 1~5로 다시 매기는 것도 코드가 합니다.</p>
+  <p class="muted">등급·열 배치는 원본에 없어 우리가 정합니다. 10량 편성 = 1호차 특실 30 + 2~10호차 일반 55×9 = <b>525석</b>.</p>
 
   <div class="note">
-    <b>왜 만들었나</b> — 처음엔 CSV를 눈으로 보고 SQL에 손으로 옮겼습니다. 그러다
+    <b>적재 스크립트를 만든 이유</b> — 처음엔 CSV를 눈으로 보고 SQL에 손으로 옮겼습니다. 그러다
     <b>역코드를 두 번 틀렸습니다</b> (4자리로 추측 → 3자리로 정정 → 진짜는 7자리).
-    값이 CSV에서 왔다는 것을 사람이 아니라 기계가 보증해야 합니다.
-    기능설계서 1.1이 ADM-01 등록 화면 대신 약속한 "적재 스크립트"가 이것입니다.
+    값이 CSV에서 왔다는 것을 사람이 아니라 기계가 보증해야 합니다. CI가 매 push마다
+    <code>node tools/load-public-data.js</code>로 시드와 원본이 일치하는지 검사합니다.
   </div>
 
   <h3>대조하면서 고친 것</h3>
@@ -215,20 +294,11 @@ node tools/load-public-data.js --write    # SQL 값 블록 재생성</pre>
     <li><b>역코드는 7자리</b>였습니다 (서울 <code>3900023</code>). 추측한 4자리·3자리 둘 다 틀렸습니다.</li>
     <li><b>거리가 재래선 값</b>이었습니다. KTX는 경부고속선을 타므로 서울~부산은 441.7km가 아니라
         <b>417.4km</b>입니다. 거리에서 운임이 나오므로 운임 40행이 전부 바뀌었습니다.</li>
-    <li><b>좌석수가 달랐습니다.</b> 추측한 일반 56·특실 36석 대신 원본의 55·30석.
-        좌석 1,080 → 1,050석. 55석이 열 문자 4개로 안 나누어떨어져서(13열 ABCD + 14열 ABC)
+    <li><b>좌석수가 달랐습니다.</b> 추측한 일반 56·특실 36석 대신 원본의 55·30석. 좌석 1,080 → 1,050석.
+        55석이 열 문자 4개로 안 나누어떨어져서(13열 ABCD + 14열 ABC)
         검증 10번을 <code>CEIL(n/k) + FLOOR(n/k)</code> 공식으로 바꿨습니다.</li>
     <li><b>노선명 <code>경부선</code>은 맞았습니다.</b> 거리만 고속선 기준입니다.</li>
   </ul>
-
-  <h3>자동 적재와 검증</h3>
-  <p><code>docker compose up -d</code>로 Oracle을 처음 띄우면 DDL 다음으로 시드가 자동 실행됩니다.</p>
-  <pre>jejari schema created
-seed: 01_station_route.sql ok  …  05_train_stop_fare.sql ok
-jejari seed loaded
-→ 99_verify.sql 23항목 전부 OK · SESSIONTIMEZONE +09:00</pre>
-  <p class="muted">하행 101 서울 09:00 출발 → 부산 11:43 도착 (417.4km).
-     시드는 전부 <code>MERGE</code>라 여러 번 실행해도 결과가 같습니다.</p>
 </section>
 
 <!-- ───────────────────────────── RSV-02 -->
@@ -241,6 +311,20 @@ jejari seed loaded
     <div class="kpi"><b>47 / 47</b><span>테스트 통과</span></div>
     <div class="kpi"><b>1 / 100</b><span>T1 동시 선점 승자</span></div>
     <div class="kpi"><b>0</b><span>중복 예약</span></div>
+  </div>
+
+  <h3>T1 · 같은 좌석에 100명이 동시에</h3>
+  <div class="ctl">
+    <button class="btn go" id="runT1">▶ 재생</button>
+    <span class="muted">점 하나가 요청 하나입니다. 100개가 좌석 하나로 동시에 달려듭니다.</span>
+  </div>
+  <div class="t1"><svg id="t1svg" viewBox="0 0 640 210" role="img"
+       aria-label="100개 요청 중 1개만 좌석 선점에 성공하고 99개는 DB에 가지 않고 거절되는 그림"></svg></div>
+  <div class="t1-sum">
+    <span>성공 <b id="t1ok">0</b></span>
+    <span>거절 <b id="t1no">0</b></span>
+    <span>DB 왕복 <b id="t1db">0</b></span>
+    <span class="muted">실측: 성공 1 · 거절 99 · DB 왕복 2회(승자의 INSERT + COMMIT)</span>
   </div>
 
   <pre>요청 → 입장 토큰 확인 → 멱등 키로 예약 ID 확보
@@ -256,7 +340,7 @@ jejari seed loaded
     <tr><td><code>release.lua</code></td><td>§2.3 롤백 보상</td><td>값이 내 예약인 키만 <code>DEL</code></td></tr>
     <tr><td><code>extend.lua</code></td><td>§4.2-1 결제 연장, §11.2 릴레이 리스</td><td>값이 내 것일 때만 연장. <b>없는 키는 만들지 않음</b></td></tr>
     <tr><td><code>rehold.lua</code></td><td>§6.2-2 PG 결과 모름</td><td>내 것이거나 빈 키만 다시 잡음</td></tr>
-    <tr><td><code>sold.lua</code></td><td>§5.1-10 확정</td><td>값과 상관없이 <code>SOLD:R</code>로 덮어씀 (DB가 확정했으므로)</td></tr>
+    <tr><td><code>sold.lua</code></td><td>§5.1-10 확정</td><td>값과 상관없이 <code>SOLD:R</code>로 덮어씀</td></tr>
     <tr><td><code>reoffer.lua</code></td><td>§8.2·§14.3 커밋 후 보상</td><td>내 HOLD·SOLD 키를 <code>REOFFER:R</code>로. 이미 REOFFER면 TTL 안 늘림</td></tr>
     <tr><td><code>limit_incr.lua</code></td><td>§2.1-2 한도 1차</td><td>세 scope를 올리고 하나라도 넘으면 전부 원복 + 걸린 키 번호 반환</td></tr>
     <tr><td><code>limit_decr.lua</code></td><td>§2.3·§9.1-1·§14.3</td><td>표시 키를 선점한 쪽만 감소. <b>예약당 한 번만</b></td></tr>
@@ -285,14 +369,14 @@ jejari seed loaded
   <div class="note">
     <b>조영준(E)에게</b> — Redis <code>maxmemory-policy</code>가 반드시 <code>noeviction</code>이어야 합니다(§14.5).
     기본값이면 메모리가 찰 때 <code>seat:hold</code> 키가 조용히 사라져 <b>같은 좌석이 두 번 팔립니다.</b>
-    현재 compose에 반영돼 있고, <code>RedisConfigVerifier</code>가 기동 시 검사합니다.
+    현재 compose에 반영돼 있고 <code>RedisConfigVerifier</code>가 기동 시 검사합니다.
   </div>
 
   <h3>남은 것</h3>
   <ul>
     <li>DB 트랜잭션 §2.2 — reservation · seat_inventory · reservation_seat · purchase_counter · history · saga · outbox</li>
     <li>T1의 "패배자 <b>DB 쓰기 0건</b>" (지금은 Redis 쪽만 확인)</li>
-    <li>T3·T5 재선점 (만료된 HOLD 이어받기 / 결제 중 좌석은 거절), T13 DB 거절 시 Redis 원복</li>
+    <li>T3·T5 재선점, T13 DB 거절 시 Redis 원복</li>
     <li>API <code>POST /api/v1/reservations</code> 와 화면 U-05</li>
   </ul>
 </section>
@@ -300,35 +384,51 @@ jejari seed loaded
 <!-- ───────────────────────────── 락 비교 -->
 <section id="LOCK">
   <h2>§17.1 · 좌석 선점 락 방식 비교 <span class="tag ok">실측 완료</span></h2>
-  <p>좌석을 선점하는 세 방법을 <b>같은 조건·같은 입력</b>으로 재서 무엇을 왜 고를지 정했습니다.
-     워밍업 1회를 버리고 5회 측정한 중앙값입니다.</p>
+  <p>세 방법을 <b>같은 조건·같은 입력</b>으로 재서 무엇을 왜 고를지 정했습니다. 워밍업 1회를 버리고 5회 측정한 중앙값입니다.</p>
 
   <pre>A 비관적   SELECT ... FOR UPDATE  →  줄 서서 하나씩  →  UPDATE
 B 낙관적   SELECT version         →  UPDATE ... WHERE version=?  →  0행이면 다시
 C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사람만 INSERT(PK가 최종)</pre>
 
-  <h3>시나리오 1 · 같은 좌석 1개에 100명 (극한 경쟁)</h3>
-  <table>
-    <tr><th>전략</th><th class="n">TPS</th><th class="n">평균</th><th class="n">p95</th><th class="n">p99</th><th class="n">DB 왕복</th></tr>
-    <tr><td>A 비관적 락</td><td class="n">255</td><td class="n">146.9ms</td><td class="n">227.6</td><td class="n">286.7</td><td class="n">201</td></tr>
-    <tr><td>B 낙관적 락</td><td class="n">1,457</td><td class="n">11.4ms</td><td class="n">15.8</td><td class="n">16.3</td><td class="n">210</td></tr>
-    <tr class="best"><td><b>C 현재 설계</b></td><td class="n"><b>2,732</b></td><td class="n"><b>3.2ms</b></td><td class="n"><b>6.6</b></td><td class="n"><b>8.2</b></td><td class="n"><b>2</b></td></tr>
-  </table>
+  <div class="ctl"><button class="btn go" id="runChart">▶ 그래프 다시 그리기</button></div>
 
-  <h3>시나리오 2 · 좌석 20개에 300명</h3>
-  <table>
-    <tr><th>전략</th><th class="n">TPS</th><th class="n">평균</th><th class="n">p95</th><th class="n">p99</th><th class="n">DB 왕복</th></tr>
-    <tr><td>A 비관적 락</td><td class="n">707</td><td class="n">58.7ms</td><td class="n">106.1</td><td class="n">125.0</td><td class="n">620</td></tr>
-    <tr><td>B 낙관적 락</td><td class="n">1,825</td><td class="n">15.8ms</td><td class="n"><b>37.7</b></td><td class="n"><b>43.5</b></td><td class="n">626</td></tr>
-    <tr class="best"><td><b>C 현재 설계</b></td><td class="n"><b>2,083</b></td><td class="n"><b>10.5ms</b></td><td class="n">56.6</td><td class="n">74.3</td><td class="n"><b>40</b></td></tr>
-  </table>
+  <div class="chart">
+    <h4>처리량 (TPS) — 높을수록 좋음</h4>
+    <p class="cap">5회 측정 중앙값. 세 전략이 같은 좌석 배정을 받았습니다. 라벨은 그룹마다 가장 좋은 값에만 답니다 — 나머지는 막대에 커서를 올리거나 아래 표를 보세요.</p>
+    <svg id="chTps" viewBox="0 0 640 230" role="img" aria-label="시나리오별 전략 TPS 막대 그래프. 표가 아래에 있습니다"></svg>
+    <div class="legend">
+      <span><i style="background:var(--s1)"></i>A 비관적 락</span>
+      <span><i style="background:var(--s2)"></i>B 낙관적 락</span>
+      <span><i style="background:var(--s3)"></i>C 현재 설계</span>
+    </div>
+  </div>
 
-  <h3>시나리오 3 · 좌석 500개에 500명 (경쟁 적음)</h3>
+  <div class="chart">
+    <h4>DB 왕복 횟수 — 낮을수록 좋음</h4>
+    <p class="cap">C를 고른 진짜 이유입니다. 극한 경쟁에서 201회 → 2회로 100배 줄어듭니다. 여기서는 <b>낮을수록 좋아서</b> 가장 작은 값에 라벨을 답니다.</p>
+    <svg id="chDb" viewBox="0 0 640 230" role="img" aria-label="시나리오별 전략 DB 왕복 횟수 막대 그래프. 표가 아래에 있습니다"></svg>
+    <div class="legend">
+      <span><i style="background:var(--s1)"></i>A 비관적 락</span>
+      <span><i style="background:var(--s2)"></i>B 낙관적 락</span>
+      <span><i style="background:var(--s3)"></i>C 현재 설계</span>
+    </div>
+  </div>
+
+  <h3>전체 수치</h3>
   <table>
-    <tr><th>전략</th><th class="n">TPS</th><th class="n">평균</th><th class="n">p95</th><th class="n">p99</th><th class="n">DB 왕복</th></tr>
-    <tr><td>A 비관적 락</td><td class="n">787</td><td class="n">66.3ms</td><td class="n">170.7</td><td class="n">180.7</td><td class="n">1,312</td></tr>
-    <tr class="best"><td><b>B 낙관적 락</b></td><td class="n"><b>1,256</b></td><td class="n"><b>35.5ms</b></td><td class="n"><b>74.4</b></td><td class="n"><b>99.5</b></td><td class="n">1,321</td></tr>
-    <tr><td>C 현재 설계</td><td class="n">756</td><td class="n">65.7ms</td><td class="n">150.1</td><td class="n">180.8</td><td class="n"><b>624</b></td></tr>
+    <tr><th>시나리오</th><th>전략</th><th class="n">TPS</th><th class="n">평균</th><th class="n">p95</th><th class="n">p99</th><th class="n">DB 왕복</th></tr>
+    <tr><td rowspan="3">같은 좌석 1개<br><span class="muted">100명</span></td>
+        <td>A 비관적</td><td class="n">255</td><td class="n">146.9ms</td><td class="n">227.6</td><td class="n">286.7</td><td class="n">201</td></tr>
+    <tr><td>B 낙관적</td><td class="n">1,457</td><td class="n">11.4ms</td><td class="n">15.8</td><td class="n">16.3</td><td class="n">210</td></tr>
+    <tr class="best"><td><b>C 현재</b></td><td class="n"><b>2,732</b></td><td class="n"><b>3.2ms</b></td><td class="n"><b>6.6</b></td><td class="n"><b>8.2</b></td><td class="n"><b>2</b></td></tr>
+    <tr><td rowspan="3">좌석 20개<br><span class="muted">300명</span></td>
+        <td>A 비관적</td><td class="n">707</td><td class="n">58.7ms</td><td class="n">106.1</td><td class="n">125.0</td><td class="n">620</td></tr>
+    <tr><td>B 낙관적</td><td class="n">1,825</td><td class="n">15.8ms</td><td class="n"><b>37.7</b></td><td class="n"><b>43.5</b></td><td class="n">626</td></tr>
+    <tr class="best"><td><b>C 현재</b></td><td class="n"><b>2,083</b></td><td class="n"><b>10.5ms</b></td><td class="n">56.6</td><td class="n">74.3</td><td class="n"><b>40</b></td></tr>
+    <tr><td rowspan="3">좌석 500개<br><span class="muted">500명 · 경쟁 적음</span></td>
+        <td>A 비관적</td><td class="n">787</td><td class="n">66.3ms</td><td class="n">170.7</td><td class="n">180.7</td><td class="n">1,312</td></tr>
+    <tr class="best"><td><b>B 낙관적</b></td><td class="n"><b>1,256</b></td><td class="n"><b>35.5ms</b></td><td class="n"><b>74.4</b></td><td class="n"><b>99.5</b></td><td class="n">1,321</td></tr>
+    <tr><td>C 현재</td><td class="n">756</td><td class="n">65.7ms</td><td class="n">150.1</td><td class="n">180.8</td><td class="n"><b>624</b></td></tr>
   </table>
 
   <p><b>중복 예약은 세 방식 × 세 시나리오 전부 0건.</b> 정확성은 셋 다 만족해서 변별력이 없었고, 차이는 전부 비용이었습니다.</p>
@@ -424,15 +524,20 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
      검증 22·23번이 규칙 위반을 잡습니다. 명절 특별예매는 일괄 오픈이라 행사 오픈 시각을 그대로 씁니다.</p>
 </section>
 
-<footer class="wrap" style="padding-left:0;padding-right:0">
+<footer>
   제자리(Jejari) · 강동균 · 소스는 저장소의 <code>db/seed/</code>, <code>redis/lua/</code>, <code>bench/</code>,
   <code>tools/load-public-data.js</code>, <code>docs/강동균/features/</code> 에 있습니다.
 </footer>
 
-</div>
+</main>
 
 <script>
 (function () {
+  'use strict';
+  var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+
+  /* ─────────── 탭 라우팅 ─────────── */
   var ids = ['overview', 'DATA-01', 'RSV-02', 'LOCK', 'ERD'];
   function show() {
     var id = (location.hash || '').replace(/^#/, '');
@@ -445,8 +550,242 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
       a.classList.toggle('on', a.getAttribute('href') === '#' + id);
     });
     window.scrollTo(0, 0);
+    if (id === 'LOCK') drawCharts(true);
   }
   window.addEventListener('hashchange', show);
+
+  /* ─────────── 검증 23항목 (실제 99_verify.sql 출력) ─────────── */
+  var V = [
+    ['역 5개', '실제 5'], ['노선 1개', '실제 1'], ['노선별 역 5개', '실제 5'],
+    ['차량 유형 2개', '실제 2'], ['열차 2편', '실제 2'], ['편성 20호차', '실제 20'],
+    ['좌석 1050석 (525 × 2)', '실제 1050'],
+    ['호차 좌석수 = car_type.seat_count', '어긋난 호차 0건'],
+    ['좌석번호 중복 없음', '중복 0건'],
+    ['창측 수 = CEIL(n/k) + FLOOR(n/k)', '어긋난 호차 0건'],
+    ['운행 11건 (명절 8 + 평시 3)', '실제 11'],
+    ['ON_SALE 운행 2건 (9001·9002)', '실제 2'],
+    ['정차 55건 (운행 11 × 역 5)', '실제 55'],
+    ['운행마다 stop_order 1~5', '어긋난 운행 0건'],
+    ['정차 시각이 순번대로 증가', '역전 0건'],
+    ['운임 40행 (순서쌍 20 × 등급 2)', '실제 40'],
+    ['특실 > 일반 (같은 구간)', '어긋난 구간 0건'],
+    ['매수 제한: 행사 4 + 상시 3', '실제 7'],
+    ['지금 유효한 PER_RUN 정책 있음', '실제 2'],
+    ['세션 시간대 +09:00 (T34)', 'SESSIONTIMEZONE = +09:00'],
+    ['지금 유효한 PER_DAY 정책 있음', '실제 2'],
+    ['평시 오픈 = 출발 2개월 전 7시', '규칙에 어긋난 운행 0건'],
+    ['status가 오픈 시각과 일관', '어긋난 운행 0건']
+  ];
+  var vlist = $('#vlist');
+  vlist.innerHTML = V.map(function (v, i) {
+    return '<div class="vrow" data-i="' + i + '"><span class="no">' + (i + 1) + '</span>' +
+      '<span class="nm">' + v[0] + '</span><span class="dt">' + v[1] + '</span>' +
+      '<span class="st">OK</span></div>';
+  }).join('');
+  var vrows = Array.prototype.slice.call(vlist.querySelectorAll('.vrow'));
+
+  /* ─────────── 적재 파이프라인 ─────────── */
+  var STEPS = [
+    { el: '#p0', txt: ['4개 파일', 'CSV 4개 읽음'] },
+    { el: '#p1', txt: ['값 블록 생성', '블록 3개 생성'] },
+    { el: '#p2', txt: ['01 ~ 05', 'SQL 5개 준비'] },
+    { el: '#p3', txt: ['MERGE 적재', '역 5 · 좌석 1,050'] },
+    { el: '#p4', txt: ['23항목', '23 / 23 OK'] }
+  ];
+  var timers = [], steps = Array.prototype.slice.call(document.querySelectorAll('.step'));
+
+  function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+  function at(ms, fn) { timers.push(setTimeout(fn, RM ? 0 : ms)); }
+
+  function resetPipe() {
+    clearTimers();
+    steps.forEach(function (s) { s.classList.remove('live', 'done'); });
+    STEPS.forEach(function (s) { $(s.el).textContent = s.txt[0]; });
+    $('#pipeBar').style.width = '0';
+    vrows.forEach(function (r) { r.classList.remove('on', 'flash'); });
+    $('#vok').textContent = '0';
+    $('#vmsg').textContent = '';
+    $('#pipeState').textContent = '누르면 시작합니다';
+  }
+
+  function finishPipe() {
+    clearTimers();
+    steps.forEach(function (s) { s.classList.remove('live'); s.classList.add('done'); });
+    STEPS.forEach(function (s) { $(s.el).textContent = s.txt[1]; });
+    $('#pipeBar').style.width = '100%';
+    vrows.forEach(function (r) { r.classList.add('on'); });
+    $('#vok').textContent = '23';
+    $('#vmsg').textContent = '— 전부 통과 (실제 실행 결과)';
+    $('#pipeState').textContent = '완료';
+  }
+
+  function runPipe() {
+    resetPipe();
+    if (RM) { finishPipe(); return; }
+    $('#pipeState').textContent = '적재 중…';
+    var t = 0;
+    steps.forEach(function (s, i) {
+      at(t, function () {
+        s.classList.add('live');
+        $('#pipeBar').style.width = (i * 20) + '%';
+      });
+      at(t + 520, function () {
+        s.classList.remove('live'); s.classList.add('done');
+        $(STEPS[i].el).textContent = STEPS[i].txt[1];
+        $('#pipeBar').style.width = ((i + 1) * 20) + '%';
+      });
+      t += 620;
+    });
+    // 검증 23항목이 하나씩 통과
+    vrows.forEach(function (r, i) {
+      at(t + i * 85, function () {
+        r.classList.add('on', 'flash');
+        $('#vok').textContent = String(i + 1);
+        setTimeout(function () { r.classList.remove('flash'); }, 420);
+      });
+    });
+    at(t + vrows.length * 85 + 250, function () {
+      $('#vmsg').textContent = '— 전부 통과 (실제 실행 결과)';
+      $('#pipeState').textContent = '완료';
+    });
+  }
+  $('#runPipe').addEventListener('click', runPipe);
+  $('#skipPipe').addEventListener('click', function () { resetPipe(); finishPipe(); });
+  resetPipe();
+
+  /* ─────────── T1 동시 선점 ─────────── */
+  var t1svg = $('#t1svg'), NS = 'http://www.w3.org/2000/svg';
+  function el(n, a) { var e = document.createElementNS(NS, n); for (var k in a) e.setAttribute(k, a[k]); return e; }
+
+  function drawT1(animate) {
+    t1svg.innerHTML = '';
+    var W = 640, seatX = 320, seatY = 100;
+    // 좌석
+    var seat = el('rect', { x: seatX - 34, y: seatY - 26, width: 68, height: 52, rx: 10,
+      fill: 'var(--card)', stroke: 'var(--line)', 'stroke-width': 2 });
+    t1svg.appendChild(seat);
+    var lab = el('text', { x: seatX, y: seatY + 5, 'text-anchor': 'middle', class: 'ax' });
+    lab.textContent = '좌석 1개';
+    t1svg.appendChild(lab);
+    // DB
+    t1svg.appendChild(el('line', { x1: seatX + 40, y1: seatY, x2: 560, y2: seatY,
+      stroke: 'var(--grid)', 'stroke-width': 2, 'stroke-dasharray': '4 4' }));
+    var dbl = el('text', { x: 568, y: seatY + 4, class: 'ax' });
+    dbl.textContent = 'DB';
+    t1svg.appendChild(dbl);
+
+    var dots = [], N = 100;
+    for (var i = 0; i < N; i++) {
+      var col = i % 10, row = Math.floor(i / 10);
+      var x0 = 24 + col * 9, y0 = 56 + row * 9;
+      var d = el('circle', { cx: x0, cy: y0, r: 3.4, fill: 'var(--mut)', opacity: '.55' });
+      t1svg.appendChild(d);
+      dots.push({ e: d, x0: x0, y0: y0 });
+    }
+    var cap = el('text', { x: 24, y: 42, class: 'ax' });
+    cap.textContent = '요청 100개';
+    t1svg.appendChild(cap);
+
+    var ok = 0, no = 0, db = 0;
+    function setSum(a, b, c) { $('#t1ok').textContent = a; $('#t1no').textContent = b; $('#t1db').textContent = c; }
+    setSum(0, 0, 0);
+
+    if (!animate || RM) {
+      dots.forEach(function (d, i) {
+        if (i === 7) { d.e.setAttribute('cx', seatX); d.e.setAttribute('cy', seatY - 42); d.e.setAttribute('fill', 'var(--s3)'); d.e.setAttribute('opacity', '1'); d.e.setAttribute('r', '5'); }
+        else { d.e.setAttribute('fill', 'var(--s2)'); d.e.setAttribute('opacity', '.4'); }
+      });
+      setSum(1, 99, 2);
+      return;
+    }
+    dots.forEach(function (d, i) {
+      setTimeout(function () {
+        d.e.style.transition = 'cx .5s ease, cy .5s ease, fill .3s, opacity .3s, r .3s';
+        if (i === 7) {                                    // 승자
+          d.e.setAttribute('cx', seatX); d.e.setAttribute('cy', seatY - 42);
+          setTimeout(function () {
+            d.e.setAttribute('fill', 'var(--s3)'); d.e.setAttribute('opacity', '1'); d.e.setAttribute('r', '5');
+            ok = 1; db = 2; setSum(ok, no, db);
+          }, 500);
+        } else {                                          // 패배자 — DB로 가지 않음
+          d.e.setAttribute('cx', d.x0 - 14);
+          d.e.setAttribute('fill', 'var(--s2)'); d.e.setAttribute('opacity', '.4');
+          no++; setSum(ok, no, db);
+        }
+      }, 320 + i * 12);
+    });
+  }
+  $('#runT1').addEventListener('click', function () { drawT1(true); });
+  drawT1(false);
+
+  /* ─────────── 락 비교 막대 그래프 ─────────── */
+  var SC = ['같은 좌석 1개 · 100명', '좌석 20개 · 300명', '좌석 500개 · 500명'];
+  var SR = ['A 비관적 락', 'B 낙관적 락', 'C 현재 설계'];
+  var COL = ['var(--s1)', 'var(--s2)', 'var(--s3)'];
+  var TPS = [[255, 1457, 2732], [707, 1825, 2083], [787, 1256, 756]];
+  var DBR = [[201, 210, 2], [620, 626, 40], [1312, 1321, 624]];
+
+  // 값 라벨은 그룹마다 하나만 단다 (전부 달면 읽히지 않는다).
+  // TPS는 가장 큰 값, DB 왕복은 가장 작은 값이 "가장 좋은 값"이다.
+  function bestIndex(grp, lowerIsBetter) {
+    var bi = 0;
+    for (var i = 1; i < grp.length; i++) {
+      if (lowerIsBetter ? grp[i] < grp[bi] : grp[i] > grp[bi]) bi = i;
+    }
+    return bi;
+  }
+
+  function drawBars(svg, data, max, fmt, animate, lowerIsBetter) {
+    svg.innerHTML = '';
+    var W = 640, H = 230, L = 46, R = 12, T = 14, B = 44;
+    var pw = W - L - R, ph = H - T - B;
+    // 가로 눈금
+    for (var g = 0; g <= 4; g++) {
+      var y = T + ph - (ph * g / 4);
+      svg.appendChild(el('line', { x1: L, y1: y, x2: W - R, y2: y, class: 'gl' }));
+      var tv = el('text', { x: L - 7, y: y + 4, 'text-anchor': 'end', class: 'ax' });
+      tv.textContent = fmt(max * g / 4);
+      svg.appendChild(tv);
+    }
+    var gw = pw / data.length;
+    data.forEach(function (grp, gi) {
+      var inner = gw * 0.74, bw = (inner - 4) / 3;     // 막대 사이 2px 간격
+      var x0 = L + gw * gi + (gw - inner) / 2;
+      var best = bestIndex(grp, lowerIsBetter);
+      grp.forEach(function (v, si) {
+        var h = Math.max(2, ph * (v / max));
+        var x = x0 + si * (bw + 2);
+        var r = el('rect', { x: x, width: bw, rx: 4, fill: COL[si], class: 'b',
+          y: animate ? T + ph : T + ph - h, height: animate ? 0 : h });
+        r.appendChild(el('title')).textContent = SC[gi] + ' · ' + SR[si] + ' · ' + fmt(v);
+        svg.appendChild(r);
+        if (animate) {
+          setTimeout(function () {
+            r.setAttribute('y', T + ph - h); r.setAttribute('height', h);
+          }, 60 + (gi * 3 + si) * 70);
+        }
+        if (si === best) {                             // 그룹에서 가장 좋은 값만 직접 라벨
+          var vl = el('text', { x: x + bw / 2, y: T + ph - h - 6, 'text-anchor': 'middle', class: 'bar-l best' });
+          vl.textContent = fmt(v);
+          if (animate) { vl.setAttribute('opacity', '0'); setTimeout(function () { vl.setAttribute('opacity', '1'); }, 520 + (gi * 3 + si) * 70); }
+          svg.appendChild(vl);
+        }
+      });
+      var gl = el('text', { x: L + gw * gi + gw / 2, y: H - B + 20, 'text-anchor': 'middle', class: 'ax' });
+      gl.textContent = SC[gi];
+      svg.appendChild(gl);
+    });
+    svg.appendChild(el('line', { x1: L, y1: T + ph, x2: W - R, y2: T + ph,
+      stroke: 'var(--grid)', 'stroke-width': 1 }));
+  }
+  var num = function (v) { return Math.round(v).toLocaleString('ko-KR'); };
+  function drawCharts(animate) {
+    drawBars($('#chTps'), TPS, 3000, num, animate && !RM, false);
+    drawBars($('#chDb'), DBR, 1400, num, animate && !RM, true);
+  }
+  $('#runChart').addEventListener('click', function () { drawCharts(true); });
+  drawCharts(false);
+
   show();
 })();
 </script>
