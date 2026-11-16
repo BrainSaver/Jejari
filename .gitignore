@@ -46,6 +46,9 @@ CLAUDE.local.md
 .claude/settings.local.json
 .mcp.json
 
+# 개인 개발일지 (각자 쓰는 메모. 팀 공용 문서는 docs/ 에)
+개발일지/
+
 # Spring 개인 설정 (DB 비밀번호·포트 등). 공용 값은 application.yml에
 application-local.yml
 application-local.yaml
