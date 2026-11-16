@@ -1544,12 +1544,14 @@ Oracle
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
-| `history_id` | NUMBER | PK | 시스템 |  |  |
+| `history_id` | NUMBER | PK | 시스템 | 이력 ID (risk_score_history_seq.NEXTVAL) |  |
 | `subject_type` | VARCHAR2(10) | NN | 시스템 | CI / PAYMENT / DEVICE | 대상 유형 코드 통일 (CHECK) |
 | `subject_hash` | VARCHAR2(64) | NN | 시스템 | 대상 해시 |  |
 | `final_score` | NUMBER(5,2) | NN | 시스템 | 당시 점수 | 감쇠 동작 검증, 이의 제기 대응 |
 | `reasons` | CLOB |  | 시스템 | 당시 근거 |  |
 | `calculated_at` | TIMESTAMP | NN | 시스템 | 산정 시각 |  |
+
+> **제약·비고** CREATE SEQUENCE risk_score_history_seq; · risk_score를 저장하는 같은 트랜잭션에서 한 행씩 INSERT (RISK-02·03)
 
 <a id="admin-action"></a>
 #### `admin_action` 관리자 조치
@@ -2307,7 +2309,7 @@ Oracle
 | v10 | MongoDB 인덱스·보관 정리: behavior_log {member_id, ts}(타임라인), queue_log {run_id, entered_at}(순번 검증) 인덱스, login_attempt에 expire_at·TTL과 app_policy login_attempt.retention_days(30일) |
 | v11 | 코레일 실제 규칙 반영: 1일 매수 제한 PER_DAY(구매일 기준, 하루 20매)를 purchase_limit_policy·purchase_counter·Redis limit:day 키에 추가, 일반 예매 오픈은 출발 2개월 전 07:00(명절은 행사 오픈 시각), 상시 정책 기본값 열차당 10매 |
 | v12 | 위험 점수 캐시 읽기 규칙: risk:* 에 TTL을 두지 않는다는 것(0점이 되면 삭제)과 재동기화 완료 표시 키 risk:meta:synced_at 추가. 표시 키가 없으면 대기열이 캐시 대신 Oracle risk_score를 조회 |
-| v13 | 대기열·취소표 맞춤 (김성원 요청): queue:member 값에 ciHash 추가, app_policy queue.entry_ttl_sec(3600초)·waitlist.penalty_ms_per_point(60000), waitlist에 priority_at·penalty_ms 추가하고 대기 순서·ix_waitlist_next를 priority_at 기준으로 (concurrency.md §9.3) |
+| v13 | 대기열·취소표 맞춤 (김성원 요청): queue:member 값에 ciHash 추가, app_policy queue.entry_ttl_sec(3600초)·waitlist.penalty_ms_per_point(60000), waitlist에 priority_at·penalty_ms 추가하고 대기 순서·ix_waitlist_next를 priority_at 기준으로 (concurrency.md §9.3). risk_score_history.history_id 시퀀스 추가 (강다인 요청) |
 
 ## 참고 자료
 

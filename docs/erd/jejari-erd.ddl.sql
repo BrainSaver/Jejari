@@ -5,6 +5,7 @@
 
 -- 시퀀스
 CREATE SEQUENCE outbox_seq CACHE 1000;
+CREATE SEQUENCE risk_score_history_seq;
 
 CREATE TABLE station (
   station_id                 VARCHAR2(10) NOT NULL,
@@ -665,6 +666,7 @@ CREATE TABLE risk_score_history (
   CONSTRAINT ck_risk_score_history_1bhekl CHECK (subject_type IN ('CI', 'PAYMENT', 'DEVICE'))
 );
 COMMENT ON TABLE risk_score_history IS '위험 점수 이력 - 산정 시점별 점수와 근거. 감쇠 동작 검증, 이의 제기 대응.';
+COMMENT ON COLUMN risk_score_history.history_id IS '이력 ID (risk_score_history_seq.NEXTVAL)';
 COMMENT ON COLUMN risk_score_history.subject_type IS 'CI / PAYMENT / DEVICE / 대상 유형 코드 통일 (CHECK)';
 COMMENT ON COLUMN risk_score_history.subject_hash IS '대상 해시';
 COMMENT ON COLUMN risk_score_history.final_score IS '당시 점수 / 감쇠 동작 검증, 이의 제기 대응';
