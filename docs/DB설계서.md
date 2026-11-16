@@ -76,7 +76,7 @@ C = 생성, R = 조회, U = 수정, D = 삭제. 기능 ID는 기능설계서 3�
 | QUE-02·03 번호표·입장 | | `queue:*` RU, `queue:pass` C |
 | QUE-04 토큰 검증 | | `queue:pass` R |
 | RSV-01 배치도 | seat, train_car R | `seatmap` R |
-| RSV-02 선점 | purchase_limit_policy R, seat_inventory C(재선점 시 D), reservation C(재선점 시 이전 예약 U), reservation_seat C, purchase_counter CU, reservation_history C, saga_instance C, outbox_event C | `idem`, `limit:*`, `seat:hold` |
+| RSV-02 선점 | reservation_seq·reservation_history_seq, purchase_limit_policy R, seat_inventory C(재선점 시 D), reservation C(재선점 시 이전 예약 U), reservation_seat C, purchase_counter CU, reservation_history C, saga_instance C, outbox_event C | `idem`, `limit:*`, `seat:hold` |
 | RSV-03 기한 초과 | reservation U, seat_inventory D, purchase_counter U, saga_instance U, reservation_history C, outbox_event C, waitlist U | `seat:hold` TTL, `limit:*` |
 | RSV-04 내역 | reservation, reservation_seat, payment, cancellation R | |
 | RSV-05 결제 전 취소 | RSV-03과 같음 (to = CANCELED) | `seat:hold` → REOFFER |

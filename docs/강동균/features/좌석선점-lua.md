@@ -1,6 +1,6 @@
 # 좌석 선점 Redis 스크립트 (RSV-02 1차 판정)
 
-작성자: 강동균 · 코드 위치: `redis/lua/*.lua` (설명은 `redis/README.md`)
+작성자: 강동균 · 코드 위치: `src/main/resources/lua/seat/*.lua` (설명은 `redis/README.md`)
 
 ## 한 줄 요약
 

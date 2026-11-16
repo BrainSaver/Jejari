@@ -15,11 +15,8 @@ import java.util.concurrent.Future;
 import org.bson.Document;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -35,18 +32,14 @@ import tools.jackson.databind.json.JsonMapper;
 import com.jejari.common.hmac.Pseudonymizer;
 import com.jejari.common.pii.PiiCipher;
 import com.jejari.common.pii.PiiField;
+import com.jejari.support.FullStackInfraTest;
 
 /**
  * 본인인증 → 가입 → 로그인 전체 흐름을 실제 Oracle·Redis·MongoDB로 확인한다.
  * {@code docker compose up -d} 뒤 {@code ./gradlew infraTest}. Redis는 15번 DB(매번 비움),
  * Oracle·MongoDB는 이 테스트가 만든 이메일({@code @infra-test.jejari.dev})의 행만 지운다.
  */
-@Tag("infra")
-@SpringBootTest(properties = {
-		"spring.data.redis.database=15",
-		"jejari.queue.scheduler-enabled=false",
-		"jejari.risk.cache-resync-enabled=false"})
-@AutoConfigureMockMvc
+@FullStackInfraTest
 class MemberAuthInfraTest {
 
 	static final String DOMAIN = "@infra-test.jejari.dev";
@@ -226,8 +219,15 @@ class MemberAuthInfraTest {
 		assertThat(cookie).contains("HttpOnly", "SameSite=Strict");
 		assertThat(r.getResponse().getHeader("Cache-Control")).isEqualTo("no-store");
 
-		Document d = mongo.findOne(Query.query(Criteria.where("email_hash").is(pseudonymizer.email(e))
-				.and("result").is("SUCCESS")), Document.class, "login_attempt");
+		// 기록은 비동기라 저장될 때까지 잠깐 기다린다 (최대 5초)
+		Query q = Query.query(Criteria.where("email_hash").is(pseudonymizer.email(e)).and("result").is("SUCCESS"));
+		Document d = null;
+		for (int i = 0; i < 50 && d == null; i++) {
+			d = mongo.findOne(q, Document.class, "login_attempt");
+			if (d == null) {
+				Thread.sleep(100);
+			}
+		}
 		assertThat(d).isNotNull();
 		assertThat(d.toJson()).doesNotContain(e, PW);
 		assertThat(d.get("expire_at")).isNotNull();

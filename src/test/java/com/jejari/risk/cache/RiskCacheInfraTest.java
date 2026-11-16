@@ -11,10 +11,8 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -29,16 +27,13 @@ import com.jejari.risk.RiskSignals;
 import com.jejari.risk.SubjectType;
 import com.jejari.risk.store.OracleRiskScoreFallback;
 import com.jejari.risk.store.RiskScoreStore;
+import com.jejari.support.FullStackInfraTest;
 
 /**
  * RISK-03 캐시 쓰기·재동기화를 실제 Oracle·Redis로 확인한다. {@code docker compose up -d} 뒤 {@code ./gradlew infraTest}.
  * Redis는 15번 DB만 쓰고 매번 비운다. Oracle은 테스트가 만든 해시 행만 지운다.
  */
-@Tag("infra")
-@SpringBootTest(properties = {
-		"spring.data.redis.database=15",
-		"jejari.queue.scheduler-enabled=false",
-		"jejari.risk.cache-resync-enabled=false"})
+@FullStackInfraTest
 class RiskCacheInfraTest {
 
 	@Autowired

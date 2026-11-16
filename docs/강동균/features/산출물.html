@@ -149,7 +149,7 @@ rect.b:hover{opacity:.82}
     <a href="#DATA-01">DATA-01 기준 데이터</a>
     <a href="#RSV-02">RSV-02 좌석 선점</a>
     <a href="#LOCK">§17.1 락 비교</a>
-    <a href="#ERD">ERD v15</a>
+    <a href="#ERD">ERD v16</a>
   </nav>
 </div></header>
 
@@ -159,10 +159,10 @@ rect.b:hover{opacity:.82}
 <section id="overview">
   <h2>담당 기능 진행 현황</h2>
   <div class="grid">
-    <div class="kpi"><b>2 / 12</b><span>완료한 P1·P2 기능</span></div>
-    <div class="kpi"><b>1</b><span>진행 중 (RSV-02)</span></div>
+    <div class="kpi"><b>5 / 12</b><span>완료한 P1·P2 기능</span></div>
+    <div class="kpi"><b>100%</b><span>기한 초과 반환율 (20/20)</span></div>
     <div class="kpi"><b>0</b><span>중복 예약 (목표 0)</span></div>
-    <div class="kpi"><b>70</b><span>통과한 검증·테스트 항목</span></div>
+    <div class="kpi"><b>90</b><span>통과한 검증·테스트 항목</span></div>
   </div>
 
   <table>
@@ -172,15 +172,15 @@ rect.b:hover{opacity:.82}
     <tr><td><code>ADM-01</code></td><td>기준 데이터 등록</td><td>P2</td>
         <td><span class="tag ok">대체 완료</span></td><td>적재 스크립트로 대체 (기능설계서 1.1)</td></tr>
     <tr><td><code>RSV-02</code></td><td>좌석 선점 (매수 제한 포함)</td><td>P1</td>
-        <td><span class="tag warn">진행 1/3</span></td><td>DB 트랜잭션(§2.2) · API · 화면</td></tr>
+        <td><span class="tag ok">완료</span></td><td>화면(U-05) · 할인 운임 [가정]</td></tr>
     <tr><td><code>ADM-02</code></td><td>운행·행사 등록, 판매 오픈</td><td>P2</td>
         <td><span class="tag warn">일부</span></td><td>시드는 됨. 오픈 스케줄러 미착수</td></tr>
     <tr><td><code>TRN-01</code></td><td>역 목록</td><td>P1</td><td><span class="tag bad">미착수</span></td><td>전부</td></tr>
     <tr><td><code>TRN-02</code></td><td>운행 검색</td><td>P1</td><td><span class="tag bad">미착수</span></td><td>전부</td></tr>
     <tr><td><code>TRN-03</code></td><td>운임 조회</td><td>P1</td><td><span class="tag bad">미착수</span></td><td>전부</td></tr>
     <tr><td><code>RSV-01</code></td><td>좌석 배치도</td><td>P1</td><td><span class="tag bad">미착수</span></td><td><code>seatmap</code> 캐시 · API · 화면</td></tr>
-    <tr><td><code>RSV-03</code></td><td>결제 기한 초과 자동 반환</td><td>P1</td><td><span class="tag bad">미착수</span></td><td>만료 스캐너 (§6.1·§7)</td></tr>
-    <tr><td><code>RSV-05</code></td><td>결제 전 취소</td><td>P1</td><td><span class="tag bad">미착수</span></td><td>전부</td></tr>
+    <tr><td><code>RSV-03</code></td><td>결제 기한 초과 자동 반환</td><td>P1</td><td><span class="tag ok">완료</span></td><td>— (보장 경로 seat-release는 C·D)</td></tr>
+    <tr><td><code>RSV-05</code></td><td>결제 전 취소</td><td>P1</td><td><span class="tag ok">완료</span></td><td>화면(U-06 버튼)</td></tr>
     <tr><td><code>ADM-03</code></td><td>실시간 예매 현황</td><td>P1</td><td><span class="tag bad">미착수</span></td><td>전부</td></tr>
     <tr><td><code>EVT-04</code></td><td>요청 멱등 처리 (C와 공동)</td><td>P1</td><td><span class="tag bad">미착수</span></td><td>전부</td></tr>
   </table>
@@ -470,7 +470,7 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
 
 <!-- ───────────────────────────── ERD -->
 <section id="ERD">
-  <h2>ERD v15 <span class="tag ok">반영 완료</span></h2>
+  <h2>ERD v16 <span class="tag ok">반영 완료</span></h2>
   <p>ERD 반영은 담당자 한 명만 합니다. 팀원이 편집기에서 내보낸 JSON을 패치로 바꿔 HTML에 넣고,
      DDL·종합 문서를 다시 만듭니다.</p>
 
@@ -553,7 +553,7 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
 </section>
 
 <footer>
-  제자리(Jejari) · 강동균 · 소스는 저장소의 <code>db/seed/</code>, <code>redis/lua/</code>, <code>bench/</code>,
+  제자리(Jejari) · 강동균 · 소스는 저장소의 <code>db/seed/</code>, <code>src/main/resources/lua/seat/</code>, <code>bench/</code>,
   <code>tools/load-public-data.js</code>, <code>docs/강동균/features/</code> 에 있습니다.
 </footer>
 
@@ -567,8 +567,20 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
 
   /* ─────────── 탭 라우팅 ─────────── */
   var ids = ['overview', 'DATA-01', 'RSV-02', 'LOCK', 'ERD'];
+  // 탭은 주소를 바꾸지 않고 페이지 안에서만 전환한다.
+  // 문서 사이트는 이 파일을 iframe(srcdoc)에 넣는데, 그 안에서 href="#ERD"를 그대로 따라가면
+  // 부모 주소(jejari.pages.dev/#ERD)로 이동해 iframe 안에 사이트가 통째로 다시 뜬다 (로그인도 풀린 채로).
+  // 파일을 직접 열었을 때만 처음 주소의 #DATA-01 같은 값을 읽어 그 탭부터 보여 준다.
+  var current = (location.hash || '').replace(/^#/, '');
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="#"]');
+    if (!a) return;
+    e.preventDefault();
+    current = a.getAttribute('href').slice(1);
+    show();
+  });
   function show() {
-    var id = (location.hash || '').replace(/^#/, '');
+    var id = current;
     if (ids.indexOf(id) < 0) id = ids[0];
     ids.forEach(function (x) {
       var s = document.getElementById(x);
@@ -580,7 +592,6 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
     window.scrollTo(0, 0);
     if (id === 'LOCK') drawCharts(true);
   }
-  window.addEventListener('hashchange', show);
 
   /* ─────────── 검증 23항목 (실제 99_verify.sql 출력) ─────────── */
   var V = [

@@ -490,5 +490,120 @@
       "admit_wait_bot_ms",
       "admit_wait_normal_ms"
     ]
+  },
+  {
+    "id": "auth",
+    "file": "10_auth_oracle.js",
+    "title": "회원가입·로그인 (Oracle)",
+    "desc": "실제 Oracle을 쓰는 회원 인증을 봅니다: 같은 이메일 동시 가입(1명만 성공해야 함) → 가입 처리량 → 로그인 처리량 → 비밀번호 5회 오류 잠금. 실제 앱을 신뢰 프록시 옵션(--jejari.auth.trusted-proxies=127.0.0.1)으로 띄워야 하고, 끝나면 Oracle에 @loadtest.example.com 계정이 남습니다. Mock 서버로도 돌릴 수 있지만 그때는 Oracle이 아니라 흉내입니다.",
+    "params": [
+      {
+        "key": "RACE_VUS",
+        "label": "같은 이메일 동시 가입자 수",
+        "min": 2,
+        "max": 100,
+        "step": 2,
+        "def": 20,
+        "unit": "명"
+      },
+      {
+        "key": "RACE_ROUNDS",
+        "label": "경합 반복 횟수",
+        "min": 1,
+        "max": 10,
+        "step": 1,
+        "def": 3,
+        "unit": "회"
+      },
+      {
+        "key": "SIGNUP_RATE",
+        "label": "초당 가입 수",
+        "min": 1,
+        "max": 100,
+        "step": 1,
+        "def": 10,
+        "unit": "건/초"
+      },
+      {
+        "key": "SIGNUP_SEC",
+        "label": "가입 시간",
+        "min": 5,
+        "max": 60,
+        "step": 5,
+        "def": 20,
+        "unit": "초"
+      },
+      {
+        "key": "LOGIN_USERS",
+        "label": "로그인용 계정 수",
+        "min": 5,
+        "max": 500,
+        "step": 5,
+        "def": 30,
+        "unit": "개"
+      },
+      {
+        "key": "LOGIN_RATE",
+        "label": "초당 로그인 수",
+        "min": 1,
+        "max": 300,
+        "step": 1,
+        "def": 20,
+        "unit": "건/초"
+      },
+      {
+        "key": "LOGIN_SEC",
+        "label": "로그인 시간",
+        "min": 5,
+        "max": 60,
+        "step": 5,
+        "def": 20,
+        "unit": "초"
+      }
+    ],
+    "presets": {
+      "light": {
+        "RACE_VUS": 10,
+        "RACE_ROUNDS": 2,
+        "SIGNUP_RATE": 5,
+        "SIGNUP_SEC": 10,
+        "LOGIN_USERS": 10,
+        "LOGIN_RATE": 10,
+        "LOGIN_SEC": 10
+      },
+      "normal": {
+        "RACE_VUS": 20,
+        "RACE_ROUNDS": 3,
+        "SIGNUP_RATE": 10,
+        "SIGNUP_SEC": 20,
+        "LOGIN_USERS": 30,
+        "LOGIN_RATE": 20,
+        "LOGIN_SEC": 20
+      },
+      "heavy": {
+        "RACE_VUS": 100,
+        "RACE_ROUNDS": 5,
+        "SIGNUP_RATE": 50,
+        "SIGNUP_SEC": 30,
+        "LOGIN_USERS": 200,
+        "LOGIN_RATE": 150,
+        "LOGIN_SEC": 30
+      }
+    },
+    "keyMetrics": [
+      "auth_race_winners",
+      "auth_race_duplicate",
+      "auth_race_other",
+      "auth_signup_ok",
+      "auth_signup_fail",
+      "auth_signup_ms",
+      "auth_login_ok",
+      "auth_login_fail",
+      "auth_login_ms",
+      "auth_lockout_ok",
+      "auth_lockout_missing",
+      "auth_rate_limited",
+      "auth_overloaded"
+    ]
   }
 ]

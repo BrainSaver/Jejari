@@ -5,8 +5,8 @@
 좌석 경쟁과 매수 한도의 **1차 판정**을 Redis에서 원자적으로 처리하는 스크립트입니다.
 최종 판정은 언제나 Oracle입니다 (§0.1). Redis가 통과시켜도 DB가 거절하면 거절입니다.
 
-Spring 뼈대가 아직 main에 없어서 지금은 여기 두고, 뼈대가 올라오면
-`src/main/resources/lua/` 로 옮겨 `DefaultRedisScript`로 읽습니다.
+스크립트 파일은 `src/main/resources/lua/seat/`에 있고 Spring이 `DefaultRedisScript`로 읽습니다
+(`com.jejari.seat.SeatScripts`). 이 폴더에는 설명과 Python 단위 검증(`test/lua_test.py`)만 남았습니다.
 
 ## 스크립트
 
