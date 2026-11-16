@@ -13,7 +13,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
@@ -23,6 +22,7 @@ public class QueueService {
     private final StringRedisTemplate redis;
     private final RedisScript<List> enterScript;
     private final RedisScript<List> leaveScript;
+    private final RedisScript<List> statusScript;
     private final PolicyProvider policy;
     private final RiskPenaltyService risk;
     private final MemberIdentityPort members;
@@ -31,11 +31,12 @@ public class QueueService {
     private final Clock clock;
 
     public QueueService(StringRedisTemplate redis, RedisScript<List> enterScript, RedisScript<List> leaveScript,
-                        PolicyProvider policy, RiskPenaltyService risk, MemberIdentityPort members,
+                        RedisScript<List> statusScript, PolicyProvider policy, RiskPenaltyService risk, MemberIdentityPort members,
                         OnSaleRunProvider runs, QueueLogSink logSink, Clock clock) {
         this.redis = redis;
         this.enterScript = enterScript;
         this.leaveScript = leaveScript;
+        this.statusScript = statusScript;
         this.policy = policy;
         this.risk = risk;
         this.members = members;
@@ -60,7 +61,8 @@ public class QueueService {
 
         List<?> r = redis.execute(enterScript,
                 List.of(QueueKeys.queue(runId), QueueKeys.seq(runId),
-                        QueueKeys.member(memberId), QueueKeys.ci(identity.ciHash())),
+                        QueueKeys.member(memberId), QueueKeys.ci(identity.ciHash()),
+                        QueueKeys.throughput(runId)),
                 String.valueOf(runId), String.valueOf(memberId), identity.ciHash(),
                 String.valueOf(penaltyMs), String.valueOf(entryTtlMs), String.valueOf(closeAtMs));
 
@@ -74,38 +76,30 @@ public class QueueService {
         }
         if (status == 0) {
             String qm = (String) r.get(1);
+            long adjustedRank = ((Number) r.get(3)).longValue();
             logSink.record(new QueueLogEvent(Type.ENTERED, memberId, runId, ticketNo(qm),
                     Instant.ofEpochMilli(now), score, penaltyMs,
-                    ((Number) r.get(2)).longValue(), ((Number) r.get(3)).longValue(), null));
+                    ((Number) r.get(2)).longValue(), adjustedRank, null));
+            // 순번은 스크립트 안에서 ZADD 직후 읽은 값이라, 다시 조회하지 않고 그대로 번호표를 만든다 (Redis 왕복 절약)
+            return waiting(runId, ticketNo(qm), adjustedRank, ((Number) r.get(5)).longValue());
         }
         // status == 1: 이미 같은 운행에 있음. 새로 줄 서지 않고 기존 순번을 그대로 돌려준다.
         return status(memberId, runId);
     }
 
+    /** 번호표 조회. 스크립트 한 번으로 순번·토큰·입장 속도를 함께 읽어, 조회 중 입장 처리가 끼어들어도 어긋나지 않는다. */
     public QueueStatus status(long memberId, long runId) {
-        String val = redis.opsForValue().get(QueueKeys.member(memberId));
-        if (val == null) {
+        List<?> r = redis.execute(statusScript, List.of(QueueKeys.member(memberId)),
+                String.valueOf(runId), String.valueOf(memberId));
+        long kind = ((Number) r.get(0)).longValue();
+        if (kind == 0) {
             throw new QueueException(ErrorCode.QUEUE_NOT_FOUND);
         }
-        String[] parts = val.split("\\|", 3);
-        if (Long.parseLong(parts[0]) != runId) {
-            throw new QueueException(ErrorCode.QUEUE_NOT_FOUND);
+        long ticket = ticketNo((String) r.get(1));
+        if (kind == 2) {
+            return admitted(runId, ticket, (String) r.get(3), ((Number) r.get(2)).longValue());
         }
-        String qm = parts[1];
-        long ticket = ticketNo(qm);
-
-        // 조회 중에 입장 처리(ZPOPMIN)가 끼어들 수 있어, 순번이 없으면 토큰을 한 번 더 본다.
-        for (int attempt = 0; attempt < 2; attempt++) {
-            String token = redis.opsForValue().get(QueueKeys.pass(runId, memberId));
-            if (token != null) {
-                return admitted(runId, memberId, ticket, token);
-            }
-            Long zeroBased = redis.opsForZSet().rank(QueueKeys.queue(runId), qm);
-            if (zeroBased != null) {
-                return waiting(runId, ticket, zeroBased + 1);
-            }
-        }
-        throw new QueueException(ErrorCode.QUEUE_NOT_FOUND);
+        return waiting(runId, ticket, ((Number) r.get(2)).longValue(), ((Number) r.get(4)).longValue());
     }
 
     /** 대기 중이든 입장했든 지운다. 이미 나갔으면 아무 일도 하지 않는다 (멱등). */
@@ -118,23 +112,18 @@ public class QueueService {
         }
     }
 
-    private QueueStatus waiting(long runId, long ticket, long rank) {
-        long throughput = Math.max(1, currentThroughput(runId));
+    private QueueStatus waiting(long runId, long ticket, long rank, long throughputPerSec) {
+        // 입장 속도 기록이 아직 없으면(첫 입장 처리 전) 정책값을 쓴다
+        long throughput = Math.max(1, throughputPerSec > 0 ? throughputPerSec : policy.getLong(PolicyProvider.ADMIT_PER_SEC));
         long eta = (rank + throughput - 1) / throughput;
         // 앞이 멀수록 천천히 묻게 한다: 1~5초 (기능설계서 QUE-02)
         int poll = (int) Math.min(5, Math.max(1, (eta + 9) / 10));
         return new QueueStatus(QueueStatus.State.WAITING, runId, ticket, rank, rank - 1, eta, poll, null, null);
     }
 
-    private QueueStatus admitted(long runId, long memberId, long ticket, String token) {
-        Long ttlMs = redis.getExpire(QueueKeys.pass(runId, memberId), TimeUnit.MILLISECONDS);
-        OffsetDateTime expires = OffsetDateTime.now(clock).plus(java.time.Duration.ofMillis(ttlMs == null ? 0 : ttlMs));
+    private QueueStatus admitted(long runId, long ticket, String token, long ttlMs) {
+        OffsetDateTime expires = OffsetDateTime.now(clock).plus(java.time.Duration.ofMillis(Math.max(0, ttlMs)));
         return new QueueStatus(QueueStatus.State.ADMITTED, runId, ticket, null, null, null, 1, token, expires);
-    }
-
-    private long currentThroughput(long runId) {
-        String v = redis.opsForValue().get(QueueKeys.throughput(runId));
-        return v != null ? Long.parseLong(v) : policy.getLong(PolicyProvider.ADMIT_PER_SEC);
     }
 
     /** queue member 문자열 "{12자리 seq}:{memberId}"에서 번호표 번호(seq)를 꺼낸다. */

@@ -12,5 +12,7 @@ jejari:
   dev-mode: false
   queue:
     scheduler-enabled: true
+    # 정책(app_policy) 값을 앱 안에서 들고 있는 시간. 정책을 바꾸면 최대 이만큼 뒤에 반영된다.
+    policy-cache-ms: 1000
     # 개발용 판매 중 운행 (OnSaleRunProvider 실제 구현이 붙으면 쓰지 않음)
     dev-on-sale-runs: ""

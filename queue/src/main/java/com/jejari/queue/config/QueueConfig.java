@@ -49,6 +49,9 @@ public class QueueConfig {
     @Bean
     RedisScript<List> leaveScript() { return script("lua/leave.lua"); }
 
+    @Bean
+    RedisScript<List> statusScript() { return script("lua/status.lua"); }
+
     private static RedisScript<List> script(String path) {
         DefaultRedisScript<List> s = new DefaultRedisScript<>();
         s.setLocation(new ClassPathResource(path));
@@ -59,8 +62,9 @@ public class QueueConfig {
     // ---- 서비스 ----
 
     @Bean
-    PolicyProvider policyProvider(StringRedisTemplate redis) {
-        return new PolicyProvider(redis);
+    PolicyProvider policyProvider(StringRedisTemplate redis,
+                                  @Value("${jejari.queue.policy-cache-ms:1000}") long cacheMs) {
+        return new PolicyProvider(redis, cacheMs);
     }
 
     @Bean
@@ -70,9 +74,9 @@ public class QueueConfig {
 
     @Bean
     QueueService queueService(StringRedisTemplate redis, RedisScript<List> enterScript, RedisScript<List> leaveScript,
-                              PolicyProvider policy, RiskPenaltyService risk, MemberIdentityPort members,
+                              RedisScript<List> statusScript, PolicyProvider policy, RiskPenaltyService risk, MemberIdentityPort members,
                               OnSaleRunProvider runs, QueueLogSink logSink, Clock clock) {
-        return new QueueService(redis, enterScript, leaveScript, policy, risk, members, runs, logSink, clock);
+        return new QueueService(redis, enterScript, leaveScript, statusScript, policy, risk, members, runs, logSink, clock);
     }
 
     @Bean

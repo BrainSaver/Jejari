@@ -17,6 +17,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 @SpringBootTest(properties = {
         "jejari.dev-mode=true",
         "jejari.queue.scheduler-enabled=false",
+        "jejari.queue.policy-cache-ms=0",   // 테스트에서 정책을 바꾸면 바로 보이게 (캐시는 PolicyProviderTest가 따로 확인)
         "spring.data.redis.database=15"
 })
 @Import(TestSupport.class)

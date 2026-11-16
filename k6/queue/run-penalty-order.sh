@@ -10,6 +10,8 @@ ADMIT_PER_SEC=${ADMIT_PER_SEC:-10}     # 입장 시작 후 초당 입장 인원
 
 ./reset.sh
 ADMIT_PER_SEC=0 ./seed-penalty.sh
+# 앱은 정책값을 최대 jejari.queue.policy-cache-ms(기본 1초) 동안 들고 있다. 바뀐 값(입장 정지)이 반영될 때까지 기다린다.
+sleep "${POLICY_WAIT:-2}"
 "$K6" run -q "$@" penalty-order.js &
 K6_PID=$!
 sleep "$RELEASE_AFTER"
