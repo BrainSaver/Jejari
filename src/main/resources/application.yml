@@ -53,6 +53,17 @@ spring:
   jackson:
     time-zone: Asia/Seoul
 
+jejari:
+  jwt:
+    issuer: jejari
+    access-ttl: 15m
+    refresh-ttl: 14d          # 로그인 시점부터 고정. 재발급해도 늘지 않음
+    clock-skew: 30s
+    active-kid: ${JWT_ACTIVE_KID:k1}
+    secrets:                  # kid: Base64 키(32바이트 이상). 키 교체 방법은 JwtProperties 주석
+      k1: ${JWT_SECRET_K1:}
+    refresh-cookie-secure: ${JWT_REFRESH_COOKIE_SECURE:true}
+
 server:
   error:
     # 실패 응답은 GlobalExceptionHandler가 { code, message, traceId }로 만듭니다
