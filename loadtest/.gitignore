@@ -1,0 +1,5 @@
+# 테스트 계정·정답 라벨(gen_users.py가 만든다)과 실행 결과
+data/
+results/
+__pycache__/
+*.pyc
