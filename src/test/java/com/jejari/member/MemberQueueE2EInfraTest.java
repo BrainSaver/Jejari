@@ -25,12 +25,12 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * 가입 → 로그인 → 받은 액세스 토큰으로 대기열 진입까지, 실제 회원(Oracle)으로 이어지는지 확인한다.
- * 운행 정보(B 파트)는 아직 없어 FullStackInfraTest의 테스트용 판매 운행을 쓴다. 회원 정보는 실제 OracleMemberIdentityPort.
+ * 운행은 시드의 상시 판매 운행(실제 JdbcOnSaleRunProvider), 회원 정보는 실제 OracleMemberIdentityPort.
  */
 @FullStackInfraTest
 class MemberQueueE2EInfraTest {
 
-	static final long RUN = FullStackInfraTest.RUN;
+	static final long RUN = FullStackInfraTest.ON_SALE_RUN;
 	static final String PW = "Blue-Whale-42";
 	static final JsonMapper JSON = JsonMapper.builder().build();
 
