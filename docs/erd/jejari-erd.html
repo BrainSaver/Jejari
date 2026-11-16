@@ -1106,7 +1106,8 @@ const DOCS = {
   ['v7','팀 3차 검토 반영 + 동시성 절차를 docs/concurrency.md로 분리: 마감 연장 GREATEST·PG 180+60초, 재선점 시 이전 예약 HOLD 행 전부 삭제, 멱등 키 선조회, outbox seq·시퀀스·FAILED 샤드 정지·Redis 리스·FOR UPDATE WAIT, Redis 보상·limit 복원 SET NX, version 증가 규칙, PG 결과 미확인 만료 금지, 카운터 정렬 갱신, 취소·취소표 카운터, Mongo expire_at 확대·legal_hold 확인, Redis 클러스터 태그 {runId}, 비고 축약'],
   ['v8','동시성 4차 검토 반영: 결제 결과 갈래(늦은 승인 환불·실패 시 EXPIRED), 스캐너 분리(ix_resv_hold_due, payment.next_check_at·ix_pay_recheck), ix_seatinv_hold 제거, cancellation 유형 정리(EXPIRED 제거)·resold_yn 배치, saga 단계 정리, 취소표 대기자 우선(REOFFER)·제안 기한 연장·wl 멱등 키, 한도 값 규칙·자가 복구, Redis 보상 outbox 보장·limit:dec, ORA_HASH 문자열, inbox 8일, 행동 로그 180일 확정, 시간대·Redis 설정 결정'],
   ['v9','기능설계서 맞춤: admin_action에 reservation_id·예약 대상 조치(강제 취소·결제 수동 처리·마스킹 해제), 알림 종류(취소표 건너뜀·환불 완료), 대기열 중복 진입 차단(queue:member·queue:ci)·같은 시각 진입 순서(queue:seq), 운영 값 8개(취소표 한도·출발 후 취소·스캐너·알림·위험 점수 주기)'],
-  ['v10','MongoDB 인덱스·보관 정리: behavior_log {member_id, ts}(타임라인), queue_log {run_id, entered_at}(순번 검증) 인덱스, login_attempt에 expire_at·TTL과 app_policy login_attempt.retention_days(30일)']]}
+  ['v10','MongoDB 인덱스·보관 정리: behavior_log {member_id, ts}(타임라인), queue_log {run_id, entered_at}(순번 검증) 인덱스, login_attempt에 expire_at·TTL과 app_policy login_attempt.retention_days(30일)'],
+  ['v11','코레일 실제 규칙 반영: 1일 매수 제한 PER_DAY(구매일 기준, 하루 20매)를 purchase_limit_policy·purchase_counter·Redis limit:day 키에 추가, 일반 예매 오픈은 출발 2개월 전 07:00(명절은 행사 오픈 시각), 상시 정책 기본값 열차당 10매']]}
 };
 // ===== 스키마 v5: 팀 검토 12건 반영 (2026-11-06) =====
 const V5_TABLES = [
@@ -1361,7 +1362,21 @@ const V10_OPS = [
   ['samples+','app_policy',[
     {policy_key:'login_attempt.retention_days',policy_value:'30',version:1,value_type:'NUMBER',description:'login_attempt 보관 기간 (expire_at 계산)'}]]
 ];
-const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS} ];
+const V11_TABLES = [];
+const V11_OPS = [
+  // 코레일 실제 규칙 반영: 1일 매수 제한(하루 20매), 일반 예매 오픈(출발 2개월 전 07:00),
+  // 상시 열차당 10매. 명절 특별예매는 기존대로 1회 4매·열차당 4매·명절 전체 8매.
+  ['set','purchase_limit_policy','scope',{desc:'PER_RESERVATION / PER_RUN / PER_DAY / PER_HOLIDAY',reason:'1회·열차당·1일·명절 전체 제한을 코드 수정 없이 조정'}],
+  ['notes+','purchase_limit_policy','PER_DAY는 구매일(선점 시각) 기준 1일 매수. 상시 정책 기본값은 코레일 공시 기준 열차당 10매·1일 20매, 명절 행사 정책은 1회 4매·열차당 4매·명절 전체 8매 (concurrency.md §10.6)'],
+  ['set','purchase_counter','scope',{desc:'PER_RUN / PER_DAY / PER_HOLIDAY',reason:'열차당·1일·명절 전체 제한을 한 테이블에서'}],
+  ['set','purchase_counter','scope_ref_id',{desc:'run_id · 구매일 YYYYMMDD · sale_event_id',reason:'scope에 따라 가리키는 대상이 달라 FK 미설정. PER_DAY는 구매일을 숫자로 (예: 20270106)'}],
+  ['notes+','purchase_counter','PER_DAY의 scope_ref_id는 구매일 YYYYMMDD 숫자. 증가는 선점 시각(앱 시계)의 날짜, 감소는 그 예약의 created_at 날짜를 씁니다 — 자정을 넘겨 만료·취소되는 예약이 다른 날 카운터를 깎지 않게 하려는 것입니다'],
+  ['add','redis_keys','limit:event:{saleEventId}:{ciHash}',[
+    ['limit:day:{yyyymmdd}:{ciHash}','STRING','','시스템','구매일별 구매 매수','PER_DAY 제한의 빠른 체크. 만료는 그 날 24:00 + 1시간']]],
+  ['set','train_run','sale_open_at',{reason:'트래픽 폭증 시점. 부하 테스트 시나리오 기준. 일반은 출발 2개월 전 07:00, 명절은 행사 오픈 시각'}],
+  ['notes+','train_run','일반 예매 오픈은 코레일 규칙대로 출발일 2개월 전 07:00: sale_open_at = run_date - 2개월 + 07:00. 명절 운행은 sale_event.sale_open_at을 그대로 복사합니다 (특별예매 일괄 오픈)'],
+];
+const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS} ];
 const SEED_VERSION = Math.max(2,...PATCHES.map(p=>p.v));
 const LAYOUT = [
  ['station','route','route_station','fare','common_code'],

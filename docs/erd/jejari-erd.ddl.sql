@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v10)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v11)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -157,7 +157,7 @@ COMMENT ON COLUMN train_run.run_id IS '운행 ID / 대기열·재고·Kafka 집�
 COMMENT ON COLUMN train_run.train_id IS '열차';
 COMMENT ON COLUMN train_run.sale_event_id IS '명절 예매 행사 / 오픈 일정·정책을 행사 단위로 묶음';
 COMMENT ON COLUMN train_run.run_date IS '운행일 / 명절 기간';
-COMMENT ON COLUMN train_run.sale_open_at IS '예매 오픈 시각 / 트래픽 폭증 시점. 부하 테스트 시나리오 기준';
+COMMENT ON COLUMN train_run.sale_open_at IS '예매 오픈 시각 / 트래픽 폭증 시점. 부하 테스트 시나리오 기준. 일반은 출발 2개월 전 07:00, 명절은 행사 오픈 시각';
 COMMENT ON COLUMN train_run.sale_close_at IS '판매 마감';
 COMMENT ON COLUMN train_run.status IS 'SCHEDULED / ON_SALE / CLOSED / DEPARTED / 판매 가능 여부 판단';
 COMMENT ON COLUMN train_run.created_at IS '생성 시각';
@@ -217,11 +217,11 @@ CREATE TABLE purchase_limit_policy (
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_purchase_limit_policy PRIMARY KEY (policy_id),
-  CONSTRAINT ck_purchase_limit_policy_scope CHECK (scope IN ('PER_RESERVATION', 'PER_RUN', 'PER_HOLIDAY'))
+  CONSTRAINT ck_purchase_limit_policy_scope CHECK (scope IN ('PER_RESERVATION', 'PER_RUN', 'PER_DAY', 'PER_HOLIDAY'))
 );
 COMMENT ON TABLE purchase_limit_policy IS '매수 제한 정책 - 1회·열차별·명절 전체 매수 제한을 코드 수정 없이 조정.';
 COMMENT ON COLUMN purchase_limit_policy.sale_event_id IS '적용 행사 (null이면 상시) / PER_HOLIDAY 범위 정의';
-COMMENT ON COLUMN purchase_limit_policy.scope IS 'PER_RESERVATION / PER_RUN / PER_HOLIDAY / 1회·열차별·명절 전체 제한을 코드 수정 없이 조정';
+COMMENT ON COLUMN purchase_limit_policy.scope IS 'PER_RESERVATION / PER_RUN / PER_DAY / PER_HOLIDAY / 1회·열차당·1일·명절 전체 제한을 코드 수정 없이 조정';
 COMMENT ON COLUMN purchase_limit_policy.max_seats IS '최대 매수';
 COMMENT ON COLUMN purchase_limit_policy.valid_from IS '적용 시작 / 설·추석별 다른 정책';
 COMMENT ON COLUMN purchase_limit_policy.valid_to IS '적용 종료';
@@ -1067,11 +1067,11 @@ CREATE TABLE purchase_counter (
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_purchase_counter PRIMARY KEY (scope, scope_ref_id, ci_hash),
   CONSTRAINT ck_purchase_counter_r1 CHECK (seat_count >= 0),
-  CONSTRAINT ck_purchase_counter_scope CHECK (scope IN ('PER_RUN', 'PER_HOLIDAY'))
+  CONSTRAINT ck_purchase_counter_scope CHECK (scope IN ('PER_RUN', 'PER_DAY', 'PER_HOLIDAY'))
 );
 COMMENT ON TABLE purchase_counter IS '매수 카운터 - CI별 보유 매수. 매수 제한의 최종 판정을 조건부 UPDATE 한 번으로 원자적으로 처리하고, Redis 카운터가 사라지면 여기서 복원한다.';
-COMMENT ON COLUMN purchase_counter.scope IS 'PER_RUN / PER_HOLIDAY / 열차별·명절 전체 제한을 한 테이블에서';
-COMMENT ON COLUMN purchase_counter.scope_ref_id IS 'run_id 또는 sale_event_id / scope에 따라 가리키는 대상이 달라 FK 미설정';
+COMMENT ON COLUMN purchase_counter.scope IS 'PER_RUN / PER_DAY / PER_HOLIDAY / 열차당·1일·명절 전체 제한을 한 테이블에서';
+COMMENT ON COLUMN purchase_counter.scope_ref_id IS 'run_id · 구매일 YYYYMMDD · sale_event_id / scope에 따라 가리키는 대상이 달라 FK 미설정. PER_DAY는 구매일을 숫자로 (예: 20270106)';
 COMMENT ON COLUMN purchase_counter.ci_hash IS 'CI 해시 / 계정이 아닌 사람 단위 합산';
 COMMENT ON COLUMN purchase_counter.seat_count IS '현재 보유 매수 / 조건부 UPDATE로 한도 초과 차단';
 COMMENT ON COLUMN purchase_counter.created_at IS '생성 시각';

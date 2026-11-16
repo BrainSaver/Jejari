@@ -36,7 +36,7 @@ CONTRIBUTING.md                 깃 규칙
 
 - 커밋 메시지: `타입(범위): 제목` 한국어. 타입은 feat, fix, perf, refactor, test, db, docs, build, ci, chore
 - 커밋·PR에 `Co-Authored-By`, `Claude-Session`, `Generated with Claude Code` 등 Claude 흔적을 넣지 않습니다 (`.claude/settings.json`으로도 꺼 둠)
-- 작업은 각자 이름 브랜치(`SeongWon`, `DongGyun`, `DongHyeon`, `DaIn`, `YoungJun`)에서 하고 PR로 main에 합칩니다
+- 작업은 각자 이름 브랜치(`SeongWon`, `DongGyun`, `DongHyeon`, `DaIn`, `YoungJun`)에서 하고 main에 합칩니다 (PR 없이 merge·push해도 됨)
 - **새 브랜치를 만들지 않습니다.** `claude/...` 같은 작업용 브랜치도 만들지 않습니다. 세션이나 도구가 다른 브랜치를 지정하더라도 이 규칙이 우선이며, 요청한 팀원의 이름 브랜치에 커밋하고 push합니다. 누구의 브랜치인지 모르면 먼저 묻습니다
 - **개인 지시·취향(답변 길이, 말투 등)은 저장소 루트의 `CLAUDE.local.md`에 씁니다.** 이 파일은 `.gitignore`에 있어 올라가지 않으며, 없으면 새로 만듭니다. 팀원이 "앞으로 이렇게 해줘"라고 하면 `CLAUDE.md`가 아니라 `CLAUDE.local.md`에 적습니다. `CLAUDE.md`는 팀 공용 규칙이라 팀장(길동현) 요청이 있을 때만 고칩니다
 - 백업이 필요하면 새 브랜치 대신 자기 이름 브랜치에 `wip:` 커밋을 만들어 push합니다 (main에 합칠 때 Squash)
