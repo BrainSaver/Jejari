@@ -1,10 +1,12 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v15)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v16)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
 
 -- 시퀀스
 CREATE SEQUENCE member_seq;
+CREATE SEQUENCE reservation_seq CACHE 100;
+CREATE SEQUENCE reservation_history_seq CACHE 100;
 CREATE SEQUENCE outbox_seq CACHE 1000;
 CREATE SEQUENCE risk_score_history_seq;
 CREATE SEQUENCE identity_verification_seq;
@@ -347,7 +349,7 @@ CREATE TABLE reservation (
   CONSTRAINT ck_reservation_source CHECK (source IN ('NORMAL', 'WAITLIST'))
 );
 COMMENT ON TABLE reservation IS '예약 - 예약 상태 머신의 중심. reservation_id가 Kafka 파티션 키.';
-COMMENT ON COLUMN reservation.reservation_id IS '예약 ID / Kafka 파티션 키 → 상태 변경 순서 보장';
+COMMENT ON COLUMN reservation.reservation_id IS '예약 ID (reservation_seq.NEXTVAL) / Kafka 파티션 키·Saga 추적. Redis 좌석 키 값으로 쓰려고 DB 쓰기 전에 먼저 발급 (concurrency.md §2.1)';
 COMMENT ON COLUMN reservation.member_id IS '예약자';
 COMMENT ON COLUMN reservation.ci_hash IS '예약 시점 CI / 매수 제한 집계를 조인 없이 빠르게';
 COMMENT ON COLUMN reservation.run_id IS '운행';
@@ -403,6 +405,7 @@ CREATE TABLE reservation_history (
   CONSTRAINT ck_reservation_history_1ip6ha CHECK (actor_type IN ('USER', 'SYSTEM', 'ADMIN'))
 );
 COMMENT ON TABLE reservation_history IS '예약 상태 이력 - 상태 전이 기록. 순서 보장과 잘못된 전이를 테스트로 증명하는 근거.';
+COMMENT ON COLUMN reservation_history.history_id IS '이력 ID (reservation_history_seq.NEXTVAL)';
 COMMENT ON COLUMN reservation_history.from_status IS '이전 상태 / 첫 기록이면 null. 허용값은 비고의 CHECK (v4 nn-auto가 NOT NULL로 바꾸지 않도록 설명은 그대로 둠)';
 COMMENT ON COLUMN reservation_history.to_status IS 'HOLD / PAYMENT_PENDING / CONFIRMED / CANCELED / EXPIRED / 변경 상태. 잘못된 전이(CANCELED→CONFIRMED) 탐지';
 COMMENT ON COLUMN reservation_history.event_id IS '원인 Kafka 이벤트 / 어떤 이벤트가 바꿨는지 추적';
