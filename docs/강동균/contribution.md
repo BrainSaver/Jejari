@@ -14,7 +14,7 @@
 
 | 지표 | 목표 | 결과 | 측정 방법 |
 |---|---|---|---|
-| 중복 예약 | 0건 | Redis 1차 0건 (T1: 100명 동시 → 승자 1명) | `python redis/test/lua_test.py` · DB 포함 측정은 뼈대 후 |
+| 중복 예약 | 0건 | **0건** (T1: 같은 좌석 100명 동시 → 성공 1, 거절 99, DB 예약·재고 행 1개) | `SeatHoldInfraTest` (실제 Oracle·Redis), Lua 단독은 `python redis/test/lua_test.py` |
 | 락 방식별 TPS | 비교 수치 확보 | 같은 좌석 100명: A 255 / B 1,457 / **C 2,732** TPS. DB 왕복 201 → **2회** | `python bench/lock_compare.py` (워밍업 1회 + 5회 중앙값) |
 | 기한 초과 좌석 반환율 | 100% | | |
 
@@ -96,7 +96,7 @@
     코드가 두 갈래가 되면 버그 자리가 는다. 대신 `SeatHoldStrategy` 로 바꿔 끼울 수 있게 뒀다.
   - Redis 장애 시 선점 자체가 막힌다. DB 최종 판정은 살아 있지만 1차가 없으면 경쟁이
     전부 DB로 간다.
-- 관련 코드·커밋: `bench/lock_compare.py`, `bench/README.md`, `redis/lua/hold.lua`
+- 관련 코드·커밋: `bench/lock_compare.py`, `bench/README.md`, `src/main/resources/lua/seat/hold.lua`
 
 ## 4. 만든 기능
 
@@ -107,6 +107,7 @@
 | DATA-01 기준 데이터 시드 (역·노선·열차·좌석·운행·운임·매수 제한) | [기준데이터-시드](features/기준데이터-시드.md) |
 | RSV-02 좌석 선점·매수 한도 1차 판정 (Redis Lua 8개) | [좌석선점-lua](features/좌석선점-lua.md) |
 | §17.1 락 방식 비교 + SeatHoldStrategy 설계 | [락방식-비교](features/락방식-비교.md) |
+| RSV-02 좌석 선점 API (멱등·재선점·매수 카운터) + 판매 중 운행 제공 | [좌석선점-api](features/좌석선점-api.md) |
 
 ## 5. 다른 파트와의 연결
 
@@ -116,6 +117,7 @@
 | D 강다인 | 취소 수수료 정책 | `cancel_fee_policy` 예시 5건이 모두 지난 행사(1번)에 묶여 있어 상시 정책 세트가 필요 — CNL 담당이 정함 |
 | E 조영준 | Oracle 컨테이너 | `TZ=Asia/Seoul` 필수 (동시성 §0.7, 시드 검증 20번) |
 | A 김성원 | 테스트용 운행 | 지금 `ON_SALE`인 운행은 `run_id = 9001` 하나 |
+| A 김성원 | 판매 중 운행·입장 토큰 | `JdbcOnSaleRunProvider`가 `train_run`을 읽음 (개발 모드는 대용품 유지), 선점 API가 `QueuePassService.verify` 호출 (팀-확인-요청 3·4번) |
 | A 김성원 | ERD v13 | `queue:member` 값에 ciHash, `queue.entry_ttl_sec`, 취소표 대기 `priority_at`·`penalty_ms` 반영 (팀-확인-요청 1·2·12번) |
 | D 강다인 | ERD v13 | `risk_score_history_seq` 시퀀스 추가 → 점수 저장 때 이력도 기록 |
 | D 강다인 | ERD v15 | 회원가입·로그인용 시퀀스 2개, Redis 키 3개, `app_policy` 한도 3개, `login_attempt.result` BANNED |
@@ -124,7 +126,7 @@
 
 | 날짜 | 제목 | 수치 |
 |---|---|---|
-| | [제목](troubleshooting/파일.md) | |
+| 2026-11-16 | [커넥션 풀 중첩 조회 멈춤](troubleshooting/20261116-커넥션-풀-중첩-조회-멈춤.md) | T1 실패(30초 타임아웃) → 통과 |
 
 ## 7. 예상 질문
 
