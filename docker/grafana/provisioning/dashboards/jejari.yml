@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  # docker/grafana/dashboards/*.json을 "Jejari" 폴더로 불러옵니다.
+  # Grafana에서 만든 대시보드는 Export → JSON으로 저장해 그 폴더에 커밋합니다 (ADM-10)
+  - name: jejari
+    folder: Jejari
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
