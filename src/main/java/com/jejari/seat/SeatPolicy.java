@@ -19,10 +19,16 @@ public class SeatPolicy {
 
 	public static final String PAY_DEADLINE_MIN = "reservation.pay_deadline_min";
 	public static final String IDEM_TTL_SEC = "idem.ttl_sec";
+	public static final String SCANNER_HOLD_INTERVAL_SEC = "scanner.hold_interval_sec";
+	public static final String SCANNER_BATCH_SIZE = "scanner.batch_size";
+	public static final String REOFFER_HOLD_SEC = "waitlist.reoffer_hold_sec";
 
 	private static final Map<String, String> DEFAULTS = Map.of(
 			PAY_DEADLINE_MIN, "10",
-			IDEM_TTL_SEC, "600");
+			IDEM_TTL_SEC, "600",
+			SCANNER_HOLD_INTERVAL_SEC, "5",
+			SCANNER_BATCH_SIZE, "500",
+			REOFFER_HOLD_SEC, "60");
 	private static final long CACHE_NANOS = 1_000_000_000L;
 
 	private record Cached(String value, long expiresAtNanos) {
