@@ -1,6 +1,7 @@
 package com.jejari.queue.config;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -78,9 +79,11 @@ public class QueueConfig {
 
 	@Bean
 	RiskPenaltyService queueRiskPenaltyService(StringRedisTemplate redis, PolicyProvider queuePolicyProvider,
-			ObjectProvider<RiskScoreFallbackPort> fallback) {
+			ObjectProvider<RiskScoreFallbackPort> fallback, Clock clock,
+			@Value("${jejari.queue.risk-sync-stale-after:30m}") Duration riskSyncStaleAfter) {
 		return new RiskPenaltyService(redis, queuePolicyProvider,
-				fallback.orderedStream().findFirst().orElseGet(UnavailableRiskScoreFallbackPort::new));
+				fallback.orderedStream().findFirst().orElseGet(UnavailableRiskScoreFallbackPort::new), clock,
+				riskSyncStaleAfter);
 	}
 
 	@Bean

@@ -34,6 +34,11 @@ export const API = {
   login: '/api/auth/login',
   trains: '/api/trains',
 
+  // [실제] 회원 인증 (member 모듈, Oracle). 비밀값 3종(JEJARI_HMAC_KEY·JEJARI_ENC_KEYS·JEJARI_PEPPER_KEYS)이 .env에 있어야 켜진다
+  authVerify: '/api/v1/auth/verify',                           // POST {name, phone, provider}
+  authSignup: '/api/v1/auth/signup',                           // POST {verificationToken, email, password}
+  authLogin: '/api/v1/auth/login',                             // POST {email, password}
+
   // [실제] 대기열 (기능설계서 7장)
   queueEnter: (runId) => `/api/v1/runs/${runId}/queue`,       // POST
   queueMe: (runId) => `/api/v1/runs/${runId}/queue/me`,       // GET 번호표 조회, DELETE 이탈
@@ -81,6 +86,7 @@ export const HEADERS = {
   mockPg: 'X-Mock-PG',                 // [가정] mock PG 동작 지시 (success | fail | timeout)
   lockStrategy: 'X-Lock-Strategy',     // [가정] 락 방식 전환: pessimistic | optimistic | redis
   loadTest: 'X-Load-Test',             // 부하 테스트 트래픽 표시
+  forwardedFor: 'X-Forwarded-For',     // 요청마다 다른 IP로 보이게 함 (앱이 --jejari.auth.trusted-proxies=127.0.0.1 일 때만 의미 있음)
 };
 
 export const HOLD_TTL_SEC = Number(__ENV.HOLD_TTL_SEC || 30); // 좌석 선점 만료(결제 기한) 초

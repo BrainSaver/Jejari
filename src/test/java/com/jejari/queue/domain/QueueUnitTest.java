@@ -89,7 +89,8 @@ class QueueUnitTest {
 			HashOperations<String, Object, Object> h = mock(HashOperations.class);
 			when(redis.opsForHash()).thenReturn(h);
 			when(h.get(anyString(), anyString())).thenReturn(perPoint);
-			return new RiskPenaltyService(redis, new PolicyProvider(redis, 0), m -> 0);
+			return new RiskPenaltyService(redis, new PolicyProvider(redis, 0), m -> 0, java.time.Clock.systemUTC(),
+					java.time.Duration.ofMinutes(30));
 		}
 
 		@ParameterizedTest(name = "{0}점 × {1}ms/점 = {2}ms")
@@ -248,7 +249,8 @@ class QueueUnitTest {
 			when(redis.opsForHash()).thenReturn(h);
 			when(h.get(anyString(), anyString())).thenReturn(null);
 			when(v.multiGet(any())).thenReturn(multiGet);
-			return new RiskPenaltyService(redis, new PolicyProvider(redis, 0), fb);
+			return new RiskPenaltyService(redis, new PolicyProvider(redis, 0), fb, java.time.Clock.systemUTC(),
+					java.time.Duration.ofMinutes(30));
 		}
 
 		@Test

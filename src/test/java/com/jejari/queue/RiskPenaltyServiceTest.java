@@ -7,6 +7,7 @@ import com.jejari.queue.domain.RiskPenaltyService;
 import com.jejari.queue.port.MemberIdentityPort.MemberIdentity;
 import com.jejari.queue.port.RiskScoreFallbackPort;
 import com.jejari.queue.redis.QueueKeys;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,7 @@ class RiskPenaltyServiceTest extends QueueRedisSupport {
         return new RiskPenaltyService(redis, policy, m -> {
             sourceCalls.incrementAndGet();
             return fallback.maxScore(m);
-        });
+        }, clock, Duration.ofMinutes(30));
     }
 
     private void synced() {
@@ -103,5 +104,37 @@ class RiskPenaltyServiceTest extends QueueRedisSupport {
         redis.opsForValue().set("risk:CI:ci-1", "5");
         redis.opsForValue().set("risk:PAYMENT:pay-1", "garbage");
         assertThat(service(m -> 0).score(M)).isEqualTo(100.0);
+    }
+
+    // ---------- 표시 키가 오래됐는지 (재동기화 실패 감지) ----------
+
+    @Test
+    void 표시_키가_기준보다_오래되면_오래됐다고_본다() {
+        RiskPenaltyService svc = service(m -> 0);
+        assertThat(svc.isSyncStale(clock.instant().minus(Duration.ofMinutes(31)).toString())).isTrue();
+        assertThat(svc.isSyncStale(clock.instant().minus(Duration.ofHours(5)).toString())).isTrue();
+    }
+
+    @Test
+    void 표시_키가_기준_안이면_오래되지_않았다() {
+        RiskPenaltyService svc = service(m -> 0);
+        assertThat(svc.isSyncStale(clock.instant().toString())).isFalse();
+        assertThat(svc.isSyncStale(clock.instant().minus(Duration.ofMinutes(29)).toString())).isFalse();
+    }
+
+    @Test
+    void 시각이_아닌_값과_미래_시각은_오래됐다고_보지_않는다() {
+        RiskPenaltyService svc = service(m -> 0);
+        assertThat(svc.isSyncStale("dev")).isFalse();      // 개발용 reset이 쓰는 값
+        assertThat(svc.isSyncStale("")).isFalse();
+        assertThat(svc.isSyncStale(clock.instant().plus(Duration.ofMinutes(5)).toString())).isFalse(); // 서버 시계 차이
+    }
+
+    @Test
+    void 표시_키가_오래돼도_점수는_캐시_값을_그대로_쓴다() {
+        redis.opsForValue().set(QueueKeys.RISK_SYNCED_AT, clock.instant().minus(Duration.ofHours(3)).toString());
+        redis.opsForValue().set("risk:CI:ci-1", "42");
+        assertThat(service(m -> 99).score(M)).isEqualTo(42.0);
+        assertThat(sourceCalls.get()).isZero();            // 막거나 Oracle을 부르지 않고 경고만
     }
 }
