@@ -664,7 +664,7 @@ input[type=date]{font:inherit;color:var(--fg);background:var(--bg);border:1px so
 .rm-order-help p{margin:4px 0}
 .rm-order-next{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center}
 .rm-order-next>b{color:var(--pc)}
-.rm-order{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(250px,1fr);gap:14px;overflow-x:auto;padding-bottom:8px}
+.rm-order{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;align-items:start}
 .rm-stagecol{background:var(--code);border-radius:var(--radius);padding:8px;display:flex;flex-direction:column;gap:6px;min-width:0;position:relative}
 .rm-stagecol-head{display:flex;flex-direction:column;gap:1px;padding:2px 4px 4px}
 .rm-stagecol-head b{font-size:17px}
@@ -672,7 +672,6 @@ input[type=date]{font:inherit;color:var(--fg);background:var(--bg);border:1px so
 .rm-stage{font-size:11.5px;font-weight:700;padding:0 7px;border-radius:999px;border:1.5px solid var(--accent);color:var(--accent)}
 .rm-donegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:6px}
 @media (max-width:760px){
-  .rm-order{grid-auto-flow:row;grid-auto-columns:auto}
 }
 
 .fl-bar-txt{flex:1 1 260px;min-width:0}

@@ -1630,7 +1630,7 @@ function rmBoard(list, by) {
 function rmOrderView(by) {
   const st = rmStages();
   const open = RM.data.items.filter((x) => !isDone(x));
-  const pool = mineOn() ? open.filter((x) => mineOf(x)) : open;
+  const pool = open.filter((x) => (!mineOn() || mineOf(x)) && (!RM.f.part || (x.roles && x.roles[RM.f.part])));
   const n = Math.max(0, ...pool.map((x) => st.get(x.id)));
   const done = RM.data.items.filter(isDone);
   const col = (s) => pool.filter((x) => st.get(x.id) === s).sort((x, y) => sortItems(x, y));
@@ -2299,7 +2299,7 @@ function rmBind(root) {
   const lg = $('[data-login]', root); if (lg) lg.addEventListener('click', () => loginModal(() => rmRender()));
   $$('[data-fpart]', root).forEach((b) => b.addEventListener('click', () => {
     RM.f.part = RM.f.part === b.dataset.fpart ? '' : b.dataset.fpart; save();
-    if (RM.view !== 'board') location.hash = '#/roadmap/board'; else rmRender();
+    if (RM.view !== 'board' && RM.view !== 'order') location.hash = '#/roadmap/board'; else rmRender();
   }));
   $$('.rm-cell', root).forEach((b) => b.addEventListener('click', () => {
     const on = b.classList.toggle('on');
