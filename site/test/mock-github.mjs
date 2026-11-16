@@ -33,6 +33,9 @@ const add = (rel) => { const p = path.join(ROOT, rel); if (fs.existsSync(p)) see
 ['README.md', 'docs/기능설계서.md', 'docs/DB설계서.md', 'docs/concurrency.md', 'docs/erd/jejari-erd.html'].forEach(add);
 const uiDir = path.join(ROOT, 'docs/ui');
 if (fs.existsSync(uiDir)) fs.readdirSync(uiDir).forEach((f) => add('docs/ui/' + f));
+// 팀원 폴더와 문서 틀
+const walk = (rel) => { const p = path.join(ROOT, rel); if (!fs.existsSync(p)) return; for (const f of fs.readdirSync(p)) { const r = rel + '/' + f; fs.statSync(path.join(ROOT, r)).isDirectory() ? walk(r) : add(r); } };
+['docs/길동현', 'docs/강동균', 'docs/김성원', 'docs/강다인', 'docs/조영준', 'docs/templates'].forEach(walk);
 const seedTree = putTree(Object.fromEntries(Object.entries(seed).map(([k, v]) => [k, putBlob(v)])));
 const root = putCommit({ tree: seedTree, parents: [], message: 'docs: 초기 문서' });
 refs.set('main', root);

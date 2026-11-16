@@ -20,7 +20,7 @@ docs/기능설계서.md, docs/DB설계서.md  설계 문서
 docs/ui/                        화면설계: index.json(목록) + {화면ID}.md(설명) + {화면ID}.html(시안)
 site/                           문서 사이트 jejari.pages.dev (Cloudflare Pages + Functions, site/README.md)
 docs/templates/                 트러블슈팅·개인 기여 문서 틀
-docs/{이름}/                    팀원별 contribution.md, features/(기능 문서), troubleshooting/
+docs/{이름}/                    팀원별 contribution.md, devlog/(개발일지), features/(기능 문서), troubleshooting/
 .github/pull_request_template.md  PR 틀
 CONTRIBUTING.md                 깃 규칙
 ```
