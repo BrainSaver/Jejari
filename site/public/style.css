@@ -439,7 +439,11 @@ body.no-scroll{overflow:hidden}
 .rm-parts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:16px}
 .rm-part{display:flex;flex-direction:column;gap:6px;text-align:left;background:var(--bg2);border:1.5px solid var(--pc);border-radius:var(--radius);padding:10px 12px;cursor:pointer;min-width:0}
 .rm-part:hover,.rm-part.on{border-color:var(--pc)}
-.rm-part.on{box-shadow:0 0 0 2px var(--pc) inset}
+.rm-part:hover{background:color-mix(in srgb,var(--pc) 8%,var(--bg2))}
+.rm-part.on{background:color-mix(in srgb,var(--pc) 24%,var(--bg2));border:2.5px solid var(--pc);padding:9px 11px}
+.rm-part.on .rm-bar{background:color-mix(in srgb,var(--pc) 25%,var(--bg))}
+.rm-part.on .rm-bar i{background:var(--pc)}
+.rm-part-on{font-size:11.5px;font-weight:700;background:var(--pc);color:#fff;border-radius:999px;padding:0 7px;margin-left:auto;white-space:nowrap}
 .rm-part-head{display:flex;flex-direction:column;line-height:1.3}
 .rm-part-head .muted{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rm-bar{display:block;height:6px;border-radius:99px;background:var(--code);overflow:hidden}
@@ -678,3 +682,5 @@ input[type=date]{font:inherit;color:var(--fg);background:var(--bg);border:1px so
 .rm-log-adm{display:inline-flex;gap:3px;margin-left:6px}
 .fl-ibtn.del.armed{background:var(--del-fg);color:#fff;border-color:var(--del-fg)}
 .rm-log.adm{grid-template-columns:110px minmax(0,1fr) auto auto}
+.rm-parts.has-on .rm-part:not(.on){opacity:.55}
+.rm-parts.has-on .rm-part:not(.on):hover{opacity:.9}

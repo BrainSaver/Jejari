@@ -1593,15 +1593,15 @@ function rmCard(it, by, opt = {}) {
 
 function rmPartStrip() {
   const items = RM.data.items;
-  return `<div class="rm-parts">${RM_PARTS.map((p) => {
+  return `<div class="rm-parts${RM.f.part ? ' has-on' : ''}">${RM_PARTS.map((p) => {
     const mine = items.filter((x) => x.roles && x.roles[p]);
     const done = mine.filter((x) => x.roles[p].done).length;
     const pct = mine.length ? Math.round((done / mine.length) * 100) : 0;
     const msgs = (RM.data.msgs || []).filter((m) => m.to === p).length;
-    return `<button class="rm-part${RM.f.part === p ? ' on' : ''}" data-fpart="${p}" style="--pc:${partColor(p)}" title="누르면 ${esc(partName(p))} 카드만 보여요">
+    return `<button class="rm-part${RM.f.part === p ? ' on' : ''}" data-fpart="${p}" style="--pc:${partColor(p)}" title="누르면 ${esc(partName(p))} 카드만 보여요" aria-pressed="${RM.f.part === p}">
       <span class="rm-part-head"><b>${esc(partName(p))}</b><span class="muted">${esc(RM.data.parts[p].label)}</span></span>
       <span class="rm-bar"><i style="width:${pct}%"></i></span>
-      <span class="rm-part-nums"><b>${pct}%</b><span>${done}/${mine.length} 했음</span>${msgs ? `<span class="rm-to">${svgI('msg', 14)} 받은 말 ${msgs}</span>` : ''}</span>
+      <span class="rm-part-nums"><b>${pct}%</b><span>${done}/${mine.length} 했음</span>${RM.f.part === p ? '<span class="rm-part-on" title="다시 누르면 풀려요">선택됨</span>' : ''}${msgs ? `<span class="rm-to">${svgI('msg', 14)} 받은 말 ${msgs}</span>` : ''}</span>
     </button>`;
   }).join('')}</div>`;
 }
