@@ -1,6 +1,0 @@
-plugins {
-    // PC에 JDK 21이 없으면 Gradle이 자동으로 내려받습니다 (toolchain)
-    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.10.0'
-}
-
-rootProject.name = 'jejari-pii'

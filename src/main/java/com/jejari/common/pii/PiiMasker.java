@@ -1,4 +1,4 @@
-package com.jejari.pii;
+package com.jejari.common.pii;
 
 /**
  * 화면·로그 표시용 마스킹. 저장용이 아니다 (저장은 암호화 또는 해시).

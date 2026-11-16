@@ -1,4 +1,4 @@
-package com.jejari.pii;
+package com.jejari.common.pii;
 
 /**
  * 암호화 결과.

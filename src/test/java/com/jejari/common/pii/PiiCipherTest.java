@@ -1,7 +1,7 @@
-package com.jejari.pii;
+package com.jejari.common.pii;
 
-import static com.jejari.pii.PiiField.ADMIN_MFA_SECRET;
-import static com.jejari.pii.PiiField.MEMBER_PHONE;
+import static com.jejari.common.pii.PiiField.ADMIN_MFA_SECRET;
+import static com.jejari.common.pii.PiiField.MEMBER_PHONE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 

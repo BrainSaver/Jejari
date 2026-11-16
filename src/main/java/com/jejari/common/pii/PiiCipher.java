@@ -1,4 +1,4 @@
-package com.jejari.pii;
+package com.jejari.common.pii;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
