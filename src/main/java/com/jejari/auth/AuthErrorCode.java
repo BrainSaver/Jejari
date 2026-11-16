@@ -12,6 +12,8 @@ public enum AuthErrorCode implements ErrorCode {
 
 	AUTH_EMAIL_DUPLICATED(HttpStatus.CONFLICT, "이미 가입된 이메일입니다."),
 	AUTH_VERIFY_FAILED(HttpStatus.BAD_REQUEST, "본인인증에 실패했습니다."),
+	/** 가입 비밀번호 규칙 위반. 어떤 규칙인지는 메시지로 알려 주고, 입력값은 싣지 않습니다. */
+	AUTH_PASSWORD_POLICY(HttpStatus.BAD_REQUEST, "비밀번호가 규칙에 맞지 않습니다."),
 	/** 계정 존재 여부를 알려주지 않기 위해 아이디·비밀번호 중 무엇이 틀렸는지 구분하지 않습니다. */
 	AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."),
 	AUTH_LOCKED(HttpStatus.LOCKED, "로그인 시도가 많아 잠시 잠겼습니다. 잠시 후 다시 시도해 주세요."),

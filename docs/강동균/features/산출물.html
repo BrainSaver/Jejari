@@ -149,7 +149,7 @@ rect.b:hover{opacity:.82}
     <a href="#DATA-01">DATA-01 기준 데이터</a>
     <a href="#RSV-02">RSV-02 좌석 선점</a>
     <a href="#LOCK">§17.1 락 비교</a>
-    <a href="#ERD">ERD v14</a>
+    <a href="#ERD">ERD v15</a>
   </nav>
 </div></header>
 
@@ -189,7 +189,7 @@ rect.b:hover{opacity:.82}
   <table>
     <tr><th>업무</th><th>상태</th><th>내용</th></tr>
     <tr><td>ERD 반영 담당</td><td><span class="tag ok">유지 중</span></td>
-        <td>스키마 v14까지 반영 (v12 위험 점수 캐시, v13 김성원·강다인 요청, v14 취소표 패널티 확정). 검사 FAIL 0 · WARN 0, 반영 대기 JSON 없음</td></tr>
+        <td>스키마 v15까지 반영 (v12 위험 점수 캐시, v13 김성원·강다인 요청, v14 취소표 패널티 확정, v15 회원가입·로그인). 검사 FAIL 0 · WARN 0, 반영 대기 JSON 없음</td></tr>
     <tr><td>§17.1 락 방식 비교</td><td><span class="tag ok">실측 완료</span></td>
         <td>A·B·C 3전략 × 3시나리오. 뼈대 올라온 뒤 k6로 재측정 필요</td></tr>
   </table>
@@ -470,7 +470,7 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
 
 <!-- ───────────────────────────── ERD -->
 <section id="ERD">
-  <h2>ERD v14 <span class="tag ok">반영 완료</span></h2>
+  <h2>ERD v15 <span class="tag ok">반영 완료</span></h2>
   <p>ERD 반영은 담당자 한 명만 합니다. 팀원이 편집기에서 내보낸 JSON을 패치로 바꿔 HTML에 넣고,
      DDL·종합 문서를 다시 만듭니다.</p>
 
@@ -480,6 +480,10 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
     <div class="kpi"><b>85</b><span>관계</span></div>
     <div class="kpi"><b>0</b><span>검사 FAIL · WARN</span></div>
   </div>
+
+  <h3>v15 — 회원가입·로그인 (강다인 요청)</h3>
+  <p>ID 시퀀스 <code>member_seq</code>·<code>identity_verification_seq</code>, Redis 키 <code>rate:signup</code>·<code>login:fail</code>·<code>verify:{tokenHash}</code>,
+     <code>app_policy</code> 한도 3개(로그인 분당 20회, 가입 시간당 10회, 인증 토큰 600초), <code>login_attempt.result</code>에 <code>BANNED</code>를 넣었습니다.</p>
 
   <h3>v13에서 한 것 — 팀원 요청 반영</h3>
   <p>다른 팀원은 ERD를 직접 고치지 않으므로, 구현하다 스키마가 필요해지면 저에게 요청합니다.
