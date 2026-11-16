@@ -7,6 +7,7 @@ import { pinStatus, currentUser, login, logout, resetPin, sessionCookie, clearCo
 import { commitMessage, validMessage, askDoc } from '../../lib/groq.js';
 import { buildContext } from '../../lib/context.js';
 import { aiLogStore, AI_LOG_MAX } from '../../lib/ailog.js';
+import { roadmap } from '../../lib/roadmap.js';
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers } });
@@ -431,6 +432,27 @@ export async function onRequest(ctx) {
         if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
         return await mergeToMain(env, me);
 
+      // 로드맵 (보기는 누구나, 바꾸기·사진은 로그인)
+      case 'GET /roadmap': case 'GET /roadmap/rev': case 'GET /roadmap/item-log': case 'GET /roadmap/img':
+      case 'POST /roadmap/save': case 'POST /roadmap/delete': case 'POST /roadmap/note': case 'POST /roadmap/note-delete': {
+        const rm = roadmap(env);
+        if (!rm) return fail(500, 'NO_D1', 'D1 바인딩 AI_DB가 없어 로드맵을 저장할 수 없어요.');
+        const out = (r) => (r.error ? json(r, r.status) : json(r));
+        if (route === 'GET /roadmap') return json({ ...(await rm.all()), me });
+        if (route === 'GET /roadmap/rev') return json({ rev: await rm.rev() });
+        if (route === 'GET /roadmap/item-log') return json({ log: await rm.itemLog(String(q.get('id') || '')) });
+        if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
+        if (route === 'GET /roadmap/img') {
+          const im = /^i[0-9a-z]{6,12}$/.test(q.get('id') || '') ? await rm.img(q.get('id')) : null;
+          if (!im) return fail(404, 'NOT_FOUND', '사진이 없어요.');
+          const bin = Uint8Array.from(atob(im.data), (c) => c.charCodeAt(0));
+          return new Response(bin, { headers: { 'Content-Type': im.mime, 'Cache-Control': 'private, max-age=31536000, immutable' } });
+        }
+        if (route === 'POST /roadmap/save') return out(await rm.save(me, body.item, body.v));
+        if (route === 'POST /roadmap/delete') return out(await rm.remove(me, String(body.id || '')));
+        if (route === 'POST /roadmap/note') return out(await rm.note(me, String(body.id || ''), body.text, body.img));
+        return out(await rm.noteDelete(me, body.seq));
+      }
       default:
         return fail(404, 'NO_ROUTE', '없는 API예요.');
     }
