@@ -426,3 +426,10 @@ body.no-scroll{overflow:hidden}
 .md-help{font-size:12.5px;margin:0 0 10px;line-height:2}
 .md-help code{font-size:12px}
 @media (max-width:760px){.pitem{flex-direction:column;gap:2px}.pitem .muted{max-width:100%}}
+
+/* 팀원 문서의 HTML 파일 */
+.html-doc{position:relative;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:#fff}
+.html-doc iframe{display:block;width:100%;height:78vh;border:0;background:#fff}
+.html-doc.fs{position:fixed;inset:0;z-index:60;border-radius:0;border:0}
+.html-doc.fs iframe{height:100vh}
+.html-doc .fs-close{position:absolute;top:10px;right:10px;z-index:2}

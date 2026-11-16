@@ -1199,7 +1199,9 @@ const PKINDS = [
 const personDir = (name) => `docs/${S.members[name]}`;
 const todayKst = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 const docTitle = (md, fallback) => { const m = /^#\s+(.+)$/m.exec(md || ''); return m ? m[1].trim() : fallback; };
-const fileLabel = (f) => { const b = f.name.replace(/\.md$/, ''); const m = /^(\d{4})(\d{2})(\d{2})-(.*)$/.exec(b); return m ? `${m[1]}-${m[2]}-${m[3]} · ${m[4].replace(/-/g, ' ')}` : b.replace(/-/g, ' '); };
+const isPersonDoc = (n) => /\.(md|html)$/.test(n);
+const isHtml = (n) => /\.html$/i.test(n || '');
+const fileLabel = (f) => { const b = f.name.replace(/\.(md|html)$/, ''); const m = /^(\d{4})(\d{2})(\d{2})-(.*)$/.exec(b); return m ? `${m[1]}-${m[2]}-${m[3]} · ${m[4].replace(/-/g, ' ')}` : b.replace(/-/g, ' '); };
 
 async function pagePeople() {
   const names = Object.keys(S.members);
@@ -1210,7 +1212,7 @@ async function pagePeople() {
       <p class="pc-stat" data-n="${n}">불러오는 중…</p></a>`).join('')}</div></div>`;
   bindBanner(main);
   await Promise.all(names.map(async (n) => {
-    const counts = await Promise.all(['devlog', 'features', 'troubleshooting'].map((k) => api('/list' + qs({ dir: `${personDir(n)}/${k}`, ref: S.ref })).then((l) => l.filter((f) => f.name.endsWith('.md'))).catch(() => [])));
+    const counts = await Promise.all(['devlog', 'features', 'troubleshooting'].map((k) => api('/list' + qs({ dir: `${personDir(n)}/${k}`, ref: S.ref })).then((l) => l.filter((f) => isPersonDoc(f.name))).catch(() => [])));
     const el = $(`.pc-stat[data-n="${n}"]`); if (!el) return;
     const last = counts[0].map((f) => f.name).sort().pop();
     el.textContent = `개발일지 ${counts[0].length} · 기능 문서 ${counts[1].length} · 트러블슈팅 ${counts[2].length}${last && /^\d{8}/.test(last) ? ` · 최근 일지 ${last.slice(0, 4)}-${last.slice(4, 6)}-${last.slice(6, 8)}` : ''}`;
@@ -1232,21 +1234,99 @@ async function pagePerson(name, kind, file) {
   if (file) {
     const path = `${personDir(name)}/${kind}/${file}`;
     root.innerHTML = `<p style="margin:0 0 8px"><a href="#/people/${name}/${kind}">← ${kd[1]} 목록</a></p><div id="pDoc"></div>`;
+    if (isHtml(file)) return htmlView($('#pDoc'), path, { owner: name, back: `#/people/${name}/${kind}` });
     return docView($('#pDoc'), path, { compact: true, withToc: true });
   }
   root.innerHTML = `${branchBanner(S.ref)}<div class="row" style="justify-content:space-between;margin:0 0 12px;align-items:center">
     <span class="muted">${esc(kd[2])} · <code>${esc(personDir(name))}/${kind}/</code></span>
-    ${mine ? `<button class="btn" id="pNew">+ 새 ${kd[1]}</button>` : (S.me && S.me !== name ? '' : (!S.me ? '<span class="muted">로그인하면 내 폴더에 쓸 수 있어요</span>' : ''))}</div>
+    ${mine ? `<span class="row" style="gap:6px"><button class="btn plain" id="pHtml" title="보고서·시연 페이지 같은 HTML 파일을 올려요">+ HTML</button><button class="btn" id="pNew">+ 새 ${kd[1]}</button></span>` : (S.me && S.me !== name ? '' : (!S.me ? '<span class="muted">로그인하면 내 폴더에 쓸 수 있어요</span>' : ''))}</div>
     <div id="pList" class="loading">불러오는 중…</div>`;
   bindBanner(root);
   const nb = $('#pNew'); if (nb) nb.addEventListener('click', () => newPersonDoc(name, kind));
+  const hb = $('#pHtml'); if (hb) hb.addEventListener('click', () => editHtml({ dir: `${personDir(name)}/${kind}`, back: `#/people/${name}/${kind}`, dated: kind !== 'features' }));
   let list = [];
   const box = $('#pList');
-  try { list = (await api('/list' + qs({ dir: `${personDir(name)}/${kind}`, ref: S.ref }))).filter((f) => f.type === 'file' && f.name.endsWith('.md')); } catch (x) { if (box.isConnected) box.outerHTML = `<p class="empty">${esc(x.message)}</p>`; return; }
+  try { list = (await api('/list' + qs({ dir: `${personDir(name)}/${kind}`, ref: S.ref }))).filter((f) => f.type === 'file' && isPersonDoc(f.name)); } catch (x) { if (box.isConnected) box.outerHTML = `<p class="empty">${esc(x.message)}</p>`; return; }
   if (!box.isConnected) return;
   list.sort((a, b) => (kind === 'devlog' || kind === 'troubleshooting' ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name)));
   if (!list.length) { box.outerHTML = `<p class="empty">아직 ${kd[1]}가 없어요.${mine ? ' 오른쪽 위 버튼으로 첫 글을 써 보세요.' : ''}</p>`; return; }
-  box.outerHTML = `<div class="plist">${list.map((f) => `<a class="pitem" href="#/people/${name}/${kind}/${encodeURIComponent(f.name)}"><b>${esc(fileLabel(f))}</b><span class="muted">${esc(f.name)}</span></a>`).join('')}</div>`;
+  box.outerHTML = `<div class="plist">${list.map((f) => `<a class="pitem" href="#/people/${name}/${kind}/${encodeURIComponent(f.name)}"><b>${esc(fileLabel(f))}${isHtml(f.name) ? ' <span class="badge">HTML</span>' : ''}</b><span class="muted">${esc(f.name)}</span></a>`).join('')}</div>`;
+}
+
+// HTML 문서: 사이트와 분리된 iframe(sandbox, 같은 출처 아님)에 그대로 그린다. 스크립트는 돌지만 사이트 쿠키·API에는 닿지 못한다.
+async function htmlView(root, path, { owner, back } = {}) {
+  const ref = S.ref;
+  root.innerHTML = '<p class="loading">불러오는 중…</p>';
+  const file = await fetchFile(path, ref);
+  if (!file) { root.innerHTML = `<p class="empty">${esc(ref)} 브랜치에 <code>${esc(path)}</code> 파일이 없어요.</p>`; return; }
+  const canEdit = !!S.me && S.me === owner && (ref === 'main' || ref === S.me);
+  const gh = `https://github.com/brainsaver/jejari/blob/${encodeURIComponent(ref)}/${path.split('/').map(encodeURIComponent).join('/')}`;
+  root.innerHTML = `${branchBanner(ref)}<div class="row" style="justify-content:space-between;align-items:center;margin:0 0 8px;gap:8px;flex-wrap:wrap">
+    <span class="muted"><code>${esc(path)}</code> · <a href="${gh}" target="_blank" rel="noopener">GitHub</a></span>
+    <span class="row" style="gap:6px"><button class="btn sm plain" data-fs>전체 화면</button><button class="btn sm plain" data-dl>내려받기</button>${canEdit ? '<button class="btn sm" data-edit>HTML 수정</button>' : ''}</span></div>
+    <div class="html-doc"><button class="btn sm plain fs-close" hidden>닫기 ✕</button><iframe sandbox="allow-scripts allow-popups allow-modals" referrerpolicy="no-referrer" title="${esc(path.split('/').pop())}"></iframe></div>`;
+  bindBanner(root);
+  const wrap = $('.html-doc', root), fr = $('iframe', wrap), close = $('.fs-close', wrap);
+  fr.srcdoc = file.content;
+  const fsOff = () => { wrap.classList.remove('fs'); close.hidden = true; document.body.classList.remove('no-scroll'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); };
+  $('[data-fs]', root).addEventListener('click', () => { wrap.classList.add('fs'); close.hidden = false; document.body.classList.add('no-scroll'); if (wrap.requestFullscreen) wrap.requestFullscreen().catch(() => {}); });
+  close.addEventListener('click', fsOff);
+  wrap.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) { wrap.classList.remove('fs'); close.hidden = true; document.body.classList.remove('no-scroll'); } });
+  $('[data-dl]', root).addEventListener('click', () => {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([file.content], { type: 'text/html' }));
+    a.download = path.split('/').pop(); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+  const eb = $('[data-edit]', root); if (eb) eb.addEventListener('click', () => editHtml({ path, old: file.content, back: location.hash }));
+}
+// HTML 쓰기·고치기: 왼쪽 원문(붙여 넣기·파일 열기), 오른쪽 실시간 미리보기. 새 파일이면 위에서 제목(=파일 이름)을 정한다.
+function editHtml({ path, old = null, dir, back, dated }) {
+  if (!needLogin()) return;
+  const isNew = !path;
+  main.innerHTML = `<div class="wide"><p style="margin:0 0 6px"><a href="${esc(back)}">← 돌아가기</a> › ${isNew ? '새 HTML' : 'HTML 수정'}</p>
+    ${isNew ? `<div class="new-meta">${dated ? `<label>날짜 <input type="date" id="hDate" value="${todayKst()}"></label>` : ''}<label class="grow">제목 <input type="text" id="hTitle" maxlength="60" placeholder="예: 대기열 부하 테스트 결과"></label>
+      <label class="btn sm plain" style="cursor:pointer">파일 열기<input type="file" id="hFile" accept=".html,.htm,text/html" hidden></label><span class="muted" id="hPath"></span></div>` : ''}
+    <div class="editor tall"><div class="editor-bar"><b>${esc(path || 'HTML')}</b><span class="grow"></span><span class="muted">${esc(S.me)} 브랜치에 저장</span>
+    <button class="btn sm plain" data-cancel>취소</button><button class="btn sm" data-save>저장</button></div>
+    <div class="editor-body"><textarea class="code" spellcheck="false" placeholder="HTML을 붙여 넣거나 위의 '파일 열기'로 불러오세요"></textarea><iframe class="preview" sandbox="allow-scripts" title="미리보기"></iframe></div></div></div>`;
+  const ta = $('textarea', main), pv = $('iframe', main), ti = $('#hTitle'), di = $('#hDate'), fi = $('#hFile');
+  ta.value = old || '<!doctype html>\n<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>제목</title></head>\n<body>\n</body></html>\n';
+  const slug = (t) => (t || '').trim().replace(/[\\/:*?"<>|#%&{}$!'@`=+^~.,\[\]()]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').slice(0, 40) || '제목';
+  const pathOf = () => path || `${dir}/${di ? di.value.replace(/-/g, '') + '-' : ''}${slug(ti.value)}.html`;
+  const draw = () => { pv.srcdoc = ta.value; const hp = $('#hPath'); if (hp) hp.textContent = pathOf(); };
+  let t; ta.addEventListener('input', () => { clearTimeout(t); t = setTimeout(draw, 300); }); draw();
+  if (ti) ti.addEventListener('input', draw); if (di) di.addEventListener('input', draw);
+  if (fi) fi.addEventListener('change', async () => {
+    const f = fi.files[0]; if (!f) return;
+    if (f.size > 900 * 1024) { toast('900KB보다 큰 HTML은 올릴 수 없어요.'); return; }
+    ta.value = await f.text();
+    if (!ti.value.trim()) { const m = /<title>([^<]*)<\/title>/i.exec(ta.value); ti.value = (m && m[1].trim()) || f.name.replace(/\.html?$/i, ''); }
+    draw();
+  });
+  ta.addEventListener('keydown', (e) => { if (e.key === 'Tab') { e.preventDefault(); ta.setRangeText('  ', ta.selectionStart, ta.selectionEnd, 'end'); } });
+  if (ti) ti.focus();
+  $('[data-cancel]', main).addEventListener('click', () => { location.hash = back; route(); });
+  $('[data-save]', main).addEventListener('click', () => {
+    if (isNew && !ti.value.trim()) { toast('제목을 써 주세요.'); ti.focus(); return; }
+    if (ta.value === old) { toast('바뀐 내용이 없어요.'); return; }
+    const p = pathOf(), after = ta.value.endsWith('\n') ? ta.value : ta.value + '\n';
+    commitFlow({
+      path: p, heading: `${p.split('/').pop()} HTML`, before: old || '', after, title: isNew ? '새 HTML 저장' : undefined,
+      run: async (message) => {
+        try {
+          await api('/save', { body: { path: p, mode: 'file', oldText: old, newText: after, message } });
+          closeModal(); bump(); toast(`${S.me} 브랜치에 저장했어요. 다른 사람에게도 보이게 하려면 위의 "main에 합치기"를 눌러 주세요.`, 5000);
+          if (S.ref !== S.me) { S.ref = S.me; store.set('ref', S.me); }
+          loadBranches();
+          const [, ko, kind, fname] = p.split('/'); const who = Object.keys(S.members).find((n) => S.members[n] === ko);
+          location.hash = `#/people/${who}/${kind}/${encodeURIComponent(fname)}`; if (!isNew) route();
+        } catch (x) {
+          if (x.error === 'MAIN_CONFLICT') { conflictModal(x); return; }
+          if (x.error === 'STALE') { if (isNew) throw new Error('같은 이름의 파일이 이미 있어요. 제목을 바꿔 주세요.'); staleModal({ ...x, current: x.current }, ta.value, p, ''); return; }
+          throw x;
+        }
+      },
+    });
+  });
 }
 
 // 새 글: 위에서 날짜·제목을 정하고, 아래에서 마크다운(노션처럼 **굵게**, > 인용, - 목록, ## 제목, ``` 코드)으로 쓰며 오른쪽에서 바로 미리 본다

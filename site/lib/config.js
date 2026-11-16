@@ -17,10 +17,10 @@ export const PIN_LOCK_SEC = 600;
 export const SESSION_SEC = 7 * 24 * 3600;
 export const PBKDF2_ITER = 100000; // Workers의 PBKDF2 최대 반복 수
 
-// 팀원별 폴더: docs/{한글이름}/ 아래 기여 정리, 개발일지, 기능 문서, 트러블슈팅
+// 팀원별 폴더: docs/{한글이름}/ 아래 기여 정리, 개발일지, 기능 문서, 트러블슈팅 (글은 .md, 보고서·시연 페이지는 .html)
 export const PERSON_KINDS = ['devlog', 'features', 'troubleshooting'];
 const KO = Object.values(MEMBERS).join('|');
-export const PERSON_FILE = new RegExp(`^docs/(${KO})/(contribution\\.md|(devlog|features|troubleshooting)/[^/]+\\.md)$`);
+export const PERSON_FILE = new RegExp(`^docs/(${KO})/(contribution\\.md|(devlog|features|troubleshooting)/[^/]+\\.(md|html))$`);
 export const PERSON_DIR = new RegExp(`^docs/(${KO})/(devlog|features|troubleshooting)$`);
 // 팀원 폴더 파일은 그 사람만 고친다 (다른 문서는 누구나)
 export function ownerOk(me, path) {
