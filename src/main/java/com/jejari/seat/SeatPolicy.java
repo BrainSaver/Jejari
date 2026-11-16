@@ -22,13 +22,15 @@ public class SeatPolicy {
 	public static final String SCANNER_HOLD_INTERVAL_SEC = "scanner.hold_interval_sec";
 	public static final String SCANNER_BATCH_SIZE = "scanner.batch_size";
 	public static final String REOFFER_HOLD_SEC = "waitlist.reoffer_hold_sec";
+	public static final String SEATMAP_CACHE_MS = "seatmap.cache_ms";
 
 	private static final Map<String, String> DEFAULTS = Map.of(
 			PAY_DEADLINE_MIN, "10",
 			IDEM_TTL_SEC, "600",
 			SCANNER_HOLD_INTERVAL_SEC, "5",
 			SCANNER_BATCH_SIZE, "500",
-			REOFFER_HOLD_SEC, "60");
+			REOFFER_HOLD_SEC, "60",
+			SEATMAP_CACHE_MS, "1000");
 	private static final long CACHE_NANOS = 1_000_000_000L;
 
 	private record Cached(String value, long expiresAtNanos) {

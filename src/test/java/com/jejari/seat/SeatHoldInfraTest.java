@@ -269,6 +269,16 @@ class SeatHoldInfraTest {
 								+ "\",\"seats\":[{\"seatId\":" + seatIds.get(51) + ",\"passengerType\":\"ADULT\"}]}"))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.status").value("HOLD"));
+
+		// RSV-05: 같은 예약을 API로 결제 전 취소
+		long r = jdbc.queryForObject("SELECT reservation_id FROM reservation WHERE member_id = ?", Long.class, m);
+		mvc.perform(post("/api/v1/reservations/" + r + "/cancel").header("Authorization", "Bearer " + access))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("CANCELED"))
+				.andExpect(jsonPath("$.seatCount").value(1));
+		mvc.perform(post("/api/v1/reservations/" + r + "/cancel")
+						.header("Authorization", "Bearer " + tokens.issue(ActorType.MEMBER, newMember(), UUID.randomUUID().toString()).value()))
+				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESERVATION_NOT_FOUND"));
 	}
 
 	// ------------------------------------------------------------ 도우미

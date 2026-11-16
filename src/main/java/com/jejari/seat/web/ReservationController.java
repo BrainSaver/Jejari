@@ -1,6 +1,8 @@
 package com.jejari.seat.web;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +15,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.jejari.auth.AuthPrincipal;
+import com.jejari.behavior.BehaviorLog;
+import com.jejari.behavior.BehaviorType;
 import com.jejari.common.error.BusinessException;
 import com.jejari.common.error.CommonErrorCode;
 import com.jejari.queue.domain.QueuePassService;
@@ -56,11 +60,25 @@ public class ReservationController {
 		if (body == null || body.runId() == null) {
 			throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
 		}
-		queuePass.verify(body.runId(), memberId, queueToken);
-		HoldResult result = seatHold.hold(memberId, new HoldCommand(body.runId(), body.fromStationId(),
-				body.toStationId(), body.seats(), body.channel(), idempotencyKey));
-		// 새로 잡았으면 201, 같은 멱등 키 재요청이면 기존 예약 상태를 200으로
-		return ResponseEntity.status(result.replay() ? HttpStatus.OK : HttpStatus.CREATED).body(result);
+		// 행동 로그: 실패(409 등)도 남아야 같은 좌석 반복 실패(SAME_SEAT_RETRY)를 잡는다. 예외 전에 먼저 표시
+		Map<String, Object> meta = new LinkedHashMap<>();
+		List<Long> seatIds = body.seats() == null ? List.of() : body.seats().stream().map(SeatRequest::seatId).toList();
+		meta.put("seatIds", seatIds);
+		meta.put("seatCount", seatIds.size());
+		BehaviorLog.mark(BehaviorType.SEAT_HOLD, body.runId(), meta);
+		try {
+			queuePass.verify(body.runId(), memberId, queueToken);
+			HoldResult result = seatHold.hold(memberId, new HoldCommand(body.runId(), body.fromStationId(),
+					body.toStationId(), body.seats(), body.channel(), idempotencyKey));
+			meta.put("reservationId", result.reservationId());
+			BehaviorLog.mark(BehaviorType.SEAT_HOLD, body.runId(), meta);
+			// 새로 잡았으면 201, 같은 멱등 키 재요청이면 기존 예약 상태를 200으로
+			return ResponseEntity.status(result.replay() ? HttpStatus.OK : HttpStatus.CREATED).body(result);
+		} catch (BusinessException e) {
+			meta.put("errorCode", e.getErrorCode().code());
+			BehaviorLog.mark(BehaviorType.SEAT_HOLD, body.runId(), meta);
+			throw e;
+		}
 	}
 
 	/**
@@ -70,6 +88,18 @@ public class ReservationController {
 	 */
 	@PostMapping("/{reservationId}/cancel")
 	public CancelResult cancel(@AuthenticationPrincipal AuthPrincipal me, @PathVariable long reservationId) {
-		return seatRelease.cancelBeforePay(me.memberId(), reservationId);
+		Map<String, Object> meta = new LinkedHashMap<>();
+		meta.put("reservationId", reservationId);
+		meta.put("cancelKind", "BEFORE_PAY");
+		try {
+			CancelResult r = seatRelease.cancelBeforePay(me.memberId(), reservationId);
+			meta.put("seatCount", r.seatCount());
+			BehaviorLog.mark(BehaviorType.CANCEL, r.runId(), meta);
+			return r;
+		} catch (BusinessException e) {
+			meta.put("errorCode", e.getErrorCode().code());
+			BehaviorLog.mark(BehaviorType.CANCEL, null, meta);
+			throw e;
+		}
 	}
 }

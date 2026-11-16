@@ -38,7 +38,7 @@ public class SeatReleaseService {
 	private static final Logger log = LoggerFactory.getLogger(SeatReleaseService.class);
 
 	/** 결제 전 취소 결과 */
-	public record CancelResult(long reservationId, String status) {
+	public record CancelResult(long reservationId, String status, Long runId, int seatCount) {
 	}
 
 	private final SeatReleaseTx releaseTx;
@@ -49,9 +49,11 @@ public class SeatReleaseService {
 	private final JdbcTemplate jdbc;
 	private final TransactionTemplate tx;
 	private final MeterRegistry meters;
+	private final SeatMapService seatMap;
 
 	public SeatReleaseService(SeatReleaseTx releaseTx, TrainRunReader runs, SeatScripts scripts, SeatPolicy policy,
-			StringRedisTemplate redis, JdbcTemplate jdbc, TransactionTemplate tx, MeterRegistry meters) {
+			StringRedisTemplate redis, JdbcTemplate jdbc, TransactionTemplate tx, MeterRegistry meters,
+			SeatMapService seatMap) {
 		this.releaseTx = releaseTx;
 		this.runs = runs;
 		this.scripts = scripts;
@@ -60,6 +62,7 @@ public class SeatReleaseService {
 		this.jdbc = jdbc;
 		this.tx = tx;
 		this.meters = meters;
+		this.seatMap = seatMap;
 	}
 
 	/**
@@ -81,16 +84,19 @@ public class SeatReleaseService {
 		Released done = tx.execute(st -> releaseTx.release(reservationId, ReleaseReason.USER_BEFORE_PAY, memberId));
 		if (done != null) {
 			afterCommit(done);
-			return new CancelResult(reservationId, "CANCELED");
+			return new CancelResult(reservationId, "CANCELED", done.runId(), done.seatCount());
 		}
 		// 0행: 왜 안 됐는지 알려 준다 (남의 예약은 없는 예약과 같게 404)
-		List<String> status = jdbc.queryForList(
-				"SELECT status FROM reservation WHERE reservation_id = ? AND member_id = ?", String.class, reservationId, memberId);
-		if (status.isEmpty()) {
+		record Row(String status, long runId, int seatCount) {
+		}
+		List<Row> rows = jdbc.query("SELECT status, run_id, seat_count FROM reservation WHERE reservation_id = ? AND member_id = ?",
+				(rs, i) -> new Row(rs.getString(1), rs.getLong(2), rs.getInt(3)), reservationId, memberId);
+		if (rows.isEmpty()) {
 			throw new BusinessException(SeatErrorCode.RESERVATION_NOT_FOUND);
 		}
-		return switch (status.get(0)) {
-			case "CANCELED" -> new CancelResult(reservationId, "CANCELED");
+		Row row = rows.get(0);
+		return switch (row.status()) {
+			case "CANCELED" -> new CancelResult(reservationId, "CANCELED", row.runId(), row.seatCount());
 			case "PAYMENT_PENDING" -> throw new BusinessException(SeatErrorCode.PAYMENT_IN_PROGRESS);
 			case "EXPIRED" -> throw new BusinessException(SeatErrorCode.RESERVATION_EXPIRED);
 			default -> throw new BusinessException(SeatErrorCode.RESERVATION_NOT_HOLD); // CONFIRMED는 확정 취소(CNL-02)
@@ -144,6 +150,7 @@ public class SeatReleaseService {
 				keys.add(SeatKeys.limitEvent(done.saleEventId(), done.ciHash()));
 			}
 			redis.execute(scripts.limitDecr, keys, Integer.toString(done.seatCount()), Long.toString(markExpiry(run)));
+			seatMap.evict(done.runId());
 		} catch (RuntimeException e) {
 			log.warn("예약 {} 해제 후 Redis 보상 실패 (seat-release가 다시 함)", done.reservationId(), e);
 		}

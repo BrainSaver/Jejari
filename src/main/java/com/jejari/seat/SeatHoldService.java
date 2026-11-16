@@ -26,6 +26,7 @@ import com.jejari.queue.QueueErrorCode;
 import com.jejari.seat.HoldPlan.SeatLine;
 import com.jejari.seat.PurchaseLimits.Limits;
 import com.jejari.seat.SeatHoldTx.Preempted;
+import com.jejari.train.FareReader;
 import com.jejari.train.RunInfo;
 import com.jejari.train.TrainRunReader;
 
@@ -62,6 +63,8 @@ public class SeatHoldService {
 	private static final java.util.Set<String> CHANNELS = java.util.Set.of("WEB", "APP");
 
 	private final TrainRunReader runs;
+	private final SeatMapService seatMap;
+	private final FareReader fares;
 	private final PurchaseLimits limits;
 	private final PurchaseCounters counters;
 	private final SeatHoldTx holdTx;
@@ -72,10 +75,12 @@ public class SeatHoldService {
 	private final TransactionTemplate tx;
 	private final Clock clock;
 
-	public SeatHoldService(TrainRunReader runs, PurchaseLimits limits, PurchaseCounters counters, SeatHoldTx holdTx,
+	public SeatHoldService(TrainRunReader runs, SeatMapService seatMap, FareReader fares, PurchaseLimits limits, PurchaseCounters counters, SeatHoldTx holdTx,
 			SeatPolicy policy, SeatScripts scripts, StringRedisTemplate redis, JdbcTemplate jdbc, TransactionTemplate tx,
 			Clock clock) {
 		this.runs = runs;
+		this.seatMap = seatMap;
+		this.fares = fares;
 		this.limits = limits;
 		this.counters = counters;
 		this.holdTx = holdTx;
@@ -180,6 +185,11 @@ public class SeatHoldService {
 				log.warn("재선점한 이전 예약 {}의 Redis 한도 되돌리기 실패 (seat-release가 다시 함)", p.reservationId(), e);
 			}
 		}
+		try {
+			seatMap.evict(run.runId()); // 내 화면에 방금 잡은 좌석이 바로 보이게
+		} catch (RuntimeException e) {
+			log.debug("seatmap 캐시 삭제 실패 (유지 시간 뒤 갱신됨)", e);
+		}
 		return new HoldResult(r, "HOLD", deadline, plan.totalAmount(),
 				seats.stream().map(SeatLine::seatId).toList(), false);
 	}
@@ -234,17 +244,8 @@ public class SeatHoldService {
 	}
 
 	private long fare(RunInfo run, String grade, String from, String to) {
-		List<Long> v = jdbc.queryForList("""
-				SELECT amount FROM fare
-				 WHERE seat_grade = ? AND from_station_id = ? AND to_station_id = ?
-				   AND (train_kind = ? OR train_kind IS NULL)
-				   AND valid_from <= ? AND (valid_to IS NULL OR valid_to >= ?)
-				 ORDER BY CASE WHEN train_kind IS NULL THEN 1 ELSE 0 END, valid_from DESC
-				 FETCH FIRST 1 ROWS ONLY""", Long.class, grade, from, to, run.trainKind(), run.runDate(), run.runDate());
-		if (v.isEmpty()) {
-			throw new BusinessException(CommonErrorCode.INVALID_REQUEST, "운임이 등록되지 않은 구간입니다.");
-		}
-		return v.get(0);
+		return fares.find(run.trainKind(), grade, from, to, run.runDate())
+				.orElseThrow(() -> new BusinessException(CommonErrorCode.INVALID_REQUEST, "운임이 등록되지 않은 구간입니다."));
 	}
 
 	// ---------------------------------------------------------------- 멱등
