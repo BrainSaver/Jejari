@@ -2,7 +2,7 @@
 
 예매·결제·취소·취소표·이벤트 발행에서 **트랜잭션 경계, 실행 순서, SQL·Redis 명령**의 원천 문서입니다. 스키마(테이블·컬럼·제약)의 원천은 ERD 편집기(`docs/erd/jejari-erd.html`)이고, 테이블 비고에는 이 문서의 절 번호만 적습니다. 구현과 테스트는 이 문서를 그대로 따릅니다.
 
-- 기준 스키마: v9
+- 기준 스키마: v16
 - 표기: `:이름`은 바인드 변수, `app_policy`의 값은 `policy(키)`로 적습니다. Redis 키의 `{runId}` 같은 중괄호는 **자리표시자**이고 실제 키에는 중괄호가 없습니다 (`seat:hold:1001:57:0`). 클러스터 해시 태그와는 다릅니다 (§14.4).
 - §16에 테스트로 옮길 시나리오, §17에 비교 실험과 지표 정의가 있습니다.
 
@@ -103,7 +103,7 @@ PG 호출, Kafka 발행 같은 네트워크 호출은 **DB 트랜잭션 밖**에
 
 0. 1회 매수 한도: 요청 매수 n이 `PER_RESERVATION` 한도(§10.6) 이하인지 확인합니다. 카운터 없이 값 비교만 합니다.
 1. §1로 `reservation_id` R을 받습니다 (시퀀스 또는 Snowflake).
-2. 매수 한도 1차: `limit_incr.lua`(§14.2)로 `limit:{runId}:{ciHash}`, `limit:event:{saleEventId}:{ciHash}`를 n만큼 올립니다. 한도를 넘으면 스크립트가 되돌리고 0을 반환하며, §10.7 자가 복구를 한 번 거친 뒤에도 넘으면 거절합니다. 키가 없으면 스크립트가 `purchase_counter` 값으로 먼저 채웁니다 (§10.4).
+2. 매수 한도 1차: `limit_incr.lua`(§14.2)로 `limit:{runId}:{ciHash}`, `limit:day:{yyyymmdd}:{ciHash}`, `limit:event:{saleEventId}:{ciHash}`를 n만큼 올립니다. `{yyyymmdd}`는 **앱 시계의 오늘 날짜**입니다 (§0.7). 키 순서는 이 순서로 고정하고, 스크립트가 돌려준 걸린 키 번호로 `LIMIT_PER_RUN`·`LIMIT_PER_DAY`·`LIMIT_PER_HOLIDAY`를 가립니다. 한도를 넘으면 스크립트가 되돌리고 0을 반환하며, §10.7 자가 복구를 한 번 거친 뒤에도 넘으면 거절합니다. 키가 없으면 스크립트가 `purchase_counter` 값으로 먼저 채웁니다 (§10.4).
 3. 마감 `:d = 앱 시계 지금 + policy(reservation.pay_deadline_min)`을 계산합니다 (§0.7).
 4. 좌석 경쟁: `hold.lua`로 예약할 모든 구간 키 `seat:hold:{runId}:{seatId}:{segNo}`를 R 값으로 `SET NX`하고 만료를 `PXAT :d`로 겁니다. 하나라도 다른 값이 있으면 전부 실패합니다.
    - **패배자**: 2번의 한도를 되돌리고(`limit_decr.lua`), `idem` 키를 지우고 "이미 선점된 좌석"으로 거절합니다. **DB 쓰기는 0건**입니다.
@@ -403,13 +403,13 @@ SELECT payment_id, reservation_id, requested_at FROM payment
 4. 대기자 조회 (인덱스 `ix_waitlist_next`):
    ```sql
    SELECT waitlist_id, member_id, from_station_id, to_station_id, seat_grade, seat_count FROM waitlist
-    WHERE run_id = :r AND status = 'WAITING' ORDER BY requested_at
+    WHERE run_id = :r AND status = 'WAITING' ORDER BY priority_at, waitlist_id
       FOR UPDATE SKIP LOCKED
    ```
-   한 건씩 fetch합니다. `SKIP LOCKED`는 fetch할 때 행을 잠그므로 읽은 행만 잠깁니다. 다른 인스턴스가 잡은 대기자는 건너뜁니다.
+   순서는 신청 시각이 아니라 `priority_at`(= 신청 시각 + 위험 패널티)입니다 (§9.3). 한 건씩 fetch합니다. `SKIP LOCKED`는 fetch할 때 행을 잠그므로 읽은 행만 잠깁니다. 다른 인스턴스가 잡은 대기자는 건너뜁니다.
 5. 대기자마다:
    - 구간·등급·매수가 빈 좌석에 맞지 않으면 다음 대기자로 넘어갑니다 (변경 없음).
-   - 매수 한도(§10.6의 `PER_RUN`·`PER_HOLIDAY`, `limit_incr.lua`)에 걸리면 `UPDATE waitlist SET status = 'SKIPPED', updated_at = SYSTIMESTAMP WHERE waitlist_id = :w AND status = 'WAITING'`(T 안)을 하고 다음 대기자로 넘어갑니다.
+   - 매수 한도(§10.6의 `PER_RUN`·`PER_DAY`·`PER_HOLIDAY`, `limit_incr.lua`)에 걸리면 `UPDATE waitlist SET status = 'SKIPPED', updated_at = SYSTIMESTAMP WHERE waitlist_id = :w AND status = 'WAITING'`(T 안)을 하고 다음 대기자로 넘어갑니다.
    - 맞으면 6으로 갑니다.
    - 1회 한도(`PER_RESERVATION`)는 대기 신청 때 이미 확인했으므로 여기서 다시 보지 않습니다.
 6. 그 대기자 명의로 §2를 실행합니다. 다른 점은 다음과 같습니다.
@@ -431,13 +431,36 @@ SELECT payment_id, reservation_id, requested_at FROM payment
 
 수락은 결제(§4, §5)입니다. 결제 시작 때 `offer_deadline_at`도 함께 연장됩니다(§4-5). 기한이 지나면 §6 → §7이 예약을 만료시키고 `waitlist`는 `EXPIRED`가 됩니다. 그 빈 좌석 이벤트로 다음 대기자에게 다시 제안합니다.
 
+### 9.3 대기 순서와 위험 패널티
+
+대기열에서 위험 점수로 뒤로 밀린 사용자가 취소표 대기에서 정상 사용자와 같은 순서로 취소표를 가져가면 위험 점수 후순위가 우회됩니다. 그래서 대기 순서를 **신청 시각에 패널티를 더한 시각**으로 정합니다. (스키마: `waitlist.priority_at`, `waitlist.penalty_ms`, 인덱스 `ix_waitlist_next` — ERD v13)
+
+신청(WL-01) 때 한 번 계산해 저장합니다.
+
+0. 신청 자격: `member.status = 'RESTRICTED'`면 `WAITLIST_RESTRICTED`(403)로 거절합니다 (기능설계서 2장·WL-02, 미정 사항 3). RESTRICTED는 관리자가 판정해 제한한 회원이라, 최대 패널티(100점 = 5시간)로 뒤로 미뤄도 결국 취소표를 가져가므로 신청 자체를 막습니다. `BANNED`는 로그인에서 `AUTH_BANNED`로 막혀 여기까지 오지 않습니다.
+
+1. 위험 점수: 대기열 진입(QUE-01)과 같은 규칙입니다. 회원의 CI·결제 수단·기기 해시로 `risk:{CI|PAYMENT|DEVICE}:{해시}`를 읽어 **최댓값**(`policy(risk.member_penalty_rule)`)을 쓰고, 없으면 0점입니다. (대기열과 달리 RESTRICTED 100점 규칙은 쓰지 않습니다: 0번에서 이미 거절)
+2. `penalty_ms = round(점수 × policy(waitlist.penalty_ms_per_point))`. **대기열의 `risk.penalty_ms_per_point`(기본 1점 = 1초)를 그대로 쓰지 않습니다.** 대기열은 몇 분 안에 줄이 빠지지만 취소표 대기는 몇 시간~며칠 이어지므로, 같은 단위면 80점이 80초라 순서가 사실상 바뀌지 않습니다. 값은 **180000(1점 = 3분, 80점 = 4시간, 100점 = 5시간)**으로 정했습니다 (기능설계서 미정 사항 7). 봇은 매진 직후 바로 신청하므로 판매 첫날 오전 신청자 뒤로 밀리게 하고, 오탐(목표 5% 이하)된 정상 사용자도 몇 시간 뒤면 차례가 오도록 고른 값입니다. 20점 이하 약한 신호는 1시간 이내라 영향이 작습니다. k6 봇 시나리오 결과를 보고 `app_policy`에서 조정합니다.
+3. `priority_at = requested_at + penalty_ms`. `requested_at`은 앱 시계(§0.7)로 한 번 계산하고, 신청 이후 점수가 바뀌어도 다시 계산하지 않습니다 (대기열과 같음).
+4. 같은 `priority_at`이면 `waitlist_id` 순서입니다.
+
+위험 점수 때문에 신청을 막지는 않습니다 (막는 것은 0번의 RESTRICTED뿐). 위험 점수가 있는 사용자도 대기열에 설 수 있듯 취소표 신청도 할 수 있고, 정상 사용자 뒤로 밀릴 뿐입니다. 대기자가 적어 앞에 아무도 없으면 패널티가 있어도 바로 제안받습니다 (대기열과 같은 성질).
+
 ---
 
 ## §10 매수 카운터 (`purchase_counter`)
 
 ### 10.1 증가 (§2.2 트랜잭션 안)
 
-대상 scope는 두 개입니다. `PER_RUN`(`scope_ref_id = run_id`)과 `PER_HOLIDAY`(`scope_ref_id = sale_event_id`)입니다. `train_run.sale_event_id`가 NULL이면 PER_HOLIDAY는 적용하지 않습니다. scope마다 다음을 실행합니다.
+대상 scope는 세 개입니다.
+
+| scope | `scope_ref_id` |
+|---|---|
+| `PER_RUN` | `run_id` |
+| `PER_DAY` | **구매일** `YYYYMMDD` 숫자 (선점 시각을 앱 시계로 읽은 날짜, §0.7) |
+| `PER_HOLIDAY` | `sale_event_id` |
+
+`train_run.sale_event_id`가 NULL이면 PER_HOLIDAY는 적용하지 않습니다. scope마다 다음을 실행합니다.
 
 ```sql
 UPDATE purchase_counter SET seat_count = seat_count + :n, updated_at = SYSTIMESTAMP
@@ -454,6 +477,8 @@ UPDATE purchase_counter SET seat_count = seat_count + :n, updated_at = SYSTIMEST
 ### 10.2 감소
 
 **예약 상태 UPDATE가 1행일 때만, 같은 트랜잭션에서** 실행합니다 (§3, §7.1, §8). 취소와 만료가 동시에 와도 한쪽만 1행이 되므로 두 번 감소하지 않습니다.
+
+`PER_DAY`의 `:ref`는 **지금 날짜가 아니라 그 예약의 `created_at` 날짜**입니다. 자정을 넘겨 만료·취소되는 예약이 다른 날 카운터를 깎으면 안 되기 때문입니다. 상태 UPDATE 전에 같은 트랜잭션에서 `created_at`을 함께 읽습니다 (§3은 이미 `FOR UPDATE`로 그 행을 읽습니다).
 
 ```sql
 UPDATE purchase_counter SET seat_count = seat_count - :n, updated_at = SYSTIMESTAMP
@@ -486,7 +511,12 @@ UPDATE purchase_counter SET seat_count = seat_count - :n, updated_at = SYSTIMEST
 |---|---|---|
 | `PER_RESERVATION` | §2.1-0 (요청 매수 n과 비교, 카운터 없음) | 제한 없음 |
 | `PER_RUN` | §2.1-2, §10.1 | 제한 없음 |
+| `PER_DAY` | §2.1-2, §10.1 | 제한 없음 |
 | `PER_HOLIDAY` | §2.1-2, §10.1. 운행에 `sale_event_id`가 있고 그 행사 정책이 있을 때만 | 적용 안 함 |
+
+`PER_DAY`는 운행이 아니라 **사람의 하루**에 걸리는 한도라서, 행사에 묶이지 않은 평시 운행에도
+상시 정책으로 적용됩니다. 코레일 공시 규칙(열차당 10매·1일 20매)을 상시 정책 기본값으로 두고,
+명절 특별예매는 행사 정책(1회 4매·열차당 4매·명절 전체 8매)이 우선합니다.
 
 ### 10.7 Redis 한도 자가 복구
 
@@ -611,14 +641,17 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 |---|---|---|
 | `idem:{memberId}:{key}`, `idem:pay:{reservationId}:{key}` | reservation_id / payment_id | `idem.ttl_sec` |
 | `queue:{runId}`, `queue:seq:{runId}` | 대기 순번 ZSET (member = `{12자리 seq}:{memberId}`), 진입 시퀀스 | 운행 판매 마감 |
-| `queue:member:{memberId}`, `queue:ci:{ciHash}` | 회원당·CI당 동시 대기 1개 | 입장 토큰 만료 / 멤버별 score |
+| `queue:member:{memberId}`, `queue:ci:{ciHash}` | 회원당·CI당 동시 대기 1개. `queue:member` 값은 `{runId}\|{queue member}\|{ciHash}` | `queue.entry_ttl_sec` / 멤버별 score |
 | `queue:active:{runId}`, `queue:throughput:{runId}` | 입장한 회원 (score = 토큰 만료 시각), 초당 입장 수 | |
 | `queue:pass:{runId}:{memberId}` | 입장 토큰 | `queue.pass_ttl_sec` |
 | `seat:hold:{runId}:{seatId}:{segNo}` | `R`(HOLD), `SOLD:R`(확정), `REOFFER:R`(대기자 제안 대기) | `pay_deadline_at` / 운행 출발 시각 / `waitlist.reoffer_hold_sec` |
 | `limit:{runId}:{ciHash}`, `limit:event:{saleEventId}:{ciHash}` | 보유 매수 | 운행 출발·행사 종료 |
+| `limit:day:{yyyymmdd}:{ciHash}` | 그 날 구매한 매수 | 그 날 24:00 + 1시간 |
 | `limit:dec:{reservationId}` | 1 (이 예약의 한도 감소를 이미 했다는 표시) | 운행 출발·행사 종료 중 늦은 쪽 |
 | `relay:shard:{n}` | 릴레이 인스턴스 ID | `relay.lease_sec` |
-| `rate:login:{ipHash}`, `rate:api:{memberId}` | 횟수 | 짧은 창 |
+| `rate:login:{ipHash}`, `rate:signup:{ipHash}`, `rate:api:{memberId}` | 횟수 | 1분 / 1시간 / 1초 |
+| `login:fail:{emailHash}` | 연속 로그인 실패 수 | `auth.lock_minutes` |
+| `verify:{tokenHash}` | 본인인증 결과 (1회용, 가입 때 GETDEL) | `auth.verify_token_ttl_sec` |
 | `risk:{subjectType}:{hash}`, `policy:cache`, `seatmap:{runId}` | 캐시 | |
 
 ### 14.2 스크립트
@@ -626,13 +659,13 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | 스크립트 | 동작 |
 |---|---|
 | `hold.lua` | KEYS 전부에 대해, 다른 값이 하나라도 있으면 0 반환. 아니면 전부 `SET 값 PXAT 만료` 후 1 반환. ARGV로 인계 값(`REOFFER:R`)을 받으면 그 값인 키는 비어 있는 것으로 봄 (§9 전용) |
-| `release.lua` | KEYS 중 값이 ARGV[1]인 키만 DEL (compare-and-delete) |
+| `release.lua` | KEYS 중 값이 ARGV[1]인 키만 DEL (compare-and-delete). 지운 키 수를 반환 |
 | `extend.lua` | KEYS 중 값이 ARGV[1]인 키만 `PEXPIREAT` (결제 연장, 리스 갱신). 없는 키는 만들지 않음 |
 | `rehold.lua` | KEYS 중 값이 R이거나 없는 키를 `SET R PXAT 만료` (§6.2 PG 결과 모름) |
 | `sold.lua` | KEYS를 값과 상관없이 `SET SOLD:R PXAT 출발 시각` (DB가 확정했으므로 덮어씀) |
-| `reoffer.lua` | KEYS 중 값이 R 또는 `SOLD:R`인 키만 `SET REOFFER:R PX reoffer_hold`. 없거나 다른 값이면 그대로 |
-| `limit_incr.lua` | 키마다 없으면 `SET 복원값 NX`, 그 뒤 INCRBY n. 하나라도 한도를 넘으면 이번 증가분을 전부 DECRBY하고 0 반환 |
-| `limit_decr.lua` | KEYS[1] = `limit:dec:{R}`. `SET NX PXAT`가 성공했을 때만 나머지 키를 DECRBY n (0 미만이면 0). **예약 하나에 한 번만 감소**하므로 빠른 경로와 보장 경로가 둘 다 실행돼도 안전 |
+| `reoffer.lua` | KEYS 중 값이 R 또는 `SOLD:R`인 키만 `SET REOFFER:R PX reoffer_hold`. 없거나 다른 값이면 그대로. 이미 `REOFFER:R`이면 **TTL을 다시 늘리지 않습니다** — 빠른 경로와 보장 경로가 둘 다 돌 때 대기자 보류 창이 늘어나지 않게 하려는 것입니다 (§14.3) |
+| `limit_incr.lua` | 키마다 없으면 `SET 복원값 NX`, 그 뒤 INCRBY n. 하나라도 한도를 넘으면 이번 증가분을 전부 DECRBY하고 `{0, i}`를 반환한다 (i = 걸린 키 번호. 앱이 `LIMIT_PER_RUN`·`LIMIT_PER_DAY`·`LIMIT_PER_HOLIDAY`를 가린다). 통과하면 `{1}` |
+| `limit_decr.lua` | KEYS[1] = `limit:dec:{R}`. `SET NX PXAT`가 성공했을 때만 나머지 키를 DECRBY n (0 미만이면 `SET 0 KEEPTTL`). 없는 키는 건드리지 않는다 — DECRBY가 만료 없는 음수 키를 새로 만들기 때문이다. **예약 하나에 한 번만 감소**하므로 빠른 경로와 보장 경로가 둘 다 실행돼도 안전. 1 감소함 / 0 이미 처리됨 |
 
 ### 14.3 Redis 보상
 
@@ -652,7 +685,7 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 지금은 단일 노드 전제입니다. 클러스터에서는 한 Lua가 쓰는 키가 같은 슬롯이어야 하므로 해시 태그를 이렇게 바꿉니다. 여기서만 중괄호가 진짜 해시 태그입니다.
 
 - 좌석: `seat:hold:{<runId>}:<seatId>:<segNo>`. 한 예약의 여러 좌석·구간이 같은 슬롯에 들어가도록 태그를 운행 단위로 통일합니다.
-- 한도: `limit:{<ciHash>}:run:<runId>`, `limit:{<ciHash>}:event:<saleEventId>`, 표시 키 `limit:{<ciHash>}:dec:<reservationId>`. CI 단위 태그입니다.
+- 한도: `limit:{<ciHash>}:run:<runId>`, `limit:{<ciHash>}:day:<yyyymmdd>`, `limit:{<ciHash>}:event:<saleEventId>`, 표시 키 `limit:{<ciHash>}:dec:<reservationId>`. CI 단위 태그입니다.
 
 `seat:hold`와 `limit`은 슬롯이 다르므로 지금처럼 다른 스크립트로 나눠 둡니다.
 
@@ -677,11 +710,13 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | `payment.pg_recheck_sec` | 60 | §6.2 PG 결과를 모를 때 다음 조회까지 |
 | `payment.pg_unknown_max_min` | 30 | §6.2 결과 모름 알림 |
 | `idem.ttl_sec` | 600 | §1 |
+| `queue.entry_ttl_sec` | 3600 | §14.1 대기 기록(`queue:member`)이 남는 최대 시간. 이탈 없이 사라진 회원 정리 |
 | `relay.lease_sec` | 15 | §11.2 |
 | `relay.lock_wait_sec` | 5 | §11.3 |
 | `outbox.max_retry` | 5 | §11.3 |
 | `inbox.retention_days` | 8 | §12 (Kafka 보관 7일보다 길게) |
 | `waitlist.reoffer_hold_sec` | 60 | §9 대기자 우선 보류 시간 |
+| `waitlist.penalty_ms_per_point` | 180000 | §9.3 위험 점수 1점당 대기 순서를 뒤로 미루는 ms (대기열보다 크게). 1점 = 3분 (팀 확정) |
 | `behavior.retention_days` | 180 | §13.2 (팀 확정) |
 | `replay.hold_cache_sec` | 30 | §13.2 legal_hold 캐시 TTL, 두 번째 `$unset` 지연 |
 | `queue_log.retention_days` | 30 | §13.2 |
@@ -731,6 +766,11 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | T33 | limit:*가 DB 카운터보다 큼 (보상 유실 흉내) | 다음 요청에서 자가 복구 후 정상 판정 | §10.7 |
 | T34 | 기동 점검 | SESSIONTIMEZONE·SYSTIMESTAMP가 +09:00 | §0.7 |
 | T35 | 같은 대기자에게 이벤트 재전달 | 제안 예약 1건 (`wl:` 키 UNIQUE) | §1, §9 |
+| T36 | 같은 CI가 하루에 1일 한도를 넘겨 예약 | 한도까지만 성공, 초과분 거절 (운행이 달라도 합산) | §10.1, §10.6 |
+| T37 | 자정 직전 선점한 예약이 자정 뒤 만료 | 어제 날짜 `PER_DAY` 행이 감소 (오늘 행은 그대로) | §10.2 |
+| T38 | 위험 점수 80인 회원 A(패널티 4시간, `priority_at` 14:00)가 10:00에, 정상 회원 B가 10:30에 신청한 뒤 좌석 1개가 빔 | B에게 먼저 제안, A는 WAITING 유지 | §9.3 |
+| T39 | 같은 조건에서 B가 14:30(A의 `priority_at` 14:00이 지난 뒤)에 신청 | A에게 먼저 제안 | §9.3 |
+| T40 | `member.status = RESTRICTED`인 회원이 취소표 대기 신청 | `WAITLIST_RESTRICTED`(403), `waitlist` 행 없음. 같은 회원을 ACTIVE로 되돌리면 신청 가능 | §9.3 |
 
 ---
 
@@ -767,4 +807,4 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | 좌석 복구율 | 자동 복구 대상(PG 결과가 실패·없음으로 확정됐거나 기한이 지난 HOLD) 중 좌석 행·Redis 키·한도가 모두 복구된 비율. 목표 100% |
 | PG 결과 모름 | 복구율 분모에서 빼고, 건수와 관리자 처리까지 걸린 시간으로 따로 보고 |
 | 중복 예약·중복 결제 | 같은 좌석·구간의 SOLD 행 2개 이상 / 예약당 APPROVED 2개 이상. 목표 0 |
-| 재배정 순서 보장 | 대기자 제안 순서가 `requested_at` 순서와 다른 건수 (SKIPPED·조건 불일치 제외). 목표 0 |
+| 재배정 순서 보장 | 대기자 제안 순서가 `priority_at` 순서와 다른 건수 (SKIPPED·조건 불일치 제외). 목표 0 |

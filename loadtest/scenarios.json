@@ -1,0 +1,609 @@
+[
+  {
+    "id": "open",
+    "file": "01_open_spike.js",
+    "title": "오픈 시각 폭주",
+    "desc": "예매 오픈 순간 요청이 급증할 때 대기열이 버티는지 봅니다 (진입 → 번호표 조회 → 입장). 입장을 기다리며 VU가 묶이므로 진입 API 자체의 한계는 '진입 처리 한계'로 잽니다.",
+    "params": [
+      {
+        "key": "PEAK_RATE",
+        "label": "초당 진입 수",
+        "min": 10,
+        "max": 5000,
+        "step": 10,
+        "def": 500,
+        "unit": "명/초"
+      },
+      {
+        "key": "HOLD_DURATION",
+        "label": "폭주 유지 시간",
+        "min": 10,
+        "max": 600,
+        "step": 10,
+        "def": 120,
+        "unit": "초",
+        "suffix": "s"
+      },
+      {
+        "key": "MAX_VUS",
+        "label": "최대 동시 VU",
+        "min": 100,
+        "max": 10000,
+        "step": 100,
+        "def": 3000,
+        "unit": "VU"
+      }
+    ],
+    "presets": {
+      "light": {
+        "PEAK_RATE": 50,
+        "HOLD_DURATION": 30,
+        "MAX_VUS": 500
+      },
+      "normal": {
+        "PEAK_RATE": 500,
+        "HOLD_DURATION": 120,
+        "MAX_VUS": 3000
+      },
+      "heavy": {
+        "PEAK_RATE": 3000,
+        "HOLD_DURATION": 180,
+        "MAX_VUS": 8000
+      }
+    },
+    "derived": {
+      "PRE_VUS": {
+        "min": [
+          "MAX_VUS",
+          1000
+        ]
+      }
+    },
+    "keyMetrics": [
+      "queue_admitted",
+      "queue_wait_sec",
+      "dropped_iterations"
+    ]
+  },
+  {
+    "id": "race",
+    "file": "02_same_seat_race.js",
+    "title": "같은 좌석 동시 선점",
+    "desc": "N명이 한 좌석을 동시에 요청합니다. 성공이 1건을 넘으면 중복 예약입니다.",
+    "params": [
+      {
+        "key": "RACE_VUS",
+        "label": "동시 요청자 수",
+        "min": 10,
+        "max": 5000,
+        "step": 10,
+        "def": 500,
+        "unit": "명"
+      },
+      {
+        "key": "LOCK_STRATEGY",
+        "label": "락 방식",
+        "type": "select",
+        "def": "",
+        "options": [
+          [
+            "",
+            "서버 기본"
+          ],
+          [
+            "pessimistic",
+            "비관적 락"
+          ],
+          [
+            "optimistic",
+            "낙관적 락"
+          ],
+          [
+            "redis",
+            "Redis 분산락"
+          ]
+        ]
+      },
+      {
+        "key": "TARGET_SEAT",
+        "label": "대상 좌석 ID (비우면 자동)",
+        "type": "text",
+        "def": ""
+      }
+    ],
+    "presets": {
+      "light": {
+        "RACE_VUS": 50
+      },
+      "normal": {
+        "RACE_VUS": 500
+      },
+      "heavy": {
+        "RACE_VUS": 3000
+      }
+    },
+    "usersParam": "RACE_VUS",
+    "keyMetrics": [
+      "seat_success",
+      "seat_conflict",
+      "seat_other",
+      "hold_latency_ms"
+    ]
+  },
+  {
+    "id": "payment",
+    "file": "03_payment_failure.js",
+    "title": "결제 실패·기한 초과",
+    "desc": "결제 실패/방치 시 좌석이 자동 복구되는지 확인합니다 (복구율 100%).",
+    "params": [
+      {
+        "key": "VUS",
+        "label": "동시 사용자 수",
+        "min": 10,
+        "max": 2000,
+        "step": 10,
+        "def": 300,
+        "unit": "명"
+      },
+      {
+        "key": "HOLD_TTL_SEC",
+        "label": "선점 만료 시간(서버 설정과 일치)",
+        "min": 5,
+        "max": 600,
+        "step": 5,
+        "def": 30,
+        "unit": "초"
+      }
+    ],
+    "presets": {
+      "light": {
+        "VUS": 30
+      },
+      "normal": {
+        "VUS": 300
+      },
+      "heavy": {
+        "VUS": 1500
+      }
+    },
+    "usersParam": "VUS",
+    "keyMetrics": [
+      "seat_recovered",
+      "seat_not_recovered",
+      "seat_wrongly_released",
+      "seat_check_unknown"
+    ]
+  },
+  {
+    "id": "idem",
+    "file": "04_idempotency.js",
+    "title": "중복 요청 멱등성",
+    "desc": "같은 결제 요청을 동시에 여러 번 보내도 결제가 1건인지 확인합니다.",
+    "params": [
+      {
+        "key": "VUS",
+        "label": "동시 사용자 수",
+        "min": 10,
+        "max": 2000,
+        "step": 10,
+        "def": 200,
+        "unit": "명"
+      },
+      {
+        "key": "DUP_REQUESTS",
+        "label": "같은 요청 반복 횟수",
+        "min": 2,
+        "max": 20,
+        "step": 1,
+        "def": 5,
+        "unit": "회"
+      }
+    ],
+    "presets": {
+      "light": {
+        "VUS": 20,
+        "DUP_REQUESTS": 3
+      },
+      "normal": {
+        "VUS": 200,
+        "DUP_REQUESTS": 5
+      },
+      "heavy": {
+        "VUS": 1000,
+        "DUP_REQUESTS": 10
+      }
+    },
+    "usersParam": "VUS",
+    "keyMetrics": [
+      "duplicate_payments",
+      "duplicate_holds",
+      "idempotency_checked"
+    ]
+  },
+  {
+    "id": "waitlist",
+    "file": "05_cancel_waitlist.js",
+    "title": "취소표 재배정 순서",
+    "desc": "취소표가 예약 대기 순서대로 배정되는지 확인합니다.",
+    "params": [
+      {
+        "key": "WAITERS",
+        "label": "대기자 수",
+        "min": 2,
+        "max": 100,
+        "step": 1,
+        "def": 10,
+        "unit": "명"
+      }
+    ],
+    "presets": {
+      "light": {
+        "WAITERS": 3
+      },
+      "normal": {
+        "WAITERS": 10
+      },
+      "heavy": {
+        "WAITERS": 60
+      }
+    },
+    "usersParam": "WAITERS",
+    "usersExtra": 1,
+    "keyMetrics": [
+      "waitlist_assigned",
+      "waitlist_order_violations"
+    ]
+  },
+  {
+    "id": "bypass",
+    "file": "06_token_bypass.js",
+    "title": "대기열 우회 차단",
+    "desc": "입장 토큰 없음·위조·남의 토큰·다른 운행·이탈 후 재사용으로 좌석 배치도를 호출해 100% 차단되는지, 정상 토큰은 열리는지 봅니다.",
+    "params": [
+      {
+        "key": "VUS",
+        "label": "동시 시도자 수",
+        "min": 10,
+        "max": 2000,
+        "step": 10,
+        "def": 100,
+        "unit": "명"
+      }
+    ],
+    "presets": {
+      "light": {
+        "VUS": 20
+      },
+      "normal": {
+        "VUS": 100
+      },
+      "heavy": {
+        "VUS": 1000
+      }
+    },
+    "usersParam": "VUS",
+    "keyMetrics": [
+      "bypass_allowed",
+      "valid_rejected",
+      "bypass_blocked_rate"
+    ],
+    "usersMult": 2
+  },
+  {
+    "id": "bot",
+    "file": "07_bot_simulation.js",
+    "title": "정상 + 봇 시뮬레이션",
+    "desc": "정상 사용자와 봇 3종 트래픽을 섞어 보내 탐지율·오탐률 측정용 데이터를 만듭니다.",
+    "params": [
+      {
+        "key": "MAX_PER_GROUP",
+        "label": "그룹당 최대 계정 수",
+        "min": 10,
+        "max": 5000,
+        "step": 10,
+        "def": 500,
+        "unit": "명"
+      }
+    ],
+    "presets": {
+      "light": {
+        "MAX_PER_GROUP": 50
+      },
+      "normal": {
+        "MAX_PER_GROUP": 500
+      },
+      "heavy": {
+        "MAX_PER_GROUP": 3000
+      }
+    },
+    "keyMetrics": []
+  },
+  {
+    "id": "entry",
+    "file": "08_entry_burst.js",
+    "title": "진입 처리 한계",
+    "desc": "입장을 기다리지 않고 진입만 단계별로 올려 가며, 어느 단계에서 느려지거나 실패하는지 찾습니다. 끝나면 Redis에 키가 많이 남으니 개발용 초기화(POST /api/v1/dev/reset)로 비우세요.",
+    "params": [
+      {
+        "key": "PEAK_RATE",
+        "label": "최대 초당 진입 수",
+        "min": 100,
+        "max": 20000,
+        "step": 100,
+        "def": 4000,
+        "unit": "명/초"
+      },
+      {
+        "key": "STEPS",
+        "label": "단계 수",
+        "min": 1,
+        "max": 8,
+        "step": 1,
+        "def": 4,
+        "unit": "단계"
+      },
+      {
+        "key": "STEP_SEC",
+        "label": "단계당 시간",
+        "min": 5,
+        "max": 60,
+        "step": 5,
+        "def": 10,
+        "unit": "초"
+      },
+      {
+        "key": "MAX_VUS",
+        "label": "최대 동시 VU",
+        "min": 200,
+        "max": 5000,
+        "step": 100,
+        "def": 1500,
+        "unit": "VU"
+      }
+    ],
+    "presets": {
+      "light": {
+        "PEAK_RATE": 500,
+        "STEPS": 2,
+        "STEP_SEC": 5,
+        "MAX_VUS": 500
+      },
+      "normal": {
+        "PEAK_RATE": 4000,
+        "STEPS": 4,
+        "STEP_SEC": 10,
+        "MAX_VUS": 1500
+      },
+      "heavy": {
+        "PEAK_RATE": 8000,
+        "STEPS": 8,
+        "STEP_SEC": 20,
+        "MAX_VUS": 3000
+      }
+    },
+    "derived": {
+      "PRE_VUS": {
+        "min": [
+          "MAX_VUS",
+          300
+        ]
+      }
+    },
+    "keyMetrics": [
+      "entry_ok_step1",
+      "entry_ok_step2",
+      "entry_ok_step3",
+      "entry_ok_step4",
+      "entry_ok_step5",
+      "entry_ok_step6",
+      "entry_ok_step7",
+      "entry_ok_step8",
+      "entry_ms_step1",
+      "entry_ms_step2",
+      "entry_ms_step3",
+      "entry_ms_step4",
+      "entry_ms_step5",
+      "entry_ms_step6",
+      "entry_ms_step7",
+      "entry_ms_step8",
+      "dropped_iterations"
+    ]
+  },
+  {
+    "id": "penalty",
+    "file": "09_penalty_order.js",
+    "title": "순번 조정 정확도",
+    "desc": "위험 점수가 높은 계정(봇)이 먼저 줄을 서도 정상 사용자보다 뒤에 입장하는지 봅니다. 시작 전에 대기열을 초기화하고 봇 점수·입장 속도를 스스로 설정합니다(개발 모드 서버 또는 Mock 서버 필요). 봇 점수 × 1초가 정상 사용자 전원이 입장하는 시간(정상 수 ÷ 입장 속도)보다 길어야 합니다.",
+    "params": [
+      {
+        "key": "BOTS",
+        "label": "봇 수",
+        "min": 1,
+        "max": 200,
+        "step": 1,
+        "def": 20,
+        "unit": "명"
+      },
+      {
+        "key": "NORMALS",
+        "label": "정상 사용자 수",
+        "min": 10,
+        "max": 1000,
+        "step": 10,
+        "def": 100,
+        "unit": "명"
+      },
+      {
+        "key": "BOT_SCORE",
+        "label": "봇 위험 점수",
+        "min": 1,
+        "max": 100,
+        "step": 1,
+        "def": 80,
+        "unit": "점"
+      },
+      {
+        "key": "ADMIT_PER_SEC",
+        "label": "초당 입장 인원",
+        "min": 1,
+        "max": 500,
+        "step": 1,
+        "def": 10,
+        "unit": "명/초"
+      },
+      {
+        "key": "RELEASE_AFTER",
+        "label": "입장 시작 시각",
+        "min": 3,
+        "max": 60,
+        "step": 1,
+        "def": 6,
+        "unit": "초"
+      }
+    ],
+    "presets": {
+      "light": {
+        "BOTS": 10,
+        "NORMALS": 50,
+        "BOT_SCORE": 80,
+        "ADMIT_PER_SEC": 10,
+        "RELEASE_AFTER": 6
+      },
+      "normal": {
+        "BOTS": 20,
+        "NORMALS": 100,
+        "BOT_SCORE": 80,
+        "ADMIT_PER_SEC": 10,
+        "RELEASE_AFTER": 6
+      },
+      "heavy": {
+        "BOTS": 50,
+        "NORMALS": 500,
+        "BOT_SCORE": 100,
+        "ADMIT_PER_SEC": 50,
+        "RELEASE_AFTER": 10
+      }
+    },
+    "keyMetrics": [
+      "bot_admitted_after_all_normals",
+      "normal_admitted_before_bots",
+      "admit_wait_bot_ms",
+      "admit_wait_normal_ms"
+    ]
+  },
+  {
+    "id": "auth",
+    "file": "10_auth_oracle.js",
+    "title": "회원가입·로그인 (Oracle)",
+    "desc": "실제 Oracle을 쓰는 회원 인증을 봅니다: 같은 이메일 동시 가입(1명만 성공해야 함) → 가입 처리량 → 로그인 처리량 → 비밀번호 5회 오류 잠금. 실제 앱을 신뢰 프록시 옵션(--jejari.auth.trusted-proxies=127.0.0.1)으로 띄워야 하고, 끝나면 Oracle에 @loadtest.example.com 계정이 남습니다. Mock 서버로도 돌릴 수 있지만 그때는 Oracle이 아니라 흉내입니다.",
+    "params": [
+      {
+        "key": "RACE_VUS",
+        "label": "같은 이메일 동시 가입자 수",
+        "min": 2,
+        "max": 100,
+        "step": 2,
+        "def": 20,
+        "unit": "명"
+      },
+      {
+        "key": "RACE_ROUNDS",
+        "label": "경합 반복 횟수",
+        "min": 1,
+        "max": 10,
+        "step": 1,
+        "def": 3,
+        "unit": "회"
+      },
+      {
+        "key": "SIGNUP_RATE",
+        "label": "초당 가입 수",
+        "min": 1,
+        "max": 100,
+        "step": 1,
+        "def": 10,
+        "unit": "건/초"
+      },
+      {
+        "key": "SIGNUP_SEC",
+        "label": "가입 시간",
+        "min": 5,
+        "max": 60,
+        "step": 5,
+        "def": 20,
+        "unit": "초"
+      },
+      {
+        "key": "LOGIN_USERS",
+        "label": "로그인용 계정 수",
+        "min": 5,
+        "max": 500,
+        "step": 5,
+        "def": 30,
+        "unit": "개"
+      },
+      {
+        "key": "LOGIN_RATE",
+        "label": "초당 로그인 수",
+        "min": 1,
+        "max": 300,
+        "step": 1,
+        "def": 20,
+        "unit": "건/초"
+      },
+      {
+        "key": "LOGIN_SEC",
+        "label": "로그인 시간",
+        "min": 5,
+        "max": 60,
+        "step": 5,
+        "def": 20,
+        "unit": "초"
+      }
+    ],
+    "presets": {
+      "light": {
+        "RACE_VUS": 10,
+        "RACE_ROUNDS": 2,
+        "SIGNUP_RATE": 5,
+        "SIGNUP_SEC": 10,
+        "LOGIN_USERS": 10,
+        "LOGIN_RATE": 10,
+        "LOGIN_SEC": 10
+      },
+      "normal": {
+        "RACE_VUS": 20,
+        "RACE_ROUNDS": 3,
+        "SIGNUP_RATE": 10,
+        "SIGNUP_SEC": 20,
+        "LOGIN_USERS": 30,
+        "LOGIN_RATE": 20,
+        "LOGIN_SEC": 20
+      },
+      "heavy": {
+        "RACE_VUS": 100,
+        "RACE_ROUNDS": 5,
+        "SIGNUP_RATE": 50,
+        "SIGNUP_SEC": 30,
+        "LOGIN_USERS": 200,
+        "LOGIN_RATE": 150,
+        "LOGIN_SEC": 30
+      }
+    },
+    "keyMetrics": [
+      "auth_race_winners",
+      "auth_race_duplicate",
+      "auth_race_other",
+      "auth_signup_ok",
+      "auth_signup_fail",
+      "auth_signup_ms",
+      "auth_login_ok",
+      "auth_login_fail",
+      "auth_login_ms",
+      "auth_lockout_ok",
+      "auth_lockout_missing",
+      "auth_rate_limited",
+      "auth_overloaded"
+    ]
+  }
+]

@@ -1,10 +1,15 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v10)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v16)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
 
 -- 시퀀스
+CREATE SEQUENCE member_seq;
+CREATE SEQUENCE reservation_seq CACHE 100;
+CREATE SEQUENCE reservation_history_seq CACHE 100;
 CREATE SEQUENCE outbox_seq CACHE 1000;
+CREATE SEQUENCE risk_score_history_seq;
+CREATE SEQUENCE identity_verification_seq;
 
 CREATE TABLE station (
   station_id                 VARCHAR2(10) NOT NULL,
@@ -157,7 +162,7 @@ COMMENT ON COLUMN train_run.run_id IS '운행 ID / 대기열·재고·Kafka 집�
 COMMENT ON COLUMN train_run.train_id IS '열차';
 COMMENT ON COLUMN train_run.sale_event_id IS '명절 예매 행사 / 오픈 일정·정책을 행사 단위로 묶음';
 COMMENT ON COLUMN train_run.run_date IS '운행일 / 명절 기간';
-COMMENT ON COLUMN train_run.sale_open_at IS '예매 오픈 시각 / 트래픽 폭증 시점. 부하 테스트 시나리오 기준';
+COMMENT ON COLUMN train_run.sale_open_at IS '예매 오픈 시각 / 트래픽 폭증 시점. 부하 테스트 시나리오 기준. 일반은 출발 2개월 전 07:00, 명절은 행사 오픈 시각';
 COMMENT ON COLUMN train_run.sale_close_at IS '판매 마감';
 COMMENT ON COLUMN train_run.status IS 'SCHEDULED / ON_SALE / CLOSED / DEPARTED / 판매 가능 여부 판단';
 COMMENT ON COLUMN train_run.created_at IS '생성 시각';
@@ -217,11 +222,11 @@ CREATE TABLE purchase_limit_policy (
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_purchase_limit_policy PRIMARY KEY (policy_id),
-  CONSTRAINT ck_purchase_limit_policy_scope CHECK (scope IN ('PER_RESERVATION', 'PER_RUN', 'PER_HOLIDAY'))
+  CONSTRAINT ck_purchase_limit_policy_scope CHECK (scope IN ('PER_RESERVATION', 'PER_RUN', 'PER_DAY', 'PER_HOLIDAY'))
 );
 COMMENT ON TABLE purchase_limit_policy IS '매수 제한 정책 - 1회·열차별·명절 전체 매수 제한을 코드 수정 없이 조정.';
 COMMENT ON COLUMN purchase_limit_policy.sale_event_id IS '적용 행사 (null이면 상시) / PER_HOLIDAY 범위 정의';
-COMMENT ON COLUMN purchase_limit_policy.scope IS 'PER_RESERVATION / PER_RUN / PER_HOLIDAY / 1회·열차별·명절 전체 제한을 코드 수정 없이 조정';
+COMMENT ON COLUMN purchase_limit_policy.scope IS 'PER_RESERVATION / PER_RUN / PER_DAY / PER_HOLIDAY / 1회·열차당·1일·명절 전체 제한을 코드 수정 없이 조정';
 COMMENT ON COLUMN purchase_limit_policy.max_seats IS '최대 매수';
 COMMENT ON COLUMN purchase_limit_policy.valid_from IS '적용 시작 / 설·추석별 다른 정책';
 COMMENT ON COLUMN purchase_limit_policy.valid_to IS '적용 종료';
@@ -245,7 +250,7 @@ CREATE TABLE member (
   CONSTRAINT ck_member_status CHECK (status IN ('ACTIVE', 'RESTRICTED', 'BANNED'))
 );
 COMMENT ON TABLE member IS '회원 - 회원 계정. ci_hash가 위험 점수·매수 제한의 묶음 단위. 비밀번호는 member_credential로 분리.';
-COMMENT ON COLUMN member.member_id IS '회원 ID';
+COMMENT ON COLUMN member.member_id IS '회원 ID (member_seq.NEXTVAL) / 가입 때 먼저 발급. 개인정보 암호문의 AAD에 들어가므로 INSERT 전에 필요';
 COMMENT ON COLUMN member.email IS '로그인 ID';
 COMMENT ON COLUMN member.ci_hash IS '모의 본인인증 CI 해시 / 위험 점수·매수 제한의 묶음 단위. 다계정이어도 같은 값';
 COMMENT ON COLUMN member.name IS '이름 / 회원가입·예매자 확인';
@@ -344,7 +349,7 @@ CREATE TABLE reservation (
   CONSTRAINT ck_reservation_source CHECK (source IN ('NORMAL', 'WAITLIST'))
 );
 COMMENT ON TABLE reservation IS '예약 - 예약 상태 머신의 중심. reservation_id가 Kafka 파티션 키.';
-COMMENT ON COLUMN reservation.reservation_id IS '예약 ID / Kafka 파티션 키 → 상태 변경 순서 보장';
+COMMENT ON COLUMN reservation.reservation_id IS '예약 ID (reservation_seq.NEXTVAL) / Kafka 파티션 키·Saga 추적. Redis 좌석 키 값으로 쓰려고 DB 쓰기 전에 먼저 발급 (concurrency.md §2.1)';
 COMMENT ON COLUMN reservation.member_id IS '예약자';
 COMMENT ON COLUMN reservation.ci_hash IS '예약 시점 CI / 매수 제한 집계를 조인 없이 빠르게';
 COMMENT ON COLUMN reservation.run_id IS '운행';
@@ -400,6 +405,7 @@ CREATE TABLE reservation_history (
   CONSTRAINT ck_reservation_history_1ip6ha CHECK (actor_type IN ('USER', 'SYSTEM', 'ADMIN'))
 );
 COMMENT ON TABLE reservation_history IS '예약 상태 이력 - 상태 전이 기록. 순서 보장과 잘못된 전이를 테스트로 증명하는 근거.';
+COMMENT ON COLUMN reservation_history.history_id IS '이력 ID (reservation_history_seq.NEXTVAL)';
 COMMENT ON COLUMN reservation_history.from_status IS '이전 상태 / 첫 기록이면 null. 허용값은 비고의 CHECK (v4 nn-auto가 NOT NULL로 바꾸지 않도록 설명은 그대로 둠)';
 COMMENT ON COLUMN reservation_history.to_status IS 'HOLD / PAYMENT_PENDING / CONFIRMED / CANCELED / EXPIRED / 변경 상태. 잘못된 전이(CANCELED→CONFIRMED) 탐지';
 COMMENT ON COLUMN reservation_history.event_id IS '원인 Kafka 이벤트 / 어떤 이벤트가 바꿨는지 추적';
@@ -552,6 +558,8 @@ CREATE TABLE waitlist (
   seat_grade                 VARCHAR2(10) NOT NULL,
   seat_count                 NUMBER(2) NOT NULL,
   requested_at               TIMESTAMP NOT NULL,
+  priority_at                TIMESTAMP NOT NULL,
+  penalty_ms                 NUMBER(12) NOT NULL,
   offered_at                 TIMESTAMP,
   offer_deadline_at          TIMESTAMP,
   offered_reservation_id     NUMBER,
@@ -559,22 +567,25 @@ CREATE TABLE waitlist (
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_waitlist PRIMARY KEY (waitlist_id),
+  CONSTRAINT ck_waitlist_r1 CHECK (penalty_ms >= 0),
   CONSTRAINT ck_waitlist_seat_grade CHECK (seat_grade IN ('GENERAL', 'FIRST')),
   CONSTRAINT ck_waitlist_status CHECK (status IN ('WAITING', 'OFFERED', 'ACCEPTED', 'EXPIRED', 'CANCELED', 'SKIPPED'))
 );
-COMMENT ON TABLE waitlist IS '취소표 대기 - 취소 발생 시 신청 순서대로 배정 → 알림 → 제한 시간 내 결제.';
+COMMENT ON TABLE waitlist IS '취소표 대기 - 취소 발생 시 대기 순서(priority_at = 신청 시각 + 위험 패널티)대로 배정 → 알림 → 제한 시간 내 결제.';
 COMMENT ON COLUMN waitlist.from_station_id IS '희망 승차역 / 구간 일치 취소표만 배정';
 COMMENT ON COLUMN waitlist.to_station_id IS '희망 하차역';
 COMMENT ON COLUMN waitlist.seat_grade IS 'GENERAL / FIRST / 희망 등급. 좌석 등급 코드 통일';
 COMMENT ON COLUMN waitlist.seat_count IS '희망 매수';
-COMMENT ON COLUMN waitlist.requested_at IS '신청 시각 / 대기 순서 기준';
+COMMENT ON COLUMN waitlist.requested_at IS '신청 시각 / priority_at 계산의 시작 시각 (앱 시계, 신청 때 한 번)';
+COMMENT ON COLUMN waitlist.priority_at IS '대기 순서 기준 시각 = requested_at + penalty_ms / 위험 점수가 높은 대기자는 뒤로 (concurrency.md §9.3). 대기 순서는 이 컬럼으로만 정렬, 신청 후 다시 계산하지 않음';
+COMMENT ON COLUMN waitlist.penalty_ms IS '위험 점수로 미룬 시간(ms), 패널티 없으면 0 / 순서 조정 근거 기록 (운영 원칙: 점수 근거 기록)';
 COMMENT ON COLUMN waitlist.offered_at IS '배정 제안 시각';
 COMMENT ON COLUMN waitlist.offer_deadline_at IS '결제 기한 / = 제안 예약의 pay_deadline_at 복사. 결제 시작 때 함께 연장 (concurrency.md §4)';
 COMMENT ON COLUMN waitlist.offered_reservation_id IS '제안된 예약';
 COMMENT ON COLUMN waitlist.status IS 'WAITING / OFFERED / ACCEPTED / EXPIRED / CANCELED / SKIPPED / SKIPPED = 제안 시 매수 한도 초과로 건너뜀';
 COMMENT ON COLUMN waitlist.created_at IS '생성 시각';
 COMMENT ON COLUMN waitlist.updated_at IS '수정 시각';
-CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, requested_at);
+CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, priority_at, waitlist_id);
 
 CREATE TABLE notification (
   notification_id            NUMBER NOT NULL,
@@ -660,6 +671,7 @@ CREATE TABLE risk_score_history (
   CONSTRAINT ck_risk_score_history_1bhekl CHECK (subject_type IN ('CI', 'PAYMENT', 'DEVICE'))
 );
 COMMENT ON TABLE risk_score_history IS '위험 점수 이력 - 산정 시점별 점수와 근거. 감쇠 동작 검증, 이의 제기 대응.';
+COMMENT ON COLUMN risk_score_history.history_id IS '이력 ID (risk_score_history_seq.NEXTVAL)';
 COMMENT ON COLUMN risk_score_history.subject_type IS 'CI / PAYMENT / DEVICE / 대상 유형 코드 통일 (CHECK)';
 COMMENT ON COLUMN risk_score_history.subject_hash IS '대상 해시';
 COMMENT ON COLUMN risk_score_history.final_score IS '당시 점수 / 감쇠 동작 검증, 이의 제기 대응';
@@ -757,6 +769,7 @@ CREATE TABLE identity_verification (
   CONSTRAINT ck_identity_verificatio_14v838 CHECK (result IN ('SUCCESS', 'FAIL'))
 );
 COMMENT ON TABLE identity_verification IS '본인인증 이력 - 모의 본인인증 이력. 같은 CI로 여러 계정을 인증하는 다계정 신호를 잡는다.';
+COMMENT ON COLUMN identity_verification.verification_id IS '인증 이력 ID (identity_verification_seq.NEXTVAL)';
 COMMENT ON COLUMN identity_verification.member_id IS '인증한 계정';
 COMMENT ON COLUMN identity_verification.ci_hash IS '인증 결과 CI 해시 / 같은 CI로 짧은 기간 여러 계정 인증 = 다계정 신호';
 COMMENT ON COLUMN identity_verification.provider IS 'MOCK_PASS / MOCK_PHONE / 모의 본인인증';
@@ -1067,11 +1080,11 @@ CREATE TABLE purchase_counter (
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_purchase_counter PRIMARY KEY (scope, scope_ref_id, ci_hash),
   CONSTRAINT ck_purchase_counter_r1 CHECK (seat_count >= 0),
-  CONSTRAINT ck_purchase_counter_scope CHECK (scope IN ('PER_RUN', 'PER_HOLIDAY'))
+  CONSTRAINT ck_purchase_counter_scope CHECK (scope IN ('PER_RUN', 'PER_DAY', 'PER_HOLIDAY'))
 );
 COMMENT ON TABLE purchase_counter IS '매수 카운터 - CI별 보유 매수. 매수 제한의 최종 판정을 조건부 UPDATE 한 번으로 원자적으로 처리하고, Redis 카운터가 사라지면 여기서 복원한다.';
-COMMENT ON COLUMN purchase_counter.scope IS 'PER_RUN / PER_HOLIDAY / 열차별·명절 전체 제한을 한 테이블에서';
-COMMENT ON COLUMN purchase_counter.scope_ref_id IS 'run_id 또는 sale_event_id / scope에 따라 가리키는 대상이 달라 FK 미설정';
+COMMENT ON COLUMN purchase_counter.scope IS 'PER_RUN / PER_DAY / PER_HOLIDAY / 열차당·1일·명절 전체 제한을 한 테이블에서';
+COMMENT ON COLUMN purchase_counter.scope_ref_id IS 'run_id · 구매일 YYYYMMDD · sale_event_id / scope에 따라 가리키는 대상이 달라 FK 미설정. PER_DAY는 구매일을 숫자로 (예: 20270106)';
 COMMENT ON COLUMN purchase_counter.ci_hash IS 'CI 해시 / 계정이 아닌 사람 단위 합산';
 COMMENT ON COLUMN purchase_counter.seat_count IS '현재 보유 매수 / 조건부 UPDATE로 한도 초과 차단';
 COMMENT ON COLUMN purchase_counter.created_at IS '생성 시각';
@@ -1244,6 +1257,11 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('notification.pay_reminder_sec', '120', 1, 'NUMBER', '결제 기한 몇 초 전에 PAY_REMINDER 알림');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.batch_interval_sec', '60', 1, 'NUMBER', '위험 점수 배치 주기(초). 각 운행 sale_open_at 전 1회는 반드시 실행');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('login_attempt.retention_days', '30', 1, 'NUMBER', 'login_attempt 보관 기간 (expire_at 계산)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('queue.entry_ttl_sec', '3600', 1, 'NUMBER', '대기 기록(queue:member)이 남는 최대 시간(초). 이탈 없이 사라진 회원의 기록 정리');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('waitlist.penalty_ms_per_point', '180000', 1, 'NUMBER', '위험 점수 1점당 취소표 대기 순서를 미루는 ms. 1점 = 3분 (80점 = 4시간, 팀 확정)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.login_rate_per_min', '20', 1, 'NUMBER', 'IP당 분당 로그인 시도 한도 (rate:login)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.signup_rate_per_hour', '10', 1, 'NUMBER', 'IP당 시간당 본인인증·가입 시도 한도 (rate:signup)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.verify_token_ttl_sec', '600', 1, 'NUMBER', '본인인증 1회용 토큰 유효 시간(초) (verify:{tokenHash})');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (1, 1, 'PER_RESERVATION', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (2, 1, 'PER_RUN', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (3, 1, 'PER_HOLIDAY', 8, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');

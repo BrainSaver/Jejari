@@ -65,8 +65,8 @@ C = 생성, R = 조회, U = 수정, D = 삭제. 기능 ID는 기능설계서 3�
 
 | 기능 | Oracle | MongoDB·Redis |
 |---|---|---|
-| AUTH-01·02 회원가입·본인인증 | member C, member_credential C, identity_verification C | |
-| AUTH-03 로그인 | member R, member_credential RU, auth_session C | login_attempt C, `rate:login` |
+| AUTH-01·02 회원가입·본인인증 | member C, member_credential C, identity_verification C (`member_seq`, `identity_verification_seq`) | `rate:signup`, `verify:{tokenHash}` |
+| AUTH-03 로그인 | member R, member_credential RU, auth_session C | login_attempt C, `rate:login`, `login:fail` |
 | AUTH-04 재발급·로그아웃 | auth_session CU | |
 | AUTH-05 관리자 로그인 | admin_user RU, auth_session C | login_attempt C, `rate:login` |
 | AUTH-06 내 정보·탈퇴 | member RU | |
@@ -76,7 +76,7 @@ C = 생성, R = 조회, U = 수정, D = 삭제. 기능 ID는 기능설계서 3�
 | QUE-02·03 번호표·입장 | | `queue:*` RU, `queue:pass` C |
 | QUE-04 토큰 검증 | | `queue:pass` R |
 | RSV-01 배치도 | seat, train_car R | `seatmap` R |
-| RSV-02 선점 | purchase_limit_policy R, seat_inventory C(재선점 시 D), reservation C(재선점 시 이전 예약 U), reservation_seat C, purchase_counter CU, reservation_history C, saga_instance C, outbox_event C | `idem`, `limit:*`, `seat:hold` |
+| RSV-02 선점 | reservation_seq·reservation_history_seq, purchase_limit_policy R, seat_inventory C(재선점 시 D), reservation C(재선점 시 이전 예약 U), reservation_seat C, purchase_counter CU, reservation_history C, saga_instance C, outbox_event C | `idem`, `limit:*`, `seat:hold` |
 | RSV-03 기한 초과 | reservation U, seat_inventory D, purchase_counter U, saga_instance U, reservation_history C, outbox_event C, waitlist U | `seat:hold` TTL, `limit:*` |
 | RSV-04 내역 | reservation, reservation_seat, payment, cancellation R | |
 | RSV-05 결제 전 취소 | RSV-03과 같음 (to = CANCELED) | `seat:hold` → REOFFER |
@@ -503,7 +503,7 @@ Argon2id 비밀번호 해시와 잠금 상태. 회원 프로필과 분리해 해
 | `actor_type` | String |  | 시스템 | MEMBER / ADMIN | 관리자 로그인도 같은 방식으로 기록 |
 | `admin_id` | Long | FK → admin_user | 시스템 | 관리자 로그인일 때 | 관리자 계정 무차별 대입 탐지 |
 | `email_hash` | String |  | 생성 | 입력한 이메일 해시 | 없는 계정 대상 시도도 추적 → 크리덴셜 스터핑 탐지 |
-| `result` | String |  | 생성 | SUCCESS / WRONG_PASSWORD / LOCKED / NOT_FOUND / RATE_LIMITED |  |
+| `result` | String |  | 생성 | SUCCESS / WRONG_PASSWORD / LOCKED / NOT_FOUND / RATE_LIMITED / BANNED | BANNED = 비밀번호는 맞았지만 정지 회원 |
 | `ip_hash` | String |  | 생성 |  | 한 IP에서 여러 계정 시도 탐지 |
 | `device_hash` | String |  | 생성 |  |  |
 | `user_agent` | String |  | 생성 |  |  |
@@ -753,7 +753,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 저장소: Oracle · 기능: WL 전체, PAY-01·02
 
 
-취소 발생 시 신청 순서대로 배정 → 알림 → 제한 시간 내 결제.
+취소 발생 시 대기 순서(priority_at = 신청 시각 + 위험 패널티)대로 배정 → 알림 → 제한 시간 내 결제.
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
@@ -764,13 +764,15 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `to_station_id` | VARCHAR2(10) | FK, NN → station | 공공 | 희망 하차역 |  |
 | `seat_grade` | VARCHAR2(10) | NN | 생성 | GENERAL / FIRST | 희망 등급. 좌석 등급 코드 통일 |
 | `seat_count` | NUMBER(2) | NN | 생성 | 희망 매수 |  |
-| `requested_at` | TIMESTAMP | NN | 생성 | 신청 시각 | 대기 순서 기준 |
+| `requested_at` | TIMESTAMP | NN | 생성 | 신청 시각 | priority_at 계산의 시작 시각 (앱 시계, 신청 때 한 번) |
+| `priority_at` | TIMESTAMP | NN | 시스템 | 대기 순서 기준 시각 = requested_at + penalty_ms | 위험 점수가 높은 대기자는 뒤로 (동시성 §9.3). 신청 후 다시 계산하지 않음 |
+| `penalty_ms` | NUMBER(12) | NN | 시스템 | 위험 점수로 미룬 시간(ms), 패널티 없으면 0 | 순서 조정 근거 기록 |
 | `offered_at` | TIMESTAMP |  | 시스템 | 배정 제안 시각 |  |
 | `offer_deadline_at` | TIMESTAMP |  | 시스템 | 결제 기한 | = 제안 예약의 pay_deadline_at 복사. 결제 시작 때 함께 연장 |
 | `offered_reservation_id` | NUMBER | FK → reservation | 시스템 | 제안된 예약 |  |
 | `status` | VARCHAR2(10) | NN | 시스템 | WAITING / OFFERED / ACCEPTED / EXPIRED / CANCELED / SKIPPED | SKIPPED = 제안 시 매수 한도 초과로 건너뜀 |
 
-> **제약·비고** CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, requested_at); 다음 대기자 조회용 · 제안 예약의 idempotency_key = 'wl:' || waitlist_id (신청 하나에 제안 하나) · 대기자 우선: 취소로 풀린 좌석은 seat:hold를 REOFFER 값으로 잠시 막고 먼저 제안 · 제안 예약도 purchase_counter 증가, 한도에 걸리면 SKIPPED
+> **제약·비고** CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, priority_at, waitlist_id); 다음 대기자 조회용 (ORDER BY priority_at, waitlist_id) · CHECK(penalty_ms >= 0) · 제안 예약의 idempotency_key = 'wl:' || waitlist_id (신청 하나에 제안 하나) · 대기자 우선: 취소로 풀린 좌석은 seat:hold를 REOFFER 값으로 잠시 막고 먼저 제안 · 제안 예약도 purchase_counter 증가, 한도에 걸리면 SKIPPED
 
 #### `notification` 알림
 
@@ -1025,7 +1027,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `admin_user` | `role` | VIEWER / REVIEWER / SUPERVISOR | 마스킹 해제·내보내기는 SUPERVISOR만 |
 | `admin_user` | `status` | ACTIVE / DISABLED |  |
 | `login_attempt` | `actor_type` | MEMBER / ADMIN | 관리자 로그인도 같은 방식으로 기록 |
-| `login_attempt` | `result` | SUCCESS / WRONG_PASSWORD / LOCKED / NOT_FOUND / RATE_LIMITED |  |
+| `login_attempt` | `result` | SUCCESS / WRONG_PASSWORD / LOCKED / NOT_FOUND / RATE_LIMITED / BANNED |  |
 | `seat_inventory` | `status` | HOLD / SOLD | 선점과 확정 구분 |
 | `reservation` | `status` | HOLD / PAYMENT_PENDING / CONFIRMED / CANCELED / EXPIRED | 상태 머신 |
 | `reservation` | `channel` | WEB / APP | 채널별 트래픽 분석 |
@@ -1088,7 +1090,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 |---|---|---|---|---|
 | `queue:{runId}` | ZSET | member=`{12자리 seq}:{memberId}`, score=진입시각ms + penalty_ms | 운행 판매 마감 | QUE-01 |
 | `queue:seq:{runId}` | STRING | 진입 시퀀스 (INCR) | 운행 판매 마감 | QUE-01 |
-| `queue:member:{memberId}` | STRING | `{runId}\|{queue member}` (회원당 대기 1개) | 토큰 만료 | QUE-01·05 |
+| `queue:member:{memberId}` | STRING | `{runId}\|{queue member}\|{ciHash}` (회원당 대기 1개, 이탈 시 queue:ci 항목 찾기) | `queue.entry_ttl_sec` (3600초) | QUE-01·05 |
 | `queue:ci:{ciHash}` | ZSET | memberId, score=만료 시각 (CI당 대기 1개) | 멤버별 score | QUE-01·05 |
 | `queue:active:{runId}` | ZSET | 입장한 회원, score=토큰 만료 시각 | | QUE-03 |
 | `queue:throughput:{runId}` | STRING | 초당 입장 수 | | QUE-02 |
@@ -1102,7 +1104,10 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `relay:shard:{n}` | STRING | 릴레이 인스턴스 ID | `relay.lease_sec` | EVT-02 |
 | `risk:{subjectType}:{hash}` | STRING | final_score | 다음 산정 주기 × 2 | RISK-03 |
 | `seatmap:{runId}` | HASH | seatId → 상태 | 출발 | TRN-02, RSV-01 |
-| `rate:login:{ipHash}` | STRING | 시도 수 | 짧은 창 | AUTH-03 |
+| `rate:login:{ipHash}` | STRING | 분당 시도 수 (한도 `auth.login_rate_per_min`) | 1분 | AUTH-03 |
+| `rate:signup:{ipHash}` | STRING | 시간당 본인인증·가입 시도 수 (한도 `auth.signup_rate_per_hour`) | 1시간 | AUTH-01·02 |
+| `login:fail:{emailHash}` | STRING | 연속 실패 수 (`auth.lock_after_failures`에 닿으면 잠금) | `auth.lock_minutes` | AUTH-03 |
+| `verify:{tokenHash}` | STRING | 본인인증 결과 (1회용, 휴대폰 번호는 암호문). 가입 때 GETDEL | `auth.verify_token_ttl_sec` | AUTH-01·02 |
 | `rate:api:{memberId}` | STRING | 초당 호출 수 | 1초 | 전체 |
 | `policy:cache` | HASH | app_policy 값 | | ADM-08 |
 
