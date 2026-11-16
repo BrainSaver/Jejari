@@ -62,4 +62,27 @@ export function waitUntilAdmitted(memberId, first, maxWaitMs, run = RUN) {
   };
 }
 
+/**
+ * 시나리오 시작 전에 진입 요청을 한 번 해 보고, 실패하면 이유를 알려 주며 중단한다 (각 시나리오의 setup에서 호출).
+ * 앱이 안 떠 있거나 Redis가 꺼진 채로 부하를 걸면 "실패율 100%" 표만 남아 결과를 오해하기 쉽다.
+ */
+export function preflight(run = RUN) {
+  const id = 99999999;
+  const res = enter(id, run);
+  if (res.status === 200) {
+    leave(id, run);
+    return;
+  }
+  const hints = {
+    0: `${BASE}에 연결하지 못했습니다. 앱이 떠 있는지, 포트가 맞는지 확인하세요 (${res.error || '연결 오류'}).`,
+    401: '앱이 개발 모드가 아닙니다. --jejari.dev-mode=true 로 다시 띄우세요.',
+    404: '다른 서버가 이 포트를 쓰고 있을 수 있습니다. netstat -ano | findstr :8080 으로 확인하세요.',
+    409: `운행 ${run}이 판매 중이 아닙니다. 앱을 --jejari.queue.dev-on-sale-runs=${run} 로 띄우세요.`,
+    500: '서버 오류입니다. 앱 콘솔의 오류 메시지를 확인하세요.',
+    503: 'Redis에 연결되지 않았습니다. Redis가 켜져 있는지(docker start jejari-redis) 확인하세요.',
+  };
+  const body = String(res.body || '').slice(0, 200);
+  throw new Error(`사전 점검 실패: 진입 요청이 ${res.status}를 돌려줬습니다. ${hints[res.status] || ''} 응답: ${body}`);
+}
+
 export { parse };

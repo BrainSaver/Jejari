@@ -16,11 +16,13 @@ import com.jejari.queue.port.LoggingQueueLogSink;
 import com.jejari.queue.port.MemberIdentityPort;
 import com.jejari.queue.port.OnSaleRunProvider;
 import com.jejari.queue.port.QueueLogSink;
+import io.lettuce.core.ClientOptions;
 import java.time.Clock;
 import java.time.ZoneId;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.data.redis.LettuceClientConfigurationBuilderCustomizer;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -36,6 +38,18 @@ public class QueueConfig {
     @ConditionalOnMissingBean
     Clock clock() {
         return Clock.system(ZoneId.of("Asia/Seoul"));
+    }
+
+    /**
+     * Redis가 끊기면 명령을 대기열에 쌓아 두지 않고 바로 실패시킨다. 기본값은 재연결을 기다리며 명령을 쌓아 두어
+     * 요청마다 스레드를 60초 붙잡고, 그 사이 앱 전체가 멈춘다. (재연결은 계속 시도한다.)
+     */
+    @Bean
+    LettuceClientConfigurationBuilderCustomizer lettuceFailFast() {
+        return builder -> builder.clientOptions(ClientOptions.builder()
+                .autoReconnect(true)
+                .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
+                .build());
     }
 
     // ---- Lua 스크립트 ----

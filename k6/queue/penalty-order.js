@@ -11,7 +11,7 @@
 import { check } from 'k6';
 import exec from 'k6/execution';
 import { Rate, Trend } from 'k6/metrics';
-import { enter, me, leave, waitUntilAdmitted, parse } from './lib/queue.js';
+import { enter, me, leave, waitUntilAdmitted, parse, preflight } from './lib/queue.js';
 
 const BOTS = Number(__ENV.BOTS || 20);
 const NORMALS = Number(__ENV.NORMALS || 100);
@@ -55,6 +55,11 @@ export const options = {
     'admit_wait_ms{group:normal}': ['min>=0'],
   },
 };
+
+// 시작 전에 앱·Redis 상태를 점검한다 (실패하면 이유를 알려 주고 중단)
+export function setup() {
+  preflight();
+}
 
 export function bot() {
   const id = BOT_BASE + exec.scenario.iterationInTest;

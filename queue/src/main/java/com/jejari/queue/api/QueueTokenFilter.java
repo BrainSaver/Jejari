@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.dao.DataAccessException;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
@@ -47,12 +48,23 @@ public class QueueTokenFilter extends OncePerRequestFilter {
             long memberId = auth.memberId(request).orElseThrow(() -> new QueueException(ErrorCode.AUTH_REQUIRED));
             pass.verify(Long.parseLong(m.group(1)), memberId, request.getHeader(HEADER));
         } catch (QueueException e) {
-            response.setStatus(e.code().status().value());
-            response.setContentType("application/json");
-            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-            mapper.writeValue(response.getWriter(), ErrorResponse.of(e.code()));
+            write(response, e.code());
+            return;
+        } catch (DataAccessException e) {
+            if (!ApiExceptionHandler.isRedisUnavailable(e)) {
+                throw e;
+            }
+            // Redis를 읽지 못하면 토큰을 확인할 수 없으므로 통과시키지 않는다 (닫는 쪽으로 실패)
+            write(response, ErrorCode.SERVICE_UNAVAILABLE);
             return;
         }
         chain.doFilter(request, response);
+    }
+
+    private void write(HttpServletResponse response, ErrorCode code) throws IOException {
+        response.setStatus(code.status().value());
+        response.setContentType("application/json");
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        mapper.writeValue(response.getWriter(), ErrorResponse.of(code));
     }
 }

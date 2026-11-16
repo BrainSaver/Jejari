@@ -6,6 +6,9 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       database: ${REDIS_DB:0}
+      # 응답이 늦으면 오래 붙잡지 않고 실패시킨다 (기본값은 60초)
+      timeout: 2s
+      connect-timeout: 2s
 
 jejari:
   # 개발용 대용품(X-Member-Id 헤더 인증, 가짜 회원·운행)을 켠다. 운영에서는 반드시 false.

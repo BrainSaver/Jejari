@@ -9,7 +9,7 @@
 import { check } from 'k6';
 import exec from 'k6/execution';
 import { Counter } from 'k6/metrics';
-import { enter, leave, parse } from './lib/queue.js';
+import { enter, leave, parse, preflight } from './lib/queue.js';
 
 const RATES = (__ENV.RATES || '500,1000,2000,4000').split(',').map((s) => Number(s.trim()));
 const STEP_SEC = Number(__ENV.STEP_SEC || 20);
@@ -47,6 +47,11 @@ export const options = {
   thresholds,
   summaryTrendStats: ['avg', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
 };
+
+// 시작 전에 앱·Redis 상태를 점검한다 (실패하면 이유를 알려 주고 중단)
+export function setup() {
+  preflight();
+}
 
 export function entry() {
   // 단계마다 회원 ID 구간을 나눠 겹치지 않게 한다 (단계당 최대 100만 건)
