@@ -30,15 +30,15 @@
 ```bash
 # 1) .env 준비(.env.example 복사 후 비밀번호 채우기, .env는 커밋 금지) 뒤 인프라를 켠다
 docker compose up -d
-# 2) 앱을 개발 모드로 띄운다 (저장소 루트에서. 운행 1001이 판매 중)
-./gradlew bootRun --args="--jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=1001"
-# 3) 이 앱(데스크톱) 또는 CLI로 실행. 환경 설정의 대상 URL은 http://localhost:8080, RUN_ID는 1001
+# 2) 앱을 개발 모드로 띄운다 (저장소 루트에서. 운행 9001이 판매 중(시드의 ON_SALE 운행))
+./gradlew bootRun --args="--jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=9001"
+# 3) 이 앱(데스크톱) 또는 CLI로 실행. 환경 설정의 대상 URL은 http://localhost:8080, RUN_ID는 9001
 ./app.sh            # Windows는 app.bat
 ./run.sh 8 -e PEAK_RATE=4000 -e STEPS=4        # 진입 처리 한계
 ./run.sh 9                                       # 순번 조정 정확도
 ```
 
-IDE에서 `JejariApplication`을 실행한다면 프로그램 인자에 `--jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=1001`을 넣습니다.
+IDE에서 `JejariApplication`을 실행한다면 프로그램 인자에 `--jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=9001`을 넣습니다.
 개발 모드는 로그인 없이 `X-Member-Id` 헤더로 회원을 구분하고 `/api/v1/dev/**`를 엽니다. 운영(`jejari.dev-mode=false`)에서는 존재하지 않습니다.
 좌석 선점·결제·취소표 API는 다른 파트가 구현하기 전이라 실제 앱에는 없습니다(시나리오 2~5, 7은 Mock 서버로).
 
