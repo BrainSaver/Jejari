@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
  * 개발 모드(jejari.dev-mode=true)에서만 켜지는 가짜 회원·운행 연동. 운영에서는 이 설정이 통째로 빠집니다.
@@ -17,6 +18,11 @@ public class DevStubsConfig {
 	@Bean
 	DevMemberIdentityPort devMemberIdentityPort() {
 		return new DevMemberIdentityPort();
+	}
+
+	@Bean
+	DevRiskScoreFallbackPort devRiskScoreFallbackPort(StringRedisTemplate redis) {
+		return new DevRiskScoreFallbackPort(redis);
 	}
 
 	@Bean
