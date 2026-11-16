@@ -19,6 +19,8 @@
   dup-pay       멱등성 키·상태 확인을 무시해 결제가 여러 번 됨                   → 시나리오 4
   order         취소표가 대기 1번이 아니라 마지막 사람에게 배정됨                → 시나리오 5
   token-bypass  입장 토큰이 없어도 좌석 API가 통과됨                             → 시나리오 6
+  dup-email     같은 이메일이 동시에 여러 번 가입됨 (UNIQUE 없음)                → 시나리오 10
+  no-lockout    비밀번호를 계속 틀려도 계정이 잠기지 않음                        → 시나리오 10
 """
 import argparse
 import bisect
@@ -36,7 +38,7 @@ from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-BUGS = ("dup-seat", "no-recover", "dup-pay", "order", "token-bypass")
+BUGS = ("dup-seat", "no-recover", "dup-pay", "order", "token-bypass", "dup-email", "no-lockout")
 LOCK_DELAY = {"pessimistic": 0.006, "optimistic": 0.002, "redis": 0.001}   # 락 방식별 임계구역 시간(흉내)
 ENTRY_HEADER = "x-queue-token"
 
@@ -63,6 +65,7 @@ class State:
             self.last_wait = {}       # user → seatkey
             self.events = defaultdict(list)   # user → [(ts, type, seat)]
             self.c = defaultdict(int)         # 통계 카운터
+            self.auth = {"tokens": {}, "members": {}, "fail": defaultdict(int), "rate": defaultdict(list)}  # 회원 인증(가입·로그인) 흉내
 
     def reset_queue(self):
         """대기열·위험 점수·정책만 비운다 (개발 모드 /api/v1/dev/reset 과 같은 범위)."""
@@ -623,7 +626,117 @@ def h_mock_reset(h, st, qs):
         h.send(200, {"status": "RESET"})
 
 
+# ── 회원 인증 (실제 member 모듈의 /api/v1/auth/** 흉내) ──
+# 실제 앱은 Oracle에 가입 정보를 쓰고 Argon2id로 해시한다. 여기서는 메모리에 저장하고 해시 시간을 sleep으로 흉내 낸다.
+# 규칙은 실제와 같게 맞췄다: IP당 본인인증·가입 시간당 10회, 로그인 분당 20회, 이메일당 5번 틀리면 잠금(423),
+# 같은 이메일 동시 가입은 1명만 성공(409), 해시 동시 처리 32개 초과 시 503.
+AUTH_HASH_SLOTS = threading.BoundedSemaphore(32)
+AUTH_HASH_SEC = 0.06
+AUTH_EMAIL = re.compile(r"^[a-z0-9](?:[a-z0-9._%+-]{0,62}[a-z0-9_%+-])?@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$")
+AUTH_PHONE = re.compile(r"^(010[0-9]{8}|01[16789][0-9]{7,8})$")
+
+
+def _auth_err(h, status, code, message):
+    h.send(status, {"code": code, "message": message, "traceId": uuid.uuid4().hex[:16]})
+
+
+def _auth_ip(h):
+    # 실제 앱은 신뢰 프록시 설정일 때만 X-Forwarded-For를 쓴다. mock은 신뢰하는 쪽으로 흉내 낸다
+    xff = (h.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+    return xff or h.client_address[0]
+
+
+def _auth_hit(st, key, window_sec, limit):
+    now = time.time()
+    with st.lock:
+        hits = [t for t in st.auth["rate"][key] if now - t < window_sec]
+        hits.append(now)
+        st.auth["rate"][key] = hits
+        return len(hits) <= limit
+
+
+def _auth_hash():
+    """Argon2id 해싱 흉내: 동시 처리 한도를 넘으면 503."""
+    if not AUTH_HASH_SLOTS.acquire(timeout=1.0):
+        return False
+    try:
+        time.sleep(AUTH_HASH_SEC)
+    finally:
+        AUTH_HASH_SLOTS.release()
+    return True
+
+
+def h_auth_verify(h, st, qs):
+    b = h.body()
+    if not _auth_hit(st, "signup:" + _auth_ip(h), 3600, 10):
+        return _auth_err(h, 429, "RATE_LIMITED", "요청이 너무 많습니다.")
+    name, phone = str(b.get("name") or "").strip(), re.sub(r"\D", "", str(b.get("phone") or ""))
+    if phone.startswith("82") and 11 <= len(phone) <= 12:
+        phone = "0" + phone[2:]
+    if (len(name) < 2 or len(name) > 50 or re.search(r"[0-9]", name) or not AUTH_PHONE.match(phone)
+            or phone.endswith("0000") or b.get("provider") not in ("MOCK_PASS", "MOCK_PHONE")):
+        return _auth_err(h, 400, "AUTH_VERIFY_FAILED", "본인인증에 실패했습니다.")
+    token = "vt_" + uuid.uuid4().hex
+    with st.lock:
+        st.auth["tokens"][token] = {"phone": phone, "at": time.time()}
+    h.send(200, {"verificationToken": token, "expiresIn": 600})
+
+
+def h_auth_signup(h, st, qs):
+    b = h.body()
+    if not _auth_hit(st, "signup:" + _auth_ip(h), 3600, 10):
+        return _auth_err(h, 429, "RATE_LIMITED", "요청이 너무 많습니다.")
+    email = str(b.get("email") or "").strip().lower()
+    pw = str(b.get("password") or "")
+    if not AUTH_EMAIL.match(email) or ".." in email or len(email) > 100:
+        return _auth_err(h, 400, "INVALID_REQUEST", "이메일 형식이 올바르지 않습니다.")
+    if not (10 <= len(pw) <= 64) or len(set(pw)) < 4:
+        return _auth_err(h, 400, "AUTH_PASSWORD_POLICY", "비밀번호가 규칙에 맞지 않습니다.")
+    with st.lock:
+        known = b.get("verificationToken") in st.auth["tokens"]
+    if not known:
+        return _auth_err(h, 400, "AUTH_VERIFY_TOKEN_INVALID", "본인인증이 만료되었거나 이미 사용되었습니다.")
+    if not _auth_hash():
+        return _auth_err(h, 503, "SERVICE_UNAVAILABLE", "일시적으로 처리할 수 없습니다.")
+    with st.lock:
+        # 토큰 소비(1회용)와 이메일 중복 판단을 한 번에: 실제는 GETDEL + Oracle UNIQUE 위반
+        if st.auth["tokens"].pop(b.get("verificationToken"), None) is None:
+            return _auth_err(h, 400, "AUTH_VERIFY_TOKEN_INVALID", "본인인증이 만료되었거나 이미 사용되었습니다.")
+        if email in st.auth["members"] and "dup-email" not in st.cfg.bugs:   # 버그: UNIQUE 없이 같은 이메일이 여러 번 가입됨
+            return _auth_err(h, 409, "AUTH_EMAIL_DUPLICATED", "이미 가입된 이메일입니다.")
+        if email in st.auth["members"]:
+            st.c["dup_email"] += 1
+        st.auth["members"][email] = pw
+        st.c["signup"] += 1
+    time.sleep(0.003)   # INSERT 3건
+    h.send(201, {"email": email[0] + "***" + email[email.index("@"):]})
+
+
+def h_auth_login(h, st, qs):
+    b = h.body()
+    if not _auth_hit(st, "login:" + _auth_ip(h), 60, 20):
+        return _auth_err(h, 429, "AUTH_RATE_LIMITED", "로그인 시도가 너무 많습니다.")
+    email, pw = str(b.get("email") or "").strip().lower(), str(b.get("password") or "")
+    with st.lock:
+        if st.auth["fail"][email] >= 5 and "no-lockout" not in st.cfg.bugs:   # 버그: 잠금이 걸리지 않음
+            return _auth_err(h, 423, "AUTH_LOCKED", "로그인 시도가 많아 잠시 잠겼습니다.")
+        stored = st.auth["members"].get(email)
+    if not _auth_hash():
+        return _auth_err(h, 503, "SERVICE_UNAVAILABLE", "일시적으로 처리할 수 없습니다.")
+    if stored is None or stored != pw:
+        with st.lock:
+            st.auth["fail"][email] += 1
+        return _auth_err(h, 401, "AUTH_INVALID_CREDENTIALS", "아이디 또는 비밀번호가 올바르지 않습니다.")
+    with st.lock:
+        st.auth["fail"].pop(email, None)
+        st.c["login_auth"] += 1
+    h.send(200, {"accessToken": "tk_" + uuid.uuid4().hex, "tokenType": "Bearer", "expiresIn": 900})
+
+
 ROUTES = [
+    ("POST", r"/api/v1/auth/verify", h_auth_verify),
+    ("POST", r"/api/v1/auth/signup", h_auth_signup),
+    ("POST", r"/api/v1/auth/login", h_auth_login),
     ("POST", r"/api/auth/login", h_login),
     ("POST", r"/api/members/signup", h_signup),
     ("GET", r"/api/trains", h_trains),
