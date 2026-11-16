@@ -1,6 +1,6 @@
 // 첫 기동 때 한 번 실행됩니다 (/docker-entrypoint-initdb.d). 데이터베이스 jejari.
 // 인덱스·보관: DB설계서 6.1, 보관 방식: concurrency.md §13.2 (expire_at + TTL expireAfterSeconds: 0)
-// 이미 만든 볼륨에는 다시 돌지 않으니, 인덱스를 추가하면 mongosh로 이 파일을 직접 실행합니다 (createIndexes는 여러 번 돌려도 안전).
+// 이미 만든 볼륨에는 다시 돌지 않으니, 인덱스를 추가하면 mongosh로 이 파일을 직접 실행합니다 (createIndex는 여러 번 돌려도 안전).
 
 const jejari = db.getSiblingDB('jejari');
 
@@ -18,9 +18,8 @@ const TTL = { expireAfterSeconds: 0 };
 
 function ensure(name, indexes) {
   if (!jejari.getCollectionNames().includes(name)) jejari.createCollection(name);
-  jejari.getCollection(name).createIndexes(
-    indexes.map(([key, opts]) => Object.assign({ key }, opts)),
-  );
+  const coll = jejari.getCollection(name);
+  for (const [key, opts] of indexes) coll.createIndex(key, opts);
 }
 
 // 행동 로그 (ts + 180일). 앱 → Kafka jejari.behavior → insertMany
