@@ -19,9 +19,9 @@
 # 1) 인프라 (Oracle·Mongo·Redis·Kafka). 첫 기동은 몇 분 걸립니다
 docker compose up -d
 
-# 2) 앱 (개발 모드, 운행 1001 판매 중). 저장소 루트에서
-./gradlew bootRun --args='--jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=1001'
-#    IDE에서 JejariApplication을 실행한다면 프로그램 인자에 --jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=1001
+# 2) 앱 (개발 모드, 운행 9001 판매 중(시드의 ON_SALE 운행)). 저장소 루트에서
+./gradlew bootRun --args='--jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=9001'
+#    IDE에서 JejariApplication을 실행한다면 프로그램 인자에 --jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=9001
 ```
 
 개발 모드에서는 로그인(JWT) 없이 `X-Member-Id` 헤더로 회원을 구분합니다. 이 스크립트의 요청이 그 방식입니다. 운영(`jejari.dev-mode=false`)에서는 동작하지 않습니다.

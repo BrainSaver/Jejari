@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>길동현 숙지 사항</title>
+<style>
+:root{
+  --bg:#f7f7f5; --card:#ffffff; --fg:#1f2328; --muted:#5b6370; --line:#e3e3df;
+  --accent:#2f5bd3; --accent-soft:#e8eefc; --warn:#b4540a; --warn-soft:#fdf1e4;
+  --ok:#17803d; --ok-soft:#e5f5ea; --code:#f0f0ec;
+  --tip-bg:#1f2328; --tip-fg:#f5f5f5; --tip-key:#9db8ff;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16181c; --card:#1e2127; --fg:#e6e6e3; --muted:#9aa1ad; --line:#2e323a;
+    --accent:#7fa2ff; --accent-soft:#232c44; --warn:#f0a35e; --warn-soft:#3a2a1b;
+    --ok:#5ccf86; --ok-soft:#1c3326; --code:#262a31;
+    --tip-bg:#f2f2ef; --tip-fg:#1f2328; --tip-key:#2f5bd3;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#16181c; --card:#1e2127; --fg:#e6e6e3; --muted:#9aa1ad; --line:#2e323a;
+  --accent:#7fa2ff; --accent-soft:#232c44; --warn:#f0a35e; --warn-soft:#3a2a1b;
+  --ok:#5ccf86; --ok-soft:#1c3326; --code:#262a31;
+  --tip-bg:#f2f2ef; --tip-fg:#1f2328; --tip-key:#2f5bd3;
+}
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.7 "Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:32px 16px 80px}
+header h1{font-size:28px;margin:0 0 6px}
+.note{background:var(--warn-soft);border-left:4px solid var(--warn);padding:10px 14px;border-radius:6px;font-size:14px;margin:14px 0}
+.hint{color:var(--muted);font-size:14px}
+.note a{color:var(--accent)}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px;margin:18px 0 8px}
+nav.toc a{font-size:13px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;color:var(--fg);text-decoration:none;background:var(--card)}
+nav.toc a:hover{border-color:var(--accent);color:var(--accent)}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin:18px 0}
+h2{font-size:21px;margin:0 0 12px}
+h2 .num{color:var(--accent);margin-right:6px}
+h3{font-size:17px;margin:22px 0 8px}
+h3 .ref{font-size:13px;font-weight:400;color:var(--muted);margin-left:6px}
+p{margin:8px 0}
+ul,ol{margin:8px 0;padding-left:22px}
+li{margin:3px 0}
+code{font-family:Consolas,"D2Coding",ui-monospace,monospace;font-size:.88em;background:var(--code);padding:1px 5px;border-radius:4px}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:15px}
+th,td{border-bottom:1px solid var(--line);padding:8px 8px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600;font-size:13px}
+.table-wrap{overflow-x:auto}
+.big{font-size:19px;font-weight:600;background:var(--accent-soft);padding:14px 16px;border-radius:8px;margin:6px 0 12px}
+.why{color:var(--muted);font-size:14px}
+.why::before{content:"왜? ";font-weight:700;color:var(--accent)}
+.rules{counter-reset:r;list-style:none;padding:0}
+.rules li{counter-increment:r;position:relative;padding:8px 0 8px 40px;border-bottom:1px dashed var(--line)}
+.rules li:last-child{border-bottom:0}
+.rules li::before{content:counter(r);position:absolute;left:0;top:8px;width:28px;height:28px;border-radius:50%;
+  background:var(--accent);color:var(--card);font-weight:700;display:flex;align-items:center;justify-content:center;font-size:14px}
+/* 흐름 그림 */
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0}
+.box{border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:14px;background:var(--bg);white-space:nowrap}
+.box.me{border-color:var(--accent);background:var(--accent-soft);font-weight:600}
+.box.ok{border-color:var(--ok);background:var(--ok-soft)}
+.box.bad{border-color:var(--warn);background:var(--warn-soft)}
+.box small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+.arrow{color:var(--muted)}
+.legend{font-size:13px;color:var(--muted)}
+.legend .box{display:inline-block;padding:1px 8px;font-size:12px}
+/* 체크리스트 */
+.check{list-style:none;padding:0}
+.check li{padding:4px 0}
+.check label{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.check input{margin-top:6px;width:16px;height:16px;accent-color:var(--accent);flex:none}
+.check input:checked + span{color:var(--muted);text-decoration:line-through}
+/* 용어 툴팁 */
+.t{border-bottom:1px dotted var(--accent);cursor:help}
+.t:hover{background:var(--accent-soft);border-radius:3px}
+#tip{position:fixed;z-index:10;max-width:300px;background:var(--tip-bg);color:var(--tip-fg);
+  padding:9px 12px;border-radius:8px;font-size:13.5px;line-height:1.55;pointer-events:none;
+  box-shadow:0 6px 20px rgba(0,0,0,.25)}
+#tip b{display:block;color:var(--tip-key);margin-bottom:2px;font-size:13px}
+.theme{position:fixed;right:14px;bottom:14px;border:1px solid var(--line);background:var(--card);color:var(--fg);
+  border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer}
+@media (max-width:600px){
+  main{padding-top:20px}
+  section{padding:16px 14px}
+  header h1{font-size:23px}
+  table{font-size:14px}
+}
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>길동현 숙지 사항</h1>
+  <div class="hint">2026-11-16 정리 · 점선 밑줄 친 용어에 마우스를 올리면(휴대폰은 탭) 설명이 뜹니다.</div>
+  <div class="note"><b>개인 요약본입니다.</b> 원본은 <a href="https://jejari.pages.dev/#/doc/conc" target="_blank" rel="noopener">동시성 문서</a>(절차)와 <a href="https://jejari.pages.dev/#/doc/func" target="_blank" rel="noopener">기능설계서</a>(기능·이벤트·API)이고, 이 문서와 다르면 원본이 맞습니다. 구현할 때는 원본의 § 번호를 따라가세요.</div>
+  <p class="hint"><b>읽는 순서:</b> 1 → 2 → 3은 꼭, 4는 구현할 때 해당 칸만, 5~8은 필요할 때 찾아보기.</p>
+  <nav class="toc">
+    <a href="#s1">1. 내 역할</a><a href="#s2">2. 흐름</a><a href="#s3">3. 규칙 7개</a><a href="#s4">4. 기능별 핵심</a>
+    <a href="#s5">5. 상태 그림</a><a href="#s6">6. Kafka</a><a href="#s7">7. 체크리스트</a><a href="#s8">8. 면접 질문</a>
+  </nav>
+</header>
+
+<section id="s1">
+  <h2><span class="num">1</span>한 줄로 내 역할</h2>
+  <div class="big">돈이 오가는 부분(결제)과, 그 결과를 다른 파트에 확실히 전달하는 부분(이벤트)을 맡는다.</div>
+  <ul>
+    <li>팀장, 역할 <b>C</b>, 브랜치 <code>DongHyeon</code></li>
+    <li>지켜야 할 숫자 두 개
+      <ul>
+        <li><b>중복 결제 0건</b>: 같은 예약에 돈이 두 번 빠지면 안 됨</li>
+        <li><b>좌석 복구율 100%</b>: 결제가 실패하거나 시간이 지나면 좌석이 반드시 돌아와야 함</li>
+      </ul>
+    </li>
+  </ul>
+</section>
+
+<section id="s2">
+  <h2><span class="num">2</span>전체 흐름에서 내 자리</h2>
+  <p class="legend"><span class="box me">파란 칸</span> = 내가 만드는 것</p>
+
+  <div class="flow">
+    <div class="box">좌석 선점<small>강동균</small></div><span class="arrow">→</span>
+    <div class="box me">결제 시작</div><span class="arrow">→</span>
+    <div class="box me">PG 결과 처리</div><span class="arrow">→</span>
+    <div class="box ok">승인 → 예약 확정</div>
+  </div>
+  <div class="flow">
+    <span class="arrow" style="padding-left:12px">PG 결과가 실패·시간 초과면 →</span>
+    <div class="box me bad">좌석 복구 (Saga)<small>실제 해제는 강동균 로직 호출</small></div>
+  </div>
+  <div class="flow" style="margin-top:14px">
+    <div class="box">모든 상태 변화</div><span class="arrow">→</span>
+    <div class="box me">Outbox</div><span class="arrow">→</span>
+    <div class="box">Kafka</div><span class="arrow">→</span>
+    <div class="box me">Inbox</div><span class="arrow">→</span>
+    <div class="box">좌석 반환·알림·위험 점수<small>각 담당자</small></div>
+  </div>
+
+  <div class="table-wrap"><table>
+    <tr><th>부분</th><th>쉽게 말하면</th></tr>
+    <tr><td><b>결제 시작</b></td><td>"결제할게요" 버튼을 누르면 예약을 결제 중 상태로 바꾸고 마감 시간을 한 번 늘려 줌</td></tr>
+    <tr><td><b>PG 결과 처리</b></td><td>PG에서 승인·실패가 오면 예약을 확정하거나 풀어 줌</td></tr>
+    <tr><td><b>Saga</b></td><td>여러 단계(선점 → 결제 → 확정) 중간에 실패하면 앞 단계를 되돌리는 관리자</td></tr>
+    <tr><td><b>Outbox</b></td><td>"이런 일이 있었다"를 DB에 먼저 적어 두고 나중에 Kafka로 보내는 우체통</td></tr>
+    <tr><td><b>Inbox</b></td><td>같은 편지가 두 번 와도 한 번만 처리하게 하는 수신 기록장</td></tr>
+  </table></div>
+  <p>여기에 <b>알림</b>(취소표 제안 등)과 <b>결제 수단 등록</b>(가상 카드)도 맡습니다.</p>
+</section>
+
+<section id="s3">
+  <h2><span class="num">3</span>꼭 기억할 규칙 7개</h2>
+  <p class="hint">모든 코드가 이 7개를 지키면 중복 결제·순서 꼬임이 안 생깁니다.</p>
+  <ol class="rules">
+    <li><b>Redis는 빠른 1차 판정, Oracle이 최종 판정.</b> Redis가 통과시켜도 DB가 거절하면 거절이다.</li>
+    <li><b>마감 시각의 원본은 <code>reservation.pay_deadline_at</code> 하나.</b> 다른 곳(좌석, Saga, 대기자, Redis)은 복사본이라 바꿀 때 같이 바꾼다. 시간은 앱 시계로 계산한다.</li>
+    <li><b>상태를 바꿀 땐 "지금 상태가 X일 때만" 바꾸고, 바뀐 행 수를 확인한다.</b> 0행이면 누가 먼저 처리한 것이니 그 뒤 일을 하지 않는다. 이게 중복 방지의 핵심이다.</li>
+    <li><b><span class="t" data-k="예약 행">예약 행</span>을 먼저 잠그고</b> 결제·좌석·Saga를 바꾼다. 순서가 같아야 데드락이 안 난다.</li>
+    <li><b>PG 호출과 Kafka 발행은 DB 트랜잭션 밖에서.</b> 락을 쥔 채 외부 응답을 기다리지 않는다.</li>
+    <li><b>이벤트는 DB에 먼저 적는다(Outbox).</b> 상태를 바꾼 같은 트랜잭션 안에서, 예약 행을 바꾼 <b>뒤에</b> INSERT한다.</li>
+    <li><b>숫자 값(시간·횟수)은 코드에 박지 않고 <code>app_policy</code>에서 읽는다.</b></li>
+  </ol>
+</section>
+
+<section id="s4">
+  <h2><span class="num">4</span>기능별 핵심 <span class="hint">(구현할 때 해당 칸만)</span></h2>
+
+  <h3>4-1. 결제 시작 <span class="ref">PAY-01 · concurrency.md §4</span></h3>
+  <ul>
+    <li><b>무엇:</b> 예약을 <code>HOLD</code> → <code>PAYMENT_PENDING</code>으로 바꾸고 결제를 요청한다.</li>
+    <li><b>마감 연장:</b> 마감을 <code>지금 + 4분</code>(PG 3분 + 여유 1분)과 기존 마감 중 <b>늦은 쪽</b>으로. 줄어들지 않고 <b>딱 한 번만</b> 늘어난다.</li>
+    <li><b>좌석 확인:</b> 좌석 행 수가 예상과 다르면 좌석을 이미 잃은 것 → 거절.</li>
+    <li><b>커밋 뒤:</b> Redis 좌석 키도 연장 → PG에 승인 요청.</li>
+    <li><b>결제 실패 후 재시도는 없다</b> → 다시 예매.
+      <div class="why">재시도마다 마감이 늘어나면 한 사람이 좌석을 오래 붙잡게 된다.</div></li>
+  </ul>
+
+  <h3>4-2. 결과 처리 <span class="ref">PAY-02·03 · §5</span></h3>
+  <p>PG 응답, 콜백, 스캐너 조회 <b>어느 경로로 와도, 몇 번 와도 결과가 같아야 한다.</b> 먼저 예약 행을 잠그고 <code>payment.status</code>를 본다.</p>
+  <div class="table-wrap"><table>
+    <tr><th>payment 상태</th><th>하는 일</th></tr>
+    <tr><td><code>REQUESTED</code> (처음)</td><td>승인이면 확정, 실패면 예약 만료</td></tr>
+    <tr><td><code>APPROVED</code> + 예약 확정됨</td><td>이미 끝남, 성공 응답만</td></tr>
+    <tr><td><code>APPROVED</code> + 예약 안 됨</td><td>"환불 진행 중" 응답</td></tr>
+    <tr><td><code>REFUNDED</code></td><td>"환불 완료" 응답</td></tr>
+    <tr><td><code>FAILED</code>인데 승인이 옴</td><td><b>늦은 승인</b>: 돈은 빠졌는데 좌석은 이미 풀림 → 전액 환불, 예약은 되살리지 않음</td></tr>
+  </table></div>
+  <ul>
+    <li><b>확정:</b> 좌석 SOLD → 결제 APPROVED → 예약 CONFIRMED → Saga DONE → 이벤트 <code>RESERVATION_CONFIRMED</code></li>
+    <li><b>실패:</b> 결제 FAILED → 예약 EXPIRED(사유 <code>PAY_FAILED</code>) → 좌석 반환. 따로 "결제 실패" 예약 상태는 없다.</li>
+  </ul>
+
+  <h3>4-3. PG 결과 확인 스캐너 <span class="ref">PAY-04 · §6.2</span></h3>
+  <ul>
+    <li><b>무엇:</b> 마감이 지났는데 결과를 모르는 결제를 PG에 다시 물어본다.</li>
+    <li><b>강동균의 HOLD 만료 스캐너와 쿼리를 분리</b> → 내 쪽이 밀려도 좌석 만료는 계속 돈다.</li>
+  </ul>
+  <div class="table-wrap"><table>
+    <tr><th>PG 대답</th><th>처리</th></tr>
+    <tr><td>승인</td><td>4-2 확정</td></tr>
+    <tr><td>실패</td><td>4-2 실패</td></tr>
+    <tr><td>요청 기록 없음</td><td>PG에 취소 요청 후 실패 처리</td></tr>
+    <tr><td><b>모름 (장애)</b></td><td><b>자동 만료하지 않음.</b> 1분 뒤 다시 묻고 좌석은 지킴. 30분 넘으면 관리자 알림</td></tr>
+  </table></div>
+  <div class="why">돈이 이미 빠졌을 수 있어서 자동 만료하지 않는다.</div>
+  <p class="hint">1차 구현은 승인·실패만, "모름"은 다음 조회로 미루기만.</p>
+
+  <h3>4-4. Saga · 좌석 복구 <span class="ref">EVT-05 · §7</span></h3>
+  <ul>
+    <li>예약이 단계(선점 → 결제 중 → 확정)를 밟는 동안 Saga가 진행 상황을 들고 있다.</li>
+    <li><b>실패·만료 시:</b> <code>COMPENSATED</code>로 바꾸고 좌석 반환·매수 카운터 감소·Redis 정리.</li>
+    <li><b>실제 좌석 해제는 강동균 로직을 <code>reservation_id</code>로 호출.</b> 두 번 불러도 결과가 같아야 한다.</li>
+    <li><b>늦은 승인 환불(§7.3, P2):</b> <code>cancellation</code>에 전액·수수료 0 기록 → PG 환불 → 완료 시 <code>REFUNDED</code></li>
+  </ul>
+
+  <h3>4-5. Outbox <span class="ref">EVT-01·02 · §11</span></h3>
+  <div class="why">DB 커밋과 Kafka 발행을 동시에 성공시키는 방법이 없다. 그래서 DB에 "보낼 이벤트"를 같이 적고, 릴레이가 나중에 보낸다.</div>
+  <p><b>순서 보장 장치</b></p>
+  <ul>
+    <li>Kafka 키는 항상 <code>reservation_id</code> → 같은 예약 이벤트는 같은 파티션.</li>
+    <li>샤드 번호 = <code>ORA_HASH(TO_CHAR(키), 15)</code>. <b>키는 항상 문자열로.</b> 숫자로 넘기면 샤드가 달라져 순서가 깨진다.</li>
+    <li>샤드 하나는 릴레이 인스턴스 하나만 맡는다 (Redis <span class="t" data-k="리스">리스</span>).</li>
+    <li><code>seq</code> 순서로 하나씩 보내고, <b>실패하면 그 샤드는 거기서 멈춘다.</b> 뒤 이벤트가 앞을 추월하지 않게.</li>
+    <li><code>SKIP LOCKED</code>는 쓰지 않는다. 건너뛰면 순서가 깨진다.</li>
+  </ul>
+  <ul>
+    <li><b>5번 실패하면</b> FAILED, 그 샤드만 정지 + 알림. 관리자가 되돌리면 재개.</li>
+    <li><b>프로듀서 설정:</b> <code>enable.idempotence=true</code>, <code>acks=all</code></li>
+    <li><b>1차 구현:</b> 샤드 1개, 인스턴스 1대</li>
+  </ul>
+
+  <h3>4-6. Inbox <span class="ref">EVT-03 · §12</span></h3>
+  <ul>
+    <li>한 트랜잭션: <code>processed_event</code> INSERT(이미 있으면 건너뜀) → 업무 처리 → 커밋 → <b>그 다음에</b> Kafka 오프셋 커밋.</li>
+    <li><b>8일</b> 보관. Kafka 보관이 7일이라 그보다 길어야 재전달 중복을 막는다.</li>
+  </ul>
+
+  <h3>4-7. 결제 멱등 <span class="ref">EVT-04 · §1</span></h3>
+  <ul>
+    <li>버튼 누를 때마다 클라이언트가 UUID를 만들어 <code>Idempotency-Key</code> 헤더로 보낸다. 재시도는 같은 키.</li>
+    <li><b>3중 방어</b>
+      <ol>
+        <li>Redis <code>idem:pay:{예약ID}:{키}</code></li>
+        <li>DB <code>UNIQUE(reservation_id, idempotency_key)</code></li>
+        <li>예약당 승인 1건 인덱스 <code>ux_payment_approved</code></li>
+      </ol>
+    </li>
+  </ul>
+
+  <h3>4-8. 알림 <span class="ref">EVT-06·WL-04</span></h3>
+  <ul>
+    <li>실제 발송 없음. <code>notification</code> 테이블에 쌓고 알림함으로 보여 준다.</li>
+    <li>종류: 취소표 제안, 결제 기한 임박, 예약 만료, 대기 건너뜀, 환불 완료</li>
+    <li><b>1차 구현:</b> INSERT만. 알림함 화면(U-11)은 나중에.</li>
+  </ul>
+</section>
+
+<section id="s5">
+  <h2><span class="num">5</span>상태 그림</h2>
+  <h3>예약</h3>
+  <div class="flow">
+    <div class="box">HOLD</div><span class="arrow">결제 시작 →</span>
+    <div class="box">PAYMENT_PENDING</div><span class="arrow">승인 →</span>
+    <div class="box ok">CONFIRMED</div><span class="arrow">취소 →</span>
+    <div class="box bad">CANCELED</div>
+  </div>
+  <div class="flow">
+    <div class="box">HOLD</div><span class="arrow">시간 초과·뺏김 →</span><div class="box bad">EXPIRED</div>
+    <span class="arrow">← 결제 실패</span><div class="box">PAYMENT_PENDING</div>
+  </div>
+  <div class="flow">
+    <div class="box">HOLD</div><span class="arrow">결제 전 취소 →</span><div class="box bad">CANCELED</div>
+  </div>
+  <p class="hint"><code>PAYMENT_PENDING</code>(결제 중)은 사용자가 취소할 수 없고, 다른 사람이 가져갈 수도 없습니다.</p>
+
+  <h3>결제</h3>
+  <div class="flow">
+    <div class="box">REQUESTED</div><span class="arrow">→</span><div class="box ok">APPROVED</div><span class="arrow">→</span><div class="box">REFUNDED</div>
+  </div>
+  <div class="flow">
+    <div class="box">REQUESTED</div><span class="arrow">→</span><div class="box bad">FAILED</div>
+    <span class="arrow">늦은 승인 →</span><div class="box ok">APPROVED</div><span class="arrow">→ 바로 환불</span>
+  </div>
+</section>
+
+<section id="s6">
+  <h2><span class="num">6</span>Kafka 요약</h2>
+  <div class="table-wrap"><table>
+    <tr><th>토픽</th><th>키</th><th>내용</th></tr>
+    <tr><td><code>jejari.reservation</code></td><td>reservation_id</td><td>예약·결제·취소 이벤트 전부 (한 토픽이라 순서 보장)</td></tr>
+    <tr><td><code>jejari.waitlist</code></td><td>waitlist_id</td><td>취소표 대기</td></tr>
+    <tr><td><code>jejari.behavior</code></td><td>ci_hash</td><td>행동 로그 (강다인)</td></tr>
+  </table></div>
+  <ul>
+    <li><b>주요 이벤트:</b> <code>SEAT_HELD</code>, <code>PAYMENT_STARTED</code>, <code>RESERVATION_CONFIRMED</code>, <code>RESERVATION_EXPIRED</code>, <code>RESERVATION_CANCELED</code></li>
+    <li><b>소비 그룹:</b> <code>seat-release</code>(좌석 반환), <code>notification</code>(알림), <code>risk-signal</code>(위험 점수), <code>refund</code>(환불)</li>
+    <li class="hint">자세한 payload는 기능설계서 8장.</li>
+  </ul>
+</section>
+
+<section id="s7">
+  <h2><span class="num">7</span>할 일 체크리스트</h2>
+  <p class="hint">체크한 내용은 이 브라우저에만 저장됩니다.</p>
+
+  <h3>지금 정해야 할 것 <span class="ref">기능설계서 11장</span></h3>
+  <ul class="check">
+    <li><label><input type="checkbox" data-id="d1"><span>#1 PG: Mock 먼저, 여유 있으면 실제 테스트 모드? (지금 가정: Mock)</span></label></li>
+    <li><label><input type="checkbox" data-id="d8"><span>#8 알림 채널: 앱 내 알림함만? (지금 가정: 그렇다)</span></label></li>
+    <li><label><input type="checkbox" data-id="d13"><span>#13 토픽 이름·파티션 수 확정</span></label></li>
+    <li><label><input type="checkbox" data-id="d4"><span>#4 좌석 일부 취소 (강다인과)</span></label></li>
+    <li><label><input type="checkbox" data-id="d15"><span>#15 관리자 기준 데이터 등록 화면 (강동균과)</span></label></li>
+  </ul>
+
+  <h3>1차 필수 테스트 <span class="ref">concurrency.md §16</span></h3>
+  <ul class="check">
+    <li><label><input type="checkbox" data-id="t6"><span>T6 결제를 시작해도 마감이 줄지 않는다</span></label></li>
+    <li><label><input type="checkbox" data-id="t18"><span>T18 같은 예약 이벤트 3개를 릴레이 2대가 처리해도 순서대로 나간다</span></label></li>
+    <li><label><input type="checkbox" data-id="t21"><span>T21 같은 Kafka 메시지가 2번 와도 처리는 1번만 된다</span></label></li>
+  </ul>
+
+  <h3>다른 사람과 맞출 것</h3>
+  <ul class="check">
+    <li><label><input type="checkbox" data-id="p1"><span>강동균: 좌석 해제 함수 이름·인자 (reservation_id 하나, 두 번 불러도 같은 결과)</span></label></li>
+    <li><label><input type="checkbox" data-id="p2"><span>강다인: 환불 재시도 배치를 누가 어디까지 맡을지</span></label></li>
+    <li><label><input type="checkbox" data-id="p3"><span>조영준: Kafka·Oracle 컨테이너 시간대 <code>Asia/Seoul</code></span></label></li>
+  </ul>
+
+  <h3>팀장 일</h3>
+  <ul class="check">
+    <li><label><input type="checkbox" data-id="l1"><span>팀원들이 2~3일에 한 번 main에 합치는지 확인</span></label></li>
+    <li><label><input type="checkbox" data-id="l2"><span>문서 사이트 PIN 초기화 요청 처리</span></label></li>
+    <li><label><input type="checkbox" data-id="l3"><span>일정이 밀리면 덜어낼 순서 공지: 타임라인 재생 → Isolation Forest</span></label></li>
+  </ul>
+</section>
+
+<section id="s8">
+  <h2><span class="num">8</span>면접 예상 질문</h2>
+  <p class="hint">답은 한 줄로 말할 수 있게.</p>
+  <div class="table-wrap"><table>
+    <tr><th>질문</th><th>답의 핵심</th></tr>
+    <tr><td>중복 결제를 어떻게 막았나?</td><td>멱등 키 3중 방어 + 예약 락 + "상태가 X일 때만" UPDATE</td></tr>
+    <tr><td>왜 결제 재시도를 막았나?</td><td>재시도마다 마감이 늘어나 좌석을 오래 붙잡는 걸 막으려고</td></tr>
+    <tr><td>결과를 모르는 결제는 왜 자동 취소하지 않나?</td><td>돈이 빠졌을 수 있어서. 좌석을 지키며 다시 묻는다</td></tr>
+    <tr><td>왜 Outbox인가?</td><td>DB 저장과 이벤트 발행이 따로 실패하는 걸 막으려고</td></tr>
+    <tr><td>이벤트 순서는 어떻게 보장하나?</td><td>같은 키, 같은 샤드, 샤드당 릴레이 1대, 실패하면 멈춤</td></tr>
+    <tr><td>같은 메시지가 두 번 오면?</td><td>Inbox 기록과 업무 처리를 한 트랜잭션에. 보관 8일 &gt; Kafka 7일</td></tr>
+    <tr><td>늦은 승인은?</td><td>승인으로 기록하고 전액 환불. 좌석은 이미 남에게 갔을 수 있어 되살리지 않는다</td></tr>
+  </table></div>
+</section>
+
+</main>
+
+<button class="theme" type="button" id="themeBtn">테마</button>
+<div id="tip" hidden></div>
+
+<script>
+// 용어 설명. 긴 이름이 먼저 맞도록 길이순으로 정렬해서 씀
+const TERMS = {
+  'Kafka': '이벤트(메시지)를 받아 두었다가 구독한 서비스들에 전달하는 메시지 시스템. 서비스끼리 직접 부르지 않고 "이런 일이 있었다"를 알리는 통로.',
+  'Redis': '메모리에 저장하는 아주 빠른 키-값 저장소. 여기서는 좌석 선점 경쟁, 멱등 키, 리스 같은 빠른 1차 판정에 씀.',
+  'Oracle': '주 데이터베이스. 예약·결제처럼 틀리면 안 되는 데이터의 최종 판정을 맡음.',
+  'MongoDB': '문서형 데이터베이스. 행동 로그처럼 양이 많은 데이터를 쌓는 곳.',
+  'PG': 'Payment Gateway, 결제 대행사(토스페이먼츠 등). 카드 승인을 대신 처리해 줌. 1차는 직접 만든 Mock PG를 씀.',
+  'Mock': '진짜 대신 쓰는 가짜 구현. Mock PG는 지연·실패·무응답을 설정으로 흉내 냄.',
+  'Saga': '여러 단계로 된 작업에서 중간이 실패하면 앞 단계를 되돌리는(보상하는) 방식. 여기서는 선점 → 결제 → 확정 흐름을 관리.',
+  'Outbox': '보낼 이벤트를 업무 데이터와 같은 트랜잭션에서 DB 표(outbox_event)에 적어 두는 방식. 릴레이가 나중에 Kafka로 보냄. 저장은 됐는데 이벤트가 사라지는 일을 막음.',
+  'Inbox': '받은 이벤트 ID를 DB 표(processed_event)에 기록해 같은 이벤트를 두 번 처리하지 않게 하는 방식.',
+  '멱등': '같은 요청을 여러 번 보내도 한 번 보낸 것과 결과가 같은 성질. 버튼 연타·네트워크 재시도에 안전.',
+  'Idempotency-Key': '멱등 처리를 위해 클라이언트가 요청마다 만들어 보내는 UUID 헤더. 재시도할 때는 같은 값을 다시 씀.',
+  '샤드': '이벤트를 번호(0~15)로 나눈 묶음. 묶음마다 담당 릴레이가 하나라 같은 묶음 안 순서가 지켜짐.',
+  '리스': '"이 샤드는 지금 내가 맡는다"는 Redis 임시 표시. 15초짜리이고 주기적으로 연장. 연장에 실패하면 즉시 손을 뗌.',
+  '릴레이': 'Outbox 표에 쌓인 이벤트를 읽어 Kafka로 보내는 배치 작업.',
+  '파티션': 'Kafka 토픽을 나눈 칸. 같은 키의 메시지는 같은 파티션에 들어가 순서가 보장됨.',
+  '토픽': 'Kafka에서 메시지를 분류하는 이름. 예: jejari.reservation',
+  '오프셋': 'Kafka에서 "어디까지 읽었는지" 표시하는 번호. 처리를 커밋한 뒤에 오프셋을 커밋해야 유실이 없음.',
+  '소비 그룹': '같은 토픽을 함께 나눠 읽는 컨슈머 묶음. 그룹마다 모든 메시지를 한 번씩 받음.',
+  '컨슈머': 'Kafka 메시지를 읽어 처리하는 쪽.',
+  '프로듀서': 'Kafka에 메시지를 보내는 쪽. 여기서는 릴레이.',
+  '트랜잭션': '여러 DB 작업을 "전부 성공 아니면 전부 취소"로 묶는 단위.',
+  '커밋': '트랜잭션의 변경을 확정하는 것. 커밋 전에는 다른 사람이 변경을 보지 못함.',
+  '롤백': '트랜잭션의 변경을 모두 취소하고 이전 상태로 되돌리는 것.',
+  '데드락': '두 작업이 서로 상대가 잡은 락을 기다리며 영원히 멈추는 상황. 잠그는 순서를 같게 하면 막을 수 있음.',
+  'SKIP LOCKED': '다른 트랜잭션이 잠근 행은 기다리지 않고 건너뛰는 SQL 옵션. 빠르지만 순서가 중요한 Outbox에서는 순서를 깨므로 쓰지 않음.',
+  'FOR UPDATE': '읽은 행을 잠가 다른 트랜잭션이 동시에 바꾸지 못하게 하는 SQL.',
+  'ORA_HASH': 'Oracle 해시 함수. 값을 0~N 사이 숫자로 바꿔 샤드 번호를 정함. 같은 값이라도 숫자형과 문자형의 결과가 다름.',
+  'UUID': '전 세계에서 겹치지 않게 만드는 36자 무작위 ID.',
+  'HOLD': '좌석을 잡아 둔 상태. 아직 결제 전이고 마감이 지나면 풀림.',
+  'PAYMENT_PENDING': '결제 진행 중인 예약 상태. 사용자 취소·다른 사람의 재선점이 안 됨.',
+  'CONFIRMED': '결제가 승인되어 확정된 예약.',
+  'EXPIRED': '마감 초과·결제 실패·재선점으로 풀린 예약.',
+  'CANCELED': '사용자나 관리자가 취소한 예약.',
+  'REQUESTED': '결제를 PG에 요청했고 결과를 아직 모르는 상태.',
+  'APPROVED': 'PG가 결제를 승인한 상태.',
+  'FAILED': '실패 상태. 결제에서는 PG 거절, Outbox에서는 발행 5회 실패.',
+  'REFUNDED': '환불이 끝난 결제.',
+  'COMPENSATED': 'Saga가 실패해서 보상(좌석 반환 등)까지 끝낸 상태.',
+  'SOLD': '결제가 끝나 팔린 좌석.',
+  'app_policy': '시간·횟수 같은 운영 값을 모아 둔 DB 표. 코드에 숫자를 박지 않고 여기서 읽음.',
+  'TTL': 'Time To Live. 데이터가 자동으로 사라지기까지의 시간.',
+  'seq': 'Outbox 이벤트의 순번(시퀀스). 커밋 순서와 같아서 이 순서대로 발행함.',
+  'payload': '이벤트에 실어 보내는 실제 내용(JSON).',
+  '콜백': 'PG가 결제 결과를 우리 서버로 직접 알려 주는 호출.',
+  '스캐너': '주기적으로 DB를 훑어 처리할 건(마감 지난 예약, 결과 모르는 결제)을 찾는 배치.',
+  '늦은 승인': '우리가 실패로 정리한 뒤에 PG 승인이 도착한 경우. 돈은 빠졌으니 전액 환불함.',
+  '예약 행': 'reservation 표의 그 예약 한 줄. 이 행을 먼저 잠가서 같은 예약을 동시에 바꾸는 작업들을 줄 세움.',
+  'acks=all': 'Kafka가 모든 복제본에 저장한 뒤에 성공으로 응답하게 하는 설정. 메시지 유실 방지.',
+  'enable.idempotence=true': 'Kafka 프로듀서가 재전송해도 메시지가 중복 저장되지 않게 하는 설정.',
+  'ci_hash': '본인인증 CI 값을 HMAC으로 가린 값. 같은 사람을 구분하는 데 씀.',
+  'Isolation Forest': '이상치 탐지 머신러닝 알고리즘. 일정이 밀리면 덜어낼 기능.',
+  'reservation_id': '예약 번호. 예약 흐름 이벤트의 Kafka 키이자 샤드를 정하는 값.',
+  'processed_event': 'Inbox 표. (소비 그룹, 이벤트 ID)를 기록해 중복 처리를 막음.',
+  'ux_payment_approved': '예약 하나에 승인된 결제가 1건만 있도록 막는 유니크 인덱스.',
+  'cancellation': '취소·환불 기록 표.',
+  'notification': '알림 기록 표. 실제 발송 없이 알림함에 보여 줌.',
+};
+
+const tip = document.getElementById('tip');
+const keys = Object.keys(TERMS).sort((a, b) => b.length - a.length);
+const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// 영문 용어는 앞뒤가 영문·숫자·밑줄이 아닐 때만 맞춤 (예: PG가 PGX 안에서 맞지 않게)
+const pattern = new RegExp(keys.filter(k => k !== '리스').map(k =>
+  /^[A-Za-z]/.test(k) ? `(?<![A-Za-z0-9_.])${esc(k)}(?![A-Za-z0-9_])` : esc(k)).join('|'), 'g');
+
+function wrapTerms(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.parentElement.closest('.t, #tip, button, nav, h1') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    const text = node.nodeValue;
+    pattern.lastIndex = 0;
+    if (!pattern.test(text)) continue;
+    pattern.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    let last = 0, m;
+    while ((m = pattern.exec(text))) {
+      frag.append(text.slice(last, m.index));
+      const span = document.createElement('span');
+      span.className = 't';
+      span.dataset.k = m[0];
+      span.textContent = m[0];
+      frag.append(span);
+      last = m.index + m[0].length;
+    }
+    frag.append(text.slice(last));
+    node.replaceWith(frag);
+  }
+}
+wrapTerms(document.querySelector('main'));
+
+function showTip(el, x, y) {
+  const k = el.dataset.k;
+  if (!TERMS[k]) return;
+  tip.innerHTML = '';
+  const b = document.createElement('b');
+  b.textContent = k;
+  tip.append(b, TERMS[k]);
+  tip.hidden = false;
+  moveTip(x, y);
+}
+function moveTip(x, y) {
+  const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+  let left = x + pad, top = y + pad;
+  if (left + w > innerWidth - 8) left = Math.max(8, x - w - pad);
+  if (top + h > innerHeight - 8) top = Math.max(8, y - h - pad);
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+}
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest('.t');
+  if (el) showTip(el, e.clientX, e.clientY);
+});
+document.addEventListener('mousemove', e => {
+  if (!tip.hidden && e.target.closest('.t')) moveTip(e.clientX, e.clientY);
+});
+document.addEventListener('mouseout', e => {
+  const el = e.target.closest('.t');
+  if (el && !el.contains(e.relatedTarget)) tip.hidden = true;
+});
+// 휴대폰: 탭하면 보이고, 다른 곳을 탭하면 사라짐
+document.addEventListener('touchstart', e => {
+  const el = e.target.closest('.t');
+  if (el) { const t = e.touches[0]; showTip(el, t.clientX, t.clientY); }
+  else tip.hidden = true;
+}, { passive: true });
+addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
+
+// 체크리스트 저장
+const SAVE_KEY = 'jejari-gil-checklist';
+let saved = {};
+try { saved = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}'); } catch (e) { saved = {}; }
+document.querySelectorAll('.check input').forEach(cb => {
+  cb.checked = !!saved[cb.dataset.id];
+  cb.addEventListener('change', () => {
+    saved[cb.dataset.id] = cb.checked;
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(saved)); } catch (e) {}
+  });
+});
+
+// 테마 전환 (자동 → 밝게 → 어둡게)
+const THEME_KEY = 'jejari-gil-theme';
+const btn = document.getElementById('themeBtn');
+const labels = { '': '테마: 자동', light: '테마: 밝게', dark: '테마: 어둡게' };
+function applyTheme(t) {
+  if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  btn.textContent = labels[t];
+}
+let theme = '';
+try { theme = localStorage.getItem(THEME_KEY) || ''; } catch (e) {}
+applyTheme(theme);
+btn.addEventListener('click', () => {
+  theme = theme === '' ? 'light' : theme === 'light' ? 'dark' : '';
+  applyTheme(theme);
+  try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+});
+</script>
+</body>
+</html>

@@ -15,11 +15,13 @@
 
 MERGE INTO station t
 USING (
-  SELECT '3900023' AS station_id, '서울'   AS station_name FROM dual UNION ALL
-  SELECT '3900883',               '광명'              FROM dual UNION ALL
-  SELECT '3900073',               '대전'              FROM dual UNION ALL
-  SELECT '3900096',               '동대구'            FROM dual UNION ALL
-  SELECT '3900114',               '부산'              FROM dual
+-- @generated:station (tools/load-public-data.js — 손으로 고치지 마세요)
+  SELECT '3900023'   AS station_id, '서울'     AS station_name FROM dual UNION ALL
+  SELECT '3900883'  , '광명'     FROM dual UNION ALL
+  SELECT '3900073'  , '대전'     FROM dual UNION ALL
+  SELECT '3900096'  , '동대구'   FROM dual UNION ALL
+  SELECT '3900114'  , '부산'     FROM dual
+-- @end:station
 ) s ON (t.station_id = s.station_id)
 WHEN MATCHED THEN
   UPDATE SET t.station_name = s.station_name, t.updated_at = SYSTIMESTAMP
@@ -28,8 +30,10 @@ WHEN NOT MATCHED THEN
 
 MERGE INTO route t
 USING (
+-- @generated:route (tools/load-public-data.js — 손으로 고치지 마세요)
   SELECT 1 AS route_id, '경부선' AS route_name,
          '3900023' AS origin_station_id, '3900114' AS dest_station_id FROM dual
+-- @end:route
 ) s ON (t.route_id = s.route_id)
 WHEN MATCHED THEN
   UPDATE SET t.route_name = s.route_name, t.origin_station_id = s.origin_station_id,
@@ -41,11 +45,13 @@ WHEN NOT MATCHED THEN
 MERGE INTO route_station t
 USING (
   -- 누적거리는 경부고속선 데이터셋의 '서울' 기준 행 값 그대로
-  SELECT 1 AS route_id, '3900023' AS station_id, 1 AS station_order,   0.0 AS distance_from_origin_km FROM dual UNION ALL
-  SELECT 1,             '3900883',               2,                   22.0                           FROM dual UNION ALL
-  SELECT 1,             '3900073',               3,                  159.8                           FROM dual UNION ALL
-  SELECT 1,             '3900096',               4,                  286.7                           FROM dual UNION ALL
-  SELECT 1,             '3900114',               5,                  417.4                           FROM dual
+-- @generated:route_station (tools/load-public-data.js — 손으로 고치지 마세요)
+  SELECT 1 AS route_id, '3900023' AS station_id, 1 AS station_order, 0.0     AS distance_from_origin_km FROM dual UNION ALL
+  SELECT 1,             '3900883',               2,                22.0                           FROM dual UNION ALL
+  SELECT 1,             '3900073',               3,                159.8                          FROM dual UNION ALL
+  SELECT 1,             '3900096',               4,                286.7                          FROM dual UNION ALL
+  SELECT 1,             '3900114',               5,                417.4                          FROM dual
+-- @end:route_station
 ) s ON (t.route_id = s.route_id AND t.station_id = s.station_id)
 WHEN MATCHED THEN
   UPDATE SET t.station_order = s.station_order,
