@@ -35,7 +35,7 @@ DB가 거절하면(한도 초과·PK 충돌 등) 롤백하고 Redis 좌석 키·
 - 운임은 [가정] 승객 유형(어린이·경로) 할인 없이 등급별 운임 그대로.
 - 구간 재고는 OFF라 구간 번호는 항상 0 (K = 좌석 수, §2.4).
 - 재선점으로 만료시킨 이전 예약의 Redis 한도는 커밋 직후 앱이 되돌린다(빠른 경로). 보장 경로(`seat-release` 소비자)는 아직 없음 — 길동현·강다인 파트.
-- outbox 기록(`ReservationOutbox`)은 결제·취소 쪽이 생기면 공용 모듈로 합칠 것.
+- outbox 기록은 팀 공용 `OutboxRecorder`(길동현 EVT-01)에 맡긴다 (`ReservationOutbox`는 이벤트 이름만 넘기는 얇은 껍데기).
 
 ## 테스트 (`SeatHoldInfraTest`, `./gradlew infraTest`)
 
