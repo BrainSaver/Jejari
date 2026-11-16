@@ -438,7 +438,7 @@ SELECT payment_id, reservation_id, requested_at FROM payment
 신청(WL-01) 때 한 번 계산해 저장합니다.
 
 1. 위험 점수: 대기열 진입(QUE-01)과 같은 규칙입니다. 회원의 CI·결제 수단·기기 해시로 `risk:{CI|PAYMENT|DEVICE}:{해시}`를 읽어 **최댓값**(`policy(risk.member_penalty_rule)`)을 쓰고, 없으면 0점입니다. `member.status = 'RESTRICTED'`는 100점, `BANNED`는 신청할 수 없습니다.
-2. `penalty_ms = round(점수 × policy(waitlist.penalty_ms_per_point))`. **대기열의 `risk.penalty_ms_per_point`(기본 1점 = 1초)를 그대로 쓰지 않습니다.** 대기열은 몇 분 안에 줄이 빠지지만 취소표 대기는 몇 시간~며칠 이어지므로, 같은 단위면 80점이 80초라 순서가 사실상 바뀌지 않습니다. 기본값은 60000(1점 = 1분, 80점 = 80분)이며 팀이 정합니다.
+2. `penalty_ms = round(점수 × policy(waitlist.penalty_ms_per_point))`. **대기열의 `risk.penalty_ms_per_point`(기본 1점 = 1초)를 그대로 쓰지 않습니다.** 대기열은 몇 분 안에 줄이 빠지지만 취소표 대기는 몇 시간~며칠 이어지므로, 같은 단위면 80점이 80초라 순서가 사실상 바뀌지 않습니다. 팀이 **180000(1점 = 3분, 80점 = 240분)으로 확정**했습니다.
 3. `priority_at = requested_at + penalty_ms`. `requested_at`은 앱 시계(§0.7)로 한 번 계산하고, 신청 이후 점수가 바뀌어도 다시 계산하지 않습니다 (대기열과 같음).
 4. 같은 `priority_at`이면 `waitlist_id` 순서입니다.
 
@@ -711,7 +711,7 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | `outbox.max_retry` | 5 | §11.3 |
 | `inbox.retention_days` | 8 | §12 (Kafka 보관 7일보다 길게) |
 | `waitlist.reoffer_hold_sec` | 60 | §9 대기자 우선 보류 시간 |
-| `waitlist.penalty_ms_per_point` | 60000 | §9.3 위험 점수 1점당 대기 순서를 뒤로 미루는 ms (대기열보다 크게). 예시, 팀 확정 전 |
+| `waitlist.penalty_ms_per_point` | 180000 | §9.3 위험 점수 1점당 대기 순서를 뒤로 미루는 ms (대기열보다 크게). 팀 확정 (1점 = 3분) |
 | `behavior.retention_days` | 180 | §13.2 (팀 확정) |
 | `replay.hold_cache_sec` | 30 | §13.2 legal_hold 캐시 TTL, 두 번째 `$unset` 지연 |
 | `queue_log.retention_days` | 30 | §13.2 |
@@ -763,8 +763,8 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | T35 | 같은 대기자에게 이벤트 재전달 | 제안 예약 1건 (`wl:` 키 UNIQUE) | §1, §9 |
 | T36 | 같은 CI가 하루에 1일 한도를 넘겨 예약 | 한도까지만 성공, 초과분 거절 (운행이 달라도 합산) | §10.1, §10.6 |
 | T37 | 자정 직전 선점한 예약이 자정 뒤 만료 | 어제 날짜 `PER_DAY` 행이 감소 (오늘 행은 그대로) | §10.2 |
-| T38 | 위험 점수 80인 회원 A(패널티 80분)가 10:00에, 정상 회원 B가 10:30에 신청한 뒤 좌석 1개가 빔 | B에게 먼저 제안, A는 WAITING 유지 | §9.3 |
-| T39 | 같은 조건에서 B가 11:30(패널티 80분이 지난 뒤)에 신청 | A에게 먼저 제안 | §9.3 |
+| T38 | 위험 점수 80인 회원 A(패널티 240분)가 10:00에, 정상 회원 B가 10:30에 신청한 뒤 좌석 1개가 빔 | B에게 먼저 제안, A는 WAITING 유지 | §9.3 |
+| T39 | 같은 조건에서 B가 14:30(패널티 240분이 지난 뒤)에 신청 | A에게 먼저 제안 | §9.3 |
 
 ---
 
