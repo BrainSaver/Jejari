@@ -3,6 +3,7 @@ package com.jejari.seat;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import com.jejari.common.error.BusinessException;
 import com.jejari.seat.SeatReleaseTx.Released;
+import com.jejari.seat.SeatReleaseTx.ReturnedSold;
 import com.jejari.train.RunInfo;
 import com.jejari.train.TrainRunReader;
 
@@ -22,7 +24,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 
 /**
  * 좌석 해제 (concurrency.md §7). 결제 기한 초과 자동 반환(RSV-03), 결제 전 취소(RSV-05), 결제 실패(PAY-03, Saga)가
- * 모두 이 한 곳을 지납니다.
+ * 모두 이 한 곳을 지납니다. 확정 예약 취소(CNL-02, §8)의 좌석 반환도 {@link #returnSoldSeatsInCurrentTx}로 여기를 지납니다.
  *
  * <pre>
  * DB 트랜잭션 (§7.1, SeatReleaseTx): 예약 상태 전이 → HOLD 행 삭제 → 카운터 감소 → Saga·이력·outbox
@@ -39,6 +41,24 @@ public class SeatReleaseService {
 
 	/** 결제 전 취소 결과 */
 	public record CancelResult(long reservationId, String status, Long runId, int seatCount) {
+	}
+
+	/**
+	 * 확정 취소로 돌려준 좌석 (§8.1-2·3).
+	 *
+	 * @param seatIds       돌려준 좌석 ID 오름차순
+	 * @param fromStationId 예약의 승차역 (취소표 제안 §9가 빈 구간을 정할 때 씀)
+	 */
+	public record ReturnedSeats(long reservationId, long runId, int seatCount, List<Long> seatIds, String fromStationId,
+			String toStationId) {
+
+		/**
+		 * RESERVATION_CANCELED 이벤트 내용의 좌석 부분. seat-release 소비자(§9)가 이 모양으로 빈 좌석을 읽는다.
+		 * CNL 쪽은 여기에 reason·cancelFee·refundAmount를 더해 outbox에 넣는다.
+		 */
+		public Map<String, Object> eventPayload() {
+			return SeatReleaseTx.seatPayload(reservationId, runId, seatIds, fromStationId, toStationId, seatCount);
+		}
 	}
 
 	private final SeatReleaseTx releaseTx;
@@ -111,9 +131,7 @@ public class SeatReleaseService {
 	 * @return 해제했으면 true, 상태가 이미 바뀌어 아무것도 안 했으면 false (두 번 불러도 결과가 같다)
 	 */
 	public boolean releaseInCurrentTx(long reservationId, ReleaseReason reason) {
-		if (!TransactionSynchronizationManager.isActualTransactionActive()) {
-			throw new IllegalStateException("releaseInCurrentTx는 트랜잭션 안에서 불러야 합니다");
-		}
+		requireTx("releaseInCurrentTx");
 		Released done = releaseTx.release(reservationId, reason, null);
 		if (done == null) {
 			return false;
@@ -127,34 +145,77 @@ public class SeatReleaseService {
 		return true;
 	}
 
-	/** §7.2 커밋 후 보상 (빠른 경로). 실패해도 예외를 던지지 않는다: DB는 이미 커밋됐고 보장 경로가 다시 한다 */
+	/**
+	 * CNL-02 확정 예약 취소(§8, D 강다인)가 부르는 좌석 반환. <b>이미 열린 트랜잭션 안에서</b> SOLD 행을 지우고
+	 * 매수 카운터를 줄이며(§8.1-2·3), 그 트랜잭션이 커밋되면 좌석 키를 REOFFER:R로 바꿔 대기자에게 먼저 넘기고
+	 * 한도를 되돌린다(§8.2, §14.3 빠른 경로).
+	 *
+	 * <p>순서: 호출하는 쪽이 먼저 {@code UPDATE reservation … CONFIRMED → CANCELED}(1행) → 이 메서드 →
+	 * cancellation INSERT·이력·outbox {@code RESERVATION_CANCELED}(내용은 {@link ReturnedSeats#eventPayload()}에 덧붙임).
+	 * 예약이 CANCELED가 아니면 IllegalStateException (순서를 잘못 부른 것).
+	 *
+	 * @return 돌려준 좌석. 이미 돌려줬으면 null (두 번 불러도 카운터는 한 번만 준다)
+	 */
+	public ReturnedSeats returnSoldSeatsInCurrentTx(long reservationId) {
+		requireTx("returnSoldSeatsInCurrentTx");
+		ReturnedSold done = releaseTx.returnSold(reservationId);
+		if (done == null) {
+			return null;
+		}
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+			@Override
+			public void afterCommit() {
+				compensate(done.reservationId(), done.runId(), done.ciHash(), done.seatCount(), done.purchaseDay(),
+						done.saleEventId(), done.seatIds(), "CONFIRMED_CANCEL");
+			}
+		});
+		return new ReturnedSeats(done.reservationId(), done.runId(), done.seatCount(), done.seatIds(),
+				done.fromStationId(), done.toStationId());
+	}
+
+	/** §7.2 커밋 후 보상 (빠른 경로) */
 	private boolean afterCommit(Released done) {
 		if (done == null) {
 			return false;
 		}
-		meters.counter("jejari.seat.released", "reason", done.reason().name()).increment();
+		compensate(done.reservationId(), done.runId(), done.ciHash(), done.seatCount(), done.purchaseDay(),
+				done.saleEventId(), done.seatIds(), done.reason().name());
+		return true;
+	}
+
+	/**
+	 * 커밋 후 Redis 보상 (§14.3 빠른 경로): 내 값(R 또는 SOLD:R)인 좌석 키를 REOFFER:R로, 한도는 예약당 한 번만 감소.
+	 * 실패해도 예외를 던지지 않는다: DB는 이미 커밋됐고 seat-release 소비자(보장 경로)가 같은 두 스크립트를 다시 돌린다.
+	 */
+	private void compensate(long reservationId, long runId, String ciHash, int seatCount, long purchaseDay,
+			Long saleEventId, List<Long> seatIds, String reasonTag) {
+		meters.counter("jejari.seat.released", "reason", reasonTag).increment();
 		try {
-			List<String> seatKeys = done.seatIds().stream()
-					.map(id -> SeatKeys.hold(done.runId(), id, HoldPlan.SEGMENT_NO)).toList();
+			List<String> seatKeys = seatIds.stream().map(id -> SeatKeys.hold(runId, id, HoldPlan.SEGMENT_NO)).toList();
 			if (!seatKeys.isEmpty()) {
-				// 내 값(R 또는 SOLD:R)인 키만 REOFFER:R로. HOLD 만료라 TTL로 이미 사라졌으면 아무 일 없음
-				redis.execute(scripts.reoffer, seatKeys, Long.toString(done.reservationId()),
+				// HOLD 만료라 TTL로 이미 사라졌으면 아무 일 없음
+				redis.execute(scripts.reoffer, seatKeys, Long.toString(reservationId),
 						Long.toString(policy.getLong(SeatPolicy.REOFFER_HOLD_SEC) * 1000));
 			}
-			RunInfo run = runs.find(done.runId()).orElse(null);
+			RunInfo run = runs.find(runId).orElse(null);
 			List<String> keys = new ArrayList<>();
-			keys.add(SeatKeys.limitDec(done.reservationId()));
-			keys.add(SeatKeys.limitRun(done.runId(), done.ciHash()));
-			keys.add(SeatKeys.limitDay(done.purchaseDay(), done.ciHash()));
-			if (done.saleEventId() != null) {
-				keys.add(SeatKeys.limitEvent(done.saleEventId(), done.ciHash()));
+			keys.add(SeatKeys.limitDec(reservationId));
+			keys.add(SeatKeys.limitRun(runId, ciHash));
+			keys.add(SeatKeys.limitDay(purchaseDay, ciHash));
+			if (saleEventId != null) {
+				keys.add(SeatKeys.limitEvent(saleEventId, ciHash));
 			}
-			redis.execute(scripts.limitDecr, keys, Integer.toString(done.seatCount()), Long.toString(markExpiry(run)));
-			seatMap.evict(done.runId());
+			redis.execute(scripts.limitDecr, keys, Integer.toString(seatCount), Long.toString(markExpiry(run)));
+			seatMap.evict(runId);
 		} catch (RuntimeException e) {
-			log.warn("예약 {} 해제 후 Redis 보상 실패 (seat-release가 다시 함)", done.reservationId(), e);
+			log.warn("예약 {} 해제 후 Redis 보상 실패 (seat-release가 다시 함)", reservationId, e);
 		}
-		return true;
+	}
+
+	static void requireTx(String method) {
+		if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+			throw new IllegalStateException(method + "는 트랜잭션 안에서 불러야 합니다");
+		}
 	}
 
 	/** limit:dec 표시 키 만료: 운행 출발·행사 종료 중 늦은 쪽 (§14.1). 운행을 못 읽으면 넉넉히 하루 뒤 */
