@@ -137,7 +137,9 @@ pass(`DDL: CREATE TABLE ${(ddl.match(/CREATE TABLE/g) || []).length}, FK ${(ddl.
 const allCols = new Set(T.flatMap(t => t.cols.map(c => c.name)));
 const docText = Object.values(api.DOCS).flatMap(d => d.rows.flat()).concat(api.DECISIONS_SEED.map(d => d.where)).join(' ').replace(/\b\w+\.lua\b/g, '');
 const unknown = [...new Set((docText.match(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g) || []))].filter(w => !by[w] && !allCols.has(w) && !/^(ext|ci|ip)$/.test(w));
-const knownWords = new Set((by.app_policy?.samples || []).flatMap(r => String(r.policy_key).split('.')));
+// app_policy 키 조각과 Redis 키 이름 조각은 컬럼이 아니다 (risk:meta:synced_at 같은 키에서 synced_at만 뽑혀 오탐)
+const knownWords = new Set((by.app_policy?.samples || []).flatMap(r => String(r.policy_key).split('.'))
+  .concat((by.redis_keys?.cols || []).flatMap(c => c.name.split(/[:{}.]/))));
 unknown.filter(w => !knownWords.has(w) && !/^(ix|ux|uq|pk|fk|ck)_/.test(w) /* 인덱스·제약 이름 */).forEach(w => warn(`문서에 나오지만 테이블·컬럼이 아닌 이름: ${w}`));
 api.DECISIONS_SEED.forEach(d => { const m = d.where.match(/^([a-z_]+)/); if (m && m[1].includes('_') && !by[m[1]]) fail(`결정 사항 반영 위치의 테이블 없음: ${d.where}`); });
 
