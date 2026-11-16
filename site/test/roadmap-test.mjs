@@ -69,5 +69,16 @@ r = await dh('/roadmap/now', { area: 'nope', part: 'A', text: 'x' }); ok(r.statu
 await dh('/roadmap/now', { area: 'queue', part: 'A', text: '' });
 r = await anon('/roadmap'); ok(!r.data.now.some((n) => n.area === 'queue' && n.part === 'A'), '비우면 지움');
 
+r = await anon('/roadmap'); const fl = r.data.flow;
+r = await anon('/roadmap/flow', { flow: fl, v: fl.v }); ok(r.status === 401, '다이어그램은 로그인해야 고침');
+r = await dh('/roadmap/flow', { flow: { ...fl, nodes: fl.nodes.filter((n) => n.k !== 'pay') , edges: fl.edges.filter((e) => e.a !== 'pay' && e.b !== 'pay') }, v: fl.v }); ok(r.status === 400 && r.data.error === 'AREA_USED', '카드가 있는 칸은 못 지움');
+r = await dh('/roadmap/flow', { flow: { ...fl, nodes: [...fl.nodes, { k: 'nnoti', kind: 'area', label: '알림', icon: '🔔', x: 20, y: 1400 }], edges: [...fl.edges, { a: 'event', b: 'nnoti', label: '발송' }] }, v: fl.v });
+ok(r.status === 200 && r.data.flow.v === (fl.v || 0) + 1, '칸·선 추가');
+r = await dg('/roadmap/flow', { flow: fl, v: fl.v }); ok(r.status === 409, '옛 버전으로 고치면 충돌');
+r = await dh('/roadmap/save', { item: { title: '알림 템플릿', area: 'nnoti', roles: { C: { done: false } } } }); ok(r.status === 200 && r.data.item.area === 'nnoti', '새 칸에 할 일');
+await dh('/roadmap/delete', { id: r.data.item.id });
+r = await anon('/roadmap'); const f2 = r.data.flow;
+r = await dh('/roadmap/flow', { flow: { nodes: fl.nodes, edges: fl.edges }, v: f2.v }); ok(r.status === 200, '되돌리기');
+
 console.log(`\n${pass} ok, ${failN} fail`);
 process.exit(failN ? 1 : 0);

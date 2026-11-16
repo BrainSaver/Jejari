@@ -34,6 +34,27 @@ export const AREAS = [
 ];
 const AREA_KEYS = AREAS.map((a) => a[0]);
 const areaOf = (code) => { const p = String(code || '').split('-')[0]; const a = AREAS.find((x) => x[2].includes(p)); return a ? a[0] : 'etc'; };
+// 흐름도 기본 모양. 팀이 사이트에서 고치면 roadmap_meta 'flow'에 저장되고 그게 우선한다.
+// 노드 kind: start(이용자처럼 칸이 아닌 시작점) / area(기능 영역 = 보드의 칸). 선의 방향(위·아래·옆)은 위치를 보고 화면이 정한다
+const ICON = { auth: '🔐', train: '🚆', queue: '⏳', seat: '💺', pay: '💳', cancel: '↩️', wait: '🎫', event: '📨', risk: '🛡️', admin: '🖥️', data: '🗂️', infra: '🧱', test: '🧪', etc: '📌' };
+const POS = {
+  user: [430, 0], auth: [380, 80], etc: [740, 80], risk: [20, 270], train: [380, 270], queue: [380, 440],
+  admin: [20, 600], seat: [380, 600], event: [740, 600], pay: [380, 840], cancel: [380, 985], wait: [740, 985],
+  data: [20, 1180], infra: [380, 1180], test: [740, 1180],
+};
+export const DEFAULT_FLOW = {
+  v: 0,
+  nodes: [
+    { k: 'user', kind: 'start', label: '이용자', icon: '🙋', x: POS.user[0], y: POS.user[1] },
+    ...AREAS.map(([k, label]) => ({ k, kind: 'area', label, icon: ICON[k], x: POS[k][0], y: POS[k][1] })),
+  ],
+  edges: [
+    ['user', 'auth', ''], ['auth', 'train', '로그인'], ['train', 'queue', '예매 시작'], ['queue', 'seat', '입장 토큰'],
+    ['seat', 'pay', '선점'], ['pay', 'cancel', '확정 후 취소'], ['user', 'risk', '행동 로그', 1], ['risk', 'queue', '순번 조정', 1],
+    ['risk', 'admin', '위험 사용자', 1], ['seat', 'admin', '예매 현황', 1], ['seat', 'event', 'outbox', 1],
+    ['pay', 'event', '실패 → Saga 복구', 1], ['cancel', 'wait', '빈 좌석 제안'], ['event', 'wait', '재배정 알림', 1],
+  ].map(([a, b, label, dash]) => ({ a, b, label, dash: !!dash })),
+};
 const PRIOS = ['P1', 'P2', 'P3'];
 const LOG_LIMIT = 80;
 const IMG_MAX = 1400000; // base64 글자 수 (약 1MB)
@@ -93,7 +114,7 @@ function normalize(it) {
     it.roles = Object.fromEntries(parts.map((p) => [p, { done, by: done ? it.doneBy || null : null, at: done ? it.doneAt || null : null }]));
     it.blocked = it.status === 'blocked';
   }
-  if (!AREA_KEYS.includes(it.area)) it.area = areaOf(it.code);
+  if (!it.area) it.area = areaOf(it.code);
   delete it.part; delete it.with; delete it.status; delete it.doneBy; delete it.doneAt; delete it.owner;
   return it;
 }
@@ -112,14 +133,14 @@ const addLog = (db, who, item, act, data) => db.prepare('INSERT INTO roadmap_log
   .bind(Date.now(), who, item, act, JSON.stringify(data));
 
 // 들어온 카드를 검사해 저장할 모양으로 만든다. 문제가 있으면 문자열(메시지)을 돌려준다.
-function clean(input, ids) {
+function clean(input, ids, areaKeys) {
   if (!input || typeof input !== 'object') return '카드 형식이 맞지 않아요.';
   const it = {};
   if (!isStr(input.title, 200, 1)) return '제목은 1~200자로 써 주세요.';
   it.title = input.title.trim();
   it.code = isStr(input.code || '', 24) ? String(input.code || '').trim().toUpperCase() : null;
   if (it.code == null || /\s/.test(it.code)) return '코드는 띄어쓰기 없이 24자 이내예요 (예: QUE-01).';
-  it.area = AREA_KEYS.includes(input.area) ? input.area : areaOf(it.code);
+  it.area = areaKeys.includes(input.area) ? input.area : areaKeys.includes(areaOf(it.code)) ? areaOf(it.code) : 'etc';
   const roles = input.roles && typeof input.roles === 'object' ? input.roles : {};
   const parts = P5.filter((p) => roles[p]);
   if (!parts.length) return '맡을 파트를 하나 이상 골라 주세요.';
@@ -164,9 +185,42 @@ function diff(a, b) {
   return out;
 }
 
+// 흐름도 검사. 문제가 있으면 문자열
+function cleanFlow(f) {
+  if (!f || !Array.isArray(f.nodes) || !Array.isArray(f.edges)) return '흐름도 형식이 맞지 않아요.';
+  if (f.nodes.length > 40 || f.edges.length > 80) return '칸은 40개, 연결선은 80개까지예요.';
+  const nodes = []; const keys = new Set();
+  for (const n of f.nodes) {
+    if (!n || !/^[a-z0-9_-]{1,24}$/.test(n.k || '') || keys.has(n.k)) return '칸 이름표(k)가 맞지 않아요.';
+    if (!isStr(n.label, 30, 1)) return '칸 이름은 1~30자예요.';
+    const x = Math.round(Number(n.x)), y = Math.round(Number(n.y));
+    if (!(x >= 0 && x <= 1800 && y >= 0 && y <= 4000)) return '칸 위치가 화면을 벗어났어요.';
+    keys.add(n.k);
+    nodes.push({ k: n.k, kind: n.kind === 'start' ? 'start' : 'area', label: n.label.trim(), icon: isStr(n.icon || '', 8) ? String(n.icon || '') : '', x, y });
+  }
+  const edges = [];
+  for (const e of f.edges) {
+    if (!e || !keys.has(e.a) || !keys.has(e.b) || e.a === e.b) return '연결선이 없는 칸을 가리켜요.';
+    if (!isStr(e.label || '', 30)) return '연결선 글은 30자까지예요.';
+    edges.push({ a: e.a, b: e.b, label: String(e.label || '').trim(), dash: !!e.dash });
+  }
+  if (!nodes.some((n) => n.kind === 'area')) return '기능 칸이 하나는 있어야 해요.';
+  return { nodes, edges };
+}
+
 export function roadmap(env) {
   const db = env.AI_DB;
   if (!db) return null;
+  async function getFlow() {
+    const r = await db.prepare("SELECT v FROM roadmap_meta WHERE k = 'flow'").first();
+    return (r && parse(r.v)) || DEFAULT_FLOW;
+  }
+  // 카드가 들어갈 수 있는 영역 = 흐름도의 기능 칸 (+ 기타는 늘 있음)
+  const areasOf = (flow) => {
+    const list = flow.nodes.filter((n) => n.kind === 'area').map((n) => ({ k: n.k, label: n.label, icon: n.icon }));
+    if (!list.some((x) => x.k === 'etc')) list.push({ k: 'etc', label: '기타', icon: ICON.etc });
+    return list;
+  };
 
   async function write(me, cur, item, now) {
     const changes = diff(cur, item);
@@ -192,6 +246,7 @@ export function roadmap(env) {
         db.prepare('SELECT area, part, text, who, at FROM roadmap_now').all(),
       ]);
       // 카드마다 남긴 말 수, 파트별로 받은 말 수
+      const flow = await getFlow();
       const nc = new Map(); const msgs = [];
       for (const x of notes.results || []) {
         const d = parse(x.data) || {};
@@ -201,7 +256,7 @@ export function roadmap(env) {
         nc.set(x.item, c);
       }
       return {
-        rev: r, parts: PARTS, areas: AREAS.map(([k, label]) => ({ k, label })),
+        rev: r, parts: PARTS, areas: areasOf(flow), flow,
         items: (items.results || []).map(rowItem).filter(Boolean).map((it) => ({ ...it, notes: (nc.get(it.id) || {}).n || 0, notesTo: (nc.get(it.id) || {}).to || {} })),
         log: (logs.results || []).map(rowLog),
         msgs: msgs.reverse().slice(0, 60),
@@ -210,13 +265,42 @@ export function roadmap(env) {
     },
     async rev() { await init(db); return rev(db); },
 
+    // 흐름도 고치기 (칸 이동·추가·삭제·이름, 연결선). v가 다르면 그 사이 누가 고친 것
+    async saveFlow(me, input, v) {
+      await init(db);
+      const cur = await getFlow();
+      if (Number(v) !== Number(cur.v || 0)) return { error: 'STALE', status: 409, message: '그 사이 누가 흐름도를 고쳤어요. 최신 모양을 불러왔어요.', current: cur };
+      const f = cleanFlow(input);
+      if (typeof f === 'string') return { error: 'BAD_FLOW', status: 400, message: f };
+      // 카드가 남아 있는 칸은 지울 수 없다
+      const used = new Set(((await db.prepare('SELECT data FROM roadmap_item').all()).results || []).map((r) => (normalize(parse(r.data) || {})).area));
+      const keep = new Set([...f.nodes.filter((n) => n.kind === 'area').map((n) => n.k), 'etc']);
+      const lost = [...used].filter((k) => k && !keep.has(k));
+      if (lost.length) {
+        const names = lost.map((k) => (cur.nodes.find((n) => n.k === k) || { label: k }).label).join(', ');
+        return { error: 'AREA_USED', status: 400, message: `할 일 카드가 있는 칸은 지울 수 없어요: ${names}. 카드를 다른 칸으로 옮기거나 지운 뒤에 지워 주세요.` };
+      }
+      const next = { ...f, v: Number(cur.v || 0) + 1, by: me, at: Date.now() };
+      const r = await db.prepare("INSERT INTO roadmap_meta (k, v) VALUES ('flow', ?1) ON CONFLICT (k) DO UPDATE SET v = excluded.v WHERE json_extract(roadmap_meta.v, '$.v') IS ?2")
+        .bind(JSON.stringify(next), cur.v ? Number(cur.v) : null).run();
+      if (!r.meta || !r.meta.changes) return { error: 'STALE', status: 409, message: '그 사이 누가 흐름도를 고쳤어요. 최신 모양을 불러왔어요.', current: await getFlow() };
+      const before = new Set(cur.nodes.map((n) => n.k)), after = new Set(next.nodes.map((n) => n.k));
+      await addLog(db, me, null, 'flow', {
+        added: next.nodes.filter((n) => !before.has(n.k)).map((n) => n.label),
+        removed: cur.nodes.filter((n) => !after.has(n.k)).map((n) => n.label),
+        edges: [cur.edges.length, next.edges.length],
+      }).run();
+      return { flow: next };
+    },
+
     // 흐름도 칸의 파트별 "지금 하는 일". 빈 글이면 지운다
     async setNow(me, area, part, text) {
       await init(db);
-      if (!AREA_KEYS.includes(area) || !PARTS[part]) return { error: 'BAD_NOW', status: 400, message: '영역이나 파트가 맞지 않아요.' };
+      const areas = areasOf(await getFlow());
+      if (!areas.some((x) => x.k === area) || !PARTS[part]) return { error: 'BAD_NOW', status: 400, message: '영역이나 파트가 맞지 않아요.' };
       if (!isStr(text || '', 300)) return { error: 'BAD_NOW', status: 400, message: '300자까지 쓸 수 있어요.' };
       const t = String(text || '').trim();
-      const label = (AREAS.find((a) => a[0] === area) || [])[1];
+      const label = areas.find((x) => x.k === area).label;
       await db.batch([
         t ? db.prepare('INSERT INTO roadmap_now (area, part, text, who, at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (area, part) DO UPDATE SET text = excluded.text, who = excluded.who, at = excluded.at').bind(area, part, t, me, Date.now())
           : db.prepare('DELETE FROM roadmap_now WHERE area = ?1 AND part = ?2').bind(area, part),
@@ -235,7 +319,7 @@ export function roadmap(env) {
       await init(db);
       const idRows = await db.prepare('SELECT id FROM roadmap_item').all();
       const ids = new Set((idRows.results || []).map((x) => x.id));
-      const it = clean(input, ids);
+      const it = clean(input, ids, areasOf(await getFlow()).map((x) => x.k));
       if (typeof it === 'string') return { error: 'BAD_ITEM', status: 400, message: it };
       const now = Date.now();
 

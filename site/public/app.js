@@ -1454,7 +1454,7 @@ function rmPoll() {
     try {
       const { rev } = await api('/roadmap/rev' + qs({ t: Date.now() }));
       if (rev === RM.rev) return;
-      if (!$('#modalBack').hidden) { RM.stale = true; return; } // 편집 중이면 닫은 뒤에
+      if (!$('#modalBack').hidden || RM.edit) { RM.stale = true; return; } // 편집 중이면 닫은 뒤에
       await rmLoad(); rmRender();
     } catch {}
   }, 20000);
@@ -1509,7 +1509,7 @@ function rmBoard(list, by) {
     const done = all.filter(isDone).length;
     const pct = all.length ? Math.round((done / all.length) * 100) : 0;
     return `<section class="rm-area" data-area="${k}">
-      <div class="rm-area-head"><b>${esc(label)}</b><span class="muted">${done}/${all.length}</span>${S.me ? `<button class="btn sm plain" data-add="${k}" title="${esc(label)}에 할 일 추가">+ 할 일</button>` : ''}</div>
+      <div class="rm-area-head"><span class="fl-icon">${esc(areaIcon(k))}</span><b>${esc(label)}</b><span class="muted">${done}/${all.length}</span>${S.me ? `<button class="btn sm plain" data-add="${k}" title="${esc(label)}에 할 일 추가">+ 할 일</button>` : ''}</div>
       <span class="rm-bar area"><i style="width:${pct}%"></i></span>
       <div class="rm-cards">${col.map((x) => rmCard(x, by)).join('') || '<p class="muted rm-none">조건에 맞는 카드가 없어요.</p>'}</div>
     </section>`;
@@ -1567,6 +1567,7 @@ function rmLogLine(e, by, withTitle = true) {
   if (e.act === 'seed') what = esc(e.text);
   else if (e.act === 'add') what = `${name} 추가`;
   else if (e.act === 'delete') what = `${name} 삭제`;
+  else if (e.act === 'flow') what = `흐름도 수정${(e.added || []).length ? ` · 칸 추가: ${esc(e.added.join(', '))}` : ''}${(e.removed || []).length ? ` · 칸 삭제: ${esc(e.removed.join(', '))}` : ''}${e.edges ? ` · 연결선 ${e.edges[0]}→${e.edges[1]}개` : ''}`;
   else if (e.act === 'now') what = `<b>${esc(e.label || '')}</b> · ${esc(partName(e.part))} 지금 하는 일${e.text ? `: <span class="rm-note-text">${esc(e.text)}</span>` : ' 지움'}`;
   else if (e.act === 'note') what = `${name} ${e.to ? `<b>→ ${esc(partName(e.to))}</b>에게` : ''} 남긴 말${e.text ? `: <span class="rm-note-text">${esc(e.text.length > 140 ? e.text.slice(0, 140) + '…' : e.text)}</span>` : ''}${e.img ? ' <span class="badge">사진</span>' : ''}`;
   else {
@@ -1590,25 +1591,9 @@ function rmLogLine(e, by, withTitle = true) {
 }
 
 // ---------- 흐름도 (예매 흐름 위에 기능 영역을 놓고, 칸마다 맡은 사람·진행률·지금 하는 일) ----------
-// [영역, 열(0~2), 줄] 1000px 너비 캔버스. 줄 높이는 칸 크기를 재서 정한다. 화면이 좁으면 이 순서대로 세로 목록
-const FLOW_NODES = [
-  ['user', 1, 0], ['auth', 1, 1], ['etc', 2, 1], ['risk', 0, 2], ['train', 1, 2], ['queue', 1, 3],
-  ['admin', 0, 4], ['seat', 1, 4], ['event', 2, 4], ['pay', 1, 5],
-  ['cancel', 1, 6], ['wait', 2, 6],
-  ['data', 0, 8], ['infra', 1, 8], ['test', 2, 8],
-];
-const FLOW_X = [20, 380, 740];
-const FLOW_BAND = 8; // 이 줄부터 공통 기반
-// [출발, 도착, 글, 점선 여부, 출발 쪽, 도착 쪽]  쪽: t·b·l·r
-const FLOW_EDGES = [
-  ['user', 'auth', '', 0, 'b', 't'], ['auth', 'train', '로그인', 0, 'b', 't'], ['train', 'queue', '예매 시작', 0, 'b', 't'],
-  ['queue', 'seat', '입장 토큰', 0, 'b', 't'], ['seat', 'pay', '선점', 0, 'b', 't'], ['pay', 'cancel', '확정 후 취소', 0, 'b', 't'],
-  ['user', 'risk', '행동 로그', 1, 'l', 't'], ['risk', 'queue', '순번 조정', 1, 'r', 'l'], ['risk', 'admin', '위험 사용자', 1, 'b', 't'],
-  ['seat', 'admin', '예매 현황', 1, 'l', 'r'], ['seat', 'event', 'outbox', 1, 'r', 'l'], ['pay', 'event', '실패 → Saga 복구', 1, 'r', 'l'],
-  ['cancel', 'wait', '빈 좌석 제안', 0, 'r', 'l'], ['event', 'wait', '재배정 알림', 1, 'b', 't'],
-];
-const FLOW_NOTE = { user: '이용자', etc: '기타' };
-
+// 모양은 서버의 flow(노드 위치·이름·아이콘, 연결선). 로그인하면 "다이어그램 수정"으로 끌어 옮기고 추가·삭제한다
+const FLOW_ICONS = ['🙋', '🔐', '🚆', '⏳', '💺', '💳', '↩️', '🎫', '📨', '🛡️', '🖥️', '🗂️', '🧱', '🧪', '📌', '📊', '🔔', '⚙️', '🧾', '🗺️', '🤖', '📱', '🧠', '🚀'];
+const curFlow = () => (RM.edit ? RM.edit.flow : RM.data.flow);
 function areaParts(k) {
   // 이 영역 카드에 칸이 있는 파트 = 맡은 사람 (역할 분담 그대로)
   const list = RM.data.items.filter((x) => x.area === k);
@@ -1618,82 +1603,212 @@ function areaParts(k) {
   }).filter((x) => x.total).sort((a, b) => b.total - a.total);
 }
 const nowOf = (k, p) => (RM.data.now || []).find((n) => n.area === k && n.part === p);
+const areaIcon = (k) => { const n = RM.data.flow.nodes.find((x) => x.k === k); const a = RM.data.areas.find((x) => x.k === k); return (n && n.icon) || (a && a.icon) || ''; };
 
-function flowNode(k, col, row) {
-  const x = FLOW_X[col] + (k === 'user' ? 50 : 0);
-  if (k === 'user') return `<div class="fl-node fl-user" data-k="user" data-row="${row}" style="--x:${x}px">이용자</div>`;
-  const items = RM.data.items.filter((it) => it.area === k);
-  if (!items.length && k === 'etc') return '';
+function flowNode(n) {
+  const ed = !!RM.edit;
+  const tools = ed ? `<span class="fl-tools"><button class="fl-ibtn" data-fedit="${n.k}" title="이름·아이콘 바꾸기">✏️</button><button class="fl-ibtn" data-fdel="${n.k}" title="칸 지우기">🗑️</button></span>` : '';
+  const pos = `style="left:${n.x}px;top:${n.y}px"`;
+  if (n.kind === 'start') return `<div class="fl-node fl-user" data-k="${n.k}" ${pos}><span class="fl-icon">${esc(n.icon || '')}</span>${esc(n.label)}${tools}</div>`;
+  const items = RM.data.items.filter((it) => it.area === n.k);
   const done = items.filter(isDone).length;
   const pct = items.length ? Math.round((done / items.length) * 100) : 0;
-  const parts = areaParts(k);
+  const parts = areaParts(n.k);
   const blocked = items.filter((it) => it.blocked && !isDone(it)).length;
   const msgs = items.reduce((s, it) => s + (it.notes || 0), 0);
-  return `<div class="fl-node${pct === 100 ? ' all' : ''}" data-k="${k}" data-row="${row}" style="--x:${x}px" tabindex="0" role="button" title="눌러서 ${esc(areaLabel(k))} 열기">
-    <div class="fl-head"><b>${esc(areaLabel(k))}</b><span class="fl-pct">${done}/${items.length}</span></div>
+  return `<div class="fl-node${pct === 100 && items.length ? ' all' : ''}" data-k="${n.k}" ${pos} tabindex="0" role="button" title="${ed ? '끌어서 옮기기' : `눌러서 ${esc(n.label)} 열기`}">
+    <div class="fl-head"><span class="fl-icon">${esc(n.icon || '')}</span><b>${esc(n.label)}</b><span class="fl-pct">${done}/${items.length}</span>${tools}</div>
     <span class="rm-bar area"><i style="width:${pct}%"></i></span>
-    <div class="fl-people">${parts.map(({ p, total, done: d }) => { const n = nowOf(k, p); return `<button class="fl-who" data-now="${k}" data-p="${p}" style="--pc:${partColor(p)}" title="${esc(partName(p))}: ${d}/${total}${n ? ` · 지금: ${esc(n.text)}` : ''} (누르면 지금 하는 일 적기)">
+    <div class="fl-people">${parts.map(({ p, total, done: d }) => { const nw = nowOf(n.k, p); return `<button class="fl-who" data-now="${n.k}" data-p="${p}" style="--pc:${partColor(p)}" title="${esc(partName(p))}: ${d}/${total}${nw ? ` · 지금: ${esc(nw.text)}` : ''} (누르면 지금 하는 일 적기)"${ed ? ' disabled' : ''}>
       <span class="fl-who-name"><b>${p}</b> ${esc(S.members[partOwner(p)])}</span><span class="fl-who-n">${d}/${total}</span>
-      ${n ? `<span class="fl-now">${esc(n.text)}</span>` : ''}</button>`; }).join('') || '<span class="muted" style="font-size:12px">맡은 사람 없음</span>'}</div>
+      ${nw ? `<span class="fl-now">${esc(nw.text)}</span>` : ''}</button>`; }).join('') || '<span class="muted" style="font-size:12.5px">맡은 사람 없음 · 칸을 눌러 할 일을 추가해요</span>'}</div>
     ${blocked || msgs ? `<div class="fl-foot">${blocked ? `<span class="rm-st st-blocked">막힘 ${blocked}</span>` : ''}${msgs ? `<span class="rm-msgs">💬 ${msgs}</span>` : ''}</div>` : ''}
   </div>`;
 }
 
 function rmFlow() {
-  return `<p class="muted" style="margin:0 0 10px">예매 흐름 위에 기능을 놓았어요. 칸에는 맡은 사람과 진행률이 보이고, <b>이름</b>을 누르면 그 사람이 지금 하는 일을 적고, <b>칸</b>을 누르면 그 기능의 할 일 카드를 보고 추가할 수 있어요.</p>
-  <div class="fl-wrap"><div class="fl" id="flow">${FLOW_NODES.map(([k, c, r]) => flowNode(k, c, r)).join('')}
-    <div class="fl-band" id="flowBand"><span>공통 기반 (모든 기능이 쓰는 것)</span></div>
-    <svg class="fl-svg" id="flowSvg" aria-hidden="true"></svg></div></div>`;
+  const f = curFlow();
+  const ed = RM.edit;
+  const bar = S.me ? (ed
+    ? `<div class="fl-bar editing"><span class="fl-bar-t">✏️ 다이어그램 수정 중</span>
+        <button class="btn sm plain fl-tb" data-fact="add">➕ 칸 추가</button>
+        <button class="btn sm plain fl-tb${ed.link ? ' on' : ''}" data-fact="link">🔗 ${ed.link ? (ed.link.a ? '이을 칸을 누르세요' : '시작 칸을 누르세요') : '연결선 추가'}</button>
+        <span class="muted fl-hint">칸은 끌어서 옮기고, 선 위 글을 누르면 고치거나 지워요.</span>
+        <span style="flex:1"></span>
+        <button class="btn sm plain fl-tb" data-fact="reset" title="처음 모양으로">↺ 처음 모양</button>
+        <button class="btn sm plain fl-tb" data-fact="cancel">✖ 취소</button>
+        <button class="btn sm fl-tb" data-fact="save">💾 저장</button></div>`
+    : `<div class="fl-bar"><span class="muted">예매 흐름 위에 기능을 놓았어요. <b>이름</b>을 누르면 지금 하는 일을 적고, <b>칸</b>을 누르면 할 일을 보고 추가해요.</span><span style="flex:1"></span>
+        <button class="btn sm plain fl-tb" data-fact="edit">✏️ 다이어그램 수정</button></div>`)
+    : '<p class="muted" style="margin:0 0 10px">예매 흐름 위에 기능을 놓았어요. 칸을 누르면 그 기능의 할 일이 보여요. 로그인하면 지금 하는 일을 적고 다이어그램도 고칠 수 있어요.</p>';
+  return `${bar}<div class="fl-wrap"><div class="fl${ed ? ' editing' : ''}${ed && ed.link ? ' linking' : ''}" id="flow">
+    <svg class="fl-svg" id="flowSvg" aria-hidden="true"></svg>${f.nodes.map(flowNode).join('')}<div id="flowLabs"></div></div></div>
+    ${RM.data.flow.by ? `<p class="muted" style="font-size:12px;margin:6px 0 0">다이어그램 마지막 수정: ${rmWho(RM.data.flow.by)} · ${ago(RM.data.flow.at)}</p>` : ''}`;
 }
 
-// 칸 크기가 글 길이에 따라 달라서, 그린 다음 실제 위치를 재서 선을 잇는다
+// 칸 위치를 재서 선을 잇는다. 선 방향은 두 칸의 위치를 보고 정한다 (위아래로 멀면 아래→위, 옆으로 멀면 옆→옆)
 function drawFlow() {
   const fl = $('#flow'); const svg = $('#flowSvg');
-  if (!fl || !svg || getComputedStyle(svg).display === 'none') return;
-  // 줄마다 가장 큰 칸 높이만큼 내려가며 배치
-  const rows = {};
-  $$('.fl-node', fl).forEach((n) => { const r = +n.dataset.row; rows[r] = Math.max(rows[r] || 0, n.offsetHeight); });
-  let y = 0; const top = {};
-  Object.keys(rows).map(Number).sort((p, q) => p - q).forEach((r) => {
-    if (r === FLOW_BAND) { y += 26; const band = $('#flowBand'); if (band) band.style.top = (y - 34) + 'px'; }
-    top[r] = y; y += rows[r] + (r === 0 ? 34 : 58);
-  });
-  $$('.fl-node', fl).forEach((n) => { n.style.top = top[+n.dataset.row] + 'px'; });
-  const box = fl.getBoundingClientRect();
+  if (!fl || !svg) return;
+  const mobile = getComputedStyle(svg).display === 'none';
   const R = {};
-  $$('.fl-node', fl).forEach((n) => { const r = n.getBoundingClientRect(); R[n.dataset.k] = { x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height }; });
-  const h = Math.max(...Object.values(R).map((r) => r.y + r.h)) + 20;
-  fl.style.height = h + 'px';
-  svg.setAttribute('viewBox', `0 0 ${box.width} ${h}`); svg.setAttribute('width', box.width); svg.setAttribute('height', h);
+  $$('.fl-node', fl).forEach((n) => { R[n.dataset.k] = { x: n.offsetLeft, y: n.offsetTop, w: n.offsetWidth, h: n.offsetHeight }; });
+  if (mobile) { fl.style.height = ''; $('#flowLabs').innerHTML = ''; return; }
+  const vals = Object.values(R);
+  const h = Math.max(300, ...vals.map((r) => r.y + r.h)) + 30;
+  const w = Math.max(1000, ...vals.map((r) => r.x + r.w)) + 20;
+  fl.style.height = h + 'px'; fl.style.width = w + 'px';
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`); svg.setAttribute('width', w); svg.setAttribute('height', h);
+  const side = (A, B) => {
+    const ax = A.x + A.w / 2, ay = A.y + A.h / 2, bx = B.x + B.w / 2, by = B.y + B.h / 2;
+    const gapY = B.y > A.y + A.h ? B.y - (A.y + A.h) : A.y > B.y + B.h ? A.y - (B.y + B.h) : -1;
+    if (gapY > 20 && Math.abs(by - ay) > Math.abs(bx - ax) * 0.35) return by > ay ? ['b', 't'] : ['t', 'b'];
+    return bx > ax ? ['r', 'l'] : ['l', 'r'];
+  };
   const pt = (r, s) => (s === 't' ? [r.x + r.w / 2, r.y] : s === 'b' ? [r.x + r.w / 2, r.y + r.h] : s === 'l' ? [r.x, r.y + r.h / 2] : [r.x + r.w, r.y + r.h / 2]);
   const dir = { t: [0, -1], b: [0, 1], l: [-1, 0], r: [1, 0] };
   let out = '<defs><marker id="flArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>';
-  for (const [a, b, label, dash, sa, sb] of FLOW_EDGES) {
-    if (!R[a] || !R[b]) continue;
-    const [x1, y1] = pt(R[a], sa), [x2, y2] = pt(R[b], sb);
-    const d = Math.max(40, Math.min(160, Math.hypot(x2 - x1, y2 - y1) / 2.5));
+  let labs = '';
+  curFlow().edges.forEach((e, i) => {
+    const A = R[e.a], B = R[e.b]; if (!A || !B) return;
+    const [sa, sb] = side(A, B);
+    const [x1, y1] = pt(A, sa), [x2, y2] = pt(B, sb);
+    const d = Math.max(30, Math.min(150, Math.hypot(x2 - x1, y2 - y1) / 2.5));
     const c1 = [x1 + dir[sa][0] * d, y1 + dir[sa][1] * d], c2 = [x2 + dir[sb][0] * d, y2 + dir[sb][1] * d];
-    out += `<path d="M${x1},${y1} C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${x2},${y2}" class="fl-edge${dash ? ' dash' : ''}" marker-end="url(#flArrow)"/>`;
-    if (label) {
-      // 곡선 가운데(t=0.5)에 글
-      const mx = (x1 + 3 * c1[0] + 3 * c2[0] + x2) / 8, my = (y1 + 3 * c1[1] + 3 * c2[1] + y2) / 8;
-      const w = label.length * 11.5 + 14;
-      out += `<g class="fl-lab"><rect x="${mx - w / 2}" y="${my - 11}" width="${w}" height="22" rx="6"/><text x="${mx}" y="${my + 4.5}" text-anchor="middle">${esc(label)}</text></g>`;
-    }
-  }
+    out += `<path d="M${x1},${y1} C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${x2},${y2}" class="fl-edge${e.dash ? ' dash' : ''}" marker-end="url(#flArrow)"/>`;
+    const mx = (x1 + 3 * c1[0] + 3 * c2[0] + x2) / 8, my = (y1 + 3 * c1[1] + 3 * c2[1] + y2) / 8;
+    if (e.label || RM.edit) labs += `<button class="fl-lab${e.label ? '' : ' empty'}" data-edge="${i}" style="left:${mx}px;top:${my}px"${RM.edit ? '' : ' tabindex="-1"'}>${e.label ? esc(e.label) : '✏️'}</button>`;
+  });
   svg.innerHTML = out;
+  $('#flowLabs').innerHTML = labs;
+  if (RM.edit) $$('[data-edge]', fl).forEach((b) => b.addEventListener('click', (ev) => { ev.stopPropagation(); flowEdgeEdit(+b.dataset.edge); }));
 }
 
 function bindFlow(root) {
-  $$('.fl-node[data-k]', root).forEach((n) => {
-    if (n.dataset.k === 'user') return;
-    n.addEventListener('click', () => rmArea(n.dataset.k));
-    n.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === n) rmArea(n.dataset.k); });
-  });
-  $$('[data-now]', root).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); rmNowEdit(b.dataset.now, b.dataset.p); }));
+  const ed = RM.edit;
+  $$('[data-fact]', root).forEach((b) => b.addEventListener('click', () => flowAct(b.dataset.fact)));
+  if (!ed) {
+    $$('.fl-node[data-k]', root).forEach((n) => {
+      const node = RM.data.flow.nodes.find((x) => x.k === n.dataset.k);
+      if (!node || node.kind === 'start') return;
+      n.addEventListener('click', () => rmArea(n.dataset.k));
+      n.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === n) rmArea(n.dataset.k); });
+    });
+    $$('[data-now]', root).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); rmNowEdit(b.dataset.now, b.dataset.p); }));
+  } else {
+    $$('[data-fedit]', root).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); flowNodeEdit(b.dataset.fedit); }));
+    $$('[data-fdel]', root).forEach((b) => b.addEventListener('pointerdown', (e) => e.stopPropagation()));
+    $$('[data-fedit]', root).forEach((b) => b.addEventListener('pointerdown', (e) => e.stopPropagation()));
+    $$('[data-fdel]', root).forEach((b) => twoStep(b, '❗', async () => { flowDelNode(b.dataset.fdel); }));
+    $$('.fl-node[data-k]', root).forEach((n) => flowDrag(n));
+  }
   requestAnimationFrame(drawFlow);
   if (!RM.flowResize) { RM.flowResize = true; window.addEventListener('resize', () => { clearTimeout(RM.frt); RM.frt = setTimeout(drawFlow, 120); }); }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawFlow);
+}
+
+// ---- 다이어그램 수정 ----
+function flowAct(act) {
+  if (act === 'edit') { if (!needLogin(() => rmRender())) return; RM.edit = { flow: JSON.parse(JSON.stringify(RM.data.flow)), link: null, v: RM.data.flow.v || 0 }; rmRender(); return; }
+  const ed = RM.edit; if (!ed) return;
+  if (act === 'cancel') { RM.edit = null; if (RM.stale) rmLoad().then(rmRender); else rmRender(); return; }
+  if (act === 'link') { ed.link = ed.link ? null : { a: null }; rmRender(); return; }
+  if (act === 'add') { flowNodeEdit(null); return; }
+  if (act === 'reset') { flowResetModal(); return; }
+  if (act === 'save') flowSave();
+}
+async function flowSave() {
+  const ed = RM.edit;
+  try {
+    await api('/roadmap/flow', { body: { flow: { nodes: ed.flow.nodes, edges: ed.flow.edges }, v: ed.v } });
+    RM.edit = null; await rmLoad(); rmRender(); toast('다이어그램을 저장했어요. 모두에게 같은 모양으로 보여요.');
+  } catch (x) {
+    if (x.error === 'STALE') { toast(x.message, 6000); await rmLoad(); RM.edit = null; rmRender(); return; }
+    toast(x.message, 6000);
+  }
+}
+function flowResetModal() {
+  const m = openModal(`<h2>처음 모양으로</h2><p class="muted">칸 위치와 연결선을 처음 만든 모양으로 되돌려요. 직접 추가한 칸은 남기고 맨 아래에 놓아요. 저장을 눌러야 반영돼요.</p>
+    <div class="row"><button class="btn plain" data-x>취소</button><button class="btn" id="frGo">되돌리기</button></div>`);
+  $('[data-x]', m).addEventListener('click', closeModal);
+  $('#frGo', m).addEventListener('click', async () => {
+    try {
+      const d = await api('/roadmap/flow-default' + qs({}));
+      const custom = RM.edit.flow.nodes.filter((n) => !d.flow.nodes.some((x) => x.k === n.k));
+      const maxY = Math.max(...d.flow.nodes.map((n) => n.y)) + 220;
+      custom.forEach((n, i) => { n.x = 20 + (i % 3) * 360; n.y = maxY + Math.floor(i / 3) * 200; });
+      RM.edit.flow = { ...RM.edit.flow, nodes: [...d.flow.nodes, ...custom], edges: d.flow.edges };
+      closeModal(); rmRender();
+    } catch (x) { toast(x.message); }
+  });
+}
+function flowDelNode(k) {
+  const ed = RM.edit;
+  const n = ed.flow.nodes.find((x) => x.k === k);
+  const cards = RM.data.items.filter((x) => x.area === k).length;
+  if (cards) { toast(`'${n.label}' 칸에 할 일 카드 ${cards}장이 있어서 지울 수 없어요. 카드를 다른 칸으로 옮기거나 지운 뒤에 지워 주세요.`, 6000); return; }
+  ed.flow.nodes = ed.flow.nodes.filter((x) => x.k !== k);
+  ed.flow.edges = ed.flow.edges.filter((e) => e.a !== k && e.b !== k);
+  rmRender();
+}
+function flowNodeEdit(k) {
+  const ed = RM.edit;
+  const n = k ? ed.flow.nodes.find((x) => x.k === k) : null;
+  let icon = n ? n.icon : '📌';
+  const m = openModal(`<h2>${n ? '칸 고치기' : '칸 추가'}</h2>
+    <div class="field"><label>이름</label><input type="text" id="fnLabel" maxlength="30" value="${esc(n ? n.label : '')}" placeholder="예: 알림" autofocus></div>
+    <div class="field"><label>아이콘</label><div class="fl-iconpick">${FLOW_ICONS.map((ic) => `<button type="button" class="fl-ipick${ic === icon ? ' on' : ''}" data-ic="${ic}">${ic}</button>`).join('')}</div></div>
+    ${n ? '' : '<p class="muted" style="font-size:13px">새 칸은 할 일 카드를 넣을 수 있는 기능 칸이 돼요. 만든 뒤 끌어서 자리를 잡아요.</p>'}
+    <p class="err" id="fnErr"></p>
+    <div class="row"><button class="btn plain" data-x>취소</button><button class="btn" id="fnGo">${n ? '바꾸기' : '추가'}</button></div>`);
+  $('[data-x]', m).addEventListener('click', closeModal);
+  $$('.fl-ipick', m).forEach((b) => b.addEventListener('click', () => { icon = b.dataset.ic; $$('.fl-ipick', m).forEach((x) => x.classList.toggle('on', x === b)); }));
+  $('#fnGo', m).addEventListener('click', () => {
+    const label = $('#fnLabel', m).value.trim();
+    if (!label) { $('#fnErr', m).textContent = '이름을 써 주세요.'; return; }
+    if (n) { n.label = label; n.icon = icon; }
+    else {
+      const wrap = $('.fl-wrap');
+      const y = Math.max(0, (window.scrollY + 120) - (wrap ? wrap.getBoundingClientRect().top + window.scrollY : 0));
+      ed.flow.nodes.push({ k: 'n' + Date.now().toString(36).slice(-6), kind: 'area', label, icon, x: 20 + ((wrap && wrap.scrollLeft) || 0), y: Math.round(y) });
+    }
+    closeModal(); rmRender();
+  });
+}
+function flowEdgeEdit(i) {
+  const ed = RM.edit; const e = ed.flow.edges[i]; if (!e) return;
+  const lab = (k) => { const n = ed.flow.nodes.find((x) => x.k === k); return n ? `${n.icon || ''} ${n.label}` : k; };
+  const m = openModal(`<h2>연결선</h2><p class="muted" style="margin:0 0 6px">${esc(lab(e.a))} → ${esc(lab(e.b))}</p>
+    <div class="field"><label>선 위 글 <span class="muted">(비워도 돼요)</span></label><input type="text" id="feLabel" maxlength="30" value="${esc(e.label)}" autofocus></div>
+    <label class="chk"><input type="checkbox" id="feDash"${e.dash ? ' checked' : ''}> 점선 (곁가지·비동기 흐름)</label>
+    <div class="row"><button class="btn sm danger" id="feDel">🗑️ 선 지우기</button><button class="btn sm plain" id="feRev">⇄ 방향 바꾸기</button><span style="flex:1"></span><button class="btn plain" data-x>취소</button><button class="btn" id="feGo">바꾸기</button></div>`);
+  $('[data-x]', m).addEventListener('click', closeModal);
+  $('#feDel', m).addEventListener('click', () => { ed.flow.edges.splice(i, 1); closeModal(); rmRender(); });
+  $('#feRev', m).addEventListener('click', () => { [e.a, e.b] = [e.b, e.a]; closeModal(); rmRender(); });
+  $('#feGo', m).addEventListener('click', () => { e.label = $('#feLabel', m).value.trim(); e.dash = $('#feDash', m).checked; closeModal(); rmRender(); });
+}
+// 끌어서 옮기기 (10px 칸에 맞춤). 연결선 추가 중이면 누른 칸을 고른다
+function flowDrag(el) {
+  el.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    const ed = RM.edit; const n = ed.flow.nodes.find((x) => x.k === el.dataset.k); if (!n) return;
+    if (ed.link) {
+      ev.preventDefault();
+      if (!ed.link.a) { ed.link.a = n.k; rmRender(); $(`.fl-node[data-k="${n.k}"]`).classList.add('picked'); return; }
+      if (ed.link.a !== n.k && !ed.flow.edges.some((e) => e.a === ed.link.a && e.b === n.k)) ed.flow.edges.push({ a: ed.link.a, b: n.k, label: '', dash: false });
+      ed.link = null; rmRender(); flowEdgeEdit(ed.flow.edges.length - 1); return;
+    }
+    ev.preventDefault();
+    const sx = ev.clientX, sy = ev.clientY, ox = n.x, oy = n.y;
+    el.setPointerCapture(ev.pointerId); el.classList.add('dragging');
+    const move = (e) => {
+      n.x = Math.max(0, Math.round((ox + e.clientX - sx) / 10) * 10); n.y = Math.max(0, Math.round((oy + e.clientY - sy) / 10) * 10);
+      el.style.left = n.x + 'px'; el.style.top = n.y + 'px';
+      cancelAnimationFrame(RM.dragRaf); RM.dragRaf = requestAnimationFrame(drawFlow);
+    };
+    const up = () => { el.classList.remove('dragging'); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); drawFlow(); };
+    el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  });
 }
 
 // 이름을 눌러 "지금 하는 일" 한 줄 적기
@@ -1728,7 +1843,7 @@ function rmArea(k) {
   const done = items.filter(isDone).length;
   const m = openModal(`<div class="rm-detail">
     <div class="rm-detail-head"><span class="muted">기능 영역</span><span class="rm-frac">${done}/${items.length} 끝</span></div>
-    <h2>${esc(areaLabel(k))}</h2>
+    <h2><span class="fl-icon">${esc(areaIcon(k))}</span> ${esc(areaLabel(k))}</h2>
     <div class="rm-rel-h">맡은 사람</div>
     <div class="fl-team">${parts.map(({ p, total, done: d }) => { const n = nowOf(k, p); return `<div class="fl-team-row" style="--pc:${partColor(p)}">
       <span class="fl-team-who"><span><b>${p}</b> ${esc(S.members[partOwner(p)])}</span><small class="muted">${d}/${total} 했음</small></span>
