@@ -2230,6 +2230,8 @@ function rmAsk(k) {
 
 async function pageRoadmap(view) {
   RM.view = ['flow', 'order', 'board', 'parts', 'deps', 'log'].includes(view) ? view : 'flow';
+  // 이름 칸 선택은 보드·할 순서에서만 쓰므로 다른 탭으로 가면 푼다
+  if (RM.f.part && !['board', 'order'].includes(RM.view)) { RM.f.part = ''; store.set('rm-f2', RM.f); }
   if (RM.data) {
     // 탭을 옮기거나 다시 열 때는 가진 것으로 바로 그리고, 오래됐으면 뒤에서 새로 받아 바뀐 경우만 다시 그린다
     rmRender(); rmPoll();
