@@ -786,11 +786,11 @@ async function mergeModal() {
     const b = $('#mGo', m); b.disabled = true; b.textContent = '합치는 중…';
     try {
       const r = await api('/merge', { body: {} });
-      closeModal(); bump(); await loadBranches(); toast(`main에 합쳤어요 (PR #${r.pr}).`, 5000); route();
+      closeModal(); bump(); await loadBranches(); toast(`main에 합쳤어요 (커밋 ${r.commits}개).`, 5000); route();
     } catch (x) {
       b.disabled = false; b.textContent = '합치기';
       if (x.error === 'MAIN_CONFLICT') { conflictModal(x); return; }
-      $('#mErr', m).innerHTML = esc(x.message) + (x.url ? ` <a href="${esc(x.url)}" target="_blank" rel="noopener">PR 열기</a>` : '');
+      $('#mErr', m).textContent = x.message;
     }
   });
 }
