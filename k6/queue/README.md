@@ -47,6 +47,25 @@ K6=$(which k6) ./run-penalty-order.sh
 
 시나리오를 다시 돌리기 전에는 `./reset.sh`로 대기열 키를 지웁니다 (개발 DB에서만).
 
+## Windows (PowerShell)
+
+`reset.sh`, `seed-penalty.sh`, `run-penalty-order.sh`와 같은 일을 하는 `.ps1`이 있어 Git Bash나 WSL 없이 PowerShell에서 바로 돌릴 수 있습니다. Redis는 Docker 컨테이너 `jejari-redis`가 켜져 있으면 `docker exec`로, 아니면 로컬 `redis-cli`로 접근합니다.
+
+```powershell
+cd F:\Jejari\k6\queue
+.\reset.ps1                        # 대기열·위험 점수·정책 캐시 키 삭제
+.\run-penalty-order.ps1            # 순번 조정 정확도 (초기화·점수 설정·입장 시작까지)
+.\run-penalty-order.ps1 -Bots 20 -Normals 100 -AdmitPerSec 10
+```
+
+스크립트 실행이 막히면(`이 시스템에서 스크립트를 실행할 수 없으므로…`) 현재 창에서만 허용합니다.
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+k6가 PATH에 없으면 `-K6 'C:\경로\k6.exe'`를 붙입니다. Redis를 다른 컨테이너 이름이나 DB로 쓰면 환경변수 `REDIS_CONTAINER`, `REDIS_DB`로 바꿉니다.
+
 ## 사전 점검
 
 모든 시나리오는 시작 전에 진입 요청을 한 번 해 보고, 실패하면 원인(앱이 안 떠 있음, 개발 모드 아님, 다른 서버가 포트를 씀, 운행이 판매 중이 아님, Redis가 꺼짐)을 알려 주며 멈춥니다. "실패율 100%" 표가 나오면 먼저 이 메시지가 있었는지 확인하세요.
