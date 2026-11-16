@@ -540,7 +540,12 @@ body.no-scroll{overflow:hidden}
 .rm-depbox summary{font-size:13px;font-weight:600}
 .rm-depbox input{margin:8px 0;width:100%}
 .rm-hist .rm-log{grid-template-columns:90px minmax(0,1fr) auto}
-.rm-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0 12px}
+.rm-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0 12px}
+.rm-grid2{display:grid;grid-template-columns:200px minmax(0,1fr);gap:0 14px}
+.rm-more{margin:6px 0 4px;border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+.rm-more>summary{cursor:pointer;font-weight:700}
+.rm-more[open]>summary{margin-bottom:6px}
+.rm-dephead{font-weight:600;margin:8px 0 4px}
 .rm-grid .field{margin:8px 0}
 .rm-form input[type=text],.rm-form input[type=date],.rm-form select{width:100%}
 input[type=date]{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line2);border-radius:8px;padding:5px 10px}
@@ -557,6 +562,7 @@ input[type=date]{font:inherit;color:var(--fg);background:var(--bg);border:1px so
   .rm-partcols{grid-template-columns:1fr;overflow:visible}
   .rm-rel{grid-template-columns:1fr}
   .rm-grid{grid-template-columns:1fr 1fr}
+  .rm-grid2{grid-template-columns:1fr}
   .rm-log{grid-template-columns:1fr;gap:2px}
   .rm-legend{margin-left:0}
 }
@@ -627,3 +633,21 @@ input[type=date]{font:inherit;color:var(--fg);background:var(--bg);border:1px so
   .fl-team-row{grid-template-columns:1fr auto}
   .fl-team-now{grid-column:1/-1;grid-row:2}
 }
+
+/* 내 파트만 */
+.rm-minebtn{border:1.5px solid var(--pc)}
+.rm-minebtn.on{background:var(--pc);color:#fff;border-color:var(--pc)}
+.rm-minesum{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:0 0 10px;padding:8px 12px;border:1.5px solid var(--pc);border-radius:10px;background:var(--bg2);font-size:14px}
+.rm-minesum>b:first-child{color:var(--pc)}
+.rm-minesum .muted{font-size:12.5px}
+.rm-card.dim,.fl-node.dim,.rm-partcol.dim{opacity:.32}
+.rm-card.dim:hover,.fl-node.dim:hover,.rm-partcol.dim:hover{opacity:.7}
+.rm-card.mine{border:2px solid var(--pc)}
+.rm-card.mine.m-done{border-style:dashed}
+.rm-mytag{align-self:flex-start;display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;border:1.5px solid var(--pc);color:var(--pc)}
+.rm-mytag.m-done{border-color:var(--add-fg);color:var(--add-fg)}
+.fl-node.mine{border:2px solid var(--accent)}
+.fl-mine{margin-left:auto;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;font-size:12px;font-weight:700;padding:1px 8px;border:1.5px solid var(--pc);color:var(--pc);border-radius:999px}
+.fl-mine.m-done{border-color:var(--add-fg);color:var(--add-fg)}
+.fl-who.me{border-color:var(--pc);border-width:2px}
+.rm-partcol.mine{border:2px solid var(--pc)}

@@ -328,6 +328,15 @@ export function roadmap(env) {
 
       if (!input.id) {
         if (ids.size >= 500) return { error: 'TOO_MANY', status: 400, message: '카드는 500개까지예요.' };
+        // 번호를 비우면 영역 머리글자 + 다음 번호 (예: RSV-07)
+        if (!it.code) {
+          const ar = AREAS.find((x) => x[0] === it.area);
+          const pre = ar && ar[2][0] ? ar[2][0] : it.area.replace(/[^a-z0-9]/g, '').slice(0, 4).toUpperCase() || 'ETC';
+          const rows = (await db.prepare('SELECT data FROM roadmap_item').all()).results || [];
+          let max = 0;
+          for (const r of rows) { const m = /^([A-Z0-9]+)-(\d+)$/.exec((parse(r.data) || {}).code || ''); if (m && m[1] === pre) max = Math.max(max, Number(m[2])); }
+          it.code = `${pre}-${String(max + 1).padStart(2, '0')}`;
+        }
         const item = { id: rid('r'), ...it, roles: stampRoles(it.roles, null, me, now), createdBy: me, createdAt: now, updatedBy: me, updatedAt: now, order: now };
         await db.batch([
           db.prepare('INSERT INTO roadmap_item (id, v, at, data) VALUES (?1, 1, ?2, ?3)').bind(item.id, now, JSON.stringify(item)),

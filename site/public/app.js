@@ -1471,6 +1471,9 @@ const partOwner = (p) => RM.data.parts[p].owner;
 const partColor = (p) => colorOf(partOwner(p));
 const partName = (p) => `${p} ${S.members[partOwner(p)] || ''}`;
 const myPart = () => RM_PARTS.find((p) => partOwner(p) === S.me) || '';
+// "내 파트만" 켜짐: 내 칸이 있는 카드만 진하게, 나머지는 흐리게
+const mineOn = () => !!(RM.f.mine && myPart());
+const mineOf = (it) => { const p = myPart(); return p && it.roles && it.roles[p] ? (it.roles[p].done ? 'done' : 'todo') : ''; };
 const rmWho = (n) => (n === 'seed' ? '기능설계서' : esc(S.members[n] || n || ''));
 const ago = (t) => {
   const s = (Date.now() - t) / 1000;
@@ -1523,7 +1526,10 @@ function rmCard(it, by) {
   const wait = waitingOn(it, by);
   const st = stateOf(it);
   const n = rolesOf(it).length, d = doneN(it);
-  return `<div class="rm-card st-${st}" data-open="${it.id}" tabindex="0" role="button">
+  const mm = mineOn() ? mineOf(it) : null;
+  const cls = mm === null ? '' : mm ? ` mine m-${mm}` : ' dim';
+  return `<div class="rm-card st-${st}${cls}" data-open="${it.id}" tabindex="0" role="button"${mm ? ` style="--pc:${partColor(myPart())}"` : ''}>
+    ${mm ? `<div class="rm-mytag m-${mm}">${mm === 'done' ? `${svgI('check', 13)} 내 칸 했음` : '내 칸 아직'}</div>` : ''}
     <div class="rm-card-top">${it.code ? `<span class="rm-code">${esc(it.code)}</span>` : ''}${it.prio !== 'P1' ? `<span class="badge">${it.prio}</span>` : ''}${it.blocked && st !== 'done' ? '<span class="rm-st st-blocked">막힘</span>' : ''}${it.week ? `<span class="muted">${it.week}주차</span>` : ''}<span class="rm-frac">${d}/${n}</span></div>
     <div class="rm-title">${esc(it.title)}</div>
     <div class="rm-chips">${rolesOf(it).map((p) => roleChip(it, p)).join('')}</div>
@@ -1549,7 +1555,8 @@ function rmPartStrip() {
 function rmBoard(list, by) {
   return `<div class="rm-areas">${RM.data.areas.map(({ k, label }) => {
     const all = RM.data.items.filter((x) => x.area === k);
-    const col = list.filter((x) => x.area === k).sort(sortItems);
+    const rank = (x) => ({ todo: 0, done: 1, '': 2 })[mineOf(x)];
+    const col = list.filter((x) => x.area === k).sort((x, y) => (mineOn() ? rank(x) - rank(y) : 0) || sortItems(x, y));
     if (!all.length && k !== 'etc') return '';
     if (!col.length && (RM.f.part || RM.f.q || RM.f.prio || RM.f.hideDone) && !S.me) return '';
     const done = all.filter(isDone).length;
@@ -1567,7 +1574,7 @@ function rmPartsView(by) {
   return `<div class="rm-partcols">${RM_PARTS.map((p) => {
     const todo = RM.data.items.filter((x) => x.roles && x.roles[p] && !x.roles[p].done).sort(sortItems);
     const msgs = (RM.data.msgs || []).filter((m) => m.to === p).slice(0, 8);
-    return `<section class="rm-partcol" style="--pc:${partColor(p)}"><div class="rm-partcol-head"><b>${esc(partName(p))}</b> <span class="muted">남은 ${todo.length}개</span></div>
+    return `<section class="rm-partcol${mineOn() ? (p === myPart() ? ' mine' : ' dim') : ''}" style="--pc:${partColor(p)}"><div class="rm-partcol-head"><b>${esc(partName(p))}</b> <span class="muted">남은 ${todo.length}개</span></div>
       ${msgs.length ? `<div class="rm-inbox"><div class="rm-rel-h">${svgI('msg', 14)} 받은 말</div>${msgs.map((m) => `<button class="rm-msg" data-open="${m.item}"><span class="muted">${rmWho(m.who)} · ${ago(m.at)} · ${esc(m.code || m.title || '')}</span><span>${esc((m.text || '(사진)').slice(0, 120))}</span></button>`).join('')}</div>` : ''}
       ${todo.map((x) => { const w = waitingOn(x, by); return `<div class="rm-todo" data-open="${x.id}">${roleChip(x, p)}<span class="rm-todo-t"><b>${esc(x.code)}</b> ${esc(x.title)}<small class="muted">${esc(areaLabel(x.area))}${x.week ? ` · ${x.week}주차` : ''}${w.length ? ` · 기다림 ${w.length}` : ''}</small></span></div>`; }).join('') || '<p class="muted">다 했어요.</p>'}
     </section>`;
@@ -1662,10 +1669,12 @@ function flowNode(n) {
   const parts = areaParts(n.k);
   const blocked = items.filter((it) => it.blocked && !isDone(it)).length;
   const msgs = items.reduce((s, it) => s + (it.notes || 0), 0);
-  return `<div class="fl-node${pct === 100 && items.length ? ' all' : ''}" data-k="${n.k}" ${pos} tabindex="0" role="button" title="${ed ? '끌어서 옮기기' : `눌러서 ${esc(n.label)} 열기`}">
-    <div class="fl-head">${nodeIcon(n.icon)}<b>${esc(n.label)}</b><span class="fl-pct">${done}/${items.length}</span>${tools}</div>
+  const mi = mineOn() && !ed ? items.filter((it) => mineOf(it)) : null;
+  const mtodo = mi ? mi.filter((it) => mineOf(it) === 'todo').length : 0;
+  return `<div class="fl-node${pct === 100 && items.length ? ' all' : ''}${mi ? (mi.length ? ' mine' : ' dim') : ''}" data-k="${n.k}" ${pos} tabindex="0" role="button" title="${ed ? '끌어서 옮기기' : `눌러서 ${esc(n.label)} 열기`}">
+    <div class="fl-head">${nodeIcon(n.icon)}<b>${esc(n.label)}</b>${mi && mi.length ? `<span class="fl-mine${mtodo ? '' : ' m-done'}" style="--pc:${partColor(myPart())}" title="내 칸 ${mi.length}개 중 ${mi.length - mtodo}개 했음">${mtodo ? `내 것 ${mtodo}개 남음` : `${svgI('check', 13)} 내 것 다 함`}</span>` : `<span class="fl-pct">${done}/${items.length}</span>`}${tools}</div>
     <span class="rm-bar area"><i style="width:${pct}%"></i></span>
-    <div class="fl-people">${parts.map(({ p, total, done: d }) => { const nw = nowOf(n.k, p); return `<button class="fl-who" data-now="${n.k}" data-p="${p}" style="--pc:${partColor(p)}" title="${esc(partName(p))}: ${d}/${total}${nw ? ` · 지금: ${esc(nw.text)}` : ''} (누르면 지금 하는 일 적기)"${ed ? ' disabled' : ''}>
+    <div class="fl-people">${parts.map(({ p, total, done: d }) => { const nw = nowOf(n.k, p); return `<button class="fl-who${mi && p === myPart() ? ' me' : ''}" data-now="${n.k}" data-p="${p}" style="--pc:${partColor(p)}" title="${esc(partName(p))}: ${d}/${total}${nw ? ` · 지금: ${esc(nw.text)}` : ''} (누르면 지금 하는 일 적기)"${ed ? ' disabled' : ''}>
       <span class="fl-who-name"><b>${p}</b> ${esc(S.members[partOwner(p)])}</span><span class="fl-who-n">${d}/${total}</span>
       ${nw ? `<span class="fl-now">${esc(nw.text)}</span>` : ''}</button>`; }).join('') || '<span class="muted" style="font-size:12.5px">맡은 사람 없음 · 칸을 눌러 할 일을 추가해요</span>'}</div>
     ${blocked || msgs ? `<div class="fl-foot">${blocked ? `<span class="rm-st st-blocked">막힘 ${blocked}</span>` : ''}${msgs ? `<span class="rm-msgs">${svgI('msg', 14)} ${msgs}</span>` : ''}</div>` : ''}
@@ -1937,8 +1946,9 @@ function rmRender() {
   main.innerHTML = `<div class="wide rm">
     <div class="rm-head"><div><h1 class="page">로드맵</h1>
       <p class="page-sub" style="margin:0">카드 ${items.length}장 중 <b>${cardsDone}장 끝</b> · 파트 칸 ${checks}개 중 ${checked}개 체크 (${checks ? Math.round(checked / checks * 100) : 0}%). ${S.me ? '카드 안 A~E 칸을 누르면 했다·안 했다가 바뀌어요.' : '로그인하면 체크하고 할 일을 추가할 수 있어요.'}</p></div>
-      <div class="rm-head-acts">${S.me ? `<button class="btn" data-add="">${svgI('plus', 16)} 할 일 추가</button>` : '<button class="btn" data-login>로그인</button>'}</div></div>
+      <div class="rm-head-acts">${S.me && myPart() ? `<button class="btn plain rm-minebtn${mineOn() ? ' on' : ''}" id="rmMine" style="--pc:${partColor(myPart())}" aria-pressed="${mineOn()}" title="내 파트(${myPart()}) 카드만 진하게 보기">${svgI('user', 16)} 내 파트만${mineOn() ? ' 켜짐' : ''}</button>` : ''}${S.me ? `<button class="btn" data-add="">${svgI('plus', 16)} 할 일 추가</button>` : '<button class="btn" data-login>로그인</button>'}</div></div>
     ${rmPartStrip()}
+    ${mineOn() ? (() => { const mi = items.filter((x) => mineOf(x)); const d = mi.filter((x) => mineOf(x) === 'done').length; return `<div class="rm-minesum" style="--pc:${partColor(myPart())}"><b>${esc(partName(myPart()))}</b> 내 칸 ${mi.length}개 중 <b>${d}개 했음</b> · <b>${mi.length - d}개 남음</b><span class="muted">진한 카드가 내 것, 흐린 카드는 다른 파트 것이에요.</span></div>`; })() : ''}
     <div class="tabs">${[['flow', '흐름도'], ['board', '보드'], ['parts', '파트별 할 일·받은 말'], ['deps', '의존 관계'], ['log', '최근 변경']].map(([k, l]) => `<button data-v="${k}" class="${RM.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     ${RM.view === 'board' ? `<div class="filters rm-filters">
       <input type="search" id="rmQ" placeholder="코드·제목 검색" value="${esc(f.q)}">
@@ -1961,6 +1971,7 @@ function rmBind(root) {
     b.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === b) rmOpen(b.dataset.open); });
   });
   $$('[data-add]', root).forEach((b) => b.addEventListener('click', () => rmEdit(null, b.dataset.add)));
+  const mb = $('#rmMine', root); if (mb) mb.addEventListener('click', () => { RM.f.mine = !RM.f.mine; save(); rmRender(); });
   const lg = $('[data-login]', root); if (lg) lg.addEventListener('click', () => loginModal(() => rmRender()));
   $$('[data-fpart]', root).forEach((b) => b.addEventListener('click', () => {
     RM.f.part = RM.f.part === b.dataset.fpart ? '' : b.dataset.fpart; save();
@@ -2143,18 +2154,22 @@ function rmEdit(it, area) {
   const m = openModal(`<h2>${isNew ? '할 일 추가' : '카드 고치기'}</h2>
     <form id="rmForm" class="rm-form">
       <div class="field"><label>할 일</label><input type="text" name="title" maxlength="200" required value="${esc(cur.title)}" placeholder="예: 좌석 선점 API에 매수 제한 붙이기" autofocus></div>
-      <div class="field"><label>맡을 파트 <span class="muted">(카드 안에 체크칸이 생겨요)</span></label><div class="rm-with">${RM_PARTS.map((p) => `<label class="chk rm-pick" style="--pc:${partColor(p)}"><input type="checkbox" name="role" value="${p}"${cur.roles[p] ? ' checked' : ''}> <b>${p}</b> ${esc(S.members[partOwner(p)])}</label>`).join('')}</div></div>
-      <div class="rm-grid">
+      <div class="rm-grid2">
         <div class="field"><label>영역</label><select name="area">${RM.data.areas.map((a) => `<option value="${a.k}"${cur.area === a.k ? ' selected' : ''}>${esc(a.label)}</option>`).join('')}</select></div>
-        <div class="field"><label>코드 <span class="muted">(선택)</span></label><input type="text" name="code" maxlength="24" value="${esc(cur.code)}" placeholder="RSV-06"></div>
+        <div class="field"><label>맡을 사람</label><div class="rm-with">${RM_PARTS.map((p) => `<label class="chk rm-pick" style="--pc:${partColor(p)}"><input type="checkbox" name="role" value="${p}"${cur.roles[p] ? ' checked' : ''}> ${esc(S.members[partOwner(p)])}</label>`).join('')}</div></div>
+      </div>
+      <details class="rm-more"${isNew ? '' : ' open'}><summary>더 적기 <span class="muted">(우선순위·주차·마감일·설명·먼저 끝나야 할 일, 안 적어도 돼요)</span></summary>
+      <div class="rm-grid">
         <div class="field"><label>우선</label><select name="prio">${['P1', 'P2', 'P3'].map((p) => `<option${cur.prio === p ? ' selected' : ''}>${p}</option>`).join('')}</select></div>
         <div class="field"><label>주차</label><select name="week">${[0, 1, 2, 3, 4].map((w) => `<option value="${w}"${Number(cur.week) === w ? ' selected' : ''}>${w ? w + '주차' : '미정'}</option>`).join('')}</select></div>
-        <div class="field"><label>마감일 <span class="muted">(선택)</span></label><input type="date" name="due" value="${esc(cur.due || '')}"></div>
+        <div class="field"><label>마감일</label><input type="date" name="due" value="${esc(cur.due || '')}"></div>
+        <div class="field"><label>번호 <span class="muted">(비우면 자동)</span></label><input type="text" name="code" maxlength="24" value="${esc(cur.code)}" placeholder="자동"></div>
       </div>
-      <div class="field"><label>설명 <span class="muted">(마크다운, 선택)</span></label><textarea name="note" rows="3" maxlength="2000">${esc(cur.note)}</textarea></div>
-      <details class="rm-depbox"${deps.size ? ' open' : ''}><summary>먼저 끝나야 하는 작업 <span class="muted" id="rmDepN">${deps.size}개</span></summary>
-        <input type="search" id="rmDepQ" placeholder="코드·제목으로 찾기">
-        <div class="rm-deppick">${others.map((x) => `<label class="rm-depopt" data-t="${esc(`${x.code} ${x.title} ${areaLabel(x.area)}`.toLowerCase())}"><input type="checkbox" value="${x.id}"${deps.has(x.id) ? ' checked' : ''}><b>${esc(x.code)}</b> ${esc(x.title)} ${stPill(x)}</label>`).join('')}</div></details>
+      <div class="field"><label>설명 <span class="muted">(마크다운)</span></label><textarea name="note" rows="3" maxlength="2000">${esc(cur.note)}</textarea></div>
+      <div class="rm-depbox"><div class="rm-dephead">먼저 끝나야 하는 일 <span class="muted" id="rmDepN">${deps.size}개</span></div>
+        <input type="search" id="rmDepQ" placeholder="번호·제목으로 찾기">
+        <div class="rm-deppick">${others.map((x) => `<label class="rm-depopt" data-t="${esc(`${x.code} ${x.title} ${areaLabel(x.area)}`.toLowerCase())}"><input type="checkbox" value="${x.id}"${deps.has(x.id) ? ' checked' : ''}><b>${esc(x.code)}</b> ${esc(x.title)} ${stPill(x)}</label>`).join('')}</div></div>
+      </details>
       <p class="err" id="rmErr"></p>
       <div class="row"><button type="button" class="btn plain" data-x>취소</button><button class="btn" id="rmGo">${isNew ? '추가' : '저장'}</button></div>
     </form>`, { wide: true });
@@ -2166,7 +2181,7 @@ function rmEdit(it, area) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const parts = $$('input[name=role]:checked', m).map((x) => x.value);
-    if (!parts.length) { $('#rmErr', m).textContent = '맡을 파트를 하나 이상 골라 주세요.'; return; }
+    if (!parts.length) { $('#rmErr', m).textContent = '맡을 사람을 한 명 이상 골라 주세요.'; return; }
     const item = {
       ...(it ? { id: it.id } : {}), code: form.code.value.trim(), title: form.title.value.trim(), area: form.area.value,
       roles: Object.fromEntries(parts.map((p) => [p, { done: !!(cur.roles[p] && cur.roles[p].done) }])),
