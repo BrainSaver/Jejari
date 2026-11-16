@@ -214,7 +214,7 @@ th{background:var(--code);font-weight:600}
   .ref-pick select{max-width:110px}
   #loginBtn{font-size:0;padding:6px 10px}
   #loginBtn::after{content:"로그인";font-size:13px}
-  #mergeBtn{display:none!important}
+  #mergeBtn,#syncBtn{display:none!important}
   .side{position:fixed;left:0;top:var(--top);z-index:30;background:var(--bg2);transform:translateX(-100%);transition:transform .2s;width:240px}
   .side.open{transform:none;box-shadow:var(--shadow)}
   main{padding:16px 16px 80px}
