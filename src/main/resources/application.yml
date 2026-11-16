@@ -67,6 +67,10 @@ jejari:
     scheduler-enabled: true   # 입장 스케줄러(1초마다 입장 처리). 앱 1대 기준입니다
     policy-cache-ms: 1000     # 정책(app_policy) 값을 앱에서 들고 있는 시간. 바꾸면 최대 이만큼 뒤에 반영
     dev-on-sale-runs: ""      # 개발 모드에서 판매 중으로 볼 운행 ID (예: 9001, 시드(db/seed)의 ON_SALE 운행은 9001·9002)
+  risk:
+    # 위험 점수 캐시(risk:*) 재동기화: Oracle risk_score → Redis. 앱 시작 직후 한 번, 그 뒤 이 간격마다 (RiskCacheResync)
+    cache-resync-enabled: true
+    cache-resync-interval: 10m
   jwt:
     issuer: jejari
     access-ttl: 15m
