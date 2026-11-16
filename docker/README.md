@@ -17,6 +17,7 @@ Oracle · MongoDB · Redis · Kafka · Prometheus · Grafana를 한 번에 띄�
 | 무엇 | 어떻게 | 정상 |
 |---|---|---|
 | Oracle 스키마 | `docker compose logs oracle \| grep "jejari schema created"` | 한 줄 나옴 |
+| Oracle 기준 데이터 | `docker compose logs oracle \| grep "jejari seed loaded"` | 한 줄 나옴 (역·열차·좌석·운행·운임) |
 | Mongo 인덱스 | `docker compose logs mongo \| grep "mongo init done"` | 한 줄 나옴 |
 | Kafka 토픽 | `docker compose logs kafka-init` | 토픽 4개 목록 |
 | 앱 | IDE에서 `JejariApplication` 실행 → `curl localhost:8080/actuator/health` | `"status":"UP"`, 로그에 `시간대 점검 통과` |

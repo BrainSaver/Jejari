@@ -12,7 +12,8 @@ SeatHoldStrategy 뒤로 옮겨 같은 시나리오를 다시 잰다.
     1회 측정은 편차가 커서(같은 조건에서 TPS가 2~4배 흔들렸다) 믿을 수 없다.
 
 실행: python bench/lock_compare.py
-필요: Oracle(localhost:1521/FREEPDB1) · Redis(localhost:6379) · pip install oracledb redis
+필요: docker compose up -d (Oracle·Redis) · pip install oracledb redis
+      접속 정보는 저장소 루트 .env 에서 읽는다
 """
 import os
 import sys
@@ -31,11 +32,32 @@ try:
 except Exception:
     pass
 
-ORA = dict(user=os.environ.get("ORACLE_USER", "jejari"),
-           password=os.environ.get("ORACLE_PASSWORD", "jejari"),
-           dsn=os.environ.get("ORACLE_DSN", "localhost:1521/FREEPDB1"))
+def _load_env():
+    """저장소 루트 .env 를 읽는다 (compose·Spring이 쓰는 같은 파일). 없으면 넘어간다."""
+    here = pathlib.Path(__file__).resolve()
+    p = next((d / ".env" for d in here.parents if (d / ".env").exists()), None)
+    if p is None:
+        return
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip())
+
+
+_load_env()
+
+
+ORA = dict(user=os.environ.get("ORACLE_APP_USER", "jejari"),
+           password=os.environ["ORACLE_APP_PASSWORD"],
+           dsn="%s:%s/%s" % (os.environ.get("ORACLE_HOST", "localhost"),
+                             os.environ.get("ORACLE_PORT", "1521"),
+                             os.environ.get("ORACLE_SERVICE", "FREEPDB1")))
 RKW = dict(host=os.environ.get("REDIS_HOST", "localhost"),
-           port=int(os.environ.get("REDIS_PORT", "6379")), decode_responses=True)
+           port=int(os.environ.get("REDIS_PORT", "6379")),
+           password=os.environ.get("REDIS_PASSWORD") or None,
+           decode_responses=True)
 LUA = pathlib.Path(__file__).resolve().parents[1] / "redis" / "lua"
 
 RUN_ID = 9001
