@@ -28,6 +28,8 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	// 비밀번호 Argon2id (Spring Security Argon2PasswordEncoder가 BouncyCastle 구현을 씀)
+	implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.oracle.database.jdbc:ojdbc17'
 	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
