@@ -1567,6 +1567,7 @@ function rmLogLine(e, by, withTitle = true) {
   if (e.act === 'seed') what = esc(e.text);
   else if (e.act === 'add') what = `${name} 추가`;
   else if (e.act === 'delete') what = `${name} 삭제`;
+  else if (e.act === 'now') what = `<b>${esc(e.label || '')}</b> · ${esc(partName(e.part))} 지금 하는 일${e.text ? `: <span class="rm-note-text">${esc(e.text)}</span>` : ' 지움'}`;
   else if (e.act === 'note') what = `${name} ${e.to ? `<b>→ ${esc(partName(e.to))}</b>에게` : ''} 남긴 말${e.text ? `: <span class="rm-note-text">${esc(e.text.length > 140 ? e.text.slice(0, 140) + '…' : e.text)}</span>` : ''}${e.img ? ' <span class="badge">사진</span>' : ''}`;
   else {
     const ch = (e.changes || []).map(([f, a, b]) => {
@@ -1588,10 +1589,165 @@ function rmLogLine(e, by, withTitle = true) {
   return `<div class="rm-log"><span class="rm-log-who"><span class="dot" style="background:${colorOf(e.who)}"></span> ${rmWho(e.who)}</span><span class="rm-log-what">${what}</span><span class="muted rm-log-at" title="${kst(new Date(e.at).toISOString(), true)}">${ago(e.at)}</span></div>`;
 }
 
+// ---------- 흐름도 (예매 흐름 위에 기능 영역을 놓고, 칸마다 맡은 사람·진행률·지금 하는 일) ----------
+// [영역, 열(0~2), 줄] 1000px 너비 캔버스. 줄 높이는 칸 크기를 재서 정한다. 화면이 좁으면 이 순서대로 세로 목록
+const FLOW_NODES = [
+  ['user', 1, 0], ['auth', 1, 1], ['etc', 2, 1], ['risk', 0, 2], ['train', 1, 2], ['queue', 1, 3],
+  ['admin', 0, 4], ['seat', 1, 4], ['event', 2, 4], ['pay', 1, 5],
+  ['cancel', 1, 6], ['wait', 2, 6],
+  ['data', 0, 8], ['infra', 1, 8], ['test', 2, 8],
+];
+const FLOW_X = [20, 380, 740];
+const FLOW_BAND = 8; // 이 줄부터 공통 기반
+// [출발, 도착, 글, 점선 여부, 출발 쪽, 도착 쪽]  쪽: t·b·l·r
+const FLOW_EDGES = [
+  ['user', 'auth', '', 0, 'b', 't'], ['auth', 'train', '로그인', 0, 'b', 't'], ['train', 'queue', '예매 시작', 0, 'b', 't'],
+  ['queue', 'seat', '입장 토큰', 0, 'b', 't'], ['seat', 'pay', '선점', 0, 'b', 't'], ['pay', 'cancel', '확정 후 취소', 0, 'b', 't'],
+  ['user', 'risk', '행동 로그', 1, 'l', 't'], ['risk', 'queue', '순번 조정', 1, 'r', 'l'], ['risk', 'admin', '위험 사용자', 1, 'b', 't'],
+  ['seat', 'admin', '예매 현황', 1, 'l', 'r'], ['seat', 'event', 'outbox', 1, 'r', 'l'], ['pay', 'event', '실패 → Saga 복구', 1, 'r', 'l'],
+  ['cancel', 'wait', '빈 좌석 제안', 0, 'r', 'l'], ['event', 'wait', '재배정 알림', 1, 'b', 't'],
+];
+const FLOW_NOTE = { user: '이용자', etc: '기타' };
+
+function areaParts(k) {
+  // 이 영역 카드에 칸이 있는 파트 = 맡은 사람 (역할 분담 그대로)
+  const list = RM.data.items.filter((x) => x.area === k);
+  return RM_PARTS.map((p) => {
+    const mine = list.filter((x) => x.roles && x.roles[p]);
+    return { p, total: mine.length, done: mine.filter((x) => x.roles[p].done).length };
+  }).filter((x) => x.total).sort((a, b) => b.total - a.total);
+}
+const nowOf = (k, p) => (RM.data.now || []).find((n) => n.area === k && n.part === p);
+
+function flowNode(k, col, row) {
+  const x = FLOW_X[col] + (k === 'user' ? 50 : 0);
+  if (k === 'user') return `<div class="fl-node fl-user" data-k="user" data-row="${row}" style="--x:${x}px">이용자</div>`;
+  const items = RM.data.items.filter((it) => it.area === k);
+  if (!items.length && k === 'etc') return '';
+  const done = items.filter(isDone).length;
+  const pct = items.length ? Math.round((done / items.length) * 100) : 0;
+  const parts = areaParts(k);
+  const blocked = items.filter((it) => it.blocked && !isDone(it)).length;
+  const msgs = items.reduce((s, it) => s + (it.notes || 0), 0);
+  return `<div class="fl-node${pct === 100 ? ' all' : ''}" data-k="${k}" data-row="${row}" style="--x:${x}px" tabindex="0" role="button" title="눌러서 ${esc(areaLabel(k))} 열기">
+    <div class="fl-head"><b>${esc(areaLabel(k))}</b><span class="fl-pct">${done}/${items.length}</span></div>
+    <span class="rm-bar area"><i style="width:${pct}%"></i></span>
+    <div class="fl-people">${parts.map(({ p, total, done: d }) => { const n = nowOf(k, p); return `<button class="fl-who" data-now="${k}" data-p="${p}" style="--pc:${partColor(p)}" title="${esc(partName(p))}: ${d}/${total}${n ? ` · 지금: ${esc(n.text)}` : ''} (누르면 지금 하는 일 적기)">
+      <span class="fl-who-name"><b>${p}</b> ${esc(S.members[partOwner(p)])}</span><span class="fl-who-n">${d}/${total}</span>
+      ${n ? `<span class="fl-now">${esc(n.text)}</span>` : ''}</button>`; }).join('') || '<span class="muted" style="font-size:12px">맡은 사람 없음</span>'}</div>
+    ${blocked || msgs ? `<div class="fl-foot">${blocked ? `<span class="rm-st st-blocked">막힘 ${blocked}</span>` : ''}${msgs ? `<span class="rm-msgs">💬 ${msgs}</span>` : ''}</div>` : ''}
+  </div>`;
+}
+
+function rmFlow() {
+  return `<p class="muted" style="margin:0 0 10px">예매 흐름 위에 기능을 놓았어요. 칸에는 맡은 사람과 진행률이 보이고, <b>이름</b>을 누르면 그 사람이 지금 하는 일을 적고, <b>칸</b>을 누르면 그 기능의 할 일 카드를 보고 추가할 수 있어요.</p>
+  <div class="fl-wrap"><div class="fl" id="flow">${FLOW_NODES.map(([k, c, r]) => flowNode(k, c, r)).join('')}
+    <div class="fl-band" id="flowBand"><span>공통 기반 (모든 기능이 쓰는 것)</span></div>
+    <svg class="fl-svg" id="flowSvg" aria-hidden="true"></svg></div></div>`;
+}
+
+// 칸 크기가 글 길이에 따라 달라서, 그린 다음 실제 위치를 재서 선을 잇는다
+function drawFlow() {
+  const fl = $('#flow'); const svg = $('#flowSvg');
+  if (!fl || !svg || getComputedStyle(svg).display === 'none') return;
+  // 줄마다 가장 큰 칸 높이만큼 내려가며 배치
+  const rows = {};
+  $$('.fl-node', fl).forEach((n) => { const r = +n.dataset.row; rows[r] = Math.max(rows[r] || 0, n.offsetHeight); });
+  let y = 0; const top = {};
+  Object.keys(rows).map(Number).sort((p, q) => p - q).forEach((r) => {
+    if (r === FLOW_BAND) { y += 26; const band = $('#flowBand'); if (band) band.style.top = (y - 34) + 'px'; }
+    top[r] = y; y += rows[r] + (r === 0 ? 34 : 58);
+  });
+  $$('.fl-node', fl).forEach((n) => { n.style.top = top[+n.dataset.row] + 'px'; });
+  const box = fl.getBoundingClientRect();
+  const R = {};
+  $$('.fl-node', fl).forEach((n) => { const r = n.getBoundingClientRect(); R[n.dataset.k] = { x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height }; });
+  const h = Math.max(...Object.values(R).map((r) => r.y + r.h)) + 20;
+  fl.style.height = h + 'px';
+  svg.setAttribute('viewBox', `0 0 ${box.width} ${h}`); svg.setAttribute('width', box.width); svg.setAttribute('height', h);
+  const pt = (r, s) => (s === 't' ? [r.x + r.w / 2, r.y] : s === 'b' ? [r.x + r.w / 2, r.y + r.h] : s === 'l' ? [r.x, r.y + r.h / 2] : [r.x + r.w, r.y + r.h / 2]);
+  const dir = { t: [0, -1], b: [0, 1], l: [-1, 0], r: [1, 0] };
+  let out = '<defs><marker id="flArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>';
+  for (const [a, b, label, dash, sa, sb] of FLOW_EDGES) {
+    if (!R[a] || !R[b]) continue;
+    const [x1, y1] = pt(R[a], sa), [x2, y2] = pt(R[b], sb);
+    const d = Math.max(40, Math.min(160, Math.hypot(x2 - x1, y2 - y1) / 2.5));
+    const c1 = [x1 + dir[sa][0] * d, y1 + dir[sa][1] * d], c2 = [x2 + dir[sb][0] * d, y2 + dir[sb][1] * d];
+    out += `<path d="M${x1},${y1} C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${x2},${y2}" class="fl-edge${dash ? ' dash' : ''}" marker-end="url(#flArrow)"/>`;
+    if (label) {
+      // 곡선 가운데(t=0.5)에 글
+      const mx = (x1 + 3 * c1[0] + 3 * c2[0] + x2) / 8, my = (y1 + 3 * c1[1] + 3 * c2[1] + y2) / 8;
+      const w = label.length * 11.5 + 14;
+      out += `<g class="fl-lab"><rect x="${mx - w / 2}" y="${my - 11}" width="${w}" height="22" rx="6"/><text x="${mx}" y="${my + 4.5}" text-anchor="middle">${esc(label)}</text></g>`;
+    }
+  }
+  svg.innerHTML = out;
+}
+
+function bindFlow(root) {
+  $$('.fl-node[data-k]', root).forEach((n) => {
+    if (n.dataset.k === 'user') return;
+    n.addEventListener('click', () => rmArea(n.dataset.k));
+    n.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === n) rmArea(n.dataset.k); });
+  });
+  $$('[data-now]', root).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); rmNowEdit(b.dataset.now, b.dataset.p); }));
+  requestAnimationFrame(drawFlow);
+  if (!RM.flowResize) { RM.flowResize = true; window.addEventListener('resize', () => { clearTimeout(RM.frt); RM.frt = setTimeout(drawFlow, 120); }); }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawFlow);
+}
+
+// 이름을 눌러 "지금 하는 일" 한 줄 적기
+function rmNowEdit(k, p, back) {
+  if (!needLogin(() => rmNowEdit(k, p, back))) return;
+  const n = nowOf(k, p);
+  const m = openModal(`<h2>${esc(areaLabel(k))} · ${esc(partName(p))}</h2>
+    <p class="muted" style="margin:0 0 8px">지금 이 기능에서 하고 있는 일을 한 줄로 적어요. 흐름도 칸에 바로 보여요. 비우고 저장하면 지워져요.</p>
+    ${n ? `<p class="muted" style="font-size:13px;margin:0 0 6px">마지막: ${rmWho(n.who)} · ${ago(n.at)}</p>` : ''}
+    <textarea id="nowText" rows="3" maxlength="300" class="rm-nowta" placeholder="예: 입장 토큰 검증 필터 만드는 중, 내일 테스트" autofocus>${esc(n ? n.text : '')}</textarea>
+    <p class="err" id="nowErr"></p>
+    <div class="row"><button class="btn plain" data-x>취소</button><button class="btn" id="nowGo">저장</button></div>`);
+  const close = () => (back ? rmArea(k) : (closeModal(), rmAfterClose()));
+  $('[data-x]', m).addEventListener('click', close);
+  const ta = $('#nowText', m);
+  ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('#nowGo', m).click(); });
+  $('#nowGo', m).addEventListener('click', async () => {
+    try {
+      await api('/roadmap/now', { body: { area: k, part: p, text: ta.value } });
+      await rmLoad(); rmRender(); toast(ta.value.trim() ? '지금 하는 일을 적었어요.' : '지웠어요.');
+      if (back) rmArea(k); else closeModal();
+    } catch (x) { $('#nowErr', m).textContent = x.message; }
+  });
+}
+
+// 칸을 눌렀을 때: 맡은 사람별 진행·지금 하는 일 + 그 기능의 할 일 카드
+function rmArea(k) {
+  RM.modal = { kind: 'area', k };
+  const by = rmById();
+  const items = RM.data.items.filter((x) => x.area === k).sort(sortItems);
+  const parts = areaParts(k);
+  const done = items.filter(isDone).length;
+  const m = openModal(`<div class="rm-detail">
+    <div class="rm-detail-head"><span class="muted">기능 영역</span><span class="rm-frac">${done}/${items.length} 끝</span></div>
+    <h2>${esc(areaLabel(k))}</h2>
+    <div class="rm-rel-h">맡은 사람</div>
+    <div class="fl-team">${parts.map(({ p, total, done: d }) => { const n = nowOf(k, p); return `<div class="fl-team-row" style="--pc:${partColor(p)}">
+      <span class="fl-team-who"><span><b>${p}</b> ${esc(S.members[partOwner(p)])}</span><small class="muted">${d}/${total} 했음</small></span>
+      <span class="fl-team-now">${n ? `${esc(n.text)} <small class="muted">${rmWho(n.who)} · ${ago(n.at)}</small>` : '<span class="muted">지금 하는 일 없음</span>'}</span>
+      ${S.me ? `<button class="btn sm plain" data-nowp="${p}">${n ? '고치기' : '적기'}</button>` : ''}</div>`; }).join('') || '<p class="muted">아직 맡은 사람이 없어요. 할 일을 추가하면서 파트를 고르면 생겨요.</p>'}</div>
+    <div class="fl-cards-head"><span class="rm-rel-h" style="margin:0">할 일 ${items.length}개</span>${S.me ? `<button class="btn sm" data-add="${k}">+ 할 일 추가</button>` : ''}</div>
+    <div class="rm-cards">${items.map((x) => rmCard(x, by)).join('') || '<p class="muted">할 일이 없어요.</p>'}</div>
+    <div class="row"><button class="btn plain" data-x>닫기</button></div></div>`, { wide: true });
+  $('[data-x]', m).addEventListener('click', () => { RM.modal = null; closeModal(); rmAfterClose(); });
+  $$('[data-nowp]', m).forEach((b) => b.addEventListener('click', () => rmNowEdit(k, b.dataset.nowp, true)));
+  $$('[data-chk]', m).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); rmCheck(b.dataset.chk, b.dataset.p); }));
+  $$('[data-open]', m).forEach((b) => b.addEventListener('click', () => { RM.back = k; rmOpen(b.dataset.open); }));
+  $$('[data-add]', m).forEach((b) => b.addEventListener('click', () => { RM.back = k; rmEdit(null, k); }));
+}
+
 async function pageRoadmap(view) {
   main.innerHTML = '<div class="wide"><p class="loading">로드맵 불러오는 중…</p></div>';
   await rmLoad();
-  RM.view = ['board', 'parts', 'deps', 'log'].includes(view) ? view : 'board';
+  RM.view = ['flow', 'board', 'parts', 'deps', 'log'].includes(view) ? view : 'flow';
   rmRender();
   rmPoll();
 }
@@ -1605,7 +1761,8 @@ function rmRender() {
   const cardsDone = items.filter(isDone).length;
   const list = rmFiltered();
   let body = '';
-  if (RM.view === 'board') body = rmBoard(list, by);
+  if (RM.view === 'flow') body = rmFlow();
+  else if (RM.view === 'board') body = rmBoard(list, by);
   else if (RM.view === 'parts') body = rmPartsView(by);
   else if (RM.view === 'deps') body = rmDepsView(by);
   else {
@@ -1613,11 +1770,11 @@ function rmRender() {
     body = log.length ? `<div class="rm-logs">${log.map((e) => rmLogLine(e, by)).join('')}</div><p class="muted">최근 ${log.length}건까지 보여요. 카드를 열면 그 카드의 전체 기록이 있어요.</p>` : '<p class="empty">아직 기록이 없어요.</p>';
   }
   main.innerHTML = `<div class="wide rm">
-    <div class="rm-head"><div><h1 class="page">로드맵 보드</h1>
+    <div class="rm-head"><div><h1 class="page">로드맵</h1>
       <p class="page-sub" style="margin:0">카드 ${items.length}장 중 <b>${cardsDone}장 끝</b> · 파트 칸 ${checks}개 중 ${checked}개 체크 (${checks ? Math.round(checked / checks * 100) : 0}%). ${S.me ? '카드 안 A~E 칸을 누르면 했다·안 했다가 바뀌어요.' : '로그인하면 체크하고 할 일을 추가할 수 있어요.'}</p></div>
       <div class="rm-head-acts">${S.me ? '<button class="btn" data-add="">+ 할 일 추가</button>' : '<button class="btn" data-login>로그인</button>'}</div></div>
     ${rmPartStrip()}
-    <div class="tabs">${[['board', '보드'], ['parts', '파트별 할 일·받은 말'], ['deps', '의존 관계'], ['log', '최근 변경']].map(([k, l]) => `<button data-v="${k}" class="${RM.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div class="tabs">${[['flow', '흐름도'], ['board', '보드'], ['parts', '파트별 할 일·받은 말'], ['deps', '의존 관계'], ['log', '최근 변경']].map(([k, l]) => `<button data-v="${k}" class="${RM.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     ${RM.view === 'board' ? `<div class="filters rm-filters">
       <input type="search" id="rmQ" placeholder="코드·제목 검색" value="${esc(f.q)}">
       <select id="rmPart"><option value="">모든 파트</option>${RM_PARTS.map((p) => `<option value="${p}"${f.part === p ? ' selected' : ''}>${esc(partName(p))}</option>`).join('')}</select>
@@ -1627,6 +1784,7 @@ function rmRender() {
       <span class="rm-legend"><span class="rm-chip on" style="--pc:var(--muted)"><span class="rm-chip-box">✓</span>A</span> 했음 <span class="rm-chip" style="--pc:var(--muted)"><span class="rm-chip-box"></span>A</span> 아직</span></div>` : ''}
     ${body}</div>`;
   rmBind(main);
+  if (RM.view === 'flow') bindFlow(main);
 }
 
 function rmBind(root) {
@@ -1667,12 +1825,14 @@ async function rmCheck(id, p) {
   const done = !it.roles[p].done;
   it.roles[p] = done ? { done: true, by: S.me, at: Date.now() } : { done: false, by: null, at: null }; // 바로 보이게
   const inModal = !$('#modalBack').hidden;
-  if (inModal) rmOpen(id); else rmRender();
+  const again = () => (RM.modal && RM.modal.kind === 'area' ? rmArea(RM.modal.k) : rmOpen(id));
+  if (inModal) again(); else rmRender();
   try {
     const r = await api('/roadmap/check', { body: { id, part: p, done } });
     toast(`${it.code || it.title}: ${partName(p)} ${done ? '했음 ✓' : '체크 풂'}`);
     await rmLoad();
-    if (inModal && !$('#modalBack').hidden) { rmRender(); rmOpen(r.item.id); } else rmRender();
+    rmRender();
+    if (inModal && !$('#modalBack').hidden) again();
   } catch (x) { toast(x.message); await rmLoad(); rmRender(); }
 }
 
@@ -1693,6 +1853,9 @@ async function rmSave(item, v) {
 const rmPlain = (it) => ({ id: it.id, code: it.code, title: it.title, area: it.area, roles: it.roles, blocked: !!it.blocked, prio: it.prio, week: it.week, due: it.due, note: it.note, deps: it.deps || [] });
 
 function rmOpen(id) {
+  const back = RM.back || (RM.modal && RM.modal.kind === 'card' ? RM.modal.back : null);
+  RM.back = null;
+  RM.modal = { kind: 'card', id, back };
   const by = rmById();
   const it = by.get(id);
   if (!it) { toast('그 사이 지워진 카드예요.'); return; }
@@ -1717,18 +1880,19 @@ function rmOpen(id) {
       <div class="rm-noteacts"><label class="btn sm plain">사진 고르기<input type="file" id="rmFile" accept="image/*" hidden></label><span id="rmImgInfo" class="muted"></span><span style="flex:1"></span><button class="btn sm" id="rmNoteGo">남기기</button></div>
       <img id="rmImgPrev" class="rm-img-prev" hidden alt="붙일 사진 미리보기"></div>` : '<p class="muted">로그인하면 말을 남길 수 있어요.</p>'}
     <div id="rmNotes"><p class="loading">불러오는 중…</p></div>
-    <div class="row">${S.me ? '<button class="btn sm danger" id="rmDel">삭제</button><span style="flex:1"></span><button class="btn plain" id="rmEditBtn">고치기</button>' : ''}<button class="btn plain" data-x>닫기</button></div>
+    <div class="row">${S.me ? '<button class="btn sm danger" id="rmDel">삭제</button><span style="flex:1"></span><button class="btn plain" id="rmEditBtn">고치기</button>' : ''}${back ? `<button class="btn plain" data-back>← ${esc(areaLabel(back))}</button>` : ''}<button class="btn plain" data-x>닫기</button></div>
   </div>`, { wide: true });
-  $('[data-x]', m).addEventListener('click', () => { closeModal(); rmAfterClose(); });
+  $('[data-x]', m).addEventListener('click', () => { RM.modal = null; closeModal(); rmAfterClose(); });
+  const bk = $('[data-back]', m); if (bk) bk.addEventListener('click', () => rmArea(back));
   $$('[data-go]', m).forEach((b) => b.addEventListener('click', () => rmOpen(b.dataset.go)));
   $$('[data-chk]', m).forEach((b) => b.addEventListener('click', () => rmCheck(b.dataset.chk, b.dataset.p)));
   if (S.me) {
     $('#rmBlocked', m).addEventListener('change', async (e) => {
       try { const r = await rmSave({ ...rmPlain(it), blocked: e.target.checked }, it.v); if (r) { toast(r.blocked ? '막힘으로 표시했어요.' : '막힘을 풀었어요.'); rmOpen(r.id); } } catch (x) { toast(x.message); }
     });
-    $('#rmEditBtn', m).addEventListener('click', () => rmEdit(it));
+    $('#rmEditBtn', m).addEventListener('click', () => { RM.back = back; rmEdit(it); });
     twoStep($('#rmDel', m), '한 번 더 누르면 삭제', async () => {
-      try { await api('/roadmap/delete', { body: { id: it.id } }); closeModal(); toast(`${it.code || it.title} 카드를 지웠어요.`); await rmLoad(); rmRender(); }
+      try { await api('/roadmap/delete', { body: { id: it.id } }); toast(`${it.code || it.title} 카드를 지웠어요.`); await rmLoad(); rmRender(); if (back) rmArea(back); else { RM.modal = null; closeModal(); } }
       catch (x) { toast(x.message); }
     });
     rmNoteForm(m, it);
@@ -1829,7 +1993,8 @@ function rmEdit(it, area) {
       <p class="err" id="rmErr"></p>
       <div class="row"><button type="button" class="btn plain" data-x>취소</button><button class="btn" id="rmGo">${isNew ? '추가' : '저장'}</button></div>
     </form>`, { wide: true });
-  $('[data-x]', m).addEventListener('click', () => (it ? rmOpen(it.id) : (closeModal(), rmAfterClose())));
+  const back = RM.back; RM.back = null;
+  $('[data-x]', m).addEventListener('click', () => { if (it) { RM.back = back; rmOpen(it.id); } else if (back) rmArea(back); else { closeModal(); rmAfterClose(); } });
   const form = $('#rmForm', m);
   $('#rmDepQ', m).addEventListener('input', (e) => { const q = e.target.value.trim().toLowerCase(); $$('.rm-depopt', m).forEach((o) => { o.hidden = q && !o.dataset.t.includes(q); }); });
   $$('.rm-depopt input', m).forEach((c) => c.addEventListener('change', () => { if (c.checked) deps.add(c.value); else deps.delete(c.value); $('#rmDepN', m).textContent = `${deps.size}개`; }));
@@ -1845,7 +2010,7 @@ function rmEdit(it, area) {
     const btn = $('#rmGo', m); btn.disabled = true;
     try {
       const r = await rmSave(item, it ? it.v : undefined);
-      if (r) { toast(isNew ? '할 일을 추가했어요.' : '저장했어요.'); rmOpen(r.id); }
+      if (r) { toast(isNew ? '할 일을 추가했어요.' : '저장했어요.'); RM.back = back; rmOpen(r.id); }
     } catch (x) { $('#rmErr', m).textContent = x.message; } finally { btn.disabled = false; }
   });
 }

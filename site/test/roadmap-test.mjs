@@ -62,5 +62,12 @@ r = await anon('/roadmap');
 ok(!r.data.items.some((x) => x.id === nw.id), '삭제 반영');
 ok(r.data.log.some((e) => e.act === 'check' && e.who === 'DongGyun'), '최근 변경에 누가 체크했는지');
 
+r = await anon('/roadmap/now', { area: 'queue', part: 'A', text: 'x' }); ok(r.status === 401, '지금 하는 일은 로그인해야 적음');
+r = await dh('/roadmap/now', { area: 'queue', part: 'A', text: '토큰 검증 필터 만드는 중' }); ok(r.status === 200, '지금 하는 일 적기');
+r = await anon('/roadmap'); ok(r.data.now.some((n) => n.area === 'queue' && n.part === 'A' && n.who === 'DongHyeon'), '흐름도에 지금 하는 일');
+r = await dh('/roadmap/now', { area: 'nope', part: 'A', text: 'x' }); ok(r.status === 400, '없는 영역 거부');
+await dh('/roadmap/now', { area: 'queue', part: 'A', text: '' });
+r = await anon('/roadmap'); ok(!r.data.now.some((n) => n.area === 'queue' && n.part === 'A'), '비우면 지움');
+
 console.log(`\n${pass} ok, ${failN} fail`);
 process.exit(failN ? 1 : 0);

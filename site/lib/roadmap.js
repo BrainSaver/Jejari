@@ -51,6 +51,8 @@ const SCHEMA = [
   'CREATE INDEX IF NOT EXISTS ix_roadmap_log_item ON roadmap_log (item, seq)',
   'CREATE TABLE IF NOT EXISTS roadmap_img (id TEXT PRIMARY KEY, item TEXT, at INTEGER NOT NULL, who TEXT NOT NULL, mime TEXT NOT NULL, data TEXT NOT NULL)',
   'CREATE TABLE IF NOT EXISTS roadmap_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)',
+  // 흐름도 칸(영역)마다 파트별 "지금 하는 일" 한 줄
+  'CREATE TABLE IF NOT EXISTS roadmap_now (area TEXT NOT NULL, part TEXT NOT NULL, text TEXT NOT NULL, who TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (area, part))',
 ];
 
 const rid = (p) => p + [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(36).padStart(2, '0')).join('').slice(0, 10);
@@ -182,11 +184,12 @@ export function roadmap(env) {
   return {
     async all() {
       await init(db);
-      const [items, logs, r, notes] = await Promise.all([
+      const [items, logs, r, notes, now] = await Promise.all([
         db.prepare('SELECT v, data FROM roadmap_item').all(),
         db.prepare(`SELECT seq, at, who, item, act, data FROM roadmap_log WHERE act <> 'unnote' ORDER BY seq DESC LIMIT ${LOG_LIMIT}`).all(),
         rev(db),
         db.prepare("SELECT seq, at, who, item, data FROM roadmap_log WHERE act = 'note' ORDER BY seq").all(),
+        db.prepare('SELECT area, part, text, who, at FROM roadmap_now').all(),
       ]);
       // 카드마다 남긴 말 수, 파트별로 받은 말 수
       const nc = new Map(); const msgs = [];
@@ -202,9 +205,25 @@ export function roadmap(env) {
         items: (items.results || []).map(rowItem).filter(Boolean).map((it) => ({ ...it, notes: (nc.get(it.id) || {}).n || 0, notesTo: (nc.get(it.id) || {}).to || {} })),
         log: (logs.results || []).map(rowLog),
         msgs: msgs.reverse().slice(0, 60),
+        now: now.results || [],
       };
     },
     async rev() { await init(db); return rev(db); },
+
+    // 흐름도 칸의 파트별 "지금 하는 일". 빈 글이면 지운다
+    async setNow(me, area, part, text) {
+      await init(db);
+      if (!AREA_KEYS.includes(area) || !PARTS[part]) return { error: 'BAD_NOW', status: 400, message: '영역이나 파트가 맞지 않아요.' };
+      if (!isStr(text || '', 300)) return { error: 'BAD_NOW', status: 400, message: '300자까지 쓸 수 있어요.' };
+      const t = String(text || '').trim();
+      const label = (AREAS.find((a) => a[0] === area) || [])[1];
+      await db.batch([
+        t ? db.prepare('INSERT INTO roadmap_now (area, part, text, who, at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (area, part) DO UPDATE SET text = excluded.text, who = excluded.who, at = excluded.at').bind(area, part, t, me, Date.now())
+          : db.prepare('DELETE FROM roadmap_now WHERE area = ?1 AND part = ?2').bind(area, part),
+        addLog(db, me, null, 'now', { area, label, part, text: t }),
+      ]);
+      return { ok: true };
+    },
     async itemLog(id) {
       await init(db);
       const r = await db.prepare('SELECT seq, at, who, item, act, data FROM roadmap_log WHERE item = ?1 ORDER BY seq DESC LIMIT 200').bind(id).all();

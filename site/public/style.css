@@ -560,3 +560,44 @@ input[type=date]{font:inherit;color:var(--fg);background:var(--bg);border:1px so
   .rm-log{grid-template-columns:1fr;gap:2px}
   .rm-legend{margin-left:0}
 }
+
+/* 흐름도 */
+.fl-wrap{overflow-x:auto;padding-bottom:6px}
+.fl{position:relative;width:1000px;min-height:400px;margin:0 auto}
+.fl-svg{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+.fl-edge{fill:none;stroke:var(--muted);stroke-width:1.6}
+.fl-edge.dash{stroke-dasharray:5 5;stroke-width:1.3}
+.fl-lab rect{fill:var(--bg);stroke:var(--line2)}
+.fl-lab text{font-size:12px;fill:var(--muted);font-weight:600}
+.fl-node{position:absolute;left:var(--x);top:0;width:240px;z-index:1;background:var(--bg2);border:1.5px solid var(--line2);border-radius:12px;padding:10px 12px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+.fl-node:hover,.fl-node:focus-visible{border-color:var(--accent);outline:none}
+.fl-node.all{border-color:var(--add-fg)}
+.fl-user{width:140px;text-align:center;font-weight:700;padding:8px;border-radius:999px;cursor:default;background:var(--code)}
+.fl-head{display:flex;align-items:baseline;gap:8px}
+.fl-head b{font-size:15px}
+.fl-pct{margin-left:auto;font-size:12px;font-weight:700;color:var(--muted)}
+.fl-people{display:flex;flex-direction:column;gap:3px}
+.fl-who{display:grid;grid-template-columns:1fr auto;gap:0 6px;align-items:baseline;text-align:left;border:0;border-left:3px solid var(--pc);background:var(--code);border-radius:6px;padding:2px 8px;cursor:pointer;font-size:12.5px;line-height:1.4}
+.fl-who:hover{background:var(--accent-soft)}
+.fl-who-name b{color:var(--pc)}
+.fl-who-n{color:var(--muted);font-size:11.5px;font-weight:600}
+.fl-now{grid-column:1/-1;color:var(--fg);font-size:12px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.fl-foot{display:flex;gap:8px;margin-top:6px;font-size:12px}
+.fl-band{position:absolute;left:0;right:0;border-top:1px dashed var(--line2)}
+.fl-band span{position:absolute;left:0;top:4px;font-size:12px;font-weight:700;color:var(--muted)}
+.fl-team{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.fl-team-row{display:grid;grid-template-columns:150px minmax(0,1fr) auto;gap:10px;align-items:center;border-left:4px solid var(--pc);background:var(--code);border-radius:8px;padding:7px 10px;font-size:14px}
+.fl-team-who{display:flex;flex-direction:column;line-height:1.3}
+.fl-team-who b{color:var(--pc)}
+.fl-team-who small{font-size:12px}
+.fl-team-now small{display:block;font-size:11.5px}
+.fl-cards-head{display:flex;align-items:center;justify-content:space-between;margin:4px 0 8px}
+.rm-nowta{width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line2);border-radius:8px;padding:8px 10px;resize:vertical}
+@media (max-width:760px){
+  .fl{width:auto;height:auto!important;display:flex;flex-direction:column;gap:22px}
+  .fl-svg,.fl-band{display:none}
+  .fl-node{position:relative;left:auto;top:auto;width:auto}
+  .fl-node + .fl-node::before{content:"↓";position:absolute;top:-21px;left:50%;color:var(--muted);font-size:14px}
+  .fl-team-row{grid-template-columns:1fr auto}
+  .fl-team-now{grid-column:1/-1;grid-row:2}
+}
