@@ -81,13 +81,37 @@
 - Oracle 컨테이너의 `healthy`는 "DB를 쓸 수 있음"과 다르다. 재시작 직후엔 PDB가 열렸는지 로그로 확인한다.
 - 실제로 커밋하는 테스트는 실행 중인 앱의 릴레이와 행을 두고 경쟁한다. 테스트 전에 앱을 끈다.
 
+## 강동균에게 전달: 예약 이벤트 기록 방법
+
+> 아래를 그대로 보냅니다. 내 코드가 main에 합쳐진 뒤부터 쓸 수 있습니다.
+
+동균님, 좌석 선점(RSV-02) DB 트랜잭션에 outbox 기록 한 줄만 넣어 주세요 (concurrency.md §2.2 9번).
+
+```java
+private final OutboxRecorder outbox;   // com.jejari.event.outbox, 빈으로 주입
+
+@Transactional
+public void hold(...) {
+    // 1~8. 예약 INSERT, 좌석 재고 HOLD, 카운터, 이력, saga_instance …
+    outbox.recordReservation(reservationId, EventType.SEAT_HELD, new SeatHeld(...));   // 9. 맨 끝에
+}
+```
+
+- **꼭 `@Transactional` 안에서** 불러 주세요. 밖에서 부르면 `IllegalTransactionStateException`이 납니다 (일부러 막아 둠). JPA·JdbcTemplate 어느 쪽 트랜잭션이든 같은 DB 연결이라 그대로 묶입니다.
+- **reservation 행 INSERT·UPDATE 뒤에** 부르면 됩니다 (§0.5). 그래야 같은 예약의 이벤트 순서가 보장됩니다.
+- payload는 아무 record나 넘기면 JSON으로 저장됩니다. `SEAT_HELD` 필드는 기능설계서 8장 표대로:
+  `reservationId, memberId, ciHash, runId, seats[{seatId, segNo}], from, to, seatCount, amount, payDeadlineAt, source`
+- Kafka 발행, 순서, 재시도, 중복 제거는 제 쪽(릴레이·Inbox)이 맡습니다. 그 뒤로는 신경 쓰지 않아도 됩니다.
+- 트랜잭션이 롤백되면 이벤트도 같이 사라지니, 실패 경로에서 따로 지울 필요 없습니다.
+- 자세한 설명: `docs/길동현/features/outbox-릴레이-inbox.md`
+
 ## 다음 할 일
 
 - [x] ~~`com.jejari.event` 패키지와 이벤트 봉투·타입~~
 - [x] ~~Outbox 기록 샤드 계산을 실제 Oracle로 검증 (T32)~~
 - [x] ~~EVT-01~03 커밋·push (`0f9f181`)~~
 - [x] ~~`features/` 기능 문서, `troubleshooting/` 문서 2건, `contribution.md` 갱신~~
-- [ ] 강동균에게 `outbox.recordReservation(...)` 호출 방법 전달
+- [ ] 강동균에게 위 "전달" 내용 보내기 (먼저 내 브랜치를 main에 합치기)
 - [ ] Mock PG (카드번호 끝자리 규칙) → 결제 시작·확정·실패 (§4·§5)
 - [ ] 강동균 예약 코드가 들어오면 Saga (EVT-05)
 - [ ] 실제 `@KafkaListener` 컨슈머 재전달 테스트는 알림 컨슈머를 만들 때 함께
