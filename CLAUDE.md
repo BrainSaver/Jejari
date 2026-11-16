@@ -43,6 +43,7 @@ CONTRIBUTING.md                 깃 규칙
 - ERD HTML 패치는 ERD 반영 담당자(강동균)의 요청일 때만 씁니다. 다른 팀원이 스키마 변경을 요청하면 편집기에서 JSON을 내보내 `docs/erd/exports/`에 올리라고 안내합니다
 - **팀원이 자기 기능을 이해하게 돕습니다** (CONTRIBUTING.md 4장). 코드를 작성하거나 고친 뒤에는 핵심 원리와 이렇게 한 이유를 쉽고 짧게 설명합니다. 기능을 main에 합칠 때 `docs/{이름}/features/`에 짧은 기능 문서를 남기자고 안내하고, 다른 팀원이 1~2분 안에 이해할 수 있는 수준으로 씁니다
 - 버그를 고쳤으면 `docs/templates/troubleshooting.md` 형식으로 `docs/{이름}/troubleshooting/`에 문서 초안을 같이 만들자고 제안합니다
+- **설치·환경·빌드·깃 충돌 문제가 나면 먼저 `docs/*/troubleshooting/`에서 같은 증상을 찾아봅니다** (에러 메시지로 검색). 팀원이 이미 겪고 해결한 문제가 많습니다 (예: Docker 설치 공간 부족, compose 포트 충돌, 공용 문서 충돌, 한글 인코딩)
 
 ## HTML 안의 구조
 
