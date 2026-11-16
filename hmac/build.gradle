@@ -1,0 +1,26 @@
+// 식별정보 가명처리(HMAC) 모듈. Spring에 의존하지 않는 순수 Java 라이브러리라
+// 대기열(A)·회원(D)·로그(D)·인증(E) 어디서든 가져다 쓸 수 있다.
+plugins {
+    id 'java-library'
+}
+
+group = 'com.jejari'
+version = '0.1.0'
+sourceCompatibility = '21'
+targetCompatibility = '21'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.assertj:assertj-core:3.26.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    testLogging { events 'failed'; exceptionFormat 'full' }
+}
