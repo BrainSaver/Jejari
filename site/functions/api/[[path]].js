@@ -419,6 +419,14 @@ export async function onRequest(ctx) {
       case 'POST /revert':
         if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
         return await revert(env, me, body);
+      case 'POST /sync': {
+        // main의 최신 내용을 내 브랜치로 가져온다 (저장 전 자동으로 하던 일을 버튼으로)
+        if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
+        const before = await compare(env, me, MAIN);
+        const p = await prepare(env, me);
+        if (p.error) return json(p, 409);
+        return json({ ok: true, branch: me, sync: p.sync, commits: before.ahead_by || 0 });
+      }
       case 'POST /merge':
         if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
         return await mergeToMain(env, me);
