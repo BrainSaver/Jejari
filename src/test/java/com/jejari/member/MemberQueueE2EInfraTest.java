@@ -3,20 +3,13 @@ package com.jejari.member;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Bean;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
@@ -24,45 +17,22 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import com.jejari.queue.port.OnSaleRunProvider;
 import com.jejari.queue.redis.QueueKeys;
+import com.jejari.support.FullStackInfraTest;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * 가입 → 로그인 → 받은 액세스 토큰으로 대기열 진입까지, 실제 회원(Oracle)으로 이어지는지 확인한다.
- * 운행 정보(B 파트)는 아직 없어 테스트에서만 판매 중인 운행 하나를 넣는다. 회원 정보는 실제 OracleMemberIdentityPort.
+ * 운행 정보(B 파트)는 아직 없어 FullStackInfraTest의 테스트용 판매 운행을 쓴다. 회원 정보는 실제 OracleMemberIdentityPort.
  */
-@Tag("infra")
-@SpringBootTest(properties = {
-		"spring.data.redis.database=15",
-		"jejari.queue.scheduler-enabled=false",
-		"jejari.risk.cache-resync-enabled=false"})
-@AutoConfigureMockMvc
+@FullStackInfraTest
 class MemberQueueE2EInfraTest {
 
-	static final long RUN = 777_001L;
+	static final long RUN = FullStackInfraTest.RUN;
 	static final String PW = "Blue-Whale-42";
 	static final JsonMapper JSON = JsonMapper.builder().build();
-
-	@TestConfiguration
-	static class OnSaleRun {
-		@Bean
-		OnSaleRunProvider testOnSaleRun() {
-			return new OnSaleRunProvider() {
-				@Override
-				public Optional<RunSale> find(long runId) {
-					return runId == RUN ? Optional.of(new RunSale(RUN, true, null)) : Optional.empty();
-				}
-
-				@Override
-				public List<Long> onSaleRunIds() {
-					return List.of(RUN);
-				}
-			};
-		}
-	}
 
 	@Autowired
 	MockMvc mvc;

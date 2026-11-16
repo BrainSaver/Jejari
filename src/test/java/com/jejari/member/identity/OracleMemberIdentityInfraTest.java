@@ -11,10 +11,8 @@ import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -26,16 +24,13 @@ import com.jejari.queue.domain.RiskPenaltyService;
 import com.jejari.queue.port.MemberIdentityPort;
 import com.jejari.queue.port.MemberIdentityPort.MemberIdentity;
 import com.jejari.queue.redis.QueueKeys;
+import com.jejari.support.FullStackInfraTest;
 
 /**
  * 대기열용 회원 정보 조회를 실제 Oracle로 확인하고, A의 RiskPenaltyService와 맞물리는지 본다.
  * {@code docker compose up -d} 뒤 {@code ./gradlew infraTest}. 이 테스트가 만든 회원 행만 지운다.
  */
-@Tag("infra")
-@SpringBootTest(properties = {
-		"spring.data.redis.database=15",
-		"jejari.queue.scheduler-enabled=false",
-		"jejari.risk.cache-resync-enabled=false"})
+@FullStackInfraTest
 class OracleMemberIdentityInfraTest {
 
 	static final SecureRandom RANDOM = new SecureRandom();
