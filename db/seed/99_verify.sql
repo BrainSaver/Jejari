@@ -3,7 +3,7 @@
 
 SET LINESIZE 160
 SET PAGESIZE 100
-COLUMN item   FORMAT A34
+COLUMN item   FORMAT A36
 COLUMN pass   FORMAT A6
 COLUMN detail FORMAT A64
 
@@ -38,12 +38,12 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
            HAVING NOT ((seat_grade = 'GENERAL' AND SUM(CASE WHEN is_window = 'Y' THEN 1 ELSE 0 END) * 2 = COUNT(*))
                     OR (seat_grade = 'FIRST'   AND SUM(CASE WHEN is_window = 'Y' THEN 1 ELSE 0 END) * 3 = COUNT(*) * 2)))
   UNION ALL
-  SELECT '11. 운행 9건 (명절 8 + 개발 1)',     CASE WHEN COUNT(*) = 9   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_run
+  SELECT '11. 운행 11건 (명절 8 + 평시 3)',    CASE WHEN COUNT(*) = 11  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_run
   UNION ALL
-  SELECT '12. ON_SALE 운행 1건 이상',          CASE WHEN COUNT(*) >= 1  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
+  SELECT '12. ON_SALE 운행 2건 (9001·9002)',   CASE WHEN COUNT(*) = 2   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
     FROM train_run WHERE status = 'ON_SALE'
   UNION ALL
-  SELECT '13. 정차 45건 (운행 9 × 역 5)',      CASE WHEN COUNT(*) = 45  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_stop
+  SELECT '13. 정차 55건 (운행 11 × 역 5)',     CASE WHEN COUNT(*) = 55  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_stop
   UNION ALL
   SELECT '14. 운행마다 stop_order 1~5',        CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,      '어긋난 운행 ' || COUNT(*) || '건'
     FROM (SELECT run_id FROM train_stop GROUP BY run_id
@@ -65,7 +65,7 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
       ON g.from_station_id = f.from_station_id AND g.to_station_id = f.to_station_id
      AND f.seat_grade = 'FIRST' AND g.seat_grade = 'GENERAL' AND f.amount <= g.amount
   UNION ALL
-  SELECT '18. 매수 제한: 행사 3 + 상시 2',     CASE WHEN COUNT(*) = 5   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
+  SELECT '18. 매수 제한: 행사 4 + 상시 3',     CASE WHEN COUNT(*) = 7   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
     FROM purchase_limit_policy WHERE policy_id >= 4
   UNION ALL
   SELECT '19. 지금 유효한 PER_RUN 정책 있음',  CASE WHEN COUNT(*) >= 1  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
@@ -76,9 +76,34 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
   UNION ALL
   SELECT '20. 세션 시간대 +09:00 (T34)',       CASE WHEN SESSIONTIMEZONE IN ('+09:00', 'Asia/Seoul') THEN 1 ELSE 0 END,
          'SESSIONTIMEZONE = ' || SESSIONTIMEZONE FROM dual
+  UNION ALL
+  SELECT '21. 지금 유효한 PER_DAY 정책 있음',   CASE WHEN COUNT(*) >= 1  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
+    FROM purchase_limit_policy
+   WHERE scope = 'PER_DAY'
+     AND (valid_from IS NULL OR valid_from <= SYSTIMESTAMP)
+     AND (valid_to   IS NULL OR valid_to   >= SYSTIMESTAMP)
+  UNION ALL
+  SELECT '22. 평시 오픈 = 출발 2개월 전 7시', CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,
+         '규칙에 어긋난 운행 ' || COUNT(*) || '건'
+    FROM train_run
+   WHERE sale_event_id IS NULL
+     AND sale_open_at <> CAST(ADD_MONTHS(run_date, -2) AS TIMESTAMP) + INTERVAL '7' HOUR
+  UNION ALL
+  SELECT '23. status가 오픈 시각과 일관',       CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,
+         '어긋난 운행 ' || COUNT(*) || '건'
+    FROM train_run
+   WHERE (status = 'ON_SALE'   AND sale_open_at >  SYSTIMESTAMP)
+      OR (status = 'SCHEDULED' AND sale_open_at <= SYSTIMESTAMP)
 ) ORDER BY TO_NUMBER(REGEXP_SUBSTR(item, '^[0-9]+'));
 
--- 참고: 서울~부산 운임과 하행 101 정차 시각
+-- 참고: 매수 제한 정책, 서울~부산 운임, 하행 101 정차 시각
+SELECT NVL(TO_CHAR(sale_event_id), '상시') AS 행사, scope, max_seats AS 한도
+  FROM purchase_limit_policy WHERE policy_id >= 4 ORDER BY sale_event_id NULLS LAST, scope;
+
+SELECT run_id, train_id, TO_CHAR(run_date, 'YYYY-MM-DD') AS 운행일,
+       TO_CHAR(sale_open_at, 'YYYY-MM-DD HH24:MI') AS 예매오픈, status
+  FROM train_run ORDER BY run_id;
+
 SELECT seat_grade, amount FROM fare
  WHERE from_station_id = '0001' AND to_station_id = '0020' ORDER BY seat_grade;
 

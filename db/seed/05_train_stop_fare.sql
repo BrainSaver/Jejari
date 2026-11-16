@@ -57,24 +57,25 @@ COMMIT;
 --   일반실 = 2,800원 + 125원/km, 특실 = 일반실 × 1.4
 --   서울~부산 441.7km → 일반 58,000원 / 특실 81,200원
 --   노선 1의 역 5개 중 서로 다른 순서쌍 20개 × 등급 2 = 40행
+--   fare_id = 등급 기준값(일반 0 / 특실 1000) + 출발역 순번 × 10 + 도착역 순번.
+--   ROW_NUMBER()를 쓰면 일부만 적재된 뒤 다시 실행할 때 PK가 어긋날 수 있어 데이터에서 계산합니다.
 MERGE INTO fare t
 USING (
-  SELECT ROW_NUMBER() OVER (ORDER BY seat_grade, from_station_id, to_station_id) AS fare_id,
-         'KTX' AS train_kind, seat_grade, from_station_id, to_station_id, amount,
-         DATE '2026-01-01' AS valid_from, CAST(NULL AS DATE) AS valid_to
-    FROM (
-      SELECT g.seat_grade,
-             a.station_id AS from_station_id,
-             b.station_id AS to_station_id,
-             ROUND((2800 + 125 * ABS(a.distance_from_origin_km - b.distance_from_origin_km))
-                   * g.rate / 100) * 100 AS amount
-        FROM route_station a
-        JOIN route_station b
-          ON b.route_id = a.route_id AND b.station_id <> a.station_id
-       CROSS JOIN (SELECT 'GENERAL' AS seat_grade, 1.0 AS rate FROM dual UNION ALL
-                   SELECT 'FIRST',                 1.4       FROM dual) g
-       WHERE a.route_id = 1
-    )
+  SELECT g.base_id + a.station_order * 10 + b.station_order AS fare_id,
+         'KTX'                 AS train_kind,
+         g.seat_grade,
+         a.station_id          AS from_station_id,
+         b.station_id          AS to_station_id,
+         ROUND((2800 + 125 * ABS(a.distance_from_origin_km - b.distance_from_origin_km))
+               * g.rate / 100) * 100 AS amount,
+         DATE '2026-01-01'     AS valid_from,
+         CAST(NULL AS DATE)    AS valid_to
+    FROM route_station a
+    JOIN route_station b
+      ON b.route_id = a.route_id AND b.station_id <> a.station_id
+   CROSS JOIN (SELECT 'GENERAL' AS seat_grade, 1.0 AS rate,    0 AS base_id FROM dual UNION ALL
+               SELECT 'FIRST',                 1.4,         1000           FROM dual) g
+   WHERE a.route_id = 1
 ) s ON (    t.train_kind      = s.train_kind
         AND t.seat_grade      = s.seat_grade
         AND t.from_station_id = s.from_station_id

@@ -17,10 +17,10 @@ cd db/seed
 sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @01_station_route.sql
 sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @02_car_type_train_seat.sql
 sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @03_sale_event_run.sql
-sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @04_dev_run.sql
+sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @04_regular_run.sql
 sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @05_train_stop_fare.sql
 
-# 3. 검증 — 20개 항목이 모두 OK여야 합니다
+# 3. 검증 — 23개 항목이 모두 OK여야 합니다
 sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @99_verify.sql
 ```
 
@@ -42,9 +42,9 @@ FK 때문에 reset이 실패하므로 그 데이터를 먼저 지웁니다.
 | `train_car` | 20 | 열차당 10량 (1호차 특실, 2~10호차 일반실) |
 | `seat` | 1,080 | 열차당 540석 (특실 36 + 일반 504) |
 | `sale_event` | 1 | id 2 「시연 명절」 연휴 = 실행일 + 30~33일, 예매 오픈 = 다음날 07:00 |
-| `purchase_limit_policy` | 5 | 행사 2 전용 3건(1회 4 · 열차당 4 · 명절 8) + 상시 2건(1회 4 · 열차당 4) |
-| `train_run` | 9 | 명절 8건(열차 2 × 4일, `SCHEDULED`) + 개발용 1건(id 9001, `ON_SALE`) |
-| `train_stop` | 45 | 운행당 5역. 진행 방향 기준 `stop_order` 1~5 |
+| `purchase_limit_policy` | 7 | 행사 2 전용 4건(1회 4 · 열차당 4 · **1일 20** · 명절 8) + 상시 3건(1회 9 · 열차당 10 · 1일 20) |
+| `train_run` | 11 | 명절 8건(`SCHEDULED`) + 평시 3건(9001·9002 `ON_SALE`, 9003 내일 오픈) |
+| `train_stop` | 55 | 운행당 5역. 진행 방향 기준 `stop_order` 1~5 |
 | `fare` | 40 | 역 순서쌍 20 × 등급 2 |
 
 ## 값을 이렇게 정한 이유
@@ -75,6 +75,16 @@ FK 때문에 reset이 실패하므로 그 데이터를 먼저 지웁니다.
 + 중간 정차 2분씩. 운임 일반실 = 2,800원 + 125원/km, 특실 = 일반실 × 1.4, 100원 단위
 반올림. 서울~부산 441.7 km → 2시간 52분(주행 164분 + 정차 8분), 일반 58,000원 / 특실 81,200원.
 
+**매수 제한·예매 오픈은 코레일 실제 규칙** — 개인 구입 제한은 열차당 최대 10석·하루 최대
+20석이고, 일반 승차권은 출발일 2개월 전 오전 7시에 오픈합니다
+([KTX 예매 안내](https://kbthink.com/life/leisure/ktx-booking-guide.html),
+[코레일 예매제도 개선](https://www.koreaittimes.com/news/articleView.html?idxno=138642)).
+"하루 20매"를 담을 `PER_DAY` scope가 스키마에 없어서 ERD v11 패치로 추가했습니다
+(`purchase_limit_policy`·`purchase_counter`·Redis `limit:day:*`, 절차는 동시성 §10).
+평시 운행의 오픈 시각은 손으로 넣지 않고 `ADD_MONTHS(run_date, -2) + 07:00`으로 계산하고,
+`status`도 그 값과 지금 시각을 비교해 정합니다 (검증 22·23번). 명절 특별예매는 통상 더
+조이므로 행사 정책(1회 4 · 열차당 4 · 명절 전체 8)이 상시 정책보다 우선합니다 (§10.6).
+
 **날짜를 상대값으로** — 고정 날짜로 두면 며칠 뒤 모든 운행이 과거가 되어 시연이 안 됩니다.
 그래서 실행일 기준으로 계산하고, 이미 있는 행사·운행의 날짜는 덮어쓰지 않습니다
 (날짜를 다시 잡으려면 `99_reset.sql`).
@@ -90,12 +100,15 @@ FK 때문에 reset이 실패하므로 그 데이터를 먼저 지웁니다.
 | `distance_from_origin_km` | 경부선 영업거리 | 역간 운행거리 파일의 누적거리 |
 | `car_type_code`, `seat_count` | `KTX-GEN`/`KTX-FST`, 56/36석으로 가정 | 차량유형코드 파일의 실제 코드값과 좌석 수 |
 | `latitude`, `longitude` | 비워 둠 (선택 컬럼) | 역 좌표가 있으면 채움 |
+| 상시 `PER_RESERVATION` 9매 | 코레일 1회 예매 인원 상한으로 알려진 값 — **검색으로 확인 못 함** | 실제 1회 매수 상한 |
 
 ## 다른 파트에 넘기는 것
 
 | 상대 | 내용 |
 |---|---|
 | C 길동현 | 결제 금액은 `fare`에서 읽습니다. 선점 시점 운임으로 고정(`reservation.total_amount`, 기능설계서 RSV-02) |
-| D 강다인 | `cancel_fee_policy`는 DDL 예시 5건이 모두 `sale_event_id = 1`(지난 행사)입니다. 시연 행사 2나 개발용 운행에서 수수료를 계산하려면 상시 정책(`sale_event_id` NULL) 세트가 필요합니다 — CNL-01·02 담당이 정해 주세요 |
+| D 강다인 | `cancel_fee_policy`는 DDL 예시 5건이 모두 `sale_event_id = 1`(지난 행사)입니다. 시연 행사 2나 평시 운행에서 수수료를 계산하려면 상시 정책(`sale_event_id` NULL) 세트가 필요합니다 — CNL-01·02 담당이 정해 주세요 |
+| D 강다인 | 취소표 제안(§9.5)의 대기자 한도 검사에 **`PER_DAY`가 추가**됐습니다. `PER_RUN`·`PER_HOLIDAY`만 보면 1일 한도를 넘겨 제안됩니다 |
+| C 길동현 | `PER_DAY` scope를 `concurrency.md` §10에 넣었습니다 (구매일 기준). 절차 문서를 고쳤으니 봐 주세요 |
 | E 조영준 | Docker Compose에서 Oracle 컨테이너에 `TZ=Asia/Seoul`이 필요합니다 (동시성 §0.7, 검증 20번) |
-| A 김성원 | 대기열 테스트용 `ON_SALE` 운행은 `run_id = 9001`입니다 |
+| A 김성원 | 대기열 테스트용 `ON_SALE` 운행은 `run_id = 9001`(하행)·`9002`(상행)입니다 |
