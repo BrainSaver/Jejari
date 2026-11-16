@@ -8,6 +8,7 @@ import java.lang.annotation.Target;
 import org.junit.jupiter.api.Tag;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
 
 /**
  * 앱 전체(Oracle·Redis·MongoDB)를 띄우는 통합 테스트의 공통 설정. {@code docker compose up -d} 뒤 {@code ./gradlew infraTest}.
@@ -30,6 +31,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 		"jejari.queue.scheduler-enabled=false",
 		"jejari.risk.cache-resync-enabled=false"})
 @AutoConfigureMockMvc
+@Import(BehaviorProbeController.class) // 행동 로그 통합 테스트용 엔드포인트 (테스트에만 있음)
 public @interface FullStackInfraTest {
 
 	/** 시드(db/seed)의 상시 ON_SALE 운행 */
