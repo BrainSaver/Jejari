@@ -674,3 +674,7 @@ input[type=date]{font:inherit;color:var(--fg);background:var(--bg);border:1px so
 .fl-bar-txt{flex:1 1 260px;min-width:0}
 .fl-bar-acts{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
 .fl-bar-acts .btn{white-space:nowrap}
+
+.rm-log-adm{display:inline-flex;gap:3px;margin-left:6px}
+.fl-ibtn.del.armed{background:var(--del-fg);color:#fff;border-color:var(--del-fg)}
+.rm-log.adm{grid-template-columns:110px minmax(0,1fr) auto auto}

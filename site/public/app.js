@@ -1685,11 +1685,43 @@ function rmDepsView(by) {
     ${list.slice(0, 8).map((x) => `<button class="rm-link" data-open="${x.id}"><b>${esc(x.code)}</b> ${esc(x.title)}</button>`).join('') || '<p class="muted" style="margin:4px 0">없음</p>'}${list.length > 8 ? `<p class="muted" style="margin:4px 0">외 ${list.length - 8}개</p>` : ''}</div>`).join('')}</div>`;
 }
 
+// 관리자: 기록 고치기·지우기 버튼 연결. after = 끝난 뒤 다시 그리기
+function rmLogBind(root, after) {
+  if (!S.admin) return;
+  const find = (seq) => (RM.data.log || []).find((x) => x.seq === seq) || (RM.lastItemLog || []).find((x) => x.seq === seq);
+  $$('[data-ldel]', root).forEach((b) => {
+    let armed = false, t;
+    b.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      if (!armed) { armed = true; b.classList.add('armed'); b.title = '한 번 더 누르면 지워요'; toast('한 번 더 누르면 이 기록을 지워요.'); t = setTimeout(() => { armed = false; b.classList.remove('armed'); }, 4000); return; }
+      clearTimeout(t); b.disabled = true;
+      try { await api('/roadmap/log-delete', { body: { seq: Number(b.dataset.ldel) } }); toast('기록을 지웠어요.'); await rmLoad(); after ? after() : rmRender(); } catch (x) { toast(x.message); b.disabled = false; }
+    });
+  });
+  $$('[data-ledit]', root).forEach((b) => b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const seq = Number(b.dataset.ledit); const e = find(seq);
+    const isNote = e && e.act === 'note';
+    const line = root.querySelector(`.rm-log[data-seq="${seq}"] .rm-log-what`);
+    const cur = e ? (isNote ? e.text || '' : e.memo || (line ? line.textContent.trim() : '')) : '';
+    const back = RM.modal;
+    const m = openModal(`<h2>기록 고치기</h2><p class="muted">${isNote ? '남긴 말 본문을 고쳐요.' : '최근 변경에 보이는 설명을 이 글로 바꿔요. 비우면 원래 설명으로 돌아가요.'}</p>
+      <textarea class="rm-nowta" id="logTa" rows="4" maxlength="2000">${esc(cur)}</textarea><p class="err" id="logErr"></p>
+      <div class="row"><button class="btn plain" data-x>취소</button><button class="btn" id="logGo">저장</button></div>`);
+    const reopen = () => { if (back && back.kind === 'card') rmOpen(back.id); else if (back && back.kind === 'area') rmArea(back.k); else { closeModal(); } };
+    $('[data-x]', m).addEventListener('click', reopen);
+    $('#logGo', m).addEventListener('click', async () => {
+      try { await api('/roadmap/log-edit', { body: { seq, text: $('#logTa', m).value } }); toast('고쳤어요.'); await rmLoad(); rmRender(); reopen(); } catch (x) { $('#logErr', m).textContent = x.message; }
+    });
+  }));
+}
+
 function rmLogLine(e, by, withTitle = true) {
   const it = by.get(e.item);
   const name = withTitle ? (it ? `<button class="rm-link sm" data-open="${it.id}">${esc(e.code || '')} ${esc(e.title || '')}</button>` : `<b>${esc(e.code || '')} ${esc(e.title || '')}</b>`) : '';
   let what = '';
-  if (e.act === 'seed') what = esc(e.text);
+  if (e.memo) what = `${name} <span class="rm-note-text">${esc(e.memo)}</span> <span class="muted">(수정됨)</span>`;
+  else if (e.act === 'seed') what = esc(e.text);
   else if (e.act === 'add') what = `${name} 추가`;
   else if (e.act === 'delete') what = `${name} 삭제`;
   else if (e.act === 'flow') what = `흐름도 수정${(e.added || []).length ? ` · 칸 추가: ${esc(e.added.join(', '))}` : ''}${(e.removed || []).length ? ` · 칸 삭제: ${esc(e.removed.join(', '))}` : ''}${e.edges ? ` · 연결선 ${e.edges[0]}→${e.edges[1]}개` : ''}`;
@@ -1712,7 +1744,8 @@ function rmLogLine(e, by, withTitle = true) {
     }).join(', ');
     what = `${name} ${ch}`;
   }
-  return `<div class="rm-log"><span class="rm-log-who"><span class="dot" style="background:${colorOf(e.who)}"></span> ${rmWho(e.who)}</span><span class="rm-log-what">${what}</span><span class="muted rm-log-at" title="${kst(new Date(e.at).toISOString(), true)}">${ago(e.at)}</span></div>`;
+  const adm = S.admin ? `<span class="rm-log-adm"><button class="fl-ibtn" data-ledit="${e.seq}" title="이 기록 고치기" aria-label="이 기록 고치기">${svgI('pencil', 14)}</button><button class="fl-ibtn del" data-ldel="${e.seq}" title="이 기록 지우기 (두 번 누르기)" aria-label="이 기록 지우기">${svgI('trash', 14)}</button></span>` : '';
+  return `<div class="rm-log${S.admin ? ' adm' : ''}" data-seq="${e.seq}"><span class="rm-log-who"><span class="dot" style="background:${colorOf(e.who)}"></span> ${rmWho(e.who)}</span><span class="rm-log-what">${what}</span><span class="muted rm-log-at" title="${kst(new Date(e.at).toISOString(), true)}">${ago(e.at)}</span>${adm}</div>`;
 }
 
 // ---------- 흐름도 (예매 흐름 위에 기능 영역을 놓고, 칸마다 맡은 사람·진행률·지금 하는 일) ----------
@@ -2033,7 +2066,7 @@ function rmRender() {
   else if (RM.view === 'deps') body = rmDepsView(by);
   else {
     const log = RM.data.log;
-    body = log.length ? `<div class="rm-logs">${log.map((e) => rmLogLine(e, by)).join('')}</div><p class="muted">최근 ${log.length}건까지 보여요. 카드를 열면 그 카드의 전체 기록이 있어요.</p>` : '<p class="empty">아직 기록이 없어요.</p>';
+    body = log.length ? `<div class="rm-logs">${log.map((e) => rmLogLine(e, by)).join('')}</div><p class="muted">최근 ${log.length}건까지 보여요. 체크·풀기는 3분 뒤에 올라오고, 3분 안에 되돌리면 남지 않아요. 카드를 열면 그 카드의 전체 기록이 있어요.${S.admin ? ' 팀장은 줄마다 연필·휴지통으로 기록을 고치거나 지울 수 있어요.' : ''}</p>` : '<p class="empty">아직 기록이 없어요.</p>';
   }
   main.innerHTML = `<div class="wide rm">
     <div class="rm-head"><div><h1 class="page">로드맵</h1>
@@ -2065,6 +2098,7 @@ function rmBind(root) {
   });
   $$('[data-add]', root).forEach((b) => b.addEventListener('click', () => rmEdit(null, b.dataset.add)));
   $$('[data-rmask]', root).forEach((b) => b.addEventListener('click', () => rmAsk(b.dataset.rmask)));
+  rmLogBind(root);
   const mb = $('#rmMine', root); if (mb) mb.addEventListener('click', () => { RM.f.mine = !RM.f.mine; save(); rmRender(); });
   const lg = $('[data-login]', root); if (lg) lg.addEventListener('click', () => loginModal(() => rmRender()));
   $$('[data-fpart]', root).forEach((b) => b.addEventListener('click', () => {
@@ -2095,15 +2129,35 @@ async function rmCheck(id, p) {
   const done = !it.roles[p].done;
   it.roles[p] = done ? { done: true, by: S.me, at: Date.now() } : { done: false, by: null, at: null }; // 바로 보이게
   const inModal = !$('#modalBack').hidden;
-  const again = () => (RM.modal && RM.modal.kind === 'area' ? rmArea(RM.modal.k) : rmOpen(id));
-  if (inModal) again(); else rmRender();
+  if (inModal) rmPatch(id); else rmRender();
   try {
-    const r = await api('/roadmap/check', { body: { id, part: p, done } });
+    await api('/roadmap/check', { body: { id, part: p, done } });
     toast(`${it.code || it.title}: ${partName(p)} ${done ? '했음' : '체크 풂'}`);
     await rmLoad();
     rmRender();
-    if (inModal && !$('#modalBack').hidden) again();
-  } catch (x) { toast(x.message); await rmLoad(); rmRender(); }
+    if (inModal && !$('#modalBack').hidden) rmPatch(id);
+  } catch (x) { toast(x.message); await rmLoad(); rmRender(); if (inModal) rmPatch(id); }
+}
+
+// 열린 창 안에서 그 카드의 체크 칸·상태만 바꾼다 (창 전체를 다시 그리면 크기가 흔들림)
+function rmPatch(id) {
+  const m = $('#modal'); const it = rmById().get(id); if (!it) return;
+  const by = rmById();
+  const frag = (html) => { const t = document.createElement('div'); t.innerHTML = html.trim(); return t.firstElementChild; };
+  const bindChk = (root) => $$('[data-chk]', root).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); rmCheck(b.dataset.chk, b.dataset.p); }));
+  // 칸 상세 창의 카드
+  $$(`.rm-card[data-open="${id}"]`, m).forEach((c) => {
+    const s = $('.rm-stage', c); const n = frag(rmCard(it, by, { stage: s ? Number(s.textContent.replace(/\D/g, '')) : 0 }));
+    c.replaceWith(n); bindChk(n); n.addEventListener('click', () => { RM.back = RM.modal && RM.modal.k; rmOpen(id); });
+  });
+  // 카드 창의 파트 칸
+  $$(`.rm-role [data-chk="${id}"]`, m).forEach((b) => {
+    const p = b.dataset.p, r = it.roles[p]; if (!r) return;
+    const row = b.closest('.rm-role');
+    row.innerHTML = `${roleChip(it, p, true)}<span class="muted">${r.done ? `${esc(S.members[r.by] || r.by || '')} · ${kst(new Date(r.at || it.updatedAt).toISOString())}` : '아직 안 함'}</span>`;
+    bindChk(row);
+  });
+  const st = $('.rm-detail-head .rm-st', m); if (st && RM.modal && RM.modal.kind === 'card') st.outerHTML = stPill(it);
 }
 
 function rmAfterClose() { if (RM.stale) rmLoad().then(rmRender).catch(() => {}); }
@@ -2133,6 +2187,8 @@ function rmOpen(id) {
   const deps = (it.deps || []).map((d) => by.get(d)).filter(Boolean);
   const after = RM.data.items.filter((x) => (x.deps || []).includes(it.id));
   const link = (x) => `<button class="rm-link" data-go="${x.id}"><b>${esc(x.code)}</b> ${esc(x.title)} ${stPill(x)}</button>`;
+  const same = !$('#modalBack').hidden && $('#rmNotes') && $('#rmNotes').dataset.id === id;
+  const keep = same ? { top: $('#modal').scrollTop, draft: ($('#rmNote') || {}).value || '', to: ($('#rmTo') || {}).value } : null;
   const m = openModal(`<div class="rm-detail">
     <div class="rm-detail-head"><span class="muted">${esc(areaLabel(it.area))}</span>${it.code ? `<span class="rm-code">${esc(it.code)}</span>` : ''}<span class="badge">${it.prio}</span>${it.week ? `<span class="muted">${it.week}주차</span>` : ''}${it.due ? `<span class="muted">마감 ${esc(it.due)}</span>` : ''}${stPill(it)}</div>
     <h2>${esc(it.title)}</h2>
@@ -2149,9 +2205,10 @@ function rmOpen(id) {
       <textarea id="rmNote" rows="3" maxlength="2000" placeholder="예: 응답에 seat_no 꼭 넣어 주세요 / 오늘 여기까지 했어요 / 이거 막혔어요"></textarea>
       <div class="rm-noteacts"><label class="btn sm plain">사진 고르기<input type="file" id="rmFile" accept="image/*" hidden></label><span id="rmImgInfo" class="muted"></span><span style="flex:1"></span><button class="btn sm" id="rmNoteGo">남기기</button></div>
       <img id="rmImgPrev" class="rm-img-prev" hidden alt="붙일 사진 미리보기"></div>` : '<p class="muted">로그인하면 말을 남길 수 있어요.</p>'}
-    <div id="rmNotes"><p class="loading">불러오는 중…</p></div>
+    <div id="rmNotes" data-id="${it.id}">${(RM.notesHtml && RM.notesHtml.id === it.id) ? RM.notesHtml.html : '<p class="loading">불러오는 중…</p>'}</div>
     <div class="row">${S.me ? '<button class="btn sm danger" id="rmDel">삭제</button><span style="flex:1"></span><button class="btn plain" id="rmEditBtn">고치기</button>' : ''}${back ? `<button class="btn plain" data-back>← ${esc(areaLabel(back))}</button>` : ''}<button class="btn plain" data-x>닫기</button></div>
   </div>`, { wide: true });
+  if (keep) { const ta = $('#rmNote', m); if (ta) ta.value = keep.draft; const to = $('#rmTo', m); if (to && keep.to != null) to.value = keep.to; m.scrollTop = keep.top; }
   $('[data-x]', m).addEventListener('click', () => { RM.modal = null; closeModal(); rmAfterClose(); });
   const bk = $('[data-back]', m); if (bk) bk.addEventListener('click', () => rmArea(back));
   $$('[data-go]', m).forEach((b) => b.addEventListener('click', () => rmOpen(b.dataset.go)));
@@ -2223,17 +2280,20 @@ async function rmNotes(m, it) {
   const box = $('#rmNotes', m);
   let log;
   try { log = (await api('/roadmap/item-log' + qs({ id: it.id, t: Date.now() }))).log; } catch (x) { box.innerHTML = `<p class="err">${esc(x.message)}</p>`; return; }
+  RM.lastItemLog = log;
   if (!box.isConnected) return;
   const by = rmById();
   const notes = log.filter((e) => e.act === 'note');
   const rest = log.filter((e) => e.act !== 'note');
   box.innerHTML = `${notes.map((e) => `<div class="rm-noteitem">
       <div class="rm-noteitem-h"><span class="dot" style="background:${colorOf(e.who)}"></span> <b>${rmWho(e.who)}</b>${e.to ? ` <span class="rm-to">→ ${esc(partName(e.to))}</span>` : ''} <span class="muted">${kst(new Date(e.at).toISOString())}</span>
-      ${e.who === S.me ? `<button class="btn sm plain" data-ndel="${e.seq}">지우기</button>` : ''}</div>
+      ${e.who === S.me || S.admin ? `<button class="btn sm plain" data-ndel="${e.seq}">지우기</button>` : ''}${S.admin ? `<button class="btn sm plain" data-ledit="${e.seq}">고치기</button>` : ''}${e.editedBy ? ' <span class="muted">(수정됨)</span>' : ''}</div>
       ${e.text ? `<div class="rm-note-body">${esc(e.text)}</div>` : ''}
       ${e.img ? (S.me ? `<a href="/api/roadmap/img?id=${e.img}" target="_blank" rel="noopener"><img class="rm-img" loading="lazy" src="/api/roadmap/img?id=${e.img}" alt="${esc(rmWho(e.who))}의 스크린샷"></a>` : '<p class="muted">로그인하면 사진이 보여요.</p>') : ''}
     </div>`).join('') || '<p class="muted">아직 남긴 말이 없어요.</p>'}
     ${rest.length ? `<details class="rm-hist"><summary>바뀐 기록 ${rest.length}건</summary>${rest.map((e) => rmLogLine(e, by, false)).join('')}</details>` : ''}`;
+  RM.notesHtml = { id: it.id, html: box.innerHTML };
+  rmLogBind(box, () => rmNotes(m, it));
   $$('[data-ndel]', box).forEach((b) => twoStep(b, '한 번 더', async () => {
     try { await api('/roadmap/note-delete', { body: { seq: Number(b.dataset.ndel) } }); RM.stale = true; rmNotes(m, it); } catch (x) { toast(x.message); }
   }));

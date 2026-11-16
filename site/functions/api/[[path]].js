@@ -444,7 +444,7 @@ export async function onRequest(ctx) {
 
       // 로드맵 (보기는 누구나, 바꾸기·사진은 로그인)
       case 'GET /roadmap': case 'GET /roadmap/rev': case 'GET /roadmap/item-log': case 'GET /roadmap/img': case 'GET /roadmap/flow-default':
-      case 'POST /roadmap/save': case 'POST /roadmap/delete': case 'POST /roadmap/note': case 'POST /roadmap/note-delete': case 'POST /roadmap/check': case 'POST /roadmap/now': case 'POST /roadmap/flow': {
+      case 'POST /roadmap/save': case 'POST /roadmap/delete': case 'POST /roadmap/note': case 'POST /roadmap/note-delete': case 'POST /roadmap/check': case 'POST /roadmap/now': case 'POST /roadmap/flow': case 'POST /roadmap/log-delete': case 'POST /roadmap/log-edit': {
         const rm = roadmap(env);
         if (!rm) return fail(500, 'NO_D1', 'D1 바인딩 AI_DB가 없어 로드맵을 저장할 수 없어요.');
         const out = (r) => (r.error ? json(r, r.status) : json(r));
@@ -465,7 +465,12 @@ export async function onRequest(ctx) {
         if (route === 'POST /roadmap/flow') return out(await rm.saveFlow(me, body.flow, body.v));
         if (route === 'POST /roadmap/now') return out(await rm.setNow(me, String(body.area || ''), String(body.part || ''), body.text));
         if (route === 'POST /roadmap/check') return out(await rm.check(me, String(body.id || ''), String(body.part || ''), !!body.done));
-        return out(await rm.noteDelete(me, body.seq));
+        const admin = me === adminOf(env);
+        if (route === 'POST /roadmap/log-delete' || route === 'POST /roadmap/log-edit') {
+          if (!admin) return fail(403, 'FORBIDDEN', '기록을 지우고 고치는 건 팀장만 할 수 있어요.');
+          return out(route === 'POST /roadmap/log-delete' ? await rm.logDelete(me, body.seq) : await rm.logEdit(me, body.seq, body.text));
+        }
+        return out(await rm.noteDelete(me, body.seq, admin));
       }
       default:
         return fail(404, 'NO_ROUTE', '없는 API예요.');

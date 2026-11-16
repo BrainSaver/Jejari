@@ -132,6 +132,8 @@ async function rev(db) {
   const r = await db.prepare('SELECT MAX(seq) AS s FROM roadmap_log').first();
   return (r && r.s) || 0;
 }
+// 체크·풀기는 최근 변경에 3분 뒤에 보이고, 그 안에 되돌리면 둘 다 남지 않는다
+const QUIET_MS = 3 * 60 * 1000;
 const addLog = (db, who, item, act, data) => db.prepare('INSERT INTO roadmap_log (at, who, item, act, data) VALUES (?1, ?2, ?3, ?4, ?5)')
   .bind(Date.now(), who, item, act, JSON.stringify(data));
 
@@ -234,6 +236,15 @@ export function roadmap(env) {
       .bind(now, JSON.stringify(data), cur.id, cur.v).run();
     if (!r.meta || !r.meta.changes) return null;
     const act = changes.every((c) => c[0] === 'check') ? 'check' : 'edit';
+    if (act === 'check' && changes.length === 1) {
+      const last = await db.prepare('SELECT seq, at, who, act, data FROM roadmap_log WHERE item = ?1 ORDER BY seq DESC LIMIT 1').bind(cur.id).first();
+      const lc = last && last.act === 'check' && last.who === me && now - last.at < QUIET_MS ? ((parse(last.data) || {}).changes || []) : [];
+      if (lc.length === 1 && lc[0][1] === changes[0][1] && !!lc[0][2] !== !!changes[0][2]) {
+        // 다른 화면이 새로 불러오도록 숨은 표시를 남긴다 (rev = MAX(seq))
+        await db.batch([db.prepare('DELETE FROM roadmap_log WHERE seq = ?1').bind(last.seq), addLog(db, me, null, 'hide', { seq: last.seq })]);
+        return { item: { ...data, v: cur.v + 1 } };
+      }
+    }
     await addLog(db, me, cur.id, act, { title: data.title, code: data.code, changes }).run();
     return { item: { ...data, v: cur.v + 1 } };
   }
@@ -243,7 +254,7 @@ export function roadmap(env) {
       await init(db);
       const [items, logs, r, notes, now] = await Promise.all([
         db.prepare('SELECT v, data FROM roadmap_item').all(),
-        db.prepare(`SELECT seq, at, who, item, act, data FROM roadmap_log WHERE act <> 'unnote' ORDER BY seq DESC LIMIT ${LOG_LIMIT}`).all(),
+        db.prepare(`SELECT seq, at, who, item, act, data FROM roadmap_log WHERE act NOT IN ('unnote', 'hide') AND NOT (act = 'check' AND at > ?1) ORDER BY seq DESC LIMIT ${LOG_LIMIT}`).bind(Date.now() - QUIET_MS).all(),
         rev(db),
         db.prepare("SELECT seq, at, who, item, data FROM roadmap_log WHERE act = 'note' ORDER BY seq").all(),
         db.prepare('SELECT area, part, text, who, at FROM roadmap_now').all(),
@@ -410,16 +421,39 @@ export function roadmap(env) {
       await db.batch(stmts);
       return { ok: true };
     },
-    async noteDelete(me, seq) {
+    async noteDelete(me, seq, admin) {
       await init(db);
       const r = await db.prepare("SELECT seq, who, data FROM roadmap_log WHERE seq = ?1 AND act = 'note'").bind(Number(seq)).first();
       if (!r) return { error: 'GONE', status: 404, message: '이미 지워진 메모예요.' };
-      if (r.who !== me) return { error: 'NOT_MINE', status: 403, message: '내가 쓴 메모만 지울 수 있어요.' };
+      if (r.who !== me && !admin) return { error: 'NOT_MINE', status: 403, message: '내가 쓴 메모만 지울 수 있어요.' };
       const d = parse(r.data) || {};
       // 지운 것도 다른 사람 화면이 새로 불러오도록 기록을 남긴다 (화면 피드에서는 숨김)
       const stmts = [db.prepare('DELETE FROM roadmap_log WHERE seq = ?1').bind(r.seq), addLog(db, me, null, 'unnote', { seq: r.seq })];
       if (d.img) stmts.push(db.prepare('DELETE FROM roadmap_img WHERE id = ?1').bind(d.img));
       await db.batch(stmts);
+      return { ok: true };
+    },
+    // 관리자(팀장)만: 기록 한 줄 지우기 / 글 고치기 (남긴 말은 본문, 나머지는 보이는 설명을 바꿈)
+    async logDelete(me, seq) {
+      await init(db);
+      const r = await db.prepare("SELECT seq, act, data FROM roadmap_log WHERE seq = ?1 AND act NOT IN ('unnote', 'hide')").bind(Number(seq)).first();
+      if (!r) return { error: 'GONE', status: 404, message: '이미 지워진 기록이에요.' };
+      const d = parse(r.data) || {};
+      const stmts = [db.prepare('DELETE FROM roadmap_log WHERE seq = ?1').bind(r.seq), addLog(db, me, null, 'hide', { seq: r.seq, by: 'admin' })];
+      if (r.act === 'note' && d.img) stmts.push(db.prepare('DELETE FROM roadmap_img WHERE id = ?1').bind(d.img));
+      await db.batch(stmts);
+      return { ok: true };
+    },
+    async logEdit(me, seq, text) {
+      await init(db);
+      if (!isStr(text || '', 2000)) return { error: 'BAD_LOG', status: 400, message: '2000자까지 쓸 수 있어요.' };
+      const r = await db.prepare("SELECT seq, act, data FROM roadmap_log WHERE seq = ?1 AND act NOT IN ('unnote', 'hide')").bind(Number(seq)).first();
+      if (!r) return { error: 'GONE', status: 404, message: '그 사이 지워진 기록이에요.' };
+      const d = parse(r.data) || {};
+      const t = String(text || '').trim();
+      if (r.act === 'note') d.text = t; else if (t) d.memo = t; else delete d.memo;
+      d.editedBy = me; d.editedAt = Date.now();
+      await db.batch([db.prepare('UPDATE roadmap_log SET data = ?1 WHERE seq = ?2').bind(JSON.stringify(d), r.seq), addLog(db, me, null, 'hide', { seq: r.seq, edit: true })]);
       return { ok: true };
     },
     async img(id) {
