@@ -20,8 +20,8 @@ if (!SAFE_HOST.test(host) && __ENV.I_OWN_THIS_TARGET !== 'yes') {
   );
 }
 
-// 개발 모드로 띄운 queue 앱의 판매 중 운행과 맞춘다 (--jejari.queue.dev-on-sale-runs=1001)
-export const RUN_ID = __ENV.RUN_ID || '1001';
+// 개발 모드로 띄운 queue 앱의 판매 중 운행과 맞춘다 (--jejari.queue.dev-on-sale-runs=9001). 시드(db/seed)의 ON_SALE 운행과 같다
+export const RUN_ID = __ENV.RUN_ID || '9001';
 export const SEAT_PREFIX = __ENV.SEAT_PREFIX || 'LT'; // 부하 테스트용 좌석 ID 접두사
 
 // ── 인증 방식 ───────────────────────────────────────────────
