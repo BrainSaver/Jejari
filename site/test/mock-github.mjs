@@ -117,7 +117,7 @@ const server = http.createServer(async (req, res) => {
       if (req.headers.authorization !== 'Bearer test-groq') return send(res, 401, { error: { message: 'Invalid API Key' } });
       const msgs = b.messages || [];
       const last = msgs[msgs.length - 1].content.split('\n').pop();
-      return send(res, 200, { choices: [{ message: { content: `**테스트 답변** (메시지 ${msgs.length}개)\n\n${last}` } }] });
+      return send(res, 200, { choices: [{ message: { content: `**테스트 답변** (메시지 ${msgs.length}개)\n\n${last}\n\n[[이어서]]\n- 테스트 후속 질문 1\n- 테스트 후속 질문 2\n- 테스트 후속 질문 3` } }] });
     }
     if (req.headers.authorization !== 'Bearer test-token') return send(res, 401, { message: 'Bad credentials' });
     // 테스트 도우미: 다른 사람이 main을 바꾼 상황 만들기

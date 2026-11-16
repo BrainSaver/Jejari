@@ -210,6 +210,7 @@ async function loadBranches() {
 }
 function myAhead() { const b = S.branches && S.branches.branches.find((x) => x.name === S.me); return b ? b.ahead : 0; }
 function renderTop() {
+  aiFabSync();
   document.body.classList.toggle('anon', !S.me);
   if (!S.me && S.ref !== 'main') S.ref = 'main';
   $('#sideFoot').textContent = S.me ? '수정은 섹션마다 "수정"을 눌러요. 저장하면 내 이름 브랜치에 커밋돼요.' : '팀원은 로그인하면 문서를 고치고 수정 기록·소스트리·브랜치별 내용을 볼 수 있어요.';
@@ -377,6 +378,7 @@ async function docView(root, path, { title, sub, compact, withToc } = {}) {
   }
   if (toc) toc.innerHTML = $$('h2,h3,details > summary', body).map((h) => `<a class="${h.tagName === 'H3' ? 'l3' : ''}" href="#${esc(h.id.slice(2))}">${esc(h.textContent)}</a>`).join('');
   if (toc) $$('a', toc).forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); const t = document.getElementById('h-' + a.getAttribute('href').slice(1)); if (t) t.scrollIntoView({ behavior: 'smooth' }); }));
+  applyJump(body, path);
 }
 
 async function editSection(el, path, shown, shownSecs, idx, appendNew) {
@@ -922,6 +924,8 @@ function readSelection() {
   if (text.length < 2) return null;
   const range = sel.getRangeAt(0);
   const node = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+  const ans = node && node.closest('#aiPanel .ask-msg.a');
+  if (ans && ans._askMore) return { kind: 'answer', text: text.slice(0, 1000), box: ans, rect: range.getBoundingClientRect() };
   const sec = node && node.closest('.doc-body .sec');
   if (!sec || !main.contains(sec) || sec.querySelector('textarea')) return null;
   const body = sec.closest('.doc-body');
@@ -930,7 +934,10 @@ function readSelection() {
 function placePop() {
   selCtx = readSelection();
   if (!selCtx) { selPop.hidden = true; return; }
+  const inAnswer = selCtx.kind === 'answer';
   $('[data-ask]', selPop).hidden = !S.ai;
+  $('[data-ask]', selPop).textContent = inAnswer ? '이 부분 더 물어보기' : 'AI에게 물어보기';
+  $('[data-copysel]', selPop).hidden = inAnswer;
   selPop.hidden = false;
   if (window.innerWidth < 700) { selPop.classList.add('bottom'); selPop.style.left = ''; selPop.style.top = ''; return; }
   selPop.classList.remove('bottom');
@@ -947,7 +954,7 @@ document.addEventListener('selectionchange', () => { if (window.innerWidth < 700
 window.addEventListener('scroll', () => { if (!selPop.hidden && !selPop.classList.contains('bottom')) placePop(); }, { passive: true });
 selPop.addEventListener('mousedown', (e) => e.preventDefault());
 $('[data-copysel]', selPop).addEventListener('click', () => {
-  if (!selCtx) return;
+  if (!selCtx || selCtx.kind === 'answer') return;
   const c = selCtx;
   copyLater(() => llmWithContext(c.meta, c.sec._head, c.sec._md, c.text), '고른 부분을 프로젝트 맥락과 함께 LLM용으로 복사했어요.');
   selPop.hidden = true;
@@ -955,48 +962,229 @@ $('[data-copysel]', selPop).addEventListener('click', () => {
 $('[data-ask]', selPop).addEventListener('click', () => {
   if (!selCtx) return;
   const c = selCtx; selPop.hidden = true; window.getSelection().removeAllRanges();
+  if (c.kind === 'answer') { c.box._askMore(c.text); return; }
   askModal(c);
 });
 
-const ASK_CHIPS = ['쉽게 설명해줘', '왜 이렇게 설계했어?', '예시로 보여줘', '코드로는 어떻게 구현해?', '여기 나오는 용어 정리해줘'];
-function askModal(c) {
-  const ctx = { doc: c.meta.title, path: c.meta.path, heading: cleanHead(c.sec._head), selection: c.text, section: c.sec._md };
-  const history = [];
-  const m = openModal(`<h2>AI에게 물어보기</h2>
-    <p class="muted ask-where">${esc(ctx.doc)}${ctx.heading ? ' · ' + esc(ctx.heading) : ''}</p>
-    <blockquote class="ask-quote">${esc(ctx.selection)}</blockquote>
-    <div class="ask-log"></div>
-    <div class="ask-chips">${ASK_CHIPS.map((q) => `<button type="button" class="chip">${esc(q)}</button>`).join('')}</div>
-    <form class="ask-row"><input type="text" maxlength="500" value="쉽게 설명해줘" aria-label="질문" autofocus><button class="btn" type="submit">묻기</button></form>
-    <p class="muted ask-note">AI(Groq)는 프로젝트 지도와, 전체 문서에서 이 질문과 관련 있는 부분을 자동으로 찾아 함께 보고 답해요. 틀릴 수 있으니 중요한 건 문서 원문이나 담당 팀원에게 확인하세요.</p>
-    <div class="row"><button class="btn plain" type="button" data-copylog>대화까지 LLM용 복사</button><button class="btn plain" type="button" data-close>닫기</button></div>`, { wide: true });
-  const log = $('.ask-log', m), input = $('.ask-row input', m), send = $('.ask-row button', m);
-  const add = (role, html) => { const d = document.createElement('div'); d.className = 'ask-msg ' + role; d.innerHTML = html; log.appendChild(d); d.scrollIntoView({ block: 'nearest' }); return d; };
-  let busy = false;
+const ASK_CHIPS = ['쉽게 설명해줘', '왜 이렇게 설계했어?', '예시로 보여줘', '코드로는 어떻게 구현해?'];
+const FREE_CHIPS = ['제자리가 어떤 프로젝트야?', '좌석 중복 예약은 어떻게 막아?', '결제가 실패하면 어떻게 돼?', '1차 구현 범위가 뭐야?'];
+const AI_LOG_MAX = 40;
+
+// ---- 질문 기록: 로그인하면 계정(서버), 아니면 이 기기 ----
+const localLog = {
+  all() { const v = store.get('ai-log', []); return Array.isArray(v) ? v : []; },
+  put(conv) {
+    let out = [conv, ...this.all().filter((x) => x.id !== conv.id)].slice(0, AI_LOG_MAX);
+    for (let i = 0; i < 5; i++) {
+      try { localStorage.setItem('jejari-site:ai-log', JSON.stringify(out)); return; } catch {}
+      out = out.slice(0, Math.max(1, Math.floor(out.length / 2)));
+    }
+  },
+  remove(id) { store.set('ai-log', this.all().filter((x) => x.id !== id)); },
+  clear() { store.set('ai-log', []); },
+};
+const aiStore = {
+  async list() {
+    if (!S.me) return localLog.all();
+    const loc = localLog.all();
+    if (loc.length) {
+      try { const r = await api('/ai-log/merge', { body: { list: loc } }); localLog.clear(); toast('이 기기의 질문 기록을 계정으로 옮겼어요.'); return r.list; } catch {}
+    }
+    return (await api('/ai-log' + qs({ t: Date.now() }))).list;
+  },
+  async save(conv) {
+    conv.at = Date.now();
+    if (S.me) {
+      try { await api('/ai-log/save', { body: { conv } }); return; } catch { toast('계정에 저장하지 못해 이 기기에 저장했어요.'); }
+    }
+    localLog.put(conv);
+  },
+  async remove(id) {
+    localLog.remove(id);
+    if (S.me) await api('/ai-log/delete', { body: { id } });
+  },
+  async clear() {
+    localLog.clear();
+    if (S.me) await api('/ai-log/delete', { body: { all: true } });
+  },
+};
+
+// ---- 참고한 부분으로 이동 ----
+const DOC_HASH = { 'README.md': '#/doc/plan', 'docs/기능설계서.md': '#/doc/func', 'docs/concurrency.md': '#/doc/conc', 'docs/DB설계서.md': '#/db/doc' };
+function hashOfPath(path) {
+  if (DOC_HASH[path]) return DOC_HASH[path];
+  const m = String(path || '').match(/^docs\/ui\/([UA]-\d{2})\.md$/);
+  return m ? '#/ui/' + m[1] : null;
+}
+let pendingJump = null;
+const normHead = (t) => String(t || '').replace(/[`*]/g, '').replace(/\s+/g, ' ').trim();
+function applyJump(root, path) {
+  if (!pendingJump || pendingJump.path !== path) return;
+  const parts = String(pendingJump.heading || '').split(' > ').map(normHead).filter(Boolean);
+  pendingJump = null;
+  const heads = $$('h1,h2,h3,h4,details > summary', root);
+  let target = null;
+  for (let i = parts.length - 1; i >= 0 && !target; i--) {
+    target = heads.find((h) => normHead(h.textContent) === parts[i]) || heads.find((h) => normHead(h.textContent).startsWith(parts[i]));
+  }
+  const el = target || root;
+  setTimeout(() => {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const sec = el.closest('.sec') || el; sec.classList.add('flash'); setTimeout(() => sec.classList.remove('flash'), 2200);
+  }, 60);
+}
+function jumpTo(path, heading) {
+  const h = hashOfPath(path); if (!h) return;
+  pendingJump = { path, heading };
+  closeModal();
+  if (window.innerWidth < 700) aiClose();
+  if (location.hash === h) route(); else location.hash = h;
+}
+
+// ---- 오른쪽 아래 채팅 ----
+const aiFab = document.createElement('button');
+aiFab.className = 'ai-fab'; aiFab.type = 'button'; aiFab.hidden = true; aiFab.textContent = 'AI 질문';
+const aiPanel = document.createElement('section');
+aiPanel.className = 'ai-panel'; aiPanel.id = 'aiPanel'; aiPanel.hidden = true; aiPanel.setAttribute('aria-label', 'AI 질문');
+aiPanel.innerHTML = `<header class="ai-head">
+    <button type="button" class="btn sm plain" data-ai-list>목록</button>
+    <b class="ai-title">AI 질문</b>
+    <button type="button" class="btn sm" data-ai-new>새 채팅</button>
+    <button type="button" class="ai-x" data-ai-x aria-label="닫기">✕</button>
+  </header>
+  <div class="ai-body"></div>`;
+document.body.appendChild(aiFab); document.body.appendChild(aiPanel);
+const aiBody = $('.ai-body', aiPanel);
+const AI = { conv: null, view: 'chat', busy: false };
+
+function newConv(c) {
+  return {
+    id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(),
+    doc: c ? c.meta.title : '', path: c ? c.meta.path : '', heading: c ? cleanHead(c.sec._head) : '',
+    selection: c ? c.text : '', section: c ? String(c.sec._md || '').slice(0, 6000) : '', messages: [],
+  };
+}
+function aiFabSync() {
+  aiFab.hidden = !S.ai || !aiPanel.hidden;
+  if (!aiPanel.hidden && AI.view === 'list') aiList();
+}
+function aiOpen() { aiPanel.hidden = false; aiFab.hidden = true; document.body.classList.add('ai-open'); }
+function aiClose() { aiPanel.hidden = true; document.body.classList.remove('ai-open'); aiFabSync(); }
+function askModal(c, firstQuestion) { aiOpen(); aiChat(newConv(c), firstQuestion == null ? '쉽게 설명해줘' : firstQuestion); }
+
+aiFab.addEventListener('click', () => { aiOpen(); if (AI.conv && AI.view === 'chat') aiChat(AI.conv); else aiChat(newConv(null), ''); });
+$('[data-ai-x]', aiPanel).addEventListener('click', aiClose);
+$('[data-ai-new]', aiPanel).addEventListener('click', () => aiChat(newConv(null), ''));
+$('[data-ai-list]', aiPanel).addEventListener('click', () => aiList());
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !aiPanel.hidden && $('#modalBack').hidden) aiClose(); });
+
+const convTitle = (c) => ((c.messages.find((x) => x.role === 'user') || {}).content || c.selection || '새 채팅').slice(0, 80);
+
+async function aiList() {
+  AI.view = 'list';
+  aiBody.innerHTML = '<p class="muted ai-pad">불러오는 중…</p>';
+  let list = [];
+  try { list = await aiStore.list(); } catch (x) { aiBody.innerHTML = `<p class="err ai-pad">${esc(x.message)}</p>`; return; }
+  if (AI.view !== 'list') return;
+  aiBody.innerHTML = `<p class="muted ai-pad ai-where-saved">${S.me ? `${esc(S.ko || S.me)} 계정에 저장돼요. 다른 기기에서 로그인해도 보여요.` : '이 기기에만 저장돼요. 로그인하면 계정에 저장돼 다른 기기에서도 볼 수 있어요.'} 최근 ${AI_LOG_MAX}개까지 남아요.</p>
+    ${list.length ? `<div class="ai-list">${list.map((c) => {
+      const n = c.messages.filter((x) => x.role === 'user').length;
+      return `<div class="ai-item" data-id="${esc(c.id)}">
+        <button type="button" class="ai-item-open"><b>${esc(convTitle(c))}</b>
+          <span class="muted">${esc(kst(new Date(c.at).toISOString()))}${c.doc ? ' · ' + esc(c.doc) : ''}${n > 1 ? ` · 질문 ${n}개` : ''}</span></button>
+        <button type="button" class="btn sm plain" data-del>삭제</button></div>`;
+    }).join('')}</div>
+    <p class="ai-pad"><button type="button" class="btn sm plain" data-clear>기록 모두 지우기</button></p>`
+    : '<p class="empty ai-pad">아직 물어본 내용이 없어요. "새 채팅"으로 물어보거나, 문서에서 글을 드래그해 물어보세요.</p>'}`;
+  $$('.ai-item', aiBody).forEach((row) => {
+    const conv = list.find((x) => x.id === row.dataset.id);
+    $('.ai-item-open', row).addEventListener('click', () => aiChat(conv));
+    twoStep($('[data-del]', row), '한 번 더', async () => {
+      try { await aiStore.remove(conv.id); } catch (x) { toast(x.message); }
+      if (AI.conv && AI.conv.id === conv.id) AI.conv = null;
+      aiList();
+    });
+  });
+  const clr = $('[data-clear]', aiBody);
+  if (clr) twoStep(clr, '한 번 더 누르면 모두 삭제', async () => { try { await aiStore.clear(); } catch (x) { toast(x.message); } AI.conv = null; aiList(); });
+}
+
+function aiChat(conv, prefill) {
+  AI.view = 'chat'; AI.conv = conv;
+  const free = !conv.selection;
+  aiBody.innerHTML = `<div class="ai-chat">
+      ${free ? '' : `<div class="ai-src"><a href="#" data-src>${esc(conv.doc)}${conv.heading ? ' · ' + esc(conv.heading) : ''}</a><blockquote class="ask-quote">${esc(conv.selection)}</blockquote></div>`}
+      ${conv.messages.length ? '' : `<p class="muted ai-hello">${free ? '프로젝트에 대해 무엇이든 물어보세요. AI는 프로젝트 지도와 관련 문서를 찾아 보고 짧게 답해요. 문서에서 글을 드래그해 물어볼 수도 있어요.' : '고른 부분에 대해 물어보세요.'}</p>`}
+      <div class="ask-log"></div>
+    </div>
+    <div class="ai-foot">
+      ${conv.messages.length ? '' : `<div class="ask-chips">${(free ? FREE_CHIPS : ASK_CHIPS).map((q) => `<button type="button" class="chip">${esc(q)}</button>`).join('')}</div>`}
+      <form class="ask-row"><input type="text" maxlength="500" placeholder="${conv.messages.length ? '이어서 물어보기' : '질문 입력'}" aria-label="질문"><button class="btn" type="submit">묻기</button></form>
+      <p class="muted ask-note">답 속 문장을 드래그하면 그 부분만 더 물어볼 수 있어요. AI는 틀릴 수 있으니 중요한 건 원문이나 담당 팀원에게 확인하세요.</p>
+    </div>`;
+  const log = $('.ask-log', aiBody), input = $('.ask-row input', aiBody), send = $('.ask-row button', aiBody);
+  if (prefill) input.value = prefill;
+  const scroller = $('.ai-chat', aiBody);
+  const toBottom = () => { scroller.scrollTop = scroller.scrollHeight; };
+
+  function drawQuestion(box, idx) {
+    box.innerHTML = `<span>${esc(conv.messages[idx].content)}</span><button type="button" class="ai-qdel" title="이 질문과 답 삭제">삭제</button>`;
+    twoStep($('.ai-qdel', box), '한 번 더', async () => {
+      conv.messages.splice(idx, conv.messages[idx + 1] && conv.messages[idx + 1].role === 'assistant' ? 2 : 1);
+      if (conv.messages.length) await aiStore.save(conv); else { try { await aiStore.remove(conv.id); } catch {} }
+      aiChat(conv);
+    });
+  }
+  function drawAnswer(box, msg) {
+    box.innerHTML = '';
+    box.appendChild(renderMd(msg.content));
+    if (msg.followups && msg.followups.length) {
+      const f = document.createElement('div'); f.className = 'ask-follow';
+      f.innerHTML = '<span class="muted">이어서 물어보기</span>' + msg.followups.map((q) => `<button type="button" class="chip">${esc(q)}</button>`).join('');
+      $$('button', f).forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
+      box.appendChild(f);
+    }
+    if (msg.refs && msg.refs.length) {
+      const d = document.createElement('div'); d.className = 'ask-refs';
+      d.innerHTML = `<span class="muted">참고한 부분</span>${msg.refs.map((x, i) => hashOfPath(x.path)
+        ? `<a href="${hashOfPath(x.path)}" data-ref="${i}">${esc(x.doc)} · ${esc(x.heading || '문서 처음')}</a>`
+        : `<span>${esc(x.doc)} · ${esc(x.heading || '문서 처음')}</span>`).join('')}`;
+      $$('a[data-ref]', d).forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); const x = msg.refs[+a.dataset.ref]; jumpTo(x.path, x.heading); }));
+      box.appendChild(d);
+    }
+    box._askMore = (text) => ask(`"${text.slice(0, 300)}" 이 부분을 좀 더 자세히 알려줘`);
+  }
+  const add = (cls) => { const d = document.createElement('div'); d.className = 'ask-msg ' + cls; log.appendChild(d); return d; };
+  conv.messages.forEach((m, i) => { if (m.role === 'user') drawQuestion(add('q'), i); else drawAnswer(add('a'), m); });
+  setTimeout(toBottom, 20);
+
   async function ask(q) {
-    q = q.trim(); if (!q || busy) return;
-    busy = true; send.disabled = true; input.value = '';
-    add('q', esc(q));
-    const wait = add('a', '<p class="muted">생각하는 중…</p>');
+    q = String(q || '').trim(); if (!q || AI.busy) return;
+    AI.busy = true; send.disabled = true; input.value = '';
+    $$('.ask-chips, .ai-hello', aiBody).forEach((e) => e.remove());
+    const qBox = add('q'); qBox.innerHTML = `<span>${esc(q)}</span>`;
+    const wait = add('a'); wait.innerHTML = '<p class="muted">생각하는 중…</p>';
+    toBottom();
+    const history = conv.messages.map((x) => ({ role: x.role, content: x.content }));
     try {
-      const r = await api('/ask', { body: { ...ctx, question: q, history: history.length ? history : undefined } });
-      wait.innerHTML = ''; wait.appendChild(renderMd(r.answer));
-      if (r.refs && r.refs.length) {
-        const d = document.createElement('details'); d.className = 'ask-refs';
-        d.innerHTML = `<summary>참고한 문서 ${r.refs.length}곳${r.model ? ` · 모델 ${esc(r.model)}` : ''}</summary><ul>${r.refs.map((x) => `<li>${esc(x.doc)} · ${esc(x.heading || '(머리말)')}</li>`).join('')}</ul>`;
-        wait.appendChild(d);
-      }
-      history.push({ role: 'user', content: q }, { role: 'assistant', content: r.answer });
+      const r = await api('/ask', { body: { doc: conv.doc, path: conv.path, heading: conv.heading, selection: conv.selection, section: conv.section, question: q, history: history.length ? history : undefined } });
+      conv.messages.push({ role: 'user', content: q }, { role: 'assistant', content: r.answer, followups: r.followups || [], refs: r.refs || [], model: r.model });
+      drawQuestion(qBox, conv.messages.length - 2);
+      drawAnswer(wait, conv.messages[conv.messages.length - 1]);
+      input.placeholder = '이어서 물어보기';
+      aiStore.save(conv);
     } catch (x) {
       wait.innerHTML = `<p class="err">${esc(x.message)}</p>`;
-    } finally { busy = false; send.disabled = false; if (document.body.contains(input)) input.focus(); }
+    } finally {
+      AI.busy = false; send.disabled = false;
+      if (AI.conv === conv && document.body.contains(input)) { input.focus(); toBottom(); }
+    }
   }
-  $('.ask-row', m).addEventListener('submit', (e) => { e.preventDefault(); ask(input.value); });
-  $$('.ask-chips .chip', m).forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
-  $('[data-close]', m).addEventListener('click', closeModal);
-  $('[data-copylog]', m).addEventListener('click', () => {
-    copyLater(() => llmWithContext(c.meta, c.sec._head, c.sec._md, c.text, history.slice()), '고른 부분·프로젝트 맥락·대화를 LLM용으로 복사했어요.');
-  });
+  $('.ask-row', aiBody).addEventListener('submit', (e) => { e.preventDefault(); ask(input.value); });
+  $$('.ask-chips .chip', aiBody).forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
+  const src = $('[data-src]', aiBody);
+  if (src) src.addEventListener('click', (e) => { e.preventDefault(); jumpTo(conv.path, conv.heading); });
+  if (window.innerWidth >= 700) setTimeout(() => input.focus(), 30);
 }
 
 function setNav(key) { $$('.side a').forEach((a) => a.classList.toggle('on', a.dataset.nav === key)); $('#side').classList.remove('open'); }
@@ -1011,6 +1199,7 @@ async function route() {
     else if (p === 'db') { setNav('db'); await pageDb(a); }
     else if (p === 'ui' && a) { setNav('ui'); await pageUiOne(decodeURIComponent(a)); }
     else if (p === 'ui') { setNav('ui'); await pageUi(); }
+    else if (p === 'ai') { setNav('home'); await pageHome(); aiOpen(); aiList(); }
     else if (p === 'history') { setNav('history'); await pageHistory(); }
     else if (p === 'commit' && a) { setNav('history'); await pageCommit(a); }
     else if (p === 'compare' && a) { setNav(''); await pageCompare(a); }
@@ -1019,7 +1208,7 @@ async function route() {
   } catch (x) {
     main.innerHTML = `<div class="wrap"><p class="empty">불러오지 못했어요: ${esc(x.message)}</p></div>`;
   }
-  if (!/^#\/(doc|db)/.test(location.hash)) window.scrollTo(0, 0);
+  if (!/^#\/(doc|db)/.test(location.hash) && !pendingJump) window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', () => { closeModal(); route(); });
 $('#navToggle').addEventListener('click', (e) => { e.stopPropagation(); $('#side').classList.toggle('open'); });

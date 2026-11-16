@@ -6,6 +6,7 @@ import {
 import { pinStatus, currentUser, login, logout, resetPin, sessionCookie, clearCookie } from '../../lib/auth.js';
 import { commitMessage, validMessage, askDoc } from '../../lib/groq.js';
 import { buildContext } from '../../lib/context.js';
+import { aiLogStore, AI_LOG_MAX } from '../../lib/ailog.js';
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers } });
@@ -30,6 +31,22 @@ function askAllowed(req) {
   if (askHits.size > 5000) askHits.clear();
   return true;
 }
+// ---------- AI 질문 기록 (로그인한 사람. 저장소는 lib/ailog.js: D1, 없으면 KV) ----------
+const sOk = (v, max) => typeof v === 'string' && v.length <= max;
+function validConv(c) {
+  if (!c || typeof c !== 'object' || !/^c[a-z0-9]{4,24}$/.test(c.id || '')) return false;
+  if (!sOk(c.doc || '', 80) || !sOk(c.path || '', 200) || !sOk(c.heading || '', 300) || !sOk(c.selection || '', 6000) || !sOk(c.section || '', 8000)) return false;
+  if (typeof c.at !== 'number' || !Array.isArray(c.messages) || c.messages.length > 80) return false;
+  const okMsg = (m) => m && ['user', 'assistant'].includes(m.role) && sOk(m.content, 8000)
+    && (m.followups == null || (Array.isArray(m.followups) && m.followups.length <= 5 && m.followups.every((f) => sOk(f, 120))))
+    && (m.refs == null || (Array.isArray(m.refs) && m.refs.length <= 8 && m.refs.every((r) => r && sOk(r.doc || '', 120) && sOk(r.heading || '', 300) && sOk(r.path || '', 200))))
+    && (m.model == null || sOk(m.model, 80));
+  return c.messages.every(okMsg) && JSON.stringify(c).length <= 90000;
+}
+const cleanConv = (c) => ({
+  id: c.id, at: c.at, doc: c.doc || '', path: c.path || '', heading: c.heading || '', selection: c.selection || '', section: c.section || '',
+  messages: c.messages.map((m) => ({ role: m.role, content: m.content, ...(m.followups ? { followups: m.followups } : {}), ...(m.refs ? { refs: m.refs.map((r) => ({ doc: r.doc || '', heading: r.heading || '', path: r.path || '' })) } : {}), ...(m.model ? { model: m.model } : {}) })),
+});
 const str = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
 
 function kstDate() {
@@ -268,7 +285,7 @@ export async function onRequest(ctx) {
     switch (route) {
       // 로그인
       case 'GET /me':
-        return json({ name: me, ko: me ? MEMBERS[me] : null, admin: me === adminOf(env), members: MEMBERS, pins: await pinStatus(env), ai: !!env.GROQ_API_KEY });
+        return json({ name: me, ko: me ? MEMBERS[me] : null, admin: me === adminOf(env), members: MEMBERS, pins: await pinStatus(env), ai: !!env.GROQ_API_KEY, aiLog: env.AI_DB ? 'd1' : 'kv' });
       case 'POST /login': {
         const r = await login(env, body.name, body.pin);
         if (r.error) return json(r, r.error === 'LOCKED' ? 423 : 401);
@@ -354,8 +371,9 @@ export async function onRequest(ctx) {
       }
       case 'POST /ask': {
         // 로그인 없이 가능. 문서 일부를 골라 Groq에 질문한다
-        const { selection, question } = body;
-        if (!str(selection, 6000) || !str(question, 500)) return fail(400, 'BAD_ASK', '선택한 글(6000자 이하)과 질문(500자 이하)이 필요해요.');
+        const { question } = body;
+        const selection = body.selection == null ? '' : body.selection;
+        if (typeof selection !== 'string' || selection.length > 6000 || !str(question, 500)) return fail(400, 'BAD_ASK', '질문(500자 이하)이 필요하고, 고른 글은 6000자 이하여야 해요.');
         if (body.history != null && (!Array.isArray(body.history) || body.history.length > 20
           || !body.history.every((h) => h && ['user', 'assistant'].includes(h.role) && str(h.content, 6000)))) return fail(400, 'BAD_ASK', '대화 기록 형식이 맞지 않아요.');
         if (!askAllowed(req)) return fail(429, 'ASK_LIMIT', `AI 질문은 1분에 ${ASK_PER_MIN}번까지예요. 잠시 뒤에 다시 물어봐 주세요.`);
@@ -365,6 +383,23 @@ export async function onRequest(ctx) {
         }, buildContext);
         return r.error ? fail(r.status, r.error, r.message) : json(r);
       }
+      case 'GET /ai-log':
+        if (!me) return fail(401, 'LOGIN', '로그인하면 계정에 저장된 질문 기록을 볼 수 있어요.');
+        return json({ list: await aiLogStore(env).list(me) });
+      case 'POST /ai-log/save':
+        if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
+        if (!validConv(body.conv)) return fail(400, 'BAD_CONV', '저장할 대화 형식이 맞지 않아요.');
+        await aiLogStore(env).save(me, cleanConv(body.conv));
+        return json({ ok: true });
+      case 'POST /ai-log/merge':
+        // 로그인 전에 이 기기에 쌓인 기록을 계정으로 옮긴다 (같은 대화는 최근 것을 남김)
+        if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
+        if (!Array.isArray(body.list) || body.list.length > AI_LOG_MAX || !body.list.every(validConv)) return fail(400, 'BAD_CONV', '옮길 기록 형식이 맞지 않아요.');
+        return json({ list: await aiLogStore(env).merge(me, body.list.map(cleanConv)) });
+      case 'POST /ai-log/delete':
+        if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
+        await aiLogStore(env).remove(me, body.all ? null : [].concat(body.id || []).filter((x) => typeof x === 'string'));
+        return json({ ok: true });
       case 'POST /context': {
         // LLM용 복사: 프로젝트 지도와 전체 문서에서 찾은 관련 부분 (외부 LLM은 길게 받으므로 넉넉히)
         if (!str(body.selection, 6000)) return fail(400, 'BAD_ASK', '선택한 글(6000자 이하)이 필요해요.');
