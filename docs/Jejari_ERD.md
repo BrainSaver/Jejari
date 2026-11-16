@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v16 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-16
+> 스키마 v17 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-16
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -574,6 +574,7 @@ Oracle
 | auth.login_rate_per_min | 20 | 1 | NUMBER | IP당 분당 로그인 시도 한도 (rate:login) |
 | auth.signup_rate_per_hour | 10 | 1 | NUMBER | IP당 시간당 본인인증·가입 시도 한도 (rate:signup) |
 | auth.verify_token_ttl_sec | 600 | 1 | NUMBER | 본인인증 1회용 토큰 유효 시간(초) (verify:{tokenHash}) |
+| seatmap.cache_ms | 1000 | 1 | NUMBER | 좌석 배치도 캐시(seatmap:{runId}) 유지 시간(ms). 길수록 DB·Redis 부하는 줄고 화면은 늦게 바뀜 |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -1968,7 +1969,7 @@ Redis
 | `limit:dec:{reservationId}` | STRING+TTL |  | 시스템 | 값: 1 (이 예약의 한도 감소 완료 표시) | limit_decr.lua가 SET NX에 성공할 때만 감소 → 커밋 직후 앱과 outbox 소비자가 둘 다 실행해도 한 번만 감소 |
 | `risk:{subjectType}:{hash}` | STRING |  | 시스템 | final_score 캐시 (0~100 숫자 문자열). TTL 없음 | 대기열 진입 시 DB 미조회. TTL을 두면 시간이 지나 패널티가 저절로 풀려 "쉬었다 오면 통과"가 된다. 0점이 되는 순간 지운다 |
 | `risk:meta:synced_at` | STRING |  | 시스템 | Oracle → Redis 재동기화 완료 시각 | 이 키가 있을 때만 risk:* 캐시를 믿는다. 없으면 대기열이 캐시 대신 Oracle risk_score를 직접 조회하고, 조회가 실패하면 100점(안전한 쪽). 재동기화는 risk:*를 모두 쓴 다음에 이 키를 SET |
-| `seatmap:{runId}` | HASH |  | 시스템 | seatId → 상태 | 조회 트래픽을 DB에서 분리 |
+| `seatmap:{runId}` | HASH |  | 시스템 | seatId → 상태 (H 선점·대기자 보류 / S 판매). 빈 좌석은 필드 없음, 필드 _ 는 캐시가 있다는 표시 | 배치도·남은 좌석 수 조회를 DB에서 분리. 원천은 seat:hold 키(실시간)와 seat_inventory SOLD 행. 최종 판정은 선점 때 (concurrency.md §2). 유지 시간 app_policy seatmap.cache_ms |
 | `rate:login:{ipHash}` | STRING+TTL |  | 시스템 | IP당 분당 로그인 시도 수 | Argon2 연산 남용·크리덴셜 스터핑 차단. 한도 app_policy auth.login_rate_per_min, 넘으면 해시 계산 없이 AUTH_RATE_LIMITED |
 | `rate:signup:{ipHash}` | STRING+TTL |  | 시스템 | IP당 시간당 본인인증·가입 시도 수 | 가입 남용·대량 계정 생성 차단. 한도 app_policy auth.signup_rate_per_hour |
 | `login:fail:{emailHash}` | STRING+TTL |  | 시스템 | 이메일별 연속 로그인 실패 수 | auth.lock_after_failures에 닿으면 auth.lock_minutes 동안 잠금(AUTH_LOCKED). 없는 이메일도 똑같이 세어 잠금 응답으로 계정 존재를 알 수 없게 |
@@ -2323,6 +2324,7 @@ Oracle
 | v14 | 취소표 대기 위험 패널티 확정 (강다인): app_policy waitlist.penalty_ms_per_point 60000 → 180000 (1점 = 3분, 80점 = 4시간) |
 | v15 | 회원가입·로그인 (강다인 요청): member·identity_verification ID 시퀀스, Redis 키 rate:signup·login:fail·verify, app_policy auth.login_rate_per_min(20)·signup_rate_per_hour(10)·verify_token_ttl_sec(600), login_attempt.result에 BANNED |
 | v16 | 좌석 선점 구현: reservation·reservation_history ID 시퀀스. behavior_log에 event_id + 유니크 인덱스 (강다인 요청, Kafka 재전달 중복 방지) |
+| v17 | 좌석 배치도·운행 검색 구현: seatmap:{runId} 값 형식(H/S, 빈 좌석은 필드 없음)과 app_policy seatmap.cache_ms(1000) |
 
 ## 참고 자료
 
