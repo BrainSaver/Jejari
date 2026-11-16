@@ -2,7 +2,7 @@
 
 예매·결제·취소·취소표·이벤트 발행에서 **트랜잭션 경계, 실행 순서, SQL·Redis 명령**의 원천 문서입니다. 스키마(테이블·컬럼·제약)의 원천은 ERD 편집기(`docs/erd/jejari-erd.html`)이고, 테이블 비고에는 이 문서의 절 번호만 적습니다. 구현과 테스트는 이 문서를 그대로 따릅니다.
 
-- 기준 스키마: v13
+- 기준 스키마: v14
 - 표기: `:이름`은 바인드 변수, `app_policy`의 값은 `policy(키)`로 적습니다. Redis 키의 `{runId}` 같은 중괄호는 **자리표시자**이고 실제 키에는 중괄호가 없습니다 (`seat:hold:1001:57:0`). 클러스터 해시 태그와는 다릅니다 (§14.4).
 - §16에 테스트로 옮길 시나리오, §17에 비교 실험과 지표 정의가 있습니다.
 
@@ -639,7 +639,7 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 |---|---|---|
 | `idem:{memberId}:{key}`, `idem:pay:{reservationId}:{key}` | reservation_id / payment_id | `idem.ttl_sec` |
 | `queue:{runId}`, `queue:seq:{runId}` | 대기 순번 ZSET (member = `{12자리 seq}:{memberId}`), 진입 시퀀스 | 운행 판매 마감 |
-| `queue:member:{memberId}`, `queue:ci:{ciHash}` | 회원당·CI당 동시 대기 1개 | 입장 토큰 만료 / 멤버별 score |
+| `queue:member:{memberId}`, `queue:ci:{ciHash}` | 회원당·CI당 동시 대기 1개. `queue:member` 값은 `{runId}\|{queue member}\|{ciHash}` | `queue.entry_ttl_sec` / 멤버별 score |
 | `queue:active:{runId}`, `queue:throughput:{runId}` | 입장한 회원 (score = 토큰 만료 시각), 초당 입장 수 | |
 | `queue:pass:{runId}:{memberId}` | 입장 토큰 | `queue.pass_ttl_sec` |
 | `seat:hold:{runId}:{seatId}:{segNo}` | `R`(HOLD), `SOLD:R`(확정), `REOFFER:R`(대기자 제안 대기) | `pay_deadline_at` / 운행 출발 시각 / `waitlist.reoffer_hold_sec` |
@@ -706,6 +706,7 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | `payment.pg_recheck_sec` | 60 | §6.2 PG 결과를 모를 때 다음 조회까지 |
 | `payment.pg_unknown_max_min` | 30 | §6.2 결과 모름 알림 |
 | `idem.ttl_sec` | 600 | §1 |
+| `queue.entry_ttl_sec` | 3600 | §14.1 대기 기록(`queue:member`)이 남는 최대 시간. 이탈 없이 사라진 회원 정리 |
 | `relay.lease_sec` | 15 | §11.2 |
 | `relay.lock_wait_sec` | 5 | §11.3 |
 | `outbox.max_retry` | 5 | §11.3 |

@@ -116,6 +116,8 @@
 | D 강다인 | 취소 수수료 정책 | `cancel_fee_policy` 예시 5건이 모두 지난 행사(1번)에 묶여 있어 상시 정책 세트가 필요 — CNL 담당이 정함 |
 | E 조영준 | Oracle 컨테이너 | `TZ=Asia/Seoul` 필수 (동시성 §0.7, 시드 검증 20번) |
 | A 김성원 | 테스트용 운행 | 지금 `ON_SALE`인 운행은 `run_id = 9001` 하나 |
+| A 김성원 | ERD v13 | `queue:member` 값에 ciHash, `queue.entry_ttl_sec`, 취소표 대기 `priority_at`·`penalty_ms` 반영 (팀-확인-요청 1·2·12번) |
+| D 강다인 | ERD v13 | `risk_score_history_seq` 시퀀스 추가 → 점수 저장 때 이력도 기록 |
 
 ## 6. 트러블슈팅
 
