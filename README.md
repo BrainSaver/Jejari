@@ -41,6 +41,12 @@
 <p align="right"><a href="#목차">↑ 목차로</a></p>
 </details>
 
+
+
+<summary><b>새로 바뀐 코레일 규칙</b></summary>
+- 2개월 전부터 예매 가능 <br>
+- 1인 하루 최대 20매 <br>
+- 매일 오전 7시 오픈 <br>
 <a id="sec-3"></a>
 <details open>
 <summary><b>핵심 기능</b></summary>
