@@ -1,0 +1,78 @@
+# 공용 설정. 비밀값은 환경 변수나 저장소 루트의 .env(커밋 금지, 키 목록은 .env.example)로 넣습니다.
+# 개인 설정은 application-local.yml(커밋 금지)에 두고 --spring.profiles.active=local로 켭니다.
+spring:
+  application:
+    name: jejari
+  config:
+    import: optional:file:.env[.properties]
+  autoconfigure:
+    # 기본 인메모리 사용자(기동 로그에 비밀번호 출력)를 만들지 않습니다. 인증은 JWT로 직접 구성합니다
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+
+  # ── Oracle (gvenzl/oracle-free, 서비스 FREEPDB1) ──
+  datasource:
+    url: jdbc:oracle:thin:@//${ORACLE_HOST:localhost}:${ORACLE_PORT:1521}/${ORACLE_SERVICE:FREEPDB1}
+    username: ${ORACLE_APP_USER:jejari}
+    password: ${ORACLE_APP_PASSWORD}
+    hikari:
+      # DB 세션 시간대 고정 (concurrency.md §0.7). 기동 시 TimeZoneVerifier가 확인합니다 (T34)
+      connection-init-sql: ALTER SESSION SET TIME_ZONE = 'Asia/Seoul'
+  jpa:
+    open-in-view: false
+    hibernate:
+      # 스키마는 docs/erd/jejari-erd.ddl.sql이 원본. JPA가 테이블을 만들거나 바꾸지 않습니다
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: Asia/Seoul
+
+  # ── MongoDB (Boot 4부터 spring.mongodb.*) ──
+  mongodb:
+    uri: mongodb://${MONGO_APP_USER:jejari}:${MONGO_APP_PASSWORD}@${MONGO_HOST:localhost}:${MONGO_PORT:27017}/jejari?authSource=jejari
+
+  # ── Redis (단일 노드, noeviction, AOF everysec: concurrency.md §14.5) ──
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+  # ── Kafka ──
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      # 멱등 프로듀서 (CLAUDE.md "Kafka")
+      acks: all
+      properties:
+        enable.idempotence: true
+    consumer:
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+
+  jackson:
+    time-zone: Asia/Seoul
+
+server:
+  error:
+    # 실패 응답은 GlobalExceptionHandler가 { code, message, traceId }로 만듭니다
+    include-message: never
+    include-stacktrace: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  pattern:
+    # 모든 로그 줄에 traceId (TraceIdFilter가 MDC에 넣음)
+    correlation: "[%X{traceId:-}] "
