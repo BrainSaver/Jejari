@@ -219,8 +219,15 @@ class MemberAuthInfraTest {
 		assertThat(cookie).contains("HttpOnly", "SameSite=Strict");
 		assertThat(r.getResponse().getHeader("Cache-Control")).isEqualTo("no-store");
 
-		Document d = mongo.findOne(Query.query(Criteria.where("email_hash").is(pseudonymizer.email(e))
-				.and("result").is("SUCCESS")), Document.class, "login_attempt");
+		// 기록은 비동기라 저장될 때까지 잠깐 기다린다 (최대 5초)
+		Query q = Query.query(Criteria.where("email_hash").is(pseudonymizer.email(e)).and("result").is("SUCCESS"));
+		Document d = null;
+		for (int i = 0; i < 50 && d == null; i++) {
+			d = mongo.findOne(q, Document.class, "login_attempt");
+			if (d == null) {
+				Thread.sleep(100);
+			}
+		}
 		assertThat(d).isNotNull();
 		assertThat(d.toJson()).doesNotContain(e, PW);
 		assertThat(d.get("expire_at")).isNotNull();

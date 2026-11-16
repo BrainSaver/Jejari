@@ -29,7 +29,8 @@ spring:
 
   # ── MongoDB (Boot 4부터 spring.mongodb.*) ──
   mongodb:
-    uri: mongodb://${MONGO_APP_USER:jejari}:${MONGO_APP_PASSWORD}@${MONGO_HOST:localhost}:${MONGO_PORT:27017}/jejari?authSource=jejari
+    # 붙지 못하면 오래 붙잡지 않고 실패시킵니다 (드라이버 기본값은 30초라 요청이 그만큼 멈춥니다). Redis timeout 2s와 같은 이유
+    uri: mongodb://${MONGO_APP_USER:jejari}:${MONGO_APP_PASSWORD}@${MONGO_HOST:localhost}:${MONGO_PORT:27017}/jejari?authSource=jejari&serverSelectionTimeoutMS=2000&connectTimeoutMS=2000
 
   # ── Redis (단일 노드, noeviction, AOF everysec: concurrency.md §14.5) ──
   data:
