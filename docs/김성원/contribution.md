@@ -73,6 +73,14 @@
 - 결과: 같은 환경에서 목표 4,000건/초 구간의 p95가 568~625ms → 32~62ms, 정체 지점이 약 2,900 → 약 4,700~5,000건/초.
 - 관련 코드·커밋: `PolicyProvider`, `status.lua` · `2dc0269`
 
+### 결정 7. 위험 점수는 모르면 막는 쪽으로 읽는다
+
+- 상황: 위험 점수 캐시가 비거나(Redis 재시작) 값이 오염되면(`NaN` 등) 위험 사용자가 패널티 없이 통과할 수 있었다.
+- 고려한 대안: ① 잘못된 값은 무시(0점) ② 100점 + 경고 ③ 진입 거절
+- 선택과 이유: ②. 패널티는 순번만 미루고 거절하지 않으므로 피해가 작고, 조작된 값이 "패널티 없음"이 되는 우회로가 없다. 캐시가 비었는지는 `risk:meta:synced_at`으로 구분하고, 비었으면 Oracle을 직접 본다.
+- 감수한 단점: Redis 재시작 뒤 재동기화 전까지(최대 10분) 진입이 Oracle을 조회한다 (팀 협의 중, `팀-확인-요청.md` 17번).
+- 관련 코드·커밋: `RiskPenaltyService`, `RiskScoreFallbackPort` · `aff413e`
+
 ## 4. 만든 기능
 
 기능마다 `features/`에 짧은 기능 문서를 남깁니다 (CONTRIBUTING.md 4장).
@@ -83,7 +91,7 @@
 | 식별정보 가명처리 (HMAC) | [hmac-가명처리](features/hmac-가명처리.md) |
 | 대기열 k6 시나리오 4종 (처리량·차단율·순번 조정·진입 한계) | `k6/queue/README.md` |
 
-테스트: 인프라 없이 도는 39개(대기열 웹·좌석 토큰 인터셉터·개발 모드 보안·Redis 장애 처리·HMAC 19개)와 Redis 통합 48개(`./gradlew infraTest`, 실제 Redis 필요).
+테스트: 인프라 없이 도는 39개(대기열 웹·좌석 토큰 인터셉터·개발 모드 보안·Redis 장애 처리·HMAC 19개)와 Redis 통합 57개(`./gradlew infraTest`, 실제 Redis 필요).
 
 ## 5. 다른 파트와의 연결
 
@@ -93,7 +101,7 @@
 |---|---|---|
 | B 강동균 | 좌석 API가 입장 토큰을 확인 / 판매 중 운행 목록 | 제안: `/runs/{id}/seats`는 필터가 막고, `POST /reservations`는 `QueuePassService.verify(runId, memberId, token)` 호출. 운행 상태는 `OnSaleRunProvider`로 받기 |
 | B 강동균 (ERD 반영) | `queue:member` 값 형식 변경, 새 정책 키 | 제안: 값 `{runId}\|{queue member}\|{ciHash}`(ciHash는 입장·이탈 때 `queue:ci`를 찾기 위해 덧붙임), `queue.entry_ttl_sec`(3600) 시드 추가 |
-| D 강다인 | 위험 점수 캐시 / 회원 정보 / HMAC 사용 | 제안: `risk:{CI\|PAYMENT\|DEVICE}:{해시}`에 `final_score`를 문자열로. 대기열은 읽기만. 회원 CI·결제 수단·기기 해시와 상태는 `MemberIdentityPort`로. CI·전화번호 등은 `hmac` 모듈로 해시해야 값이 같아짐 |
+| D 강다인 | 위험 점수 캐시 / 회원 정보 / HMAC 사용 | 제안: `risk:{CI\|PAYMENT\|DEVICE}:{해시}`에 `final_score`를 숫자 문자열(0~100)로. 대기열은 읽기만. 값이 오염되면 100점, `risk:meta:synced_at`이 없으면 Oracle 직접 조회(`RiskScoreFallbackPort`)를 다인 님이 구현. 회원 CI·결제 수단·기기 해시와 상태는 `MemberIdentityPort`로. CI·전화번호 등은 `hmac` 모듈로 해시해야 값이 같아짐 |
 | C 길동현 | queue_log 적재 / 에러 코드 | 제안: `QueueLogSink`를 Kafka 발행으로 구현(토픽 합의 필요). 기능설계서 9장에 `QUEUE_NOT_FOUND`(404), `AUTH_REQUIRED`(401) 추가 |
 | E 조영준 | 로그인 인증 / 비밀값 / k6 | JWT는 팀 구현(`AuthPrincipal`)을 그대로 씀 (해결). `JEJARI_HMAC_KEY`를 `.env`로 관리, 공통 영역에 `SERVICE_UNAVAILABLE`·Redis 즉시 실패 설정을 추가했으니 확인 부탁, 대기열 k6는 `k6/queue/`와 `loadtest/` |
 
@@ -103,6 +111,7 @@
 
 | 날짜 | 제목 | 수치 |
 |---|---|---|
+| 2026-11-16 | [위험 점수 캐시 값이 숫자가 아니면 진입 오류, `NaN`이면 패널티가 조용히 사라짐](troubleshooting/20261116-위험점수-값-오염-진입-오류.md) → 형식·범위 검증, 오염되면 100점, 동기화 표시 키 | 잘못된 값 15종 전부 100점 (테스트) |
 | 2026-11-16 | [위험 점수를 줬는데 봇이 먼저 입장하는 것처럼 보임](troubleshooting/20261116-패널티-봇-선입장.md) → 패널티는 "다른 사람보다 뒤"로 보낼 뿐, 줄에 혼자 있으면 바로 입장하는 설계라서 시나리오 전제가 틀렸음. 입장 시작을 줄이 찬 뒤로 조정 | 봇 입장 비율 0% → 100% |
 | 2026-11-16 | 앱 시계로 score를 찍어 순번이 뒤집힐 수 있음 → Redis `TIME`으로 통일 | 결정 3 |
 | 2026-11-16 | [전화번호에 글자가 섞여도 조용히 버려져 서로 다른 입력이 같은 해시가 됨](troubleshooting/20261116-hmac-전화번호-글자-조용히-버림.md) → 허용 문자 외에는 오류 | HMAC 테스트로 발견 |
