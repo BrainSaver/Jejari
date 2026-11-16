@@ -47,7 +47,8 @@ import com.jejari.seat.SeatHoldService.SeatRequest;
 @SpringBootTest(properties = {
 		"spring.data.redis.database=15",
 		"jejari.queue.scheduler-enabled=false",
-		"jejari.risk.cache-resync-enabled=false"})
+		"jejari.risk.cache-resync-enabled=false",
+		"jejari.seat.expiry-scanner-enabled=false"})
 @AutoConfigureMockMvc
 class SeatHoldInfraTest {
 

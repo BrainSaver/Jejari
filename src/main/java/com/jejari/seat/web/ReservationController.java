@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -19,6 +20,8 @@ import com.jejari.seat.SeatHoldService;
 import com.jejari.seat.SeatHoldService.HoldCommand;
 import com.jejari.seat.SeatHoldService.HoldResult;
 import com.jejari.seat.SeatHoldService.SeatRequest;
+import com.jejari.seat.SeatReleaseService;
+import com.jejari.seat.SeatReleaseService.CancelResult;
 
 /**
  * 좌석 선점 API (RSV-02). 기능설계서 7장: POST /api/v1/reservations, 회원 + 입장 토큰 + 멱등 키.
@@ -35,10 +38,12 @@ public class ReservationController {
 	}
 
 	private final SeatHoldService seatHold;
+	private final SeatReleaseService seatRelease;
 	private final QueuePassService queuePass;
 
-	public ReservationController(SeatHoldService seatHold, QueuePassService queuePass) {
+	public ReservationController(SeatHoldService seatHold, SeatReleaseService seatRelease, QueuePassService queuePass) {
 		this.seatHold = seatHold;
+		this.seatRelease = seatRelease;
 		this.queuePass = queuePass;
 	}
 
@@ -56,5 +61,15 @@ public class ReservationController {
 				body.toStationId(), body.seats(), body.channel(), idempotencyKey));
 		// 새로 잡았으면 201, 같은 멱등 키 재요청이면 기존 예약 상태를 200으로
 		return ResponseEntity.status(result.replay() ? HttpStatus.OK : HttpStatus.CREATED).body(result);
+	}
+
+	/**
+	 * RSV-05 결제 전 취소 (§7.4). HOLD 예약만 취소되고 수수료가 없다. 풀린 좌석은 대기자에게 먼저 간다 (REOFFER).
+	 * 결제 중(PAYMENT_PENDING)이면 409 PAYMENT_IN_PROGRESS. 확정 예약 취소(CNL-02, 강다인)는 아직 여기 붙지 않아
+	 * 409 RESERVATION_NOT_HOLD를 돌려준다 — 기능설계서 7장대로 이 경로를 HOLD·CONFIRMED 공통으로 쓰려면 그쪽 서비스를 여기서 부르면 된다.
+	 */
+	@PostMapping("/{reservationId}/cancel")
+	public CancelResult cancel(@AuthenticationPrincipal AuthPrincipal me, @PathVariable long reservationId) {
+		return seatRelease.cancelBeforePay(me.memberId(), reservationId);
 	}
 }
