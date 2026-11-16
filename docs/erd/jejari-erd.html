@@ -940,6 +940,7 @@ const DECISIONS_SEED = [
  {item:'대기열 입장 처리량',value:'초당 200명 · 입장 토큰 300초',where:'app_policy queue.*',reason:'부하 테스트로 조정',status:'예시'},
  {item:'회원 패널티 결합 규칙',value:'MAX (최댓값)',where:'app_policy risk.member_penalty_rule',reason:'다계정 중 하나라도 위험하면 묶음 전체 후순위',status:'예시'},
  {item:'위험 점수 → 대기 지연',value:'1점당 1초',where:'app_policy risk.penalty_ms_per_point',reason:'점수 80이면 80초 뒤로',status:'예시'},
+ {item:'위험 점수 → 취소표 대기 순서',value:'1점당 1분',where:'app_policy waitlist.penalty_ms_per_point',reason:'취소표 대기는 몇 시간~며칠이라 대기열(1점 1초)보다 크게. 80점이면 80분 뒤로 (concurrency.md §9.3)',status:'예시'},
  {item:'케이스 자동 생성 임계값',value:'80점',where:'model_run.threshold',reason:'모델 버전별로 다르게 둘 수 있게 model_run에 저장',status:'예시'},
  {item:'점수 감쇠',value:'반감기 30일',where:'model_run.decay_half_life_days',reason:'운영 원칙: 기간 경과 시 점수 감소',status:'예시'},
  {item:'녹화 샘플링',value:'위험 상위 10% 전체 녹화, 70점 이상 무조건',where:'app_policy replay.*',reason:'저장량과 개인정보 부담 사이 절충',status:'예시'},

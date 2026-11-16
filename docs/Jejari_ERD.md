@@ -72,6 +72,7 @@
 | 대기열 입장 처리량 | 초당 200명 · 입장 토큰 300초 | app_policy queue.* | 부하 테스트로 조정 | 예시 |
 | 회원 패널티 결합 규칙 | MAX (최댓값) | app_policy risk.member_penalty_rule | 다계정 중 하나라도 위험하면 묶음 전체 후순위 | 예시 |
 | 위험 점수 → 대기 지연 | 1점당 1초 | app_policy risk.penalty_ms_per_point | 점수 80이면 80초 뒤로 | 예시 |
+| 위험 점수 → 취소표 대기 순서 | 1점당 1분 | app_policy waitlist.penalty_ms_per_point | 취소표 대기는 몇 시간~며칠이라 대기열(1점 1초)보다 크게. 80점이면 80분 뒤로 (concurrency.md §9.3) | 예시 |
 | 케이스 자동 생성 임계값 | 80점 | model_run.threshold | 모델 버전별로 다르게 둘 수 있게 model_run에 저장 | 예시 |
 | 점수 감쇠 | 반감기 30일 | model_run.decay_half_life_days | 운영 원칙: 기간 경과 시 점수 감소 | 예시 |
 | 녹화 샘플링 | 위험 상위 10% 전체 녹화, 70점 이상 무조건 | app_policy replay.* | 저장량과 개인정보 부담 사이 절충 | 예시 |
