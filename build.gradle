@@ -24,6 +24,8 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'org.springframework.boot:spring-boot-starter-kafka'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
+	// JWT 서명·검증 (Nimbus). 직접 파싱하지 않고 Spring Security 리소스 서버에 맡깁니다
+	implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	compileOnly 'org.projectlombok:lombok'
@@ -43,6 +45,21 @@ dependencies {
 	testAnnotationProcessor 'org.projectlombok:lombok'
 }
 
+// 기본 test는 DB·Redis·Kafka 없이 돕니다 (CI). 인프라가 필요한 통합 테스트는 @Tag("infra")를 붙이고
+// docker compose up -d 뒤에 ./gradlew infraTest 로 따로 돌립니다.
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		excludeTags 'infra'
+	}
+}
+
+tasks.register('infraTest', Test) {
+	description = '인프라(Redis 등)가 떠 있어야 하는 통합 테스트 (@Tag("infra"))'
+	group = 'verification'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'infra'
+	}
+	shouldRunAfter tasks.named('test')
 }

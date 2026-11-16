@@ -1,0 +1,14 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  # Spring Boot Actuator (micrometer-registry-prometheus 필요)
+  - job_name: jejari-app
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+
+  # 선택: redis_exporter / kafka_exporter / oracledb_exporter 를 띄웠다면 아래에 추가
+  # - job_name: redis
+  #   static_configs:
+  #     - targets: ["host.docker.internal:9121"]

@@ -1,5 +1,5 @@
 // 문서 사이트 API. 읽기는 누구나, 쓰기는 이름+PIN 로그인 후 자기 이름 브랜치에만.
-import { MEMBERS, NAMES, MAIN, REFS, EDITABLE, READABLE, adminOf } from '../../lib/config.js';
+import { MEMBERS, NAMES, MAIN, REFS, EDITABLE, READABLE, PERSON_FILE, PERSON_DIR, ownerOk, adminOf } from '../../lib/config.js';
 import {
   gh, GhError, getFile, listDir, putFile, syncMain, compare, conflictFiles, listCommits, slimCommit,
 } from '../../lib/github.js';
@@ -15,7 +15,7 @@ const fail = (status, error, message, extra = {}) => json({ error, message, ...e
 const okPath = (p, list) => typeof p === 'string' && !p.includes('..') && list.some((re) => re.test(p));
 const okRef = (r) => REFS.includes(r);
 // 로그인 안 한 사람은 main의 기획서·기능설계서·DB설계서(ERD 포함)·화면설계·동시성 문서만 볼 수 있다
-const PUBLIC = [/^README\.md$/, /^docs\/concurrency\.md$/, /^docs\/기능설계서\.md$/, /^docs\/DB설계서\.md$/, /^docs\/ui\/[UA]-\d{2}\.(md|html)$/, /^docs\/ui\/index\.json$/, /^docs\/erd\/jejari-erd\.html$/];
+const PUBLIC = [/^README\.md$/, /^docs\/concurrency\.md$/, /^docs\/기능설계서\.md$/, /^docs\/DB설계서\.md$/, /^docs\/ui\/[UA]-\d{2}\.(md|html)$/, /^docs\/ui\/index\.json$/, /^docs\/erd\/jejari-erd\.html$/, PERSON_FILE, /^docs\/templates\/[^/]+\.md$/];
 const LOGIN_FIRST = () => fail(401, 'LOGIN', '로그인하면 볼 수 있어요.');
 const authorOf = (name) => ({ name, email: `${name}@users.noreply.jejari.pages.dev` });
 
@@ -137,6 +137,7 @@ async function prepare(env, me) {
 async function save(env, me, body) {
   const { path, mode, oldText, newText, message, heading } = body;
   if (!okPath(path, EDITABLE)) return fail(400, 'BAD_PATH', '사이트에서 고칠 수 없는 파일이에요.');
+  if (!ownerOk(me, path)) return fail(403, 'NOT_MINE', '다른 팀원의 폴더는 그 사람만 고칠 수 있어요.');
   if (typeof newText !== 'string') return fail(400, 'BAD_BODY', '내용이 비었어요.');
   if (!validMessage(message)) return fail(400, 'BAD_MESSAGE', '커밋 메시지는 한 줄로 써 주세요.');
 
@@ -236,30 +237,28 @@ async function revert(env, me, body) {
 }
 
 async function mergeToMain(env, me) {
+  // PR 없이 바로 합친다. prepare가 main을 먼저 브랜치에 넣어 두므로 보통은 main을 브랜치 위치로 빨리 감기만 하면 된다.
+  // 커밋은 이름별로 그대로 남는다 (squash 안 함).
   const p = await prepare(env, me);
   if (p.error) return json(p, 409);
   const cmp = await compare(env, MAIN, me);
   if (!cmp.ahead_by) return fail(400, 'NOTHING', 'main에 없는 수정이 없어요.');
-  const owner = (env.GITHUB_REPO || 'brainsaver/jejari').split('/')[0];
-  const open = await gh(env, 'GET', `/repos/{repo}/pulls?state=open&base=${MAIN}&head=${owner}:${me}`);
-  let pr = open[0];
-  if (!pr) {
-    const files = (cmp.files || []).map((f) => `- ${f.filename}`).join('\n');
-    pr = await gh(env, 'POST', '/repos/{repo}/pulls', {
-      title: `docs: ${me}(${MEMBERS[me]}) 문서 수정 main 반영`,
-      head: me, base: MAIN,
-      body: `문서 사이트에서 ${me}가 main에 합치기를 눌러 만든 PR입니다.\n\n커밋 ${cmp.ahead_by}개\n\n바뀐 파일\n${files}`,
-    });
+  if (cmp.status === 'ahead') {
+    const head = (await gh(env, 'GET', `/repos/{repo}/git/ref/heads/${encodeURIComponent(me)}`)).object.sha;
+    try {
+      await gh(env, 'PATCH', `/repos/{repo}/git/refs/heads/${MAIN}`, { sha: head, force: false });
+      return json({ ok: true, sha: head, commits: cmp.ahead_by, mode: 'fast-forward' });
+    } catch (e) {
+      if (e.status !== 422) throw e; // 그 사이 main이 움직였으면 아래 merge로
+    }
   }
   try {
-    const m = await gh(env, 'PUT', `/repos/{repo}/pulls/${pr.number}/merge`, {
-      merge_method: 'merge', commit_title: `Merge branch '${me}' (문서 사이트)`,
+    const m = await gh(env, 'POST', '/repos/{repo}/merges', {
+      base: MAIN, head: me, commit_message: `Merge branch '${me}' (문서 사이트)`,
     });
-    return json({ ok: true, pr: pr.number, url: pr.html_url, sha: m.sha, commits: cmp.ahead_by });
+    return json({ ok: true, sha: m && m.sha, commits: cmp.ahead_by, mode: 'merge' });
   } catch (e) {
-    if (e.status === 405 || e.status === 409) {
-      return fail(409, 'NOT_MERGEABLE', '지금은 main에 합칠 수 없어요. GitHub PR에서 확인해 주세요.', { url: pr.html_url });
-    }
+    if (e.status === 409) return fail(409, 'NOT_MERGEABLE', '지금은 main과 충돌이 있어 합칠 수 없어요. 다시 저장해서 main을 먼저 받아 주세요.');
     throw e;
   }
 }
@@ -312,8 +311,9 @@ export async function onRequest(ctx) {
       }
       case 'GET /list': {
         const dir = q.get('dir'); const ref = q.get('ref') || MAIN;
-        if (!['docs/ui', 'docs/erd/exports'].includes(dir) || !okRef(ref)) return fail(400, 'BAD_PATH', '볼 수 없는 폴더예요.');
-        if (!me && (ref !== MAIN || dir !== 'docs/ui')) return LOGIN_FIRST();
+        const personDir = PERSON_DIR.test(dir || '');
+        if (!(['docs/ui', 'docs/erd/exports'].includes(dir) || personDir) || !okRef(ref)) return fail(400, 'BAD_PATH', '볼 수 없는 폴더예요.');
+        if (!me && (ref !== MAIN || !(dir === 'docs/ui' || personDir))) return LOGIN_FIRST();
         return cached(req, 10, async () => json(await listDir(env, dir, ref)));
       }
       case 'GET /branches':
@@ -359,6 +359,7 @@ export async function onRequest(ctx) {
         if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
         const path = body.path;
         if (!okPath(path, EDITABLE)) return fail(400, 'BAD_PATH', '사이트에서 고칠 수 없는 파일이에요.');
+        if (!ownerOk(me, path)) return fail(403, 'NOT_MINE', '다른 팀원의 폴더는 그 사람만 고칠 수 있어요.');
         const p = await prepare(env, me);
         if (p.error) return json(p, 409);
         const f = await getFile(env, path, me);

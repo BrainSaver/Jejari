@@ -23,13 +23,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.jejari.common.security.SecurityConfig;
+import com.jejari.support.WebSecurityTestConfig;
 import com.jejari.common.web.TraceId;
-import com.jejari.common.web.TraceIdFilter;
 
 /** 실패 응답 형식 { code, message, traceId }와 traceId 전달, 임시 보안 설정을 확인합니다. DB·Redis 없이 돕니다. */
 @WebMvcTest(controllers = ErrorResponseTest.TestController.class)
-@Import({ErrorResponseTest.TestController.class, SecurityConfig.class, ErrorResponseWriter.class, GlobalExceptionHandler.class, TraceIdFilter.class})
+@WebSecurityTestConfig
+@Import(ErrorResponseTest.TestController.class)
 class ErrorResponseTest {
 
 	@Autowired
@@ -46,10 +46,10 @@ class ErrorResponseTest {
 
 	@Test
 	@WithMockUser
-	void 일반_회원이_관리자_경로면_403() throws Exception {
+	void 관리자_권한_없으면_403_ADMIN_FORBIDDEN() throws Exception {
 		mvc.perform(get("/api/v1/admin/anything"))
 				.andExpect(status().isForbidden())
-				.andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+				.andExpect(jsonPath("$.code").value("ADMIN_FORBIDDEN"));
 	}
 
 	@Test

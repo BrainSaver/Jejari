@@ -37,6 +37,9 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+      # 끊기거나 느리면 오래 붙잡지 않고 실패시킵니다 (기본값은 60초라 스레드가 묶여 앱 전체가 멈춥니다). 실패는 503
+      timeout: 2s
+      connect-timeout: 2s
 
   # ── Kafka ──
   kafka:
@@ -52,6 +55,27 @@ spring:
 
   jackson:
     time-zone: Asia/Seoul
+
+jejari:
+  # 개발 모드: 로그인 없이 X-Member-Id 헤더로 회원을 구분하고, 회원·운행 연동이 없어도 대기열을 켜는 대용품과
+  # 부하 테스트용 관리 API(/api/v1/dev/**)를 엽니다. 운영에서는 반드시 false.
+  dev-mode: false
+  # 식별정보 가명처리(HMAC) 키. 프로젝트 기간 동안 바꾸지 않습니다 (common/hmac)
+  hmac:
+    key: ${JEJARI_HMAC_KEY:}
+  queue:
+    scheduler-enabled: true   # 입장 스케줄러(1초마다 입장 처리). 앱 1대 기준입니다
+    policy-cache-ms: 1000     # 정책(app_policy) 값을 앱에서 들고 있는 시간. 바꾸면 최대 이만큼 뒤에 반영
+    dev-on-sale-runs: ""      # 개발 모드에서 판매 중으로 볼 운행 ID (예: 1001)
+  jwt:
+    issuer: jejari
+    access-ttl: 15m
+    refresh-ttl: 14d          # 로그인 시점부터 고정. 재발급해도 늘지 않음
+    clock-skew: 30s
+    active-kid: ${JWT_ACTIVE_KID:k1}
+    secrets:                  # kid: Base64 키(32바이트 이상). 키 교체 방법은 JwtProperties 주석
+      k1: ${JWT_SECRET_K1:}
+    refresh-cookie-secure: ${JWT_REFRESH_COOKIE_SECURE:true}
 
 server:
   error:

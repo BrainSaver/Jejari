@@ -461,6 +461,7 @@ function pageHomeAnon() {
       <a class="card" href="#/db"><h3>DB설계 · ERD</h3><p>Oracle·MongoDB·Redis·Kafka 역할, 테이블 정의, ERD</p></a>
       <a class="card" href="#/ui"><h3>화면설계</h3><p>사용자 11개, 관리자 7개 화면을 눌러 보는 시안과 설명</p></a>
       <a class="card" href="#/doc/conc"><h3>동시성</h3><p>트랜잭션 순서, SQL, Redis Lua, 락 순서, 테스트 목록</p></a>
+      <a class="card" href="#/people"><h3>팀원 문서</h3><p>팀원별 개발일지, 기능 문서, 트러블슈팅, 기여 정리</p></a>
     </div>
     <div class="llm-all">
       <div><h3>프로젝트 전체를 LLM에 주기</h3>
@@ -786,11 +787,11 @@ async function mergeModal() {
     const b = $('#mGo', m); b.disabled = true; b.textContent = '합치는 중…';
     try {
       const r = await api('/merge', { body: {} });
-      closeModal(); bump(); await loadBranches(); toast(`main에 합쳤어요 (PR #${r.pr}).`, 5000); route();
+      closeModal(); bump(); await loadBranches(); toast(`main에 합쳤어요 (커밋 ${r.commits}개).`, 5000); route();
     } catch (x) {
       b.disabled = false; b.textContent = '합치기';
       if (x.error === 'MAIN_CONFLICT') { conflictModal(x); return; }
-      $('#mErr', m).innerHTML = esc(x.message) + (x.url ? ` <a href="${esc(x.url)}" target="_blank" rel="noopener">PR 열기</a>` : '');
+      $('#mErr', m).textContent = x.message;
     }
   });
 }
@@ -1188,6 +1189,131 @@ function aiChat(conv, prefill) {
 }
 
 function setNav(key) { $$('.side a').forEach((a) => a.classList.toggle('on', a.dataset.nav === key)); $('#side').classList.remove('open'); }
+// ---------- 팀원 문서 (docs/{한글이름}/: 개발일지·기능 문서·트러블슈팅·기여 정리) ----------
+const PKINDS = [
+  ['devlog', '개발일지', '한 일, 어떻게 했나, 왜 그렇게 했나', 'docs/templates/devlog.md'],
+  ['features', '기능 문서', '내가 만든 기능을 1~2분 안에 이해하게', 'docs/templates/feature-note.md'],
+  ['troubleshooting', '트러블슈팅', '문제 → 원인 → 해결 → 수치', 'docs/templates/troubleshooting.md'],
+  ['contribution', '기여 정리', '담당 범위, 핵심 수치, 설계 결정', null],
+];
+const personDir = (name) => `docs/${S.members[name]}`;
+const todayKst = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+const docTitle = (md, fallback) => { const m = /^#\s+(.+)$/m.exec(md || ''); return m ? m[1].trim() : fallback; };
+const fileLabel = (f) => { const b = f.name.replace(/\.md$/, ''); const m = /^(\d{4})(\d{2})(\d{2})-(.*)$/.exec(b); return m ? `${m[1]}-${m[2]}-${m[3]} · ${m[4].replace(/-/g, ' ')}` : b.replace(/-/g, ' '); };
+
+async function pagePeople() {
+  const names = Object.keys(S.members);
+  main.innerHTML = `<div class="wrap"><h1 class="page">팀원 문서</h1>
+    <p class="page-sub">팀원마다 개발일지, 기능 문서, 트러블슈팅, 기여 정리가 있어요. 레포의 <code>docs/이름/</code> 폴더를 그대로 보여 줘요.${S.me ? ' 내 폴더는 여기서 바로 쓰고 고칠 수 있어요.' : ''}</p>
+    ${branchBanner(S.ref)}
+    <div class="cards">${names.map((n) => `<a class="card person-card" href="#/people/${n}"><h3>${esc(S.members[n])} <span class="muted" style="font-weight:500">${n}</span></h3>
+      <p class="pc-stat" data-n="${n}">불러오는 중…</p></a>`).join('')}</div></div>`;
+  bindBanner(main);
+  await Promise.all(names.map(async (n) => {
+    const counts = await Promise.all(['devlog', 'features', 'troubleshooting'].map((k) => api('/list' + qs({ dir: `${personDir(n)}/${k}`, ref: S.ref })).then((l) => l.filter((f) => f.name.endsWith('.md'))).catch(() => [])));
+    const el = $(`.pc-stat[data-n="${n}"]`); if (!el) return;
+    const last = counts[0].map((f) => f.name).sort().pop();
+    el.textContent = `개발일지 ${counts[0].length} · 기능 문서 ${counts[1].length} · 트러블슈팅 ${counts[2].length}${last && /^\d{8}/.test(last) ? ` · 최근 일지 ${last.slice(0, 4)}-${last.slice(4, 6)}-${last.slice(6, 8)}` : ''}`;
+  }));
+}
+
+async function pagePerson(name, kind, file) {
+  if (!S.members[name]) { main.innerHTML = '<div class="wrap"><p class="empty">없는 팀원이에요. <a href="#/people">팀원 문서</a></p></div>'; return; }
+  kind = PKINDS.some((k) => k[0] === kind) ? kind : 'devlog';
+  const mine = S.me === name && (S.ref === 'main' || S.ref === S.me);
+  const kd = PKINDS.find((k) => k[0] === kind);
+  main.innerHTML = `<div class="wrap"><p class="page-sub" style="margin:0 0 4px"><a href="#/people">팀원 문서</a> › <b>${esc(S.members[name])}</b> <span class="muted">${name}</span></p>
+    <h1 class="page">${esc(S.members[name])}${file ? '' : ` · ${kd[1]}`}</h1>
+    <div class="tabs">${PKINDS.map(([k, t]) => `<button data-k="${k}"${k === kind ? ' class="on"' : ''}>${t}</button>`).join('')}</div>
+    <div id="pBody"></div></div>`;
+  $$('.tabs button', main).forEach((b) => b.addEventListener('click', () => { location.hash = `#/people/${name}/${b.dataset.k}`; }));
+  const root = $('#pBody');
+  if (kind === 'contribution') return docView(root, `${personDir(name)}/contribution.md`, { compact: true, withToc: true });
+  if (file) {
+    const path = `${personDir(name)}/${kind}/${file}`;
+    root.innerHTML = `<p style="margin:0 0 8px"><a href="#/people/${name}/${kind}">← ${kd[1]} 목록</a></p><div id="pDoc"></div>`;
+    return docView($('#pDoc'), path, { compact: true, withToc: true });
+  }
+  root.innerHTML = `${branchBanner(S.ref)}<div class="row" style="justify-content:space-between;margin:0 0 12px;align-items:center">
+    <span class="muted">${esc(kd[2])} · <code>${esc(personDir(name))}/${kind}/</code></span>
+    ${mine ? `<button class="btn" id="pNew">+ 새 ${kd[1]}</button>` : (S.me && S.me !== name ? '' : (!S.me ? '<span class="muted">로그인하면 내 폴더에 쓸 수 있어요</span>' : ''))}</div>
+    <div id="pList" class="loading">불러오는 중…</div>`;
+  bindBanner(root);
+  const nb = $('#pNew'); if (nb) nb.addEventListener('click', () => newPersonDoc(name, kind));
+  let list = [];
+  const box = $('#pList');
+  try { list = (await api('/list' + qs({ dir: `${personDir(name)}/${kind}`, ref: S.ref }))).filter((f) => f.type === 'file' && f.name.endsWith('.md')); } catch (x) { if (box.isConnected) box.outerHTML = `<p class="empty">${esc(x.message)}</p>`; return; }
+  if (!box.isConnected) return;
+  list.sort((a, b) => (kind === 'devlog' || kind === 'troubleshooting' ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name)));
+  if (!list.length) { box.outerHTML = `<p class="empty">아직 ${kd[1]}가 없어요.${mine ? ' 오른쪽 위 버튼으로 첫 글을 써 보세요.' : ''}</p>`; return; }
+  box.outerHTML = `<div class="plist">${list.map((f) => `<a class="pitem" href="#/people/${name}/${kind}/${encodeURIComponent(f.name)}"><b>${esc(fileLabel(f))}</b><span class="muted">${esc(f.name)}</span></a>`).join('')}</div>`;
+}
+
+// 새 글: 위에서 날짜·제목을 정하고, 아래에서 마크다운(노션처럼 **굵게**, > 인용, - 목록, ## 제목, ``` 코드)으로 쓰며 오른쪽에서 바로 미리 본다
+async function newPersonDoc(name, kind) {
+  if (!needLogin()) return;
+  const kd = PKINDS.find((k) => k[0] === kind);
+  main.innerHTML = '<div class="wide"><p class="loading">틀을 불러오는 중…</p></div>';
+  const tpl = ((await fetchFile(kd[3], 'main').catch(() => null)) || {}).content || '# 제목\n\n';
+  const date = todayKst();
+  main.innerHTML = `<div class="wide"><p style="margin:0 0 6px"><a href="#/people/${name}/${kind}">${esc(S.members[name])} · ${kd[1]}</a> › 새 글</p>
+    <div class="new-meta">${kind === 'features' ? '' : `<label>날짜 <input type="date" id="nDate" value="${date}"></label>`}
+      <label class="grow">제목 <input type="text" id="nTitle" maxlength="60" placeholder="${kind === 'devlog' ? '예: 결제 Saga 보상 트랜잭션' : kind === 'features' ? '예: 좌석 선점' : '예: PG 콜백 중복 수신'}"></label>
+      <span class="muted" id="nPath"></span></div>
+    <div class="md-help muted"><code>**굵게**</code> <code>*기울임*</code> <code>&gt; 인용</code> <code>- 목록</code> <code>1. 번호</code> <code>- [ ] 할 일</code> <code>## 제목</code> <code>\`코드\`</code> <code>\`\`\`코드 블록\`\`\`</code> <code>| 표 |</code> 를 쓰면 오른쪽처럼 보여요. 이미 있는 글은 저장 뒤 섹션마다 "수정"으로 고쳐요.</div>
+    <div class="editor tall"><div class="editor-bar"><b>${kd[1]}</b><span class="grow"></span><span class="muted">${esc(S.me)} 브랜치에 저장</span>
+    <button class="btn sm plain" data-cancel>취소</button><button class="btn sm" data-save>저장</button></div>
+    <div class="editor-body"><textarea class="code" spellcheck="false"></textarea><div class="preview md"></div></div></div></div>`;
+  const ta = $('textarea', main), pv = $('.preview', main), ti = $('#nTitle'), di = $('#nDate');
+  const slug = (t) => (t || '').trim().replace(/[\\/:*?"<>|#%&{}$!'@`=+^~.,\[\]()]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').slice(0, 40) || '제목';
+  const pathOf = () => {
+    const d = di ? di.value.replace(/-/g, '') : '';
+    return `${personDir(name)}/${kind}/${kind === 'features' ? '' : d + '-'}${slug(ti.value)}.md`;
+  };
+  // 첫 줄 제목은 위 칸에서 정한 값으로 바꾼다
+  const head = () => kind === 'devlog' ? `# ${di.value} · ${ti.value.trim() || '한 줄 제목'}` : kind === 'features' ? `# ${ti.value.trim() || '기능 이름'}` : `# ${ti.value.trim() || '한 줄 제목'}`;
+  let body = tpl.replace(/^#\s+.*$/m, '').replace(/^> 파일 이름:.*\n/m, '').replace(/^\n+/, '');
+  body = body.replace(/작성: 이름/, `작성: ${S.members[name]}`).replace(/작성자: 이름/, `작성자: ${S.members[name]}`).replace(/\| 작성자 \| 이름 \|/, `| 작성자 | ${S.members[name]} |`).replace(/\| 날짜 \| YYYY-MM-DD \|/, `| 날짜 | ${date} |`);
+  ta.value = head() + '\n\n' + body;
+  const draw = () => { pv.innerHTML = ''; pv.appendChild(renderMd(ta.value)); $('#nPath').textContent = pathOf(); };
+  const syncHead = () => { ta.value = ta.value.replace(/^#\s+.*$/m, head()); draw(); };
+  ti.addEventListener('input', syncHead); if (di) di.addEventListener('input', syncHead);
+  let t; ta.addEventListener('input', () => { clearTimeout(t); t = setTimeout(draw, 150); }); draw();
+  // 목록·인용·할 일 줄에서 Enter를 누르면 다음 줄에 같은 기호를 이어 준다 (노션처럼)
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab') { e.preventDefault(); ta.setRangeText('  ', ta.selectionStart, ta.selectionEnd, 'end'); return; }
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+    const s = ta.selectionStart, line = ta.value.slice(ta.value.lastIndexOf('\n', s - 1) + 1, s);
+    const m = /^(\s*)(- \[[ x]\] |[-*] |> |(\d+)\. )/.exec(line); if (!m) return;
+    e.preventDefault();
+    if (line.trim() === m[2].trim()) { ta.setRangeText('', s - line.length, s, 'end'); draw(); return; }
+    const next = m[3] ? `${Number(m[3]) + 1}. ` : m[2].replace('[x]', '[ ]');
+    ta.setRangeText('\n' + m[1] + next, s, ta.selectionEnd, 'end'); draw();
+  });
+  ti.focus();
+  $('[data-cancel]', main).addEventListener('click', () => { location.hash = `#/people/${name}/${kind}`; route(); });
+  $('[data-save]', main).addEventListener('click', () => {
+    if (!ti.value.trim()) { toast('제목을 써 주세요.'); ti.focus(); return; }
+    const path = pathOf(), after = ta.value.endsWith('\n') ? ta.value : ta.value + '\n';
+    commitFlow({
+      path, heading: head(), before: '', after, title: `새 ${kd[1]} 저장`,
+      run: async (message) => {
+        try {
+          await api('/save', { body: { path, mode: 'file', oldText: null, newText: after, message } });
+          closeModal(); bump(); toast(`${S.me} 브랜치에 저장했어요. 다른 사람에게도 보이게 하려면 위의 "main에 합치기"를 눌러 주세요.`, 5000);
+          if (S.ref !== S.me) { S.ref = S.me; store.set('ref', S.me); }
+          loadBranches();
+          location.hash = `#/people/${name}/${kind}/${encodeURIComponent(path.split('/').pop())}`;
+        } catch (x) {
+          if (x.error === 'MAIN_CONFLICT') { conflictModal(x); return; }
+          if (x.error === 'STALE') throw new Error('같은 이름의 글이 이미 있어요. 제목을 바꿔 주세요.');
+          throw x;
+        }
+      },
+    });
+  });
+}
+
 async function route() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
   const [p, a] = h;
@@ -1199,6 +1325,8 @@ async function route() {
     else if (p === 'db') { setNav('db'); await pageDb(a); }
     else if (p === 'ui' && a) { setNav('ui'); await pageUiOne(decodeURIComponent(a)); }
     else if (p === 'ui') { setNav('ui'); await pageUi(); }
+    else if (p === 'people' && a) { setNav('people'); await pagePerson(a, h[2], h[3] ? decodeURIComponent(h[3]) : null); }
+    else if (p === 'people') { setNav('people'); await pagePeople(); }
     else if (p === 'ai') { setNav('home'); await pageHome(); aiOpen(); aiList(); }
     else if (p === 'history') { setNav('history'); await pageHistory(); }
     else if (p === 'commit' && a) { setNav('history'); await pageCommit(a); }
