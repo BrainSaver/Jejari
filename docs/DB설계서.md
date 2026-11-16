@@ -65,8 +65,8 @@ C = 생성, R = 조회, U = 수정, D = 삭제. 기능 ID는 기능설계서 3�
 
 | 기능 | Oracle | MongoDB·Redis |
 |---|---|---|
-| AUTH-01·02 회원가입·본인인증 | member C, member_credential C, identity_verification C | |
-| AUTH-03 로그인 | member R, member_credential RU, auth_session C | login_attempt C, `rate:login` |
+| AUTH-01·02 회원가입·본인인증 | member C, member_credential C, identity_verification C (`member_seq`, `identity_verification_seq`) | `rate:signup`, `verify:{tokenHash}` |
+| AUTH-03 로그인 | member R, member_credential RU, auth_session C | login_attempt C, `rate:login`, `login:fail` |
 | AUTH-04 재발급·로그아웃 | auth_session CU | |
 | AUTH-05 관리자 로그인 | admin_user RU, auth_session C | login_attempt C, `rate:login` |
 | AUTH-06 내 정보·탈퇴 | member RU | |
@@ -503,7 +503,7 @@ Argon2id 비밀번호 해시와 잠금 상태. 회원 프로필과 분리해 해
 | `actor_type` | String |  | 시스템 | MEMBER / ADMIN | 관리자 로그인도 같은 방식으로 기록 |
 | `admin_id` | Long | FK → admin_user | 시스템 | 관리자 로그인일 때 | 관리자 계정 무차별 대입 탐지 |
 | `email_hash` | String |  | 생성 | 입력한 이메일 해시 | 없는 계정 대상 시도도 추적 → 크리덴셜 스터핑 탐지 |
-| `result` | String |  | 생성 | SUCCESS / WRONG_PASSWORD / LOCKED / NOT_FOUND / RATE_LIMITED |  |
+| `result` | String |  | 생성 | SUCCESS / WRONG_PASSWORD / LOCKED / NOT_FOUND / RATE_LIMITED / BANNED | BANNED = 비밀번호는 맞았지만 정지 회원 |
 | `ip_hash` | String |  | 생성 |  | 한 IP에서 여러 계정 시도 탐지 |
 | `device_hash` | String |  | 생성 |  |  |
 | `user_agent` | String |  | 생성 |  |  |
@@ -1027,7 +1027,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `admin_user` | `role` | VIEWER / REVIEWER / SUPERVISOR | 마스킹 해제·내보내기는 SUPERVISOR만 |
 | `admin_user` | `status` | ACTIVE / DISABLED |  |
 | `login_attempt` | `actor_type` | MEMBER / ADMIN | 관리자 로그인도 같은 방식으로 기록 |
-| `login_attempt` | `result` | SUCCESS / WRONG_PASSWORD / LOCKED / NOT_FOUND / RATE_LIMITED |  |
+| `login_attempt` | `result` | SUCCESS / WRONG_PASSWORD / LOCKED / NOT_FOUND / RATE_LIMITED / BANNED |  |
 | `seat_inventory` | `status` | HOLD / SOLD | 선점과 확정 구분 |
 | `reservation` | `status` | HOLD / PAYMENT_PENDING / CONFIRMED / CANCELED / EXPIRED | 상태 머신 |
 | `reservation` | `channel` | WEB / APP | 채널별 트래픽 분석 |
@@ -1104,7 +1104,10 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `relay:shard:{n}` | STRING | 릴레이 인스턴스 ID | `relay.lease_sec` | EVT-02 |
 | `risk:{subjectType}:{hash}` | STRING | final_score | 다음 산정 주기 × 2 | RISK-03 |
 | `seatmap:{runId}` | HASH | seatId → 상태 | 출발 | TRN-02, RSV-01 |
-| `rate:login:{ipHash}` | STRING | 시도 수 | 짧은 창 | AUTH-03 |
+| `rate:login:{ipHash}` | STRING | 분당 시도 수 (한도 `auth.login_rate_per_min`) | 1분 | AUTH-03 |
+| `rate:signup:{ipHash}` | STRING | 시간당 본인인증·가입 시도 수 (한도 `auth.signup_rate_per_hour`) | 1시간 | AUTH-01·02 |
+| `login:fail:{emailHash}` | STRING | 연속 실패 수 (`auth.lock_after_failures`에 닿으면 잠금) | `auth.lock_minutes` | AUTH-03 |
+| `verify:{tokenHash}` | STRING | 본인인증 결과 (1회용, 휴대폰 번호는 암호문). 가입 때 GETDEL | `auth.verify_token_ttl_sec` | AUTH-01·02 |
 | `rate:api:{memberId}` | STRING | 초당 호출 수 | 1초 | 전체 |
 | `policy:cache` | HASH | app_policy 값 | | ADM-08 |
 

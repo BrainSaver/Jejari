@@ -118,6 +118,7 @@
 | A 김성원 | 테스트용 운행 | 지금 `ON_SALE`인 운행은 `run_id = 9001` 하나 |
 | A 김성원 | ERD v13 | `queue:member` 값에 ciHash, `queue.entry_ttl_sec`, 취소표 대기 `priority_at`·`penalty_ms` 반영 (팀-확인-요청 1·2·12번) |
 | D 강다인 | ERD v13 | `risk_score_history_seq` 시퀀스 추가 → 점수 저장 때 이력도 기록 |
+| D 강다인 | ERD v15 | 회원가입·로그인용 시퀀스 2개, Redis 키 3개, `app_policy` 한도 3개, `login_attempt.result` BANNED |
 
 ## 6. 트러블슈팅
 
