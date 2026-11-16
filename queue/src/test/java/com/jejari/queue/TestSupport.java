@@ -11,12 +11,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
 
-/** 테스트용 대용품: 시각을 직접 움직이는 시계, 로그 수집기, 좌석 API 흉내 */
+/** 테스트용 대용품: 시각을 직접 움직이는 시계, 로그 수집기 */
 @TestConfiguration
 public class TestSupport {
 
@@ -40,12 +36,4 @@ public class TestSupport {
 
     @Bean @Primary
     RecordingSink recordingSink() { return new RecordingSink(); }
-
-    /** B의 좌석 배치도 API 자리. 필터를 통과하면 200 */
-    @RestController
-    @RequestMapping("/api/v1/runs/{runId}/seats")
-    static class FakeSeatController {
-        @GetMapping
-        String seats(@PathVariable long runId) { return "seats-" + runId; }
-    }
 }
