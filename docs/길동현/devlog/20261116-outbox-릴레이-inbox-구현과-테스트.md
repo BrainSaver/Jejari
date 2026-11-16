@@ -1,6 +1,6 @@
 # 2026-11-16 · Outbox 기록·릴레이·Inbox 구현과 테스트 (EVT-01~03)
 
-> 작성: 길동현 · 관련: EVT-01, EVT-02, EVT-03, concurrency.md §11·§12, 커밋 전 (`DongHyeon` 브랜치 작업 중)
+> 작성: 길동현 · 관련: EVT-01, EVT-02, EVT-03, concurrency.md §11·§12, 커밋 `0f9f181`
 > 파일 이름: `docs/길동현/devlog/20261116-outbox-릴레이-inbox-구현과-테스트.md`
 > 오전 작업(역할 정리·인프라)은 `20261116-역할-정리-미정사항-확정-로컬-인프라.md`
 
@@ -85,8 +85,8 @@
 
 - [x] ~~`com.jejari.event` 패키지와 이벤트 봉투·타입~~
 - [x] ~~Outbox 기록 샤드 계산을 실제 Oracle로 검증 (T32)~~
-- [ ] EVT-01~03 커밋·push (`feat(event): Outbox 기록·릴레이·Inbox 멱등 소비 (EVT-01~03)`)
-- [ ] `features/` 기능 문서, `troubleshooting/` Oracle 기동 직후 테스트 실패(ORA-01109) 문서, `contribution.md` 갱신
+- [x] ~~EVT-01~03 커밋·push (`0f9f181`)~~
+- [x] ~~`features/` 기능 문서, `troubleshooting/` 문서 2건, `contribution.md` 갱신~~
 - [ ] 강동균에게 `outbox.recordReservation(...)` 호출 방법 전달
 - [ ] Mock PG (카드번호 끝자리 규칙) → 결제 시작·확정·실패 (§4·§5)
 - [ ] 강동균 예약 코드가 들어오면 Saga (EVT-05)
