@@ -106,6 +106,23 @@ FK 때문에 reset이 실패하므로 그 데이터를 먼저 지웁니다.
 그래서 실행일 기준으로 계산하고, 이미 있는 행사·운행의 날짜는 덮어쓰지 않습니다
 (날짜를 다시 잡으려면 `99_reset.sql`).
 
+## 적재 스크립트 (CSV → SQL)
+
+```bash
+node tools/load-public-data.js            # 검사만. SQL이 CSV와 다르면 종료코드 1
+node tools/load-public-data.js --write    # SQL의 값 블록을 다시 생성
+```
+
+`01_station_route.sql` 과 `02_car_type_train_seat.sql` 의 `-- @generated:…` ~ `-- @end:…`
+사이가 **CSV에서 생성되는 구역**입니다. 손으로 고치지 마세요. MERGE 문과 주석은 손으로 쓴
+것이라 스크립트가 건드리지 않습니다.
+
+역을 늘리거나 노선을 바꾸려면 `tools/load-public-data.js` 맨 위 `TARGET` 만 고치고
+`--write` 로 다시 생성하면 됩니다.
+
+CI(`.github/workflows/ci.yml`)가 매 push마다 검사 모드로 돌려서, 시드가 CSV와 어긋나면
+빌드가 실패합니다.
+
 ## 공공데이터 적용 (2026-11-16 완료)
 
 기획서 데이터 활용 1번대로 공공데이터포털에서 받아 **실제 값을 넣었습니다.**
