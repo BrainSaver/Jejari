@@ -7,7 +7,7 @@ import { pinStatus, currentUser, login, logout, resetPin, sessionCookie, clearCo
 import { commitMessage, validMessage, askDoc } from '../../lib/groq.js';
 import { buildContext } from '../../lib/context.js';
 import { aiLogStore, AI_LOG_MAX } from '../../lib/ailog.js';
-import { roadmap, DEFAULT_FLOW } from '../../lib/roadmap.js';
+import { roadmap, DEFAULT_FLOW, roadmapText } from '../../lib/roadmap.js';
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers } });
@@ -379,10 +379,20 @@ export async function onRequest(ctx) {
         if (body.history != null && (!Array.isArray(body.history) || body.history.length > 20
           || !body.history.every((h) => h && ['user', 'assistant'].includes(h.role) && str(h.content, 6000)))) return fail(400, 'BAD_ASK', '대화 기록 형식이 맞지 않아요.');
         if (!askAllowed(req)) return fail(429, 'ASK_LIMIT', `AI 질문은 1분에 ${ASK_PER_MIN}번까지예요. 잠시 뒤에 다시 물어봐 주세요.`);
-        const r = await askDoc(env, {
+        const input = {
           doc: String(body.doc || ''), path: String(body.path || ''), heading: String(body.heading || ''),
           selection, section: String(body.section || ''), question, history: body.history,
-        }, buildContext);
+        };
+        // 로드맵에서 물으면 지금 로드맵 현황(카드·체크·선행 작업·할 순서)을 서버가 붙인다
+        if (/^roadmap(:|$)/.test(input.path)) {
+          const rm = roadmap(env);
+          if (rm) {
+            const area = input.path.split(':')[1] || '';
+            input.section = roadmapText(await rm.all(), { area, me });
+            input.sectionChars = 6000;
+          }
+        }
+        const r = await askDoc(env, input, buildContext);
         return r.error ? fail(r.status, r.error, r.message) : json(r);
       }
       case 'GET /ai-log':

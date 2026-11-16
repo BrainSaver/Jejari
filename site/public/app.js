@@ -37,7 +37,25 @@ const refTag = (r) => `<span class="ref-tag" style="background:${colorOf(r)}">${
 const firstLine = (m) => String(m || '').split('\n')[0];
 const isMerge = (c) => (c.parents || []).length > 1 || /^Merge (branch|pull request|remote)/.test(c.message || '') || /^merge: main →/.test(c.message || '');
 
+// 읽기(GET) 응답은 메모리에 두고 다시 열 때 바로 쓴다. 15초가 지난 것은 바로 보여 주면서 뒤에서 새로 받아 둔다.
+// 저장·합치기 뒤에는 bump()가 비운다. t= 가 붙은 요청(폴링·기록)과 nocache는 늘 새로 받는다.
+const CACHE = new Map(), INFLIGHT = new Map();
+const CACHE_FRESH = 15000;
+function apiGet(path) {
+  if (INFLIGHT.has(path)) return INFLIGHT.get(path);
+  const p = apiRaw(path).then((d) => { CACHE.set(path, { at: Date.now(), d }); return d; }).finally(() => INFLIGHT.delete(path));
+  INFLIGHT.set(path, p);
+  return p;
+}
 async function api(path, opts = {}) {
+  if (!opts.body && !opts.method && !opts.nocache && !/[?&]t=/.test(path)) {
+    const c = CACHE.get(path);
+    if (c) { if (Date.now() - c.at > CACHE_FRESH) apiGet(path).catch(() => {}); return c.d; }
+    return apiGet(path);
+  }
+  return apiRaw(path, opts);
+}
+async function apiRaw(path, opts = {}) {
   const init = { method: opts.method || 'GET', headers: {}, credentials: 'same-origin' };
   if (opts.body) { init.method = 'POST'; init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(opts.body); }
   const res = await fetch('/api' + path, init);
@@ -48,7 +66,18 @@ async function api(path, opts = {}) {
 }
 const fresh = { n: 0 };
 const qs = (o) => '?' + new URLSearchParams({ ...o, ...(fresh.n ? { fresh: String(fresh.n) } : {}) });
-function bump() { fresh.n = Date.now(); }
+function bump() { fresh.n = Date.now(); CACHE.clear(); }
+// 처음 열고 한가할 때 자주 가는 페이지 내용을 미리 받아 둔다 (메뉴를 눌렀을 때 로딩 없이)
+function prefetch() {
+  const go = async () => {
+    const refs = S.ref === 'main' ? ['main'] : [S.ref, 'main'];
+    const paths = [...Object.values(DOCS).map((d) => d.path), 'docs/ui/index.json', ERD_PATH];
+    for (const r of refs) for (const path of paths) { try { await fetchFile(path, r); } catch {} }
+    try { if (!RM.data) await rmLoad(); } catch {}
+    try { await api('/commits' + qs({})); } catch {}
+  };
+  (window.requestIdleCallback || ((f) => setTimeout(f, 800)))(() => go());
+}
 
 let toastTimer;
 function toast(msg, ms = 3500) {
@@ -199,13 +228,13 @@ function lineDiff(a, b) {
 
 // ---------- 로그인 ----------
 async function loadMe() {
-  const d = await api('/me' + qs({}));
+  const d = await api('/me' + qs({}), { nocache: true });
   Object.assign(S, { me: d.name, ko: d.ko, admin: d.admin, members: d.members, pins: d.pins, ai: d.ai });
   renderTop();
 }
 async function loadBranches() {
   if (!S.me) { S.branches = null; renderTop(); return; }
-  try { S.branches = await api('/branches' + qs({})); } catch { S.branches = null; }
+  try { S.branches = await api('/branches' + qs({}), { nocache: true }); } catch { S.branches = null; }
   renderTop();
 }
 function myAhead() { const b = S.branches && S.branches.branches.find((x) => x.name === S.me); return b ? b.ahead : 0; }
@@ -989,6 +1018,7 @@ $('[data-ask]', selPop).addEventListener('click', () => {
 });
 
 const ASK_CHIPS = ['쉽게 설명해줘', '왜 이렇게 설계했어?', '예시로 보여줘', '코드로는 어떻게 구현해?'];
+const RM_CHIPS = ['내가 다음에 뭘 하면 돼?', '어떤 순서로 하면 돼?', '누가 누구를 기다리고 있어?', '이번 주에 끝내야 할 게 뭐야?'];
 const FREE_CHIPS = ['제자리가 어떤 프로젝트야?', '좌석 중복 예약은 어떻게 막아?', '결제가 실패하면 어떻게 돼?', '1차 구현 범위가 뭐야?'];
 const AI_LOG_MAX = 40;
 
@@ -1136,11 +1166,11 @@ function aiChat(conv, prefill) {
   const free = !conv.selection;
   aiBody.innerHTML = `<div class="ai-chat">
       ${free ? '' : `<div class="ai-src"><a href="#" data-src>${esc(conv.doc)}${conv.heading ? ' · ' + esc(conv.heading) : ''}</a><blockquote class="ask-quote">${esc(conv.selection)}</blockquote></div>`}
-      ${conv.messages.length ? '' : `<p class="muted ai-hello">${free ? '프로젝트에 대해 무엇이든 물어보세요. AI는 프로젝트 지도와 관련 문서를 찾아 보고 짧게 답해요. 문서에서 글을 드래그해 물어볼 수도 있어요.' : '고른 부분에 대해 물어보세요.'}</p>`}
+      ${conv.messages.length ? '' : `<p class="muted ai-hello">${free ? '프로젝트에 대해 무엇이든 물어보세요. AI는 프로젝트 지도와 관련 문서를 찾아 보고 짧게 답해요. 문서에서 글을 드래그해 물어볼 수도 있어요.' : /^roadmap/.test(conv.path) ? '지금 로드맵의 할 일, 누가 했는지, 먼저 끝나야 할 일, 할 순서를 보고 답해요.' : '고른 부분에 대해 물어보세요.'}</p>`}
       <div class="ask-log"></div>
     </div>
     <div class="ai-foot">
-      ${conv.messages.length ? '' : `<div class="ask-chips">${(free ? FREE_CHIPS : ASK_CHIPS).map((q) => `<button type="button" class="chip">${esc(q)}</button>`).join('')}</div>`}
+      ${conv.messages.length ? '' : `<div class="ask-chips">${(/^roadmap/.test(conv.path) ? RM_CHIPS : free ? FREE_CHIPS : ASK_CHIPS).map((q) => `<button type="button" class="chip">${esc(q)}</button>`).join('')}</div>`}
       <form class="ask-row"><input type="text" maxlength="500" placeholder="${conv.messages.length ? '이어서 물어보기' : '질문 입력'}" aria-label="질문"><button class="btn" type="submit">묻기</button></form>
       <p class="muted ask-note">답 속 문장을 드래그하면 그 부분만 더 물어볼 수 있어요. AI는 틀릴 수 있으니 중요한 건 원문이나 담당 팀원에게 확인하세요.</p>
     </div>`;
@@ -1205,7 +1235,11 @@ function aiChat(conv, prefill) {
   $('.ask-row', aiBody).addEventListener('submit', (e) => { e.preventDefault(); ask(input.value); });
   $$('.ask-chips .chip', aiBody).forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
   const src = $('[data-src]', aiBody);
-  if (src) src.addEventListener('click', (e) => { e.preventDefault(); jumpTo(conv.path, conv.heading); });
+  if (src) src.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (/^roadmap/.test(conv.path)) { const k = conv.path.split(':')[1]; location.hash = '#/roadmap/flow'; if (k) setTimeout(() => { if (RM.data) rmArea(k); }, 80); return; }
+    jumpTo(conv.path, conv.heading);
+  });
   if (window.innerWidth >= 700) setTimeout(() => input.focus(), 30);
 }
 
@@ -1473,6 +1507,26 @@ const partName = (p) => `${p} ${S.members[partOwner(p)] || ''}`;
 const myPart = () => RM_PARTS.find((p) => partOwner(p) === S.me) || '';
 // "내 파트만" 켜짐: 내 칸이 있는 카드만 진하게, 나머지는 흐리게
 const mineOn = () => !!(RM.f.mine && myPart());
+// 할 순서: 안 끝난 카드를 선행 작업 따라 단계로 (서버 lib/roadmap.js stagesOf와 같은 규칙)
+function rmStages() {
+  if (RM.stages && RM.stages.data === RM.data) return RM.stages.map;
+  const by = rmById(); const memo = new Map();
+  const stage = (it, seen) => {
+    if (isDone(it)) return 0;
+    if (memo.has(it.id)) return memo.get(it.id);
+    if (seen.has(it.id)) return 1;
+    seen.add(it.id);
+    let s = 1;
+    (it.deps || []).forEach((d) => { const x = by.get(d); if (x && !isDone(x)) s = Math.max(s, stage(x, seen) + 1); });
+    seen.delete(it.id); memo.set(it.id, s);
+    return s;
+  };
+  const map = new Map(RM.data.items.map((x) => [x.id, stage(x, new Set())]));
+  RM.stages = { data: RM.data, map };
+  return map;
+}
+const mineBtn = () => (S.me && myPart() ? `<button class="btn sm plain fl-tb rm-minebtn${mineOn() ? ' on' : ''}" id="rmMine" style="--pc:${partColor(myPart())}" aria-pressed="${mineOn()}" title="내 파트(${myPart()}) 카드만 진하게 보기">${svgI('user', 16)} 내 파트만${mineOn() ? ' 켜짐' : ''}</button>` : '');
+const askBtn = (area) => (S.ai ? `<button class="btn sm plain fl-tb" data-rmask="${area || ''}" title="${area ? '이 칸' : '로드맵'} 현황을 보고 AI가 답해요">${svgI('bot', 16)} AI에게 묻기</button>` : '');
 const mineOf = (it) => { const p = myPart(); return p && it.roles && it.roles[p] ? (it.roles[p].done ? 'done' : 'todo') : ''; };
 const rmWho = (n) => (n === 'seed' ? '기능설계서' : esc(S.members[n] || n || ''));
 const ago = (t) => {
@@ -1491,8 +1545,8 @@ const sortItems = (a, b) => (a.week || 9) - (b.week || 9) || (a.prio < b.prio ? 
 const roleTip = (it, p) => { const r = it.roles[p]; return r.done ? `${partName(p)}: 했음 (${S.members[r.by] || r.by || ''} · ${kst(new Date(r.at || it.updatedAt).toISOString())})` : `${partName(p)}: 아직 안 함`; };
 
 async function rmLoad() {
-  const d = await api('/roadmap' + qs({}));
-  RM.data = d; RM.rev = d.rev; RM.stale = false;
+  const d = await api('/roadmap' + qs({}), { nocache: true });
+  RM.data = d; RM.rev = d.rev; RM.stale = false; RM.at = Date.now();
   return d;
 }
 function rmPoll() {
@@ -1522,7 +1576,7 @@ const roleChip = (it, p, big) => {
     <span class="rm-chip-box">${r.done ? svgI('check', 12) : ''}</span>${p}${big ? ` <span class="rm-chip-name">${esc(S.members[partOwner(p)])}</span>` : ''}</button>`;
 };
 
-function rmCard(it, by) {
+function rmCard(it, by, opt = {}) {
   const wait = waitingOn(it, by);
   const st = stateOf(it);
   const n = rolesOf(it).length, d = doneN(it);
@@ -1530,7 +1584,7 @@ function rmCard(it, by) {
   const cls = mm === null ? '' : mm ? ` mine m-${mm}` : ' dim';
   return `<div class="rm-card st-${st}${cls}" data-open="${it.id}" tabindex="0" role="button"${mm ? ` style="--pc:${partColor(myPart())}"` : ''}>
     ${mm ? `<div class="rm-mytag m-${mm}">${mm === 'done' ? `${svgI('check', 13)} 내 칸 했음` : '내 칸 아직'}</div>` : ''}
-    <div class="rm-card-top">${it.code ? `<span class="rm-code">${esc(it.code)}</span>` : ''}${it.prio !== 'P1' ? `<span class="badge">${it.prio}</span>` : ''}${it.blocked && st !== 'done' ? '<span class="rm-st st-blocked">막힘</span>' : ''}${it.week ? `<span class="muted">${it.week}주차</span>` : ''}<span class="rm-frac">${d}/${n}</span></div>
+    <div class="rm-card-top">${opt.stage ? `<span class="rm-stage">${opt.stage}단계</span>` : ''}${it.code ? `<span class="rm-code">${esc(it.code)}</span>` : ''}${it.prio !== 'P1' ? `<span class="badge">${it.prio}</span>` : ''}${it.blocked && st !== 'done' ? '<span class="rm-st st-blocked">막힘</span>' : ''}${it.week ? `<span class="muted">${it.week}주차</span>` : ''}<span class="rm-frac">${d}/${n}</span></div>
     <div class="rm-title">${esc(it.title)}</div>
     <div class="rm-chips">${rolesOf(it).map((p) => roleChip(it, p)).join('')}</div>
     ${(it.notes || wait.length) ? `<div class="rm-card-foot">${it.notes ? `<span class="rm-msgs" title="남긴 말">${svgI('msg', 14)} ${it.notes}</span>` : ''}${wait.length && st !== 'done' ? `<span class="rm-wait">기다림: ${wait.slice(0, 2).map((x) => esc(x.code || x.title)).join(', ')}${wait.length > 2 ? ` 외 ${wait.length - 2}` : ''}</span>` : ''}</div>` : ''}
@@ -1567,6 +1621,24 @@ function rmBoard(list, by) {
       <div class="rm-cards">${col.map((x) => rmCard(x, by)).join('') || '<p class="muted rm-none">조건에 맞는 카드가 없어요.</p>'}</div>
     </section>`;
   }).join('')}</div>`;
+}
+
+function rmOrderView(by) {
+  const st = rmStages();
+  const open = RM.data.items.filter((x) => !isDone(x));
+  const pool = mineOn() ? open.filter((x) => mineOf(x)) : open;
+  const n = Math.max(0, ...pool.map((x) => st.get(x.id)));
+  const done = RM.data.items.filter(isDone);
+  const col = (s) => pool.filter((x) => st.get(x.id) === s).sort((x, y) => sortItems(x, y));
+  const myNext = myPart() ? open.filter((x) => mineOf(x) === 'todo' && st.get(x.id) === 1).sort(sortItems) : [];
+  return `<div class="rm-order-help">
+      <p><b>먼저 끝나야 하는 일</b>을 따라 단계로 나눴어요. <b>1단계</b>는 기다릴 게 없어서 지금 바로 시작할 수 있는 일이고, 2단계는 그 카드가 기다리는 1단계 일이 끝나야 시작할 수 있어요. 카드를 끝내면 뒤 단계가 앞으로 당겨져요.${mineOn() ? ' 지금은 <b>내 파트 카드만</b> 보여요.' : ''}</p>
+      ${myPart() ? `<p class="rm-order-next" style="--pc:${partColor(myPart())}"><b>${esc(partName(myPart()))}</b> 지금 바로 할 수 있는 내 일: ${myNext.length ? myNext.slice(0, 6).map((x) => `<button class="rm-link sm" data-open="${x.id}">${esc(x.code || x.title)}</button>`).join('') : '<span class="muted">없음 (앞 단계 일을 기다리는 중이거나 다 했어요)</span>'}</p>` : ''}
+    </div>
+    <div class="rm-order">${Array.from({ length: n }, (_, i) => i + 1).map((s) => { const c = col(s); return `<section class="rm-stagecol">
+      <div class="rm-stagecol-head"><b>${s}단계</b><span class="muted">${s === 1 ? '지금 시작 가능' : `${s - 1}단계가 끝나면`} · ${c.length}개</span></div>
+      <div class="rm-cards">${c.map((x) => rmCard(x, by)).join('')}</div></section>`; }).join('') || '<p class="empty">남은 일이 없어요.</p>'}</div>
+    ${done.length ? `<details class="rm-more" style="margin-top:12px"><summary>다 한 일 ${done.length}개</summary><div class="rm-donegrid">${done.map((x) => rmCard(x, by)).join('')}</div></details>` : ''}`;
 }
 
 function rmPartsView(by) {
@@ -1693,9 +1765,9 @@ function rmFlow() {
         <button class="btn sm plain fl-tb" data-fact="reset" title="처음 모양으로">${svgI('reset', 16)} 처음 모양</button>
         <button class="btn sm plain fl-tb" data-fact="cancel">${svgI('x', 16)} 취소</button>
         <button class="btn sm fl-tb" data-fact="save">${svgI('save', 16)} 저장</button></div>`
-    : `<div class="fl-bar"><span class="muted">예매 흐름 위에 기능을 놓았어요. <b>이름</b>을 누르면 지금 하는 일을 적고, <b>칸</b>을 누르면 할 일을 보고 추가해요.</span><span style="flex:1"></span>
-        <button class="btn sm plain fl-tb" data-fact="edit">${svgI('pencil', 16)} 다이어그램 수정</button></div>`)
-    : '<p class="muted" style="margin:0 0 10px">예매 흐름 위에 기능을 놓았어요. 칸을 누르면 그 기능의 할 일이 보여요. 로그인하면 지금 하는 일을 적고 다이어그램도 고칠 수 있어요.</p>';
+    : `<div class="fl-bar"><span class="muted fl-bar-txt"><b>이름</b>을 누르면 지금 하는 일을 적고, <b>칸</b>을 누르면 할 일을 보고 추가해요.</span>
+        <span class="fl-bar-acts">${askBtn('')}${mineBtn()}<button class="btn sm plain fl-tb" data-fact="edit">${svgI('pencil', 16)} 다이어그램 수정</button></span></div>`)
+    : `<div class="fl-bar"><span class="muted fl-bar-txt">칸을 누르면 그 기능의 할 일이 보여요. 로그인하면 지금 하는 일을 적고 다이어그램도 고칠 수 있어요.</span><span class="fl-bar-acts">${askBtn('')}</span></div>`;
   return `${bar}<div class="fl-wrap"><div class="fl${ed ? ' editing' : ''}${ed && ed.link ? ' linking' : ''}" id="flow">
     <svg class="fl-svg" id="flowSvg" aria-hidden="true"></svg>${f.nodes.map(flowNode).join('')}<div id="flowLabs"></div></div></div>
     ${RM.data.flow.by ? `<p class="muted" style="font-size:12px;margin:6px 0 0">다이어그램 마지막 수정: ${rmWho(RM.data.flow.by)} · ${ago(RM.data.flow.at)}</p>` : ''}`;
@@ -1897,7 +1969,8 @@ function rmNowEdit(k, p, back) {
 function rmArea(k) {
   RM.modal = { kind: 'area', k };
   const by = rmById();
-  const items = RM.data.items.filter((x) => x.area === k).sort(sortItems);
+  const st = rmStages();
+  const items = RM.data.items.filter((x) => x.area === k).sort((x, y) => (st.get(x.id) || 99) - (st.get(y.id) || 99) || sortItems(x, y));
   const parts = areaParts(k);
   const done = items.filter(isDone).length;
   const m = openModal(`<div class="rm-detail">
@@ -1908,20 +1981,38 @@ function rmArea(k) {
       <span class="fl-team-who"><span><b>${p}</b> ${esc(S.members[partOwner(p)])}</span><small class="muted">${d}/${total} 했음</small></span>
       <span class="fl-team-now">${n ? `${esc(n.text)} <small class="muted">${rmWho(n.who)} · ${ago(n.at)}</small>` : '<span class="muted">지금 하는 일 없음</span>'}</span>
       ${S.me ? `<button class="btn sm plain" data-nowp="${p}">${n ? '고치기' : '적기'}</button>` : ''}</div>`; }).join('') || '<p class="muted">아직 맡은 사람이 없어요. 할 일을 추가하면서 파트를 고르면 생겨요.</p>'}</div>
-    <div class="fl-cards-head"><span class="rm-rel-h" style="margin:0">할 일 ${items.length}개</span>${S.me ? `<button class="btn sm" data-add="${k}">${svgI('plus', 14)} 할 일 추가</button>` : ''}</div>
-    <div class="rm-cards">${items.map((x) => rmCard(x, by)).join('') || '<p class="muted">할 일이 없어요.</p>'}</div>
+    <div class="fl-cards-head"><span class="rm-rel-h" style="margin:0">할 일 ${items.length}개 <span class="muted" style="font-weight:500">· 할 순서대로</span></span><span class="fl-cards-acts">${askBtn(k)}${S.me ? `<button class="btn sm" data-add="${k}">${svgI('plus', 14)} 할 일 추가</button>` : ''}</span></div>
+    <div class="rm-cards">${items.map((x) => rmCard(x, by, { stage: st.get(x.id) })).join('') || '<p class="muted">할 일이 없어요.</p>'}</div>
     <div class="row"><button class="btn plain" data-x>닫기</button></div></div>`, { wide: true });
   $('[data-x]', m).addEventListener('click', () => { RM.modal = null; closeModal(); rmAfterClose(); });
   $$('[data-nowp]', m).forEach((b) => b.addEventListener('click', () => rmNowEdit(k, b.dataset.nowp, true)));
   $$('[data-chk]', m).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); rmCheck(b.dataset.chk, b.dataset.p); }));
   $$('[data-open]', m).forEach((b) => b.addEventListener('click', () => { RM.back = k; rmOpen(b.dataset.open); }));
   $$('[data-add]', m).forEach((b) => b.addEventListener('click', () => { RM.back = k; rmEdit(null, k); }));
+  $$('[data-rmask]', m).forEach((b) => b.addEventListener('click', () => rmAsk(k)));
+}
+
+// 로드맵 AI 질문: 서버가 path(roadmap 또는 roadmap:칸)를 보고 현황을 붙인다
+function rmAsk(k) {
+  const label = k ? areaLabel(k) : '';
+  const c = newConv(null);
+  Object.assign(c, { doc: '로드맵', path: k ? 'roadmap:' + k : 'roadmap', heading: label, selection: k ? `${label} 칸 (할 일·체크·선행 작업·할 순서)` : '로드맵 전체 (할 일·체크·선행 작업·할 순서)', section: '' });
+  aiOpen(); aiChat(c, '');
 }
 
 async function pageRoadmap(view) {
+  RM.view = ['flow', 'order', 'board', 'parts', 'deps', 'log'].includes(view) ? view : 'flow';
+  if (RM.data) {
+    // 탭을 옮기거나 다시 열 때는 가진 것으로 바로 그리고, 오래됐으면 뒤에서 새로 받아 바뀐 경우만 다시 그린다
+    rmRender(); rmPoll();
+    if (Date.now() - (RM.at || 0) > 10000) {
+      const old = RM.rev;
+      rmLoad().then(() => { if (RM.rev !== old && $('#modalBack').hidden && !RM.edit) rmRender(); }).catch(() => {});
+    }
+    return;
+  }
   main.innerHTML = '<div class="wide"><p class="loading">로드맵 불러오는 중…</p></div>';
   await rmLoad();
-  RM.view = ['flow', 'board', 'parts', 'deps', 'log'].includes(view) ? view : 'flow';
   rmRender();
   rmPoll();
 }
@@ -1937,6 +2028,7 @@ function rmRender() {
   let body = '';
   if (RM.view === 'flow') body = rmFlow();
   else if (RM.view === 'board') body = rmBoard(list, by);
+  else if (RM.view === 'order') body = rmOrderView(by);
   else if (RM.view === 'parts') body = rmPartsView(by);
   else if (RM.view === 'deps') body = rmDepsView(by);
   else {
@@ -1946,10 +2038,11 @@ function rmRender() {
   main.innerHTML = `<div class="wide rm">
     <div class="rm-head"><div><h1 class="page">로드맵</h1>
       <p class="page-sub" style="margin:0">카드 ${items.length}장 중 <b>${cardsDone}장 끝</b> · 파트 칸 ${checks}개 중 ${checked}개 체크 (${checks ? Math.round(checked / checks * 100) : 0}%). ${S.me ? '카드 안 A~E 칸을 누르면 했다·안 했다가 바뀌어요.' : '로그인하면 체크하고 할 일을 추가할 수 있어요.'}</p></div>
-      <div class="rm-head-acts">${S.me && myPart() ? `<button class="btn plain rm-minebtn${mineOn() ? ' on' : ''}" id="rmMine" style="--pc:${partColor(myPart())}" aria-pressed="${mineOn()}" title="내 파트(${myPart()}) 카드만 진하게 보기">${svgI('user', 16)} 내 파트만${mineOn() ? ' 켜짐' : ''}</button>` : ''}${S.me ? `<button class="btn" data-add="">${svgI('plus', 16)} 할 일 추가</button>` : '<button class="btn" data-login>로그인</button>'}</div></div>
+      <div class="rm-head-acts">${S.me ? `<button class="btn" data-add="">${svgI('plus', 16)} 할 일 추가</button>` : '<button class="btn" data-login>로그인</button>'}</div></div>
     ${rmPartStrip()}
     ${mineOn() ? (() => { const mi = items.filter((x) => mineOf(x)); const d = mi.filter((x) => mineOf(x) === 'done').length; return `<div class="rm-minesum" style="--pc:${partColor(myPart())}"><b>${esc(partName(myPart()))}</b> 내 칸 ${mi.length}개 중 <b>${d}개 했음</b> · <b>${mi.length - d}개 남음</b><span class="muted">진한 카드가 내 것, 흐린 카드는 다른 파트 것이에요.</span></div>`; })() : ''}
-    <div class="tabs">${[['flow', '흐름도'], ['board', '보드'], ['parts', '파트별 할 일·받은 말'], ['deps', '의존 관계'], ['log', '최근 변경']].map(([k, l]) => `<button data-v="${k}" class="${RM.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div class="tabs">${[['flow', '흐름도'], ['order', '할 순서'], ['board', '보드'], ['parts', '파트별 할 일·받은 말'], ['deps', '의존 관계'], ['log', '최근 변경']].map(([k, l]) => `<button data-v="${k}" class="${RM.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    ${RM.view !== 'flow' ? `<div class="rm-tools">${askBtn('')}${mineBtn()}</div>` : ''}
     ${RM.view === 'board' ? `<div class="filters rm-filters">
       <input type="search" id="rmQ" placeholder="코드·제목 검색" value="${esc(f.q)}">
       <select id="rmPart"><option value="">모든 파트</option>${RM_PARTS.map((p) => `<option value="${p}"${f.part === p ? ' selected' : ''}>${esc(partName(p))}</option>`).join('')}</select>
@@ -1971,6 +2064,7 @@ function rmBind(root) {
     b.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === b) rmOpen(b.dataset.open); });
   });
   $$('[data-add]', root).forEach((b) => b.addEventListener('click', () => rmEdit(null, b.dataset.add)));
+  $$('[data-rmask]', root).forEach((b) => b.addEventListener('click', () => rmAsk(b.dataset.rmask)));
   const mb = $('#rmMine', root); if (mb) mb.addEventListener('click', () => { RM.f.mine = !RM.f.mine; save(); rmRender(); });
   const lg = $('[data-login]', root); if (lg) lg.addEventListener('click', () => loginModal(() => rmRender()));
   $$('[data-fpart]', root).forEach((b) => b.addEventListener('click', () => {
@@ -2231,5 +2325,6 @@ $('#navToggle').addEventListener('click', (e) => { e.stopPropagation(); $('#side
   renderTop();
   route();
   loadBranches();
+  prefetch();
 })();
 })();

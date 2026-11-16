@@ -165,7 +165,10 @@ export async function askDoc(env, input, buildContext) {
   const { question, history } = input;
   const big = Number(env.ASK_CONTEXT_CHARS) || 6000;
   // 무료 등급은 분당 토큰이 작아서, 너무 크다고 거절되면 맥락을 줄여 한 번 더 보낸다
-  const tries = [{ related: big, section: 3000 }, { related: Math.round(big / 3), section: 1200 }];
+  // 로드맵처럼 서버가 붙인 큰 현황이 있으면 그걸 더 길게, 관련 문서는 짧게
+  const sc = input.sectionChars;
+  const tries = sc ? [{ related: Math.round(big / 3), section: sc }, { related: 800, section: Math.round(sc / 2) }]
+    : [{ related: big, section: 3000 }, { related: Math.round(big / 3), section: 1200 }];
   let last = null;
   for (const t of tries) {
     let ctx;

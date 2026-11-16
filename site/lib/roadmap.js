@@ -428,3 +428,59 @@ export function roadmap(env) {
     },
   };
 }
+
+
+// ---------- 할 순서 (선행 작업을 따라 단계 나누기) ----------
+// 안 끝난 카드만 센다. 1단계 = 기다리는 일이 없어 지금 바로 시작할 수 있는 것, n단계 = 안 끝난 선행 작업 중 가장 늦은 단계 + 1
+const doneOf = (it) => { const r = Object.values(it.roles || {}); return r.length > 0 && r.every((x) => x.done); };
+export function stagesOf(items) {
+  const by = new Map(items.map((x) => [x.id, x]));
+  const memo = new Map();
+  const stage = (it, seen) => {
+    if (doneOf(it)) return 0;
+    if (memo.has(it.id)) return memo.get(it.id);
+    if (seen.has(it.id)) return 1; // 서로 기다리는 고리는 끊는다
+    seen.add(it.id);
+    let s = 1;
+    for (const d of it.deps || []) { const x = by.get(d); if (x && !doneOf(x)) s = Math.max(s, stage(x, seen) + 1); }
+    seen.delete(it.id);
+    memo.set(it.id, s);
+    return s;
+  };
+  return new Map(items.map((x) => [x.id, stage(x, new Set())]));
+}
+
+// AI 질문용 로드맵 요약 글. area를 주면 그 칸 카드만 자세히
+export function roadmapText(data, { area, me } = {}) {
+  const st = stagesOf(data.items);
+  const by = new Map(data.items.map((x) => [x.id, x]));
+  const KO = { SeongWon: '김성원', DongGyun: '강동균', DongHyeon: '길동현', DaIn: '강다인', YoungJun: '조영준' };
+  const name = (p) => `${p} ${KO[PARTS[p].owner]}`;
+  const areaName = (k) => (data.areas.find((x) => x.k === k) || { label: k }).label;
+  const line = (it) => {
+    const roles = Object.entries(it.roles || {}).map(([p, r]) => `${p}:${r.done ? '했음' : '아직'}`).join(' ');
+    const wait = (it.deps || []).map((d) => by.get(d)).filter((d) => d && !doneOf(d)).map((d) => d.code || d.title);
+    const s = st.get(it.id);
+    return `- ${it.code || ''} ${it.title} | ${s ? `${s}단계` : '끝'}${it.week ? ` · ${it.week}주차` : ''} · ${it.prio} | ${roles}${wait.length ? ` | 먼저 끝나야 함: ${wait.join(', ')}` : ''}${it.blocked && !doneOf(it) ? ' | 막힘' : ''}`;
+  };
+  const out = [
+    '제자리 팀 로드맵 현황이에요. 파트: ' + Object.keys(PARTS).map((p) => `${name(p)}(${PARTS[p].label})`).join(', ') + '.',
+    '단계: 1단계는 먼저 끝나야 할 일이 없어 지금 바로 할 수 있는 일, 2단계는 1단계가 끝나야 시작, … "끝"은 다 한 일.',
+  ];
+  if (me) { const p = Object.keys(PARTS).find((k) => PARTS[k].owner === me); if (p) out.push(`질문한 사람: ${name(p)} ("나", "내"는 ${p} 파트)`); }
+  const now = (data.now || []).filter((n) => n.text && (!area || n.area === area));
+  if (now.length) out.push('지금 하는 일: ' + now.map((n) => `${areaName(n.area)} ${n.part}: ${n.text}`).join(' / '));
+  const areas = area ? [area] : data.areas.map((x) => x.k);
+  for (const k of areas) {
+    const list = data.items.filter((x) => x.area === k).sort((x, y) => (st.get(x.id) || 99) - (st.get(y.id) || 99) || (x.week || 9) - (y.week || 9));
+    if (!list.length) continue;
+    out.push('', `## ${areaName(k)} (${list.filter(doneOf).length}/${list.length} 끝)`, ...list.map(line));
+  }
+  if (area) {
+    // 이 칸 카드가 기다리는 다른 칸의 일
+    const ext = new Map();
+    data.items.filter((x) => x.area === area).forEach((x) => (x.deps || []).forEach((d) => { const y = by.get(d); if (y && y.area !== area) ext.set(y.id, y); }));
+    if (ext.size) out.push('', '## 이 칸이 기다리는 다른 칸의 일', ...[...ext.values()].map((y) => `${line(y)} (${areaName(y.area)})`));
+  }
+  return out.join('\n');
+}
