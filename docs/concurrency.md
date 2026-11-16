@@ -103,7 +103,7 @@ PG 호출, Kafka 발행 같은 네트워크 호출은 **DB 트랜잭션 밖**에
 
 0. 1회 매수 한도: 요청 매수 n이 `PER_RESERVATION` 한도(§10.6) 이하인지 확인합니다. 카운터 없이 값 비교만 합니다.
 1. §1로 `reservation_id` R을 받습니다 (시퀀스 또는 Snowflake).
-2. 매수 한도 1차: `limit_incr.lua`(§14.2)로 `limit:{runId}:{ciHash}`, `limit:day:{yyyymmdd}:{ciHash}`, `limit:event:{saleEventId}:{ciHash}`를 n만큼 올립니다. `{yyyymmdd}`는 **앱 시계의 오늘 날짜**입니다 (§0.7). 한도를 넘으면 스크립트가 되돌리고 0을 반환하며, §10.7 자가 복구를 한 번 거친 뒤에도 넘으면 거절합니다. 키가 없으면 스크립트가 `purchase_counter` 값으로 먼저 채웁니다 (§10.4).
+2. 매수 한도 1차: `limit_incr.lua`(§14.2)로 `limit:{runId}:{ciHash}`, `limit:day:{yyyymmdd}:{ciHash}`, `limit:event:{saleEventId}:{ciHash}`를 n만큼 올립니다. `{yyyymmdd}`는 **앱 시계의 오늘 날짜**입니다 (§0.7). 키 순서는 이 순서로 고정하고, 스크립트가 돌려준 걸린 키 번호로 `LIMIT_PER_RUN`·`LIMIT_PER_DAY`·`LIMIT_PER_HOLIDAY`를 가립니다. 한도를 넘으면 스크립트가 되돌리고 0을 반환하며, §10.7 자가 복구를 한 번 거친 뒤에도 넘으면 거절합니다. 키가 없으면 스크립트가 `purchase_counter` 값으로 먼저 채웁니다 (§10.4).
 3. 마감 `:d = 앱 시계 지금 + policy(reservation.pay_deadline_min)`을 계산합니다 (§0.7).
 4. 좌석 경쟁: `hold.lua`로 예약할 모든 구간 키 `seat:hold:{runId}:{seatId}:{segNo}`를 R 값으로 `SET NX`하고 만료를 `PXAT :d`로 겁니다. 하나라도 다른 값이 있으면 전부 실패합니다.
    - **패배자**: 2번의 한도를 되돌리고(`limit_decr.lua`), `idem` 키를 지우고 "이미 선점된 좌석"으로 거절합니다. **DB 쓰기는 0건**입니다.
@@ -642,13 +642,13 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | 스크립트 | 동작 |
 |---|---|
 | `hold.lua` | KEYS 전부에 대해, 다른 값이 하나라도 있으면 0 반환. 아니면 전부 `SET 값 PXAT 만료` 후 1 반환. ARGV로 인계 값(`REOFFER:R`)을 받으면 그 값인 키는 비어 있는 것으로 봄 (§9 전용) |
-| `release.lua` | KEYS 중 값이 ARGV[1]인 키만 DEL (compare-and-delete) |
+| `release.lua` | KEYS 중 값이 ARGV[1]인 키만 DEL (compare-and-delete). 지운 키 수를 반환 |
 | `extend.lua` | KEYS 중 값이 ARGV[1]인 키만 `PEXPIREAT` (결제 연장, 리스 갱신). 없는 키는 만들지 않음 |
 | `rehold.lua` | KEYS 중 값이 R이거나 없는 키를 `SET R PXAT 만료` (§6.2 PG 결과 모름) |
 | `sold.lua` | KEYS를 값과 상관없이 `SET SOLD:R PXAT 출발 시각` (DB가 확정했으므로 덮어씀) |
-| `reoffer.lua` | KEYS 중 값이 R 또는 `SOLD:R`인 키만 `SET REOFFER:R PX reoffer_hold`. 없거나 다른 값이면 그대로 |
-| `limit_incr.lua` | 키마다 없으면 `SET 복원값 NX`, 그 뒤 INCRBY n. 하나라도 한도를 넘으면 이번 증가분을 전부 DECRBY하고 0 반환 |
-| `limit_decr.lua` | KEYS[1] = `limit:dec:{R}`. `SET NX PXAT`가 성공했을 때만 나머지 키를 DECRBY n (0 미만이면 0). **예약 하나에 한 번만 감소**하므로 빠른 경로와 보장 경로가 둘 다 실행돼도 안전 |
+| `reoffer.lua` | KEYS 중 값이 R 또는 `SOLD:R`인 키만 `SET REOFFER:R PX reoffer_hold`. 없거나 다른 값이면 그대로. 이미 `REOFFER:R`이면 **TTL을 다시 늘리지 않습니다** — 빠른 경로와 보장 경로가 둘 다 돌 때 대기자 보류 창이 늘어나지 않게 하려는 것입니다 (§14.3) |
+| `limit_incr.lua` | 키마다 없으면 `SET 복원값 NX`, 그 뒤 INCRBY n. 하나라도 한도를 넘으면 이번 증가분을 전부 DECRBY하고 `{0, i}`를 반환한다 (i = 걸린 키 번호. 앱이 `LIMIT_PER_RUN`·`LIMIT_PER_DAY`·`LIMIT_PER_HOLIDAY`를 가린다). 통과하면 `{1}` |
+| `limit_decr.lua` | KEYS[1] = `limit:dec:{R}`. `SET NX PXAT`가 성공했을 때만 나머지 키를 DECRBY n (0 미만이면 `SET 0 KEEPTTL`). 없는 키는 건드리지 않는다 — DECRBY가 만료 없는 음수 키를 새로 만들기 때문이다. **예약 하나에 한 번만 감소**하므로 빠른 경로와 보장 경로가 둘 다 실행돼도 안전. 1 감소함 / 0 이미 처리됨 |
 
 ### 14.3 Redis 보상
 
