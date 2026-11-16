@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v12)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v13)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -552,6 +552,8 @@ CREATE TABLE waitlist (
   seat_grade                 VARCHAR2(10) NOT NULL,
   seat_count                 NUMBER(2) NOT NULL,
   requested_at               TIMESTAMP NOT NULL,
+  priority_at                TIMESTAMP NOT NULL,
+  penalty_ms                 NUMBER(12) NOT NULL,
   offered_at                 TIMESTAMP,
   offer_deadline_at          TIMESTAMP,
   offered_reservation_id     NUMBER,
@@ -559,22 +561,25 @@ CREATE TABLE waitlist (
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_waitlist PRIMARY KEY (waitlist_id),
+  CONSTRAINT ck_waitlist_r1 CHECK (penalty_ms >= 0),
   CONSTRAINT ck_waitlist_seat_grade CHECK (seat_grade IN ('GENERAL', 'FIRST')),
   CONSTRAINT ck_waitlist_status CHECK (status IN ('WAITING', 'OFFERED', 'ACCEPTED', 'EXPIRED', 'CANCELED', 'SKIPPED'))
 );
-COMMENT ON TABLE waitlist IS '취소표 대기 - 취소 발생 시 신청 순서대로 배정 → 알림 → 제한 시간 내 결제.';
+COMMENT ON TABLE waitlist IS '취소표 대기 - 취소 발생 시 대기 순서(priority_at = 신청 시각 + 위험 패널티)대로 배정 → 알림 → 제한 시간 내 결제.';
 COMMENT ON COLUMN waitlist.from_station_id IS '희망 승차역 / 구간 일치 취소표만 배정';
 COMMENT ON COLUMN waitlist.to_station_id IS '희망 하차역';
 COMMENT ON COLUMN waitlist.seat_grade IS 'GENERAL / FIRST / 희망 등급. 좌석 등급 코드 통일';
 COMMENT ON COLUMN waitlist.seat_count IS '희망 매수';
-COMMENT ON COLUMN waitlist.requested_at IS '신청 시각 / 대기 순서 기준';
+COMMENT ON COLUMN waitlist.requested_at IS '신청 시각 / priority_at 계산의 시작 시각 (앱 시계, 신청 때 한 번)';
+COMMENT ON COLUMN waitlist.priority_at IS '대기 순서 기준 시각 = requested_at + penalty_ms / 위험 점수가 높은 대기자는 뒤로 (concurrency.md §9.3). 대기 순서는 이 컬럼으로만 정렬, 신청 후 다시 계산하지 않음';
+COMMENT ON COLUMN waitlist.penalty_ms IS '위험 점수로 미룬 시간(ms), 패널티 없으면 0 / 순서 조정 근거 기록 (운영 원칙: 점수 근거 기록)';
 COMMENT ON COLUMN waitlist.offered_at IS '배정 제안 시각';
 COMMENT ON COLUMN waitlist.offer_deadline_at IS '결제 기한 / = 제안 예약의 pay_deadline_at 복사. 결제 시작 때 함께 연장 (concurrency.md §4)';
 COMMENT ON COLUMN waitlist.offered_reservation_id IS '제안된 예약';
 COMMENT ON COLUMN waitlist.status IS 'WAITING / OFFERED / ACCEPTED / EXPIRED / CANCELED / SKIPPED / SKIPPED = 제안 시 매수 한도 초과로 건너뜀';
 COMMENT ON COLUMN waitlist.created_at IS '생성 시각';
 COMMENT ON COLUMN waitlist.updated_at IS '수정 시각';
-CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, requested_at);
+CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, priority_at, waitlist_id);
 
 CREATE TABLE notification (
   notification_id            NUMBER NOT NULL,
@@ -1244,6 +1249,8 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('notification.pay_reminder_sec', '120', 1, 'NUMBER', '결제 기한 몇 초 전에 PAY_REMINDER 알림');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.batch_interval_sec', '60', 1, 'NUMBER', '위험 점수 배치 주기(초). 각 운행 sale_open_at 전 1회는 반드시 실행');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('login_attempt.retention_days', '30', 1, 'NUMBER', 'login_attempt 보관 기간 (expire_at 계산)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('queue.entry_ttl_sec', '3600', 1, 'NUMBER', '대기 기록(queue:member)이 남는 최대 시간(초). 이탈 없이 사라진 회원의 기록 정리');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('waitlist.penalty_ms_per_point', '60000', 1, 'NUMBER', '위험 점수 1점당 취소표 대기 순서를 미루는 ms (대기열보다 크게, 80점 = 80분)');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (1, 1, 'PER_RESERVATION', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (2, 1, 'PER_RUN', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (3, 1, 'PER_HOLIDAY', 8, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
