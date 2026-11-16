@@ -15,11 +15,12 @@ declare -A MAP=(
   [7]=07_bot_simulation [bot]=07_bot_simulation
   [8]=08_entry_burst [entry]=08_entry_burst
   [9]=09_penalty_order [penalty]=09_penalty_order
+  [10]=10_auth_oracle [auth]=10_auth_oracle
 )
 
 key="${1:-}"
 if [[ -z "$key" || -z "${MAP[$key]:-}" ]]; then
-  echo "사용법: $0 <1-9|open|race|payment|idem|waitlist|bypass|bot|entry|penalty> [k6 인자...]"
+  echo "사용법: $0 <1-10|open|race|payment|idem|waitlist|bypass|bot|entry|penalty|auth> [k6 인자...]"
   exit 1
 fi
 shift

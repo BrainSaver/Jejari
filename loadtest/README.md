@@ -11,6 +11,7 @@
 | 구분 | 상태 | 시나리오 |
 |---|---|---|
 | **실제 서버와 동작** | 대기열 진입·번호표·이탈, 입장 토큰으로 보호되는 좌석 배치도, 개발용 관리 API | 1, 6, 8, 9 |
+| **실제 서버 + Oracle** | 회원 인증(본인인증·가입·로그인)은 Oracle에 쓰고 읽음 (member 모듈) | 10 |
 | **Mock 서버로만 동작** | 좌석 선점·결제·취소·취소표(다른 파트 구현 전). 실제 서버에 돌리면 사전 점검이 "API가 아직 없다"고 알려 주고 멈춥니다 | 2, 3, 4, 5, 7 |
 
 - **인증**: 실제 앱은 아직 로그인이 없어 개발 모드에서 `X-Member-Id` 헤더로 회원을 구분합니다(`AUTH_MODE=member-header`, 기본). JWT가 붙으면 `-e AUTH_MODE=jwt`로 바꿉니다(`config.js`).
@@ -90,12 +91,50 @@ tkinter가 없으면: Windows는 Python 설치 시 기본 포함 / macOS는 `bre
 - 대상 URL이 로컬/내부 주소가 아니면 "내 서버입니다" 체크가 있어야 실행됩니다.
 - 앱 설정은 `~/.jejari_loadtest.json`에 저장됩니다 (비밀번호·키 내용은 저장하지 않고, 키 파일 경로만 저장).
 
+## 시나리오 10: Oracle을 쓰는 회원 인증 (실제 앱으로)
+
+대기열(1·6·8·9)은 Redis만 쓰지만, 회원가입·로그인은 **Oracle**에 쓰고 읽습니다(가입 한 건이 `member`·`member_credential`·`identity_verification` 세 행을 한 트랜잭션으로 INSERT, 로그인은 조회 + Argon2id 검증). 이 시나리오는 그 경로를 실제 DB로 확인합니다.
+
+| 단계 | 하는 일 | 합격 기준 |
+|---|---|---|
+| 1. 동시 가입 경합 | 같은 이메일로 N명이 동시에 가입 (라운드 반복) | 라운드마다 **정확히 1명만 201**, 나머지는 409 (`auth_race_winners{round:n} == 1`) |
+| 2. 가입 처리량 | 서로 다른 사람이 초당 N건 가입 (본인인증 + 가입) | 실패 0건, p95 < 2초 |
+| 3. 로그인 처리량 | 미리 만든 계정으로 초당 N건 로그인 | 실패 0건, p95 < 2초 |
+| 4. 잠금 확인 | 한 계정에 틀린 비밀번호 반복 | 기준 횟수에서 423 잠금, 맞는 비밀번호도 막힘 |
+
+**준비**
+
+```bash
+# 1) 인프라: oracle이 healthy이고 "jejari schema created" 로그가 있어야 합니다
+docker compose up -d
+docker compose ps
+# 2) .env에 비밀값 3종이 있어야 인증 기능이 켜집니다 (비어 있으면 /api/v1/auth/**가 404)
+#    JEJARI_HMAC_KEY, JEJARI_ENC_KEYS, JEJARI_PEPPER_KEYS  (.env.example 참고, 팀 공용 값)
+# 3) 앱을 신뢰 프록시 옵션과 함께 실행 (저장소 루트에서)
+./gradlew bootRun --args="--jejari.auth.trusted-proxies=127.0.0.1,0:0:0:0:0:0:0:1"
+# 4) 실행
+./run.sh 10                                    # 또는 ./run.sh auth -e SIGNUP_RATE=30 -e LOGIN_RATE=100
+```
+
+- **왜 신뢰 프록시 옵션이 필요한가**: 인증 API는 IP당 시도를 제한합니다(본인인증·가입 시간당 10회, 로그인 분당 20회 기본). 한 PC에서 쏘면 전부 같은 IP라 금방 429가 납니다. 시나리오는 요청마다 다른 IP를 `X-Forwarded-For`로 보내고, 앱은 이 헤더를 **신뢰 프록시 목록에 있는 연결 주소에서 온 것만** 믿습니다(위조로 제한을 우회하지 못하게 한 보안 설계). 그래서 테스트용 앱에만 로컬 주소를 신뢰 프록시로 넣습니다. **운영 설정에는 넣지 마세요.** 끄려면 `-e SPOOF_IP=no`.
+- **사전 점검**: 시작 전에 가입 → 로그인을 한 번 끝까지 해 보고, 실패하면 원인(비밀값 누락 404, IP 제한 429, Oracle 연결 500, Redis 503 등)과 할 일을 알려 줍니다.
+- **`auth_overloaded`(503)**: 비밀번호 해시 동시 처리 한도(`auth.max_concurrent_hash`, 기본 32)를 넘었다는 뜻입니다. 실패로 세지 않고 따로 보여 줍니다. 과부하가 시작되는 지점을 찾을 때 쓰세요.
+- **`auth_rate_limited`(429)가 0이 아니면** 설정 문제입니다(신뢰 프록시 옵션 누락 등). 합격 기준에 들어 있습니다.
+- **끝난 뒤**: Oracle에 `@loadtest.example.com` 계정이 남고, Redis에 `rate:*`·`login:fail:*`·`verify:*` 키가 남습니다(시간이 지나면 만료). 같은 `RUN_TAG`로 다시 돌리면 이메일이 겹쳐 409가 납니다(기본은 실행마다 다른 태그). 가입 정보를 확실히 비우려면 Oracle 볼륨을 초기화합니다(**로컬 Oracle 데이터가 모두 삭제**되고 스키마·시드는 다시 만들어집니다).
+
+  ```bash
+  docker compose rm -sf oracle && docker volume rm jejari_oracle-data && docker compose up -d oracle
+  ```
+
+- **Mock 서버로도 돌릴 수 있지만** 그때는 Oracle이 아니라 흉내입니다. 시나리오 로직 점검용이고, 성능 수치는 의미가 없습니다. `--bug dup-email`(동시 가입 중복), `--bug no-lockout`(잠금 안 걸림)으로 이 시나리오가 결함을 잡는지 볼 수 있습니다.
+- 한계: 이 시나리오는 가입·로그인만 봅니다. 위험 점수 Oracle 조회(Redis 표시 키가 없을 때 진입마다 조회)는 대기열 진입 API가 실제 회원 연동(`MemberIdentityPort` 구현)을 쓰게 된 뒤에 걸 수 있습니다.
+
 ## Mock 서버 (실제 서버가 없을 때 연습용)
 
 앱의 `환경 설정 → Mock 서버`에서 `▶ 시작`을 누르면 `localhost:8080`에 가짜 서버가 뜨고 대상 URL이 자동으로 맞춰집니다(이 PC 실행 모드 전용).
 명령줄로는 `python3 tools/mock_server.py` 입니다.
 
-- 정상 모드에서는 시나리오 1~6, 8, 9가 통과해야 합니다. 대기열은 실제 `queue` 앱과 같은 방식(진입 시각 + 위험 점수 패널티 순서, 입장 속도, 입장 토큰)으로 흉내 내고, 개발용 관리 API도 같은 경로로 제공합니다. 시나리오 7은 봇 계정을 `/api/admin/suspects`로 탐지하므로 `tools/eval_detection.py`까지 연습할 수 있습니다.
+- 정상 모드에서는 시나리오 1~6, 8, 9, 10(인증은 메모리로 흉내)이 통과해야 합니다. 대기열은 실제 `queue` 앱과 같은 방식(진입 시각 + 위험 점수 패널티 순서, 입장 속도, 입장 토큰)으로 흉내 내고, 개발용 관리 API도 같은 경로로 제공합니다. 시나리오 7은 봇 계정을 `/api/admin/suspects`로 탐지하므로 `tools/eval_detection.py`까지 연습할 수 있습니다.
 - **버그 모드**(`--bug dup-seat` 등)는 일부러 결함을 넣어 해당 시나리오가 "기준 미달"로 잡히는지 보여 줍니다. 결함을 끈 뒤 다시 실행하면 앱의 **결과 비교** 탭에서 전후 비교가 됩니다.
 - 상태는 메모리에만 있습니다. 앱은 시나리오 시작 전마다 자동 초기화하고, 직접 쓸 때는 `http://localhost:8080/__mock`에서 초기화할 수 있습니다.
 - **TPS·응답 시간은 mock 서버 자체의 값**이라 팀 서버 성능이 아닙니다(락 방식별 지연도 흉내). `가볍게`~`보통` 프리셋에서 쓰세요.
@@ -113,6 +152,7 @@ tkinter가 없으면: Windows는 Python 설치 시 기본 포함 / macOS는 `bre
 | 7 | `07_bot_simulation.js` | 탐지율 90%↑ / 오탐률 5%↓용 트래픽 | (평가는 `tools/eval_detection.py`) |
 | 8 | `08_entry_burst.js` | **진입 API 처리 한계** (단계별로 초당 진입 수를 올림, 입장을 기다리지 않아 VU가 안 묶임) | 단계마다 진입 p95 500ms 미만(`P95_MS`), 실패율 1% 미만 |
 | 9 | `09_penalty_order.js` | **순번 조정 정확도**: 위험 점수 높은 계정이 먼저 와도 정상 사용자 뒤에 입장 | `bot_admitted_after_all_normals == 100%`, `normal_admitted_before_bots == 100%` |
+| 10 | `10_auth_oracle.js` | **회원가입·로그인 (Oracle)**: 같은 이메일 동시 가입은 1명만 성공, 가입·로그인 처리량·응답 시간, 비밀번호 5회 오류 잠금 | `auth_race_winners == 1`(라운드마다), `auth_signup_fail == 0`, `auth_login_fail == 0`, `auth_lockout_ok == 1`, `auth_rate_limited == 0`, 가입·로그인 p95 < 2초 |
 
 ## 준비
 
@@ -167,8 +207,9 @@ python3 tools/eval_detection.py --truth data/ground_truth.csv --suspects results
 
 ```
 config.js            API 경로·필드·헤더, 로컬 대상 안전장치
+lib/auth.js          회원 인증 시나리오 공용 (가짜 신원·요청마다 다른 IP·사전 점검)
 lib/helpers.js       인증(개발 모드/JWT)·대기열·선점·결제·취소·개발용 관리 API·사전 점검 헬퍼
-scenarios/           시나리오 9개 (8·9는 대기열 진입 한계·순번 조정)
+scenarios/           시나리오 10개 (8·9는 대기열 진입 한계·순번 조정, 10은 Oracle을 쓰는 회원 인증)
 tools/gen_users.py   계정·정답 라벨 생성기 (+ 선택적 회원가입)
 tools/eval_detection.py  탐지율·오탐률 계산
 tools/mock_server.py 연습용 가짜 서버 (실제 queue 앱과 같은 대기열 API + 좌석·결제·취소표, 정상 / 버그 주입 모드)

@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v15 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-16
+> 스키마 v16 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-16
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -39,7 +39,7 @@
 | 테이블 | 60개 (운영 56 + 확장 예정 4) |
 | 저장소 | Oracle 44 · MongoDB 11 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 517개 |
+| 컬럼 | 518개 |
 | 관계 (FK) | 85개 (Oracle 제약 60 · 논리 참조 20) |
 
 | 영역 | 저장소 | 테이블 |
@@ -1129,7 +1129,7 @@ Oracle
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
-| `reservation_id` | NUMBER | PK | 시스템 | 예약 ID | Kafka 파티션 키 → 상태 변경 순서 보장 |
+| `reservation_id` | NUMBER | PK | 시스템 | 예약 ID (reservation_seq.NEXTVAL) | Kafka 파티션 키·Saga 추적. Redis 좌석 키 값으로 쓰려고 DB 쓰기 전에 먼저 발급 (concurrency.md §2.1) |
 | `member_id` | NUMBER | FK, NN → member | 생성 | 예약자 |  |
 | `ci_hash` | VARCHAR2(64) | NN | 생성 | 예약 시점 CI | 매수 제한 집계를 조인 없이 빠르게 |
 | `run_id` | NUMBER | FK, NN → train_run | 생성 | 운행 |  |
@@ -1147,7 +1147,7 @@ Oracle
 | `idempotency_key` | VARCHAR2(64) | NN | 시스템 | 클라이언트 요청 키 | 따닥 클릭·재시도 시 중복 예약 방지. UNIQUE 범위는 회원 단위 |
 | `version` | NUMBER | NN | 시스템 | 낙관적 락 버전 | 락 방식 성능 비교 실험용 |
 
-> **제약·비고** CREATE INDEX ix_resv_hold_due ON reservation (CASE WHEN status = 'HOLD' THEN pay_deadline_at END); HOLD 만료 스캐너용 (조회도 같은 CASE 식, concurrency.md §6.1). 결제 중 예약은 payment.next_check_at으로 따로 조회 · UNIQUE(member_id, idempotency_key) · 마감 시각 원천 = pay_deadline_at (복사본 4곳은 §0.2, 앱 시계로 계산 §0.7) · 결제 시작 연장은 GREATEST로 늘리기만 (§4) · 네이티브 UPDATE는 updated_at·version 갱신 (§0.3) · 결제 실패는 별도 상태 없이 EXPIRED (§5.2) · from·to 역은 운행의 정차역이고 from 순번 < to 순번 (애플리케이션 검증) · 절차: concurrency.md §1~§8
+> **제약·비고** CREATE INDEX ix_resv_hold_due ON reservation (CASE WHEN status = 'HOLD' THEN pay_deadline_at END); HOLD 만료 스캐너용 (조회도 같은 CASE 식, concurrency.md §6.1). 결제 중 예약은 payment.next_check_at으로 따로 조회 · UNIQUE(member_id, idempotency_key) · 마감 시각 원천 = pay_deadline_at (복사본 4곳은 §0.2, 앱 시계로 계산 §0.7) · 결제 시작 연장은 GREATEST로 늘리기만 (§4) · 네이티브 UPDATE는 updated_at·version 갱신 (§0.3) · 결제 실패는 별도 상태 없이 EXPIRED (§5.2) · from·to 역은 운행의 정차역이고 from 순번 < to 순번 (애플리케이션 검증) · 절차: concurrency.md §1~§8 · CREATE SEQUENCE reservation_seq CACHE 100;
 
 **관계** member_id → [`member`](#member) · run_id → [`train_run`](#train-run) · from_station_id → [`station`](#station) · to_station_id → [`station`](#station) · [`seat_inventory`](#seat-inventory).reservation_id → 이 테이블 · [`reservation_seat`](#reservation-seat).reservation_id → 이 테이블 · [`reservation_history`](#reservation-history).reservation_id → 이 테이블 · [`payment`](#payment).reservation_id → 이 테이블 · [`cancellation`](#cancellation).reservation_id → 이 테이블 · [`saga_instance`](#saga-instance).reservation_id → 이 테이블 · [`waitlist`](#waitlist).offered_reservation_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).reservation_id → 이 테이블
 
@@ -1179,7 +1179,7 @@ Oracle · updated_at 생략
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
-| `history_id` | NUMBER | PK | 시스템 |  |  |
+| `history_id` | NUMBER | PK | 시스템 | 이력 ID (reservation_history_seq.NEXTVAL) |  |
 | `reservation_id` | NUMBER | FK, NN → reservation | 시스템 |  |  |
 | `from_status` | VARCHAR2(16) |  | 시스템 | 이전 상태 | 첫 기록이면 null. 허용값은 비고의 CHECK (v4 nn-auto가 NOT NULL로 바꾸지 않도록 설명은 그대로 둠) |
 | `to_status` | VARCHAR2(16) | NN | 시스템 | HOLD / PAYMENT_PENDING / CONFIRMED / CANCELED / EXPIRED | 변경 상태. 잘못된 전이(CANCELED→CONFIRMED) 탐지 |
@@ -1187,7 +1187,7 @@ Oracle · updated_at 생략
 | `actor_type` | VARCHAR2(10) | NN | 시스템 | USER / SYSTEM / ADMIN | 누가 상태를 바꿨는지 |
 | `changed_at` | TIMESTAMP | NN | 시스템 | 변경 시각 | 순서 보장 검증 근거 |
 
-> **제약·비고** event_id는 outbox_event를 논리 참조 (outbox 정리 후에도 이력 보존을 위해 FK 미설정) · INSERT만 하는 테이블 (updated_at 생략) · CHECK(from_status IN ('HOLD', 'PAYMENT_PENDING', 'CONFIRMED', 'CANCELED', 'EXPIRED'))
+> **제약·비고** event_id는 outbox_event를 논리 참조 (outbox 정리 후에도 이력 보존을 위해 FK 미설정) · INSERT만 하는 테이블 (updated_at 생략) · CHECK(from_status IN ('HOLD', 'PAYMENT_PENDING', 'CONFIRMED', 'CANCELED', 'EXPIRED')) · CREATE SEQUENCE reservation_history_seq CACHE 100;
 
 **관계** reservation_id → [`reservation`](#reservation)
 
@@ -1893,6 +1893,7 @@ MongoDB · 🅱 빅데이터
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
+| `event_id` | String | UQ | 생성 | 이벤트 ID (UUID, 발행할 때 생성) | Kafka 재전달 시 중복 저장 방지. 유니크 인덱스에 걸리면 컨슈머가 무시 |
 | `_id` | ObjectId | PK | 시스템 |  |  |
 | `member_id` | Long | FK → member | 생성 |  |  |
 | `ci_hash` | String |  | 생성 |  | 묶음 단위 집계 |
@@ -1909,7 +1910,7 @@ MongoDB · 🅱 빅데이터
 | `response_status` | Int |  | 시스템 | HTTP 상태 | 차단·에러 분석 |
 | `meta` | Object |  | 시스템 | 이벤트별 추가 정보 | 스키마 변경 없이 필드 확장 |
 
-> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 }, { member_id: 1, ts: 1 } (타임라인 ADM-05) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13
+> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 }, { member_id: 1, ts: 1 } (타임라인 ADM-05) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13 · 유니크 { event_id: 1 }, partialFilterExpression: { event_id: { $type: "string" } } (재전달 중복 방지, 중복 키 오류는 무시. event_id가 없는 옛 문서끼리는 충돌하지 않게 부분 인덱스)
 
 **관계** member_id → [`member`](#member) · session_id → [`auth_session`](#auth-session) · run_id → [`train_run`](#train-run)
 
@@ -2321,6 +2322,7 @@ Oracle
 | v13 | 대기열·취소표 맞춤 (김성원 요청): queue:member 값에 ciHash 추가, app_policy queue.entry_ttl_sec(3600초)·waitlist.penalty_ms_per_point(60000), waitlist에 priority_at·penalty_ms 추가하고 대기 순서·ix_waitlist_next를 priority_at 기준으로 (concurrency.md §9.3). risk_score_history.history_id 시퀀스 추가 (강다인 요청) |
 | v14 | 취소표 대기 위험 패널티 확정 (강다인): app_policy waitlist.penalty_ms_per_point 60000 → 180000 (1점 = 3분, 80점 = 4시간) |
 | v15 | 회원가입·로그인 (강다인 요청): member·identity_verification ID 시퀀스, Redis 키 rate:signup·login:fail·verify, app_policy auth.login_rate_per_min(20)·signup_rate_per_hour(10)·verify_token_ttl_sec(600), login_attempt.result에 BANNED |
+| v16 | 좌석 선점 구현: reservation·reservation_history ID 시퀀스. behavior_log에 event_id + 유니크 인덱스 (강다인 요청, Kafka 재전달 중복 방지) |
 
 ## 참고 자료
 

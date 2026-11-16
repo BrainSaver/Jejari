@@ -149,7 +149,7 @@ rect.b:hover{opacity:.82}
     <a href="#DATA-01">DATA-01 기준 데이터</a>
     <a href="#RSV-02">RSV-02 좌석 선점</a>
     <a href="#LOCK">§17.1 락 비교</a>
-    <a href="#ERD">ERD v15</a>
+    <a href="#ERD">ERD v16</a>
   </nav>
 </div></header>
 
@@ -470,7 +470,7 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
 
 <!-- ───────────────────────────── ERD -->
 <section id="ERD">
-  <h2>ERD v15 <span class="tag ok">반영 완료</span></h2>
+  <h2>ERD v16 <span class="tag ok">반영 완료</span></h2>
   <p>ERD 반영은 담당자 한 명만 합니다. 팀원이 편집기에서 내보낸 JSON을 패치로 바꿔 HTML에 넣고,
      DDL·종합 문서를 다시 만듭니다.</p>
 
@@ -553,7 +553,7 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
 </section>
 
 <footer>
-  제자리(Jejari) · 강동균 · 소스는 저장소의 <code>db/seed/</code>, <code>redis/lua/</code>, <code>bench/</code>,
+  제자리(Jejari) · 강동균 · 소스는 저장소의 <code>db/seed/</code>, <code>src/main/resources/lua/seat/</code>, <code>bench/</code>,
   <code>tools/load-public-data.js</code>, <code>docs/강동균/features/</code> 에 있습니다.
 </footer>
 
@@ -567,8 +567,20 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
 
   /* ─────────── 탭 라우팅 ─────────── */
   var ids = ['overview', 'DATA-01', 'RSV-02', 'LOCK', 'ERD'];
+  // 탭은 주소를 바꾸지 않고 페이지 안에서만 전환한다.
+  // 문서 사이트는 이 파일을 iframe(srcdoc)에 넣는데, 그 안에서 href="#ERD"를 그대로 따라가면
+  // 부모 주소(jejari.pages.dev/#ERD)로 이동해 iframe 안에 사이트가 통째로 다시 뜬다 (로그인도 풀린 채로).
+  // 파일을 직접 열었을 때만 처음 주소의 #DATA-01 같은 값을 읽어 그 탭부터 보여 준다.
+  var current = (location.hash || '').replace(/^#/, '');
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="#"]');
+    if (!a) return;
+    e.preventDefault();
+    current = a.getAttribute('href').slice(1);
+    show();
+  });
   function show() {
-    var id = (location.hash || '').replace(/^#/, '');
+    var id = current;
     if (ids.indexOf(id) < 0) id = ids[0];
     ids.forEach(function (x) {
       var s = document.getElementById(x);
@@ -580,7 +592,6 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
     window.scrollTo(0, 0);
     if (id === 'LOCK') drawCharts(true);
   }
-  window.addEventListener('hashchange', show);
 
   /* ─────────── 검증 23항목 (실제 99_verify.sql 출력) ─────────── */
   var V = [
