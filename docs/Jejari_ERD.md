@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v13 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-16
+> 스키마 v14 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-16
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -72,7 +72,7 @@
 | 대기열 입장 처리량 | 초당 200명 · 입장 토큰 300초 | app_policy queue.* | 부하 테스트로 조정 | 예시 |
 | 회원 패널티 결합 규칙 | MAX (최댓값) | app_policy risk.member_penalty_rule | 다계정 중 하나라도 위험하면 묶음 전체 후순위 | 예시 |
 | 위험 점수 → 대기 지연 | 1점당 1초 | app_policy risk.penalty_ms_per_point | 점수 80이면 80초 뒤로 | 예시 |
-| 위험 점수 → 취소표 대기 순서 | 1점당 1분 | app_policy waitlist.penalty_ms_per_point | 취소표 대기는 몇 시간~며칠이라 대기열(1점 1초)보다 크게. 80점이면 80분 뒤로 (concurrency.md §9.3) | 예시 |
+| 위험 점수 → 취소표 대기 순서 | 1점당 3분 (80점 = 4시간) | app_policy waitlist.penalty_ms_per_point | 봇은 매진 직후 신청하므로 판매 첫날 오전 신청자 뒤로, 오탐 사용자도 몇 시간 뒤면 차례가 오도록 (concurrency.md §9.3) | 확정 |
 | 케이스 자동 생성 임계값 | 80점 | model_run.threshold | 모델 버전별로 다르게 둘 수 있게 model_run에 저장 | 예시 |
 | 점수 감쇠 | 반감기 30일 | model_run.decay_half_life_days | 운영 원칙: 기간 경과 시 점수 감소 | 예시 |
 | 녹화 샘플링 | 위험 상위 10% 전체 녹화, 70점 이상 무조건 | app_policy replay.* | 저장량과 개인정보 부담 사이 절충 | 예시 |
@@ -570,7 +570,7 @@ Oracle
 | risk.batch_interval_sec | 60 | 1 | NUMBER | 위험 점수 배치 주기(초). 각 운행 sale_open_at 전 1회는 반드시 실행 |
 | login_attempt.retention_days | 30 | 1 | NUMBER | login_attempt 보관 기간 (expire_at 계산) |
 | queue.entry_ttl_sec | 3600 | 1 | NUMBER | 대기 기록(queue:member)이 남는 최대 시간(초). 이탈 없이 사라진 회원의 기록 정리 |
-| waitlist.penalty_ms_per_point | 60000 | 1 | NUMBER | 위험 점수 1점당 취소표 대기 순서를 미루는 ms (대기열보다 크게, 80점 = 80분) |
+| waitlist.penalty_ms_per_point | 180000 | 1 | NUMBER | 위험 점수 1점당 취소표 대기 순서를 미루는 ms. 1점 = 3분 (80점 = 4시간, 팀 확정) |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -2311,6 +2311,7 @@ Oracle
 | v11 | 코레일 실제 규칙 반영: 1일 매수 제한 PER_DAY(구매일 기준, 하루 20매)를 purchase_limit_policy·purchase_counter·Redis limit:day 키에 추가, 일반 예매 오픈은 출발 2개월 전 07:00(명절은 행사 오픈 시각), 상시 정책 기본값 열차당 10매 |
 | v12 | 위험 점수 캐시 읽기 규칙: risk:* 에 TTL을 두지 않는다는 것(0점이 되면 삭제)과 재동기화 완료 표시 키 risk:meta:synced_at 추가. 표시 키가 없으면 대기열이 캐시 대신 Oracle risk_score를 조회 |
 | v13 | 대기열·취소표 맞춤 (김성원 요청): queue:member 값에 ciHash 추가, app_policy queue.entry_ttl_sec(3600초)·waitlist.penalty_ms_per_point(60000), waitlist에 priority_at·penalty_ms 추가하고 대기 순서·ix_waitlist_next를 priority_at 기준으로 (concurrency.md §9.3). risk_score_history.history_id 시퀀스 추가 (강다인 요청) |
+| v14 | 취소표 대기 위험 패널티 확정 (강다인): app_policy waitlist.penalty_ms_per_point 60000 → 180000 (1점 = 3분, 80점 = 4시간) |
 
 ## 참고 자료
 
