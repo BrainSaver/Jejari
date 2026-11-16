@@ -149,7 +149,7 @@ rect.b:hover{opacity:.82}
     <a href="#DATA-01">DATA-01 기준 데이터</a>
     <a href="#RSV-02">RSV-02 좌석 선점</a>
     <a href="#LOCK">§17.1 락 비교</a>
-    <a href="#ERD">ERD v16</a>
+    <a href="#ERD">ERD v17</a>
   </nav>
 </div></header>
 
@@ -159,10 +159,10 @@ rect.b:hover{opacity:.82}
 <section id="overview">
   <h2>담당 기능 진행 현황</h2>
   <div class="grid">
-    <div class="kpi"><b>5 / 12</b><span>완료한 P1·P2 기능</span></div>
+    <div class="kpi"><b>9 / 12</b><span>완료한 P1·P2 기능</span></div>
     <div class="kpi"><b>100%</b><span>기한 초과 반환율 (20/20)</span></div>
     <div class="kpi"><b>0</b><span>중복 예약 (목표 0)</span></div>
-    <div class="kpi"><b>90</b><span>통과한 검증·테스트 항목</span></div>
+    <div class="kpi"><b>99</b><span>통과한 검증·테스트 항목</span></div>
   </div>
 
   <table>
@@ -175,10 +175,10 @@ rect.b:hover{opacity:.82}
         <td><span class="tag ok">완료</span></td><td>화면(U-05) · 할인 운임 [가정]</td></tr>
     <tr><td><code>ADM-02</code></td><td>운행·행사 등록, 판매 오픈</td><td>P2</td>
         <td><span class="tag warn">일부</span></td><td>시드는 됨. 오픈 스케줄러 미착수</td></tr>
-    <tr><td><code>TRN-01</code></td><td>역 목록</td><td>P1</td><td><span class="tag bad">미착수</span></td><td>전부</td></tr>
-    <tr><td><code>TRN-02</code></td><td>운행 검색</td><td>P1</td><td><span class="tag bad">미착수</span></td><td>전부</td></tr>
-    <tr><td><code>TRN-03</code></td><td>운임 조회</td><td>P1</td><td><span class="tag bad">미착수</span></td><td>전부</td></tr>
-    <tr><td><code>RSV-01</code></td><td>좌석 배치도</td><td>P1</td><td><span class="tag bad">미착수</span></td><td><code>seatmap</code> 캐시 · API · 화면</td></tr>
+    <tr><td><code>TRN-01</code></td><td>역 목록</td><td>P1</td><td><span class="tag ok">완료</span></td><td>—</td></tr>
+    <tr><td><code>TRN-02</code></td><td>운행 검색</td><td>P1</td><td><span class="tag ok">완료</span></td><td>화면(U-03)</td></tr>
+    <tr><td><code>TRN-03</code></td><td>운임 조회</td><td>P1</td><td><span class="tag ok">완료</span></td><td>—</td></tr>
+    <tr><td><code>RSV-01</code></td><td>좌석 배치도</td><td>P1</td><td><span class="tag ok">완료</span></td><td>화면(U-05)</td></tr>
     <tr><td><code>RSV-03</code></td><td>결제 기한 초과 자동 반환</td><td>P1</td><td><span class="tag ok">완료</span></td><td>— (보장 경로 seat-release는 C·D)</td></tr>
     <tr><td><code>RSV-05</code></td><td>결제 전 취소</td><td>P1</td><td><span class="tag ok">완료</span></td><td>화면(U-06 버튼)</td></tr>
     <tr><td><code>ADM-03</code></td><td>실시간 예매 현황</td><td>P1</td><td><span class="tag bad">미착수</span></td><td>전부</td></tr>
@@ -470,7 +470,7 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
 
 <!-- ───────────────────────────── ERD -->
 <section id="ERD">
-  <h2>ERD v16 <span class="tag ok">반영 완료</span></h2>
+  <h2>ERD v17 <span class="tag ok">반영 완료</span></h2>
   <p>ERD 반영은 담당자 한 명만 합니다. 팀원이 편집기에서 내보낸 JSON을 패치로 바꿔 HTML에 넣고,
      DDL·종합 문서를 다시 만듭니다.</p>
 

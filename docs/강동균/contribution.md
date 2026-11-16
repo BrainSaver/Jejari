@@ -109,6 +109,7 @@
 | §17.1 락 방식 비교 + SeatHoldStrategy 설계 | [락방식-비교](features/락방식-비교.md) |
 | RSV-02 좌석 선점 API (멱등·재선점·매수 카운터) + 판매 중 운행 제공 | [좌석선점-api](features/좌석선점-api.md) |
 | RSV-03 만료 스캐너 · RSV-05 결제 전 취소 · 결제 실패 해제(Saga용) | [좌석해제-만료-취소](features/좌석해제-만료-취소.md) |
+| TRN-01~03 역·운행 검색·운임, RSV-01 좌석 배치도 (seatmap 캐시, 행동 로그 4종) | [열차조회-좌석배치도](features/열차조회-좌석배치도.md) |
 
 ## 5. 다른 파트와의 연결
 
@@ -122,6 +123,7 @@
 | A 김성원 | 판매 중 운행·입장 토큰 | `JdbcOnSaleRunProvider`가 `train_run`을 읽음 (개발 모드는 대용품 유지), 선점 API가 `QueuePassService.verify` 호출 (팀-확인-요청 3·4번) |
 | A 김성원 | ERD v13 | `queue:member` 값에 ciHash, `queue.entry_ttl_sec`, 취소표 대기 `priority_at`·`penalty_ms` 반영 (팀-확인-요청 1·2·12번) |
 | D 강다인 | ERD v13 | `risk_score_history_seq` 시퀀스 추가 → 점수 저장 때 이력도 기록 |
+| D 강다인 | 행동 로그 | 내 API 4곳에 `BehaviorLog.mark`: VIEW_TRAIN·VIEW_SEAT·SEAT_HOLD·CANCEL. 실패 요청도 `errorCode`와 함께 남김 (MongoDB 적재 확인) |
 | D 강다인 | ERD v15 | 회원가입·로그인용 시퀀스 2개, Redis 키 3개, `app_policy` 한도 3개, `login_attempt.result` BANNED |
 
 ## 6. 트러블슈팅

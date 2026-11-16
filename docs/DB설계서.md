@@ -1103,7 +1103,7 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 | `limit:dec:{reservationId}` | STRING | 한도 감소 완료 표시 | 출발·행사 종료 중 늦은 쪽 | RSV-03, CNL-02 |
 | `relay:shard:{n}` | STRING | 릴레이 인스턴스 ID | `relay.lease_sec` | EVT-02 |
 | `risk:{subjectType}:{hash}` | STRING | final_score | 다음 산정 주기 × 2 | RISK-03 |
-| `seatmap:{runId}` | HASH | seatId → 상태 | 출발 | TRN-02, RSV-01 |
+| `seatmap:{runId}` | HASH | seatId → H(선점·대기자 보류) / S(판매), 빈 좌석은 필드 없음, `_`는 캐시 표시 | `seatmap.cache_ms` (1초) | TRN-02, RSV-01 |
 | `rate:login:{ipHash}` | STRING | 분당 시도 수 (한도 `auth.login_rate_per_min`) | 1분 | AUTH-03 |
 | `rate:signup:{ipHash}` | STRING | 시간당 본인인증·가입 시도 수 (한도 `auth.signup_rate_per_hour`) | 1시간 | AUTH-01·02 |
 | `login:fail:{emailHash}` | STRING | 연속 실패 수 (`auth.lock_after_failures`에 닿으면 잠금) | `auth.lock_minutes` | AUTH-03 |
