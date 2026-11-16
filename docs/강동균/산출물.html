@@ -149,7 +149,7 @@ rect.b:hover{opacity:.82}
     <a href="#DATA-01">DATA-01 기준 데이터</a>
     <a href="#RSV-02">RSV-02 좌석 선점</a>
     <a href="#LOCK">§17.1 락 비교</a>
-    <a href="#ERD">ERD v13</a>
+    <a href="#ERD">ERD v14</a>
   </nav>
 </div></header>
 
@@ -189,7 +189,7 @@ rect.b:hover{opacity:.82}
   <table>
     <tr><th>업무</th><th>상태</th><th>내용</th></tr>
     <tr><td>ERD 반영 담당</td><td><span class="tag ok">유지 중</span></td>
-        <td>스키마 v13까지 반영 (v12 위험 점수 캐시, v13 김성원·강다인 요청). 검사 FAIL 0 · WARN 0, 반영 대기 JSON 없음</td></tr>
+        <td>스키마 v14까지 반영 (v12 위험 점수 캐시, v13 김성원·강다인 요청, v14 취소표 패널티 확정). 검사 FAIL 0 · WARN 0, 반영 대기 JSON 없음</td></tr>
     <tr><td>§17.1 락 방식 비교</td><td><span class="tag ok">실측 완료</span></td>
         <td>A·B·C 3전략 × 3시나리오. 뼈대 올라온 뒤 k6로 재측정 필요</td></tr>
   </table>
@@ -470,7 +470,7 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
 
 <!-- ───────────────────────────── ERD -->
 <section id="ERD">
-  <h2>ERD v13 <span class="tag ok">반영 완료</span></h2>
+  <h2>ERD v14 <span class="tag ok">반영 완료</span></h2>
   <p>ERD 반영은 담당자 한 명만 합니다. 팀원이 편집기에서 내보낸 JSON을 패치로 바꿔 HTML에 넣고,
      DDL·종합 문서를 다시 만듭니다.</p>
 
@@ -498,7 +498,7 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
   <div class="note">
     <b>왜 <code>priority_at</code>을 저장하나</b> — 조회할 때마다 "신청 시각 + 패널티"를 계산하면 인덱스를 못 탑니다.
     신청 때 한 번 계산해 저장하고, 인덱스 순서를 <code>ORDER BY priority_at, waitlist_id</code>와 같게 둬서
-    Oracle이 정렬 없이 앞에서부터 읽게 했습니다. 패널티 단위(1점 = 1분)는 예시값이고 팀 확정 전입니다.
+    Oracle이 정렬 없이 앞에서부터 읽게 했습니다. 패널티 단위는 v14에서 강다인 확정값 1점 = 3분(80점 = 4시간)으로 바꿨습니다.
   </div>
 
   <h3>v12 — 위험 점수 캐시 읽기 규칙</h3>
