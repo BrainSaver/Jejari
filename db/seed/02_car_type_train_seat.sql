@@ -14,10 +14,12 @@
 
 MERGE INTO car_type t
 USING (
-  SELECT '50554101' AS car_type_code, 'KTX일반55,간이2' AS car_type_name, 55 AS seat_count,
-         'GENERAL'   AS seat_grade,     'ABCD'             AS seat_columns FROM dual UNION ALL
-  SELECT '60303101',                   'KTXⅡ,특30(3)',                   30,
-         'FIRST',                       'ABC'                              FROM dual
+-- @generated:car_type (tools/load-public-data.js — 손으로 고치지 마세요)
+  SELECT '50554101' AS car_type_code, 'KTX일반55,간이2'      AS car_type_name, 55 AS seat_count,
+         'GENERAL'   AS seat_grade, 'ABCD'   AS seat_columns FROM dual UNION ALL
+  SELECT '60303101', 'KTXⅡ,특30(3)'        , 30,
+         'FIRST'    , 'ABC'    FROM dual
+-- @end:car_type
 ) s ON (t.car_type_code = s.car_type_code)
 WHEN MATCHED THEN
   UPDATE SET t.car_type_name = s.car_type_name, t.seat_count = s.seat_count,
@@ -45,7 +47,9 @@ MERGE INTO train_car t
 USING (
   SELECT tr.train_id,
          c.car_no,
+-- @generated:train_car (tools/load-public-data.js — 손으로 고치지 마세요)
          CASE WHEN c.car_no = 1 THEN '60303101' ELSE '50554101' END AS car_type_code
+-- @end:train_car
     FROM train tr
    CROSS JOIN (SELECT LEVEL AS car_no FROM dual CONNECT BY LEVEL <= 10) c
    WHERE tr.train_id IN (1, 2)
