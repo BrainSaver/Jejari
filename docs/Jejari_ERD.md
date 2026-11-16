@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v11 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-16
+> 스키마 v12 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-16
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -39,7 +39,7 @@
 | 테이블 | 60개 (운영 56 + 확장 예정 4) |
 | 저장소 | Oracle 44 · MongoDB 11 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 511개 |
+| 컬럼 | 512개 |
 | 관계 (FK) | 85개 (Oracle 제약 60 · 논리 참조 20) |
 
 | 영역 | 저장소 | 테이블 |
@@ -1953,13 +1953,14 @@ Redis
 | `limit:event:{saleEventId}:{ciHash}` | STRING |  | 시스템 | 명절 전체 구매 매수 | PER_HOLIDAY 제한의 빠른 체크 |
 | `limit:day:{yyyymmdd}:{ciHash}` | STRING |  | 시스템 | 구매일별 구매 매수 | PER_DAY 제한의 빠른 체크. 만료는 그 날 24:00 + 1시간 |
 | `limit:dec:{reservationId}` | STRING+TTL |  | 시스템 | 값: 1 (이 예약의 한도 감소 완료 표시) | limit_decr.lua가 SET NX에 성공할 때만 감소 → 커밋 직후 앱과 outbox 소비자가 둘 다 실행해도 한 번만 감소 |
-| `risk:{subjectType}:{hash}` | STRING |  | 시스템 | final_score 캐시 | 대기열 진입 시 DB 미조회 |
+| `risk:{subjectType}:{hash}` | STRING |  | 시스템 | final_score 캐시 (0~100 숫자 문자열). TTL 없음 | 대기열 진입 시 DB 미조회. TTL을 두면 시간이 지나 패널티가 저절로 풀려 "쉬었다 오면 통과"가 된다. 0점이 되는 순간 지운다 |
+| `risk:meta:synced_at` | STRING |  | 시스템 | Oracle → Redis 재동기화 완료 시각 | 이 키가 있을 때만 risk:* 캐시를 믿는다. 없으면 대기열이 캐시 대신 Oracle risk_score를 직접 조회하고, 조회가 실패하면 100점(안전한 쪽). 재동기화는 risk:*를 모두 쓴 다음에 이 키를 SET |
 | `seatmap:{runId}` | HASH |  | 시스템 | seatId → 상태 | 조회 트래픽을 DB에서 분리 |
 | `rate:login:{ipHash}` | STRING+TTL |  | 시스템 | 로그인 시도 카운터 | Argon2 연산 남용·크리덴셜 스터핑 차단 |
 | `rate:api:{memberId}` | STRING+TTL |  | 시스템 | 초당 API 호출 수 | 매크로 요청 폭주 1차 차단 |
 | `policy:cache` | HASH |  | 시스템 | app_policy 캐시 | 매 요청마다 DB 조회 방지 |
 
-> **제약·비고** 단일 노드 전제, maxmemory-policy noeviction, AOF everysec (concurrency.md §14.5) · 키 이름의 중괄호는 자리표시자 (실제 키 예: seat:hold:1001:57:0) · Lua 스크립트 hold·release·extend·rehold·sold·reoffer·limit_incr·limit_decr, 커밋 후 보상의 outbox 보장 경로, 클러스터 전환 시 해시 태그는 concurrency.md §14
+> **제약·비고** 단일 노드 전제, maxmemory-policy noeviction, AOF everysec (concurrency.md §14.5) · 키 이름의 중괄호는 자리표시자 (실제 키 예: seat:hold:1001:57:0) · Lua 스크립트 hold·release·extend·rehold·sold·reoffer·limit_incr·limit_decr, 커밋 후 보상의 outbox 보장 경로, 클러스터 전환 시 해시 태그는 concurrency.md §14 · 위험 점수 캐시: risk:*는 TTL 없이 두고 0점이 되면 삭제 · 앱 시작 직후와 10분마다 Oracle에서 전체 재동기화하며, risk:*를 모두 쓴 뒤 risk:meta:synced_at을 SET · 대기열은 표시 키가 있을 때만 "키 없음 = 0점"으로 읽고, 값이 0~100 숫자 문자열이 아니면 100점으로 본다
 
 <a id="g-ext"></a>
 ### 외부 빅데이터·분석
@@ -2300,6 +2301,7 @@ Oracle
 | v9 | 기능설계서 맞춤: admin_action에 reservation_id·예약 대상 조치(강제 취소·결제 수동 처리·마스킹 해제), 알림 종류(취소표 건너뜀·환불 완료), 대기열 중복 진입 차단(queue:member·queue:ci)·같은 시각 진입 순서(queue:seq), 운영 값 8개(취소표 한도·출발 후 취소·스캐너·알림·위험 점수 주기) |
 | v10 | MongoDB 인덱스·보관 정리: behavior_log {member_id, ts}(타임라인), queue_log {run_id, entered_at}(순번 검증) 인덱스, login_attempt에 expire_at·TTL과 app_policy login_attempt.retention_days(30일) |
 | v11 | 코레일 실제 규칙 반영: 1일 매수 제한 PER_DAY(구매일 기준, 하루 20매)를 purchase_limit_policy·purchase_counter·Redis limit:day 키에 추가, 일반 예매 오픈은 출발 2개월 전 07:00(명절은 행사 오픈 시각), 상시 정책 기본값 열차당 10매 |
+| v12 | 위험 점수 캐시 읽기 규칙: risk:* 에 TTL을 두지 않는다는 것(0점이 되면 삭제)과 재동기화 완료 표시 키 risk:meta:synced_at 추가. 표시 키가 없으면 대기열이 캐시 대신 Oracle risk_score를 조회 |
 
 ## 참고 자료
 
