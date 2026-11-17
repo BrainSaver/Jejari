@@ -9,6 +9,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.jejari.common.config.AppPolicy;
+
 /**
  * RSV-03 결제 기한 초과 자동 반환: HOLD 만료 스캐너 (concurrency.md §6.1).
  *
@@ -35,10 +37,10 @@ public class HoldExpiryScanner {
 
 	private final JdbcTemplate jdbc;
 	private final SeatReleaseService release;
-	private final SeatPolicy policy;
+	private final AppPolicy policy;
 	private volatile long lastRunNanos = System.nanoTime() - Long.MAX_VALUE / 2;
 
-	public HoldExpiryScanner(JdbcTemplate jdbc, SeatReleaseService release, SeatPolicy policy) {
+	public HoldExpiryScanner(JdbcTemplate jdbc, SeatReleaseService release, AppPolicy policy) {
 		this.jdbc = jdbc;
 		this.release = release;
 		this.policy = policy;
@@ -46,7 +48,7 @@ public class HoldExpiryScanner {
 
 	@Scheduled(fixedDelay = 1000, initialDelay = 5000)
 	void tick() {
-		long intervalNanos = policy.getLong(SeatPolicy.SCANNER_HOLD_INTERVAL_SEC) * 1_000_000_000L;
+		long intervalNanos = policy.getLong(AppPolicy.SCANNER_HOLD_INTERVAL_SEC) * 1_000_000_000L;
 		if (System.nanoTime() - lastRunNanos < intervalNanos) {
 			return;
 		}
@@ -60,7 +62,7 @@ public class HoldExpiryScanner {
 
 	/** 기한이 지난 HOLD를 최대 batch_size건 읽어 건마다 별도 트랜잭션으로 만료시킨다. @return 만료시킨 건수 */
 	public int scanOnce() {
-		List<Long> due = jdbc.queryForList(DUE, Long.class, policy.getLong(SeatPolicy.SCANNER_BATCH_SIZE));
+		List<Long> due = jdbc.queryForList(DUE, Long.class, policy.getLong(AppPolicy.SCANNER_BATCH_SIZE));
 		int expired = 0;
 		for (long r : due) {
 			try {

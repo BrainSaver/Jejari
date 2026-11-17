@@ -24,6 +24,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.jejari.common.config.AppPolicy;
 import com.jejari.common.error.BusinessException;
 import com.jejari.seat.SeatHoldService.HoldCommand;
 import com.jejari.seat.SeatHoldService.SeatRequest;
@@ -51,7 +52,7 @@ class SeatReleaseInfraTest {
 	@Autowired
 	SeatReleaseService release;
 	@Autowired
-	SeatPolicy policy;
+	AppPolicy policy;
 	@Autowired
 	JdbcTemplate jdbc;
 	@Autowired

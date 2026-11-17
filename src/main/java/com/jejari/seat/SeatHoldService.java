@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.jejari.auth.AuthErrorCode;
+import com.jejari.common.config.AppPolicy;
 import com.jejari.common.error.BusinessException;
 import com.jejari.common.error.CommonErrorCode;
 import com.jejari.queue.QueueErrorCode;
@@ -68,7 +69,7 @@ public class SeatHoldService {
 	private final PurchaseLimits limits;
 	private final PurchaseCounters counters;
 	private final SeatHoldTx holdTx;
-	private final SeatPolicy policy;
+	private final AppPolicy policy;
 	private final SeatScripts scripts;
 	private final StringRedisTemplate redis;
 	private final JdbcTemplate jdbc;
@@ -76,7 +77,7 @@ public class SeatHoldService {
 	private final Clock clock;
 
 	public SeatHoldService(TrainRunReader runs, SeatMapService seatMap, FareReader fares, PurchaseLimits limits, PurchaseCounters counters, SeatHoldTx holdTx,
-			SeatPolicy policy, SeatScripts scripts, StringRedisTemplate redis, JdbcTemplate jdbc, TransactionTemplate tx,
+			AppPolicy policy, SeatScripts scripts, StringRedisTemplate redis, JdbcTemplate jdbc, TransactionTemplate tx,
 			Clock clock) {
 		this.runs = runs;
 		this.seatMap = seatMap;
@@ -123,14 +124,14 @@ public class SeatHoldService {
 		long r = jdbc.queryForObject("SELECT reservation_seq.NEXTVAL FROM dual", Long.class);
 		String idemKey = SeatKeys.idem(memberId, cmd.idempotencyKey());
 		Boolean first = redis.opsForValue().setIfAbsent(idemKey, Long.toString(r),
-				policy.getLong(SeatPolicy.IDEM_TTL_SEC), TimeUnit.SECONDS);
+				policy.getLong(AppPolicy.IDEM_TTL_SEC), TimeUnit.SECONDS);
 		if (!Boolean.TRUE.equals(first)) {
 			return replay(memberId, redis.opsForValue().get(idemKey));
 		}
 
 		long purchaseDay = SeatHoldTx.yyyymmdd(now);
 		LimitKeys limitKeys = limitKeys(run, ciHash, purchaseDay, lim);
-		LocalDateTime deadline = now.plusMinutes(policy.getLong(SeatPolicy.PAY_DEADLINE_MIN));
+		LocalDateTime deadline = now.plusMinutes(policy.getLong(AppPolicy.PAY_DEADLINE_MIN));
 		List<String> seatKeys = seats.stream().map(s -> SeatKeys.hold(run.runId(), s.seatId(), HoldPlan.SEGMENT_NO)).toList();
 
 		// 2. 매수 한도 1차 (§2.1-2). 넘으면 자가 복구 한 번 (§10.7)
@@ -165,7 +166,7 @@ public class SeatHoldService {
 				if (existing.isPresent()) {
 					// §1-2: idem TTL이 지난 뒤 같은 키로 다시 옴 → 기존 예약을 돌려준다 (T31)
 					redis.opsForValue().setIfPresent(idemKey, Long.toString(existing.get()),
-							policy.getLong(SeatPolicy.IDEM_TTL_SEC), TimeUnit.SECONDS);
+							policy.getLong(AppPolicy.IDEM_TTL_SEC), TimeUnit.SECONDS);
 					return replay(memberId, Long.toString(existing.get()));
 				}
 				release(List.of(idemKey), r);
