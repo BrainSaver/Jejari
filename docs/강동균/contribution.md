@@ -112,6 +112,7 @@
 | TRN-01~03 역·운행 검색·운임, RSV-01 좌석 배치도 (seatmap 캐시, 행동 로그 4종) | [열차조회-좌석배치도](features/열차조회-좌석배치도.md) |
 | 결제·확정 취소가 부르는 좌석 단계 (PAY-01 마감 연장, PAY-02 좌석 확정, CNL-02 좌석 반환) | [좌석-결제취소-연결](features/좌석-결제취소-연결.md) |
 | ADM-02 판매 오픈 스케줄러 (train_run.status 시각 전이) | [판매오픈-스케줄러](features/판매오픈-스케줄러.md) |
+| ADM-03 실시간 예매 현황 (좌석·분당 건수·대기열·결과 모름 결제) | [실시간-예매현황](features/실시간-예매현황.md) |
 
 ## 5. 다른 파트와의 연결
 
@@ -131,6 +132,9 @@
 | D 강다인 | ERD v15 | 회원가입·로그인용 시퀀스 2개, Redis 키 3개, `app_policy` 한도 3개, `login_attempt.result` BANNED |
 | A 김성원 | 판매 오픈 자동화 | `JdbcOnSaleRunProvider`가 보는 운행이 시각에 맞춰 늘고 줄어든다. `9003`은 오픈 시각(내일 07:00)에 자동으로 열림 |
 | E 조영준 | 부하 시나리오 | 오픈 순간 트래픽을 실제로 재현할 수 있다 — `sale_open_at`을 몇 초 뒤로 넣으면 그 시각에 열림 |
+| A 김성원 | 대기열 숫자 | 현황 API가 `QueueKeys`의 `queue:{runId}`·`queue:active:{runId}`·`queue:throughput:{runId}`를 읽기만 함. 키 이름이 바뀌면 알려 주세요 |
+| C 길동현 | 결과 모름 결제 | 현황 API의 `payments.unknown`이 §6.2 건수다. ADM-09 화면의 진입 숫자로 쓰면 됨 |
+| D 강다인 | 취소 건수 | 현황의 `rates.cancels`는 `cancellation` 행 기준이라 **만료가 빠진다** (만료는 돈이 안 오가 행을 만들지 않음). 취소율을 볼 때 주의 |
 
 ## 6. 트러블슈팅
 
