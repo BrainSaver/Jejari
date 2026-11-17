@@ -1810,7 +1810,7 @@ function flowNode(n) {
   const msgs = items.reduce((s, it) => s + (it.notes || 0), 0);
   const mi = mineOn() && !ed ? items.filter((it) => mineOf(it)) : null;
   const mtodo = mi ? mi.filter((it) => mineOf(it) === 'todo').length : 0;
-  return `<div class="fl-node${pct === 100 && items.length ? ' all' : ''}${mi ? (mi.length ? ' mine' : ' dim') : ''}" data-k="${n.k}" ${mi && mi.length ? `style="left:${n.x}px;top:${n.y}px;--pc:${partColor(focusPart())}"` : pos} tabindex="0" role="button" title="${ed ? '끌어서 옮기기' : `눌러서 ${esc(n.label)} 열기`}">
+  return `<div class="fl-node${pct === 100 && items.length ? ' all' : ''}${RM.hl === n.k ? ' hl' : ''}${mi ? (mi.length ? ' mine' : ' dim') : ''}" data-k="${n.k}" ${mi && mi.length ? `style="left:${n.x}px;top:${n.y}px;--pc:${partColor(focusPart())}"` : pos} tabindex="0" role="button" title="${ed ? '끌어서 옮기기' : `눌러서 ${esc(n.label)} 열기`}">
     <div class="fl-head">${nodeIcon(n.icon)}<b>${esc(n.label)}</b>${mi && mi.length ? `<span class="fl-mine${mtodo ? '' : ' m-done'}" style="--pc:${partColor(focusPart())}" title="${esc(focusWho())} 칸 ${mi.length}개 중 ${mi.length - mtodo}개 했음">${mtodo ? `${mtodo}개 남음` : `${svgI('check', 13)} 다 함`}</span>` : `<span class="fl-pct">${done}/${items.length}</span>`}${tools}</div>
     <span class="rm-bar area"><i style="width:${pct}%"></i></span>
     <div class="fl-people">${parts.map(({ p, total, done: d }) => { const nw = nowOf(n.k, p); return `<button class="fl-who${mi && p === focusPart() ? ' me' : ''}" data-now="${n.k}" data-p="${p}" style="--pc:${partColor(p)}" title="${esc(partName(p))}: ${d}/${total}${nw ? ` · 지금: ${esc(nw.text)}` : ''} (누르면 지금 하는 일 적기)"${ed ? ' disabled' : ''}>
@@ -2283,8 +2283,19 @@ async function pageRoadmap(view) {
 function rmPendingOpen() {
   const p = RM.pending; RM.pending = null;
   if (!p) return;
-  setTimeout(() => { if (p.card && rmById().get(p.card)) rmOpen(p.card); else if (p.area) rmArea(p.area); }, 30);
+  setTimeout(() => { if (p.hl) rmHl(p.hl); if (p.card && rmById().get(p.card)) rmOpen(p.card); else if (p.area) rmArea(p.area); }, 30);
 }
+// 검색으로 연 칸을 흐름도에서 부각한다. 창을 닫은 뒤 다른 곳을 누르면 꺼진다
+function rmHl(k) {
+  RM.hl = k;
+  $$('.fl-node.hl').forEach((n) => n.classList.remove('hl'));
+  const node = $(`.fl-node[data-k="${k}"]`);
+  if (node) { node.classList.add('hl'); node.scrollIntoView({ block: 'center', inline: 'center' }); }
+}
+document.addEventListener('pointerdown', () => {
+  if (!RM.hl || !$('#modalBack').hidden) return;
+  RM.hl = null; $$('.fl-node.hl').forEach((n) => n.classList.remove('hl'));
+}, true);
 
 // ---------- 사이트 전체 검색 (Ctrl+K, /) ----------
 // 문서는 섹션 단위, 화면설계는 화면, 로드맵은 카드·칸·남긴 말·지금 하는 일. 받아 둔 내용(CACHE)을 써서 빠르다
@@ -2322,11 +2333,11 @@ async function searchIndex() {
     const goRm = (pending, view) => { RM.pending = pending; const h = '#/roadmap/' + view; if (location.hash === h) { rmPendingOpen(); } else location.hash = h; };
     for (const it of RM.data.items) {
       const who = rolesOf(it).map((p) => `${p} ${S.members[partOwner(p)] || ''}`).join(' ');
-      out.push({ kind: 'card', group: '로드맵 카드', title: `${it.code || ''} ${it.title}`.trim(), text: `${areaLabel(it.area)} · ${who} · ${ST_LABEL[stateOf(it)]}${it.note ? ' · ' + it.note : ''}`, done: isDone(it), go: () => goRm({ card: it.id }, 'board') });
+      out.push({ kind: 'card', group: '로드맵 카드', title: `${it.code || ''} ${it.title}`.trim(), text: `${areaLabel(it.area)} · ${who} · ${ST_LABEL[stateOf(it)]}${it.note ? ' · ' + it.note : ''}`, done: isDone(it), go: () => goRm({ card: it.id, hl: it.area }, 'flow') });
     }
-    for (const a of RM.data.areas) out.push({ kind: 'area', group: '로드맵 칸', title: a.label, text: areaParts(a.k).map((x) => `${x.p} ${S.members[partOwner(x.p)] || ''}`).join(' '), go: () => goRm({ area: a.k }, 'flow') });
-    for (const m of RM.data.msgs || []) if (m.text) out.push({ kind: 'msg', group: '남긴 말', title: `${rmWho(m.who).replace(/<[^>]+>/g, '')} → ${partName(m.to)} · ${m.code || m.title || ''}`, text: m.text, go: () => goRm({ card: m.item }, 'board') });
-    for (const n of RM.data.now || []) if (n.text) out.push({ kind: 'now', group: '지금 하는 일', title: `${partName(n.part)} · ${areaLabel(n.area)}`, text: n.text, go: () => goRm({ area: n.area }, 'flow') });
+    for (const a of RM.data.areas) out.push({ kind: 'area', group: '로드맵 칸', title: a.label, text: areaParts(a.k).map((x) => `${x.p} ${S.members[partOwner(x.p)] || ''}`).join(' '), go: () => goRm({ area: a.k, hl: a.k }, 'flow') });
+    for (const m of RM.data.msgs || []) if (m.text) out.push({ kind: 'msg', group: '남긴 말', title: `${rmWho(m.who).replace(/<[^>]+>/g, '')} → ${partName(m.to)} · ${m.code || m.title || ''}`, text: m.text, go: () => goRm({ card: m.item, hl: (rmById().get(m.item) || {}).area }, 'flow') });
+    for (const n of RM.data.now || []) if (n.text) out.push({ kind: 'now', group: '지금 하는 일', title: `${partName(n.part)} · ${areaLabel(n.area)}`, text: n.text, go: () => goRm({ area: n.area, hl: n.area }, 'flow') });
   } catch {}
   SR.idx = out; SR.ref = S.ref; SR.rev = RM.rev; SR.me = S.me;
   return out;
@@ -2584,11 +2595,11 @@ function rmOpen(id) {
       <div class="rm-noteacts"><label class="btn sm plain">사진 고르기<input type="file" id="rmFile" accept="image/*" hidden></label><span id="rmImgInfo" class="muted"></span><span style="flex:1"></span><button class="btn sm" id="rmNoteGo">남기기</button></div>
       <img id="rmImgPrev" class="rm-img-prev" hidden alt="붙일 사진 미리보기"></div>` : '<p class="muted">로그인하면 말을 남길 수 있어요.</p>'}
     <div id="rmNotes" data-id="${it.id}">${(RM.notesHtml && RM.notesHtml.id === it.id) ? RM.notesHtml.html : '<p class="loading">불러오는 중…</p>'}</div>
-    <div class="row">${S.me ? '<button class="btn sm danger" id="rmDel">삭제</button><span style="flex:1"></span><button class="btn plain" id="rmEditBtn">고치기</button>' : ''}${back ? `<button class="btn plain" data-back>← ${esc(areaLabel(back))}</button>` : ''}<button class="btn plain" data-x>닫기</button></div>
+    <div class="row">${S.me ? '<button class="btn sm danger" id="rmDel">삭제</button><span style="flex:1"></span><button class="btn plain" id="rmEditBtn">고치기</button>' : ''}${`<button class="btn plain" data-back title="이 카드가 있는 칸 보기">← ${esc(areaLabel(back || it.area))}</button>`}<button class="btn plain" data-x>닫기</button></div>
   </div>`, { wide: true });
   if (keep) { const ta = $('#rmNote', m); if (ta) ta.value = keep.draft; const to = $('#rmTo', m); if (to && keep.to != null) to.value = keep.to; m.scrollTop = keep.top; }
   $('[data-x]', m).addEventListener('click', () => { RM.modal = null; closeModal(); rmAfterClose(); });
-  const bk = $('[data-back]', m); if (bk) bk.addEventListener('click', () => rmArea(back));
+  const bk = $('[data-back]', m); if (bk) bk.addEventListener('click', () => rmArea(back || it.area));
   $$('[data-go]', m).forEach((b) => b.addEventListener('click', () => rmOpen(b.dataset.go)));
   $$('[data-chk]', m).forEach((b) => b.addEventListener('click', () => rmCheck(b.dataset.chk, b.dataset.p)));
   if (S.me) {

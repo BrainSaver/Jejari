@@ -95,12 +95,14 @@ class SyntheticDataInfraTest {
 		}
 		assertThat(byKind.get("normal")[1]).as("오탐 (정상)").isZero();
 
-		// 삭제하면 흔적이 없다
+		// 삭제하면 흔적이 없다 (이 테스트가 만든 회원만 센다. 로컬 DB에 syn1 같은 다른 가상 데이터가 남아 있어도 통과)
 		long runId = r.runId();
+		List<Long> ids = jdbc.queryForList("SELECT member_id FROM member WHERE email LIKE ?", Long.class, "lt" + TAG + ".%");
+		assertThat(mongo.getCollection("behavior_log").countDocuments(Filters.in("member_id", ids))).isPositive();
 		assertThat(service.cleanup(TAG)).isEqualTo(100);
 		assertThat(count("SELECT COUNT(*) FROM member WHERE email LIKE ?", "lt" + TAG + ".%")).isZero();
 		assertThat(count("SELECT COUNT(*) FROM train_run WHERE run_id = ?", runId)).isZero();
-		assertThat(mongo.getCollection("behavior_log").countDocuments(Filters.eq("user_agent", "synthetic"))).isZero();
+		assertThat(mongo.getCollection("behavior_log").countDocuments(Filters.in("member_id", ids))).isZero();
 	}
 
 	@Test
