@@ -30,7 +30,8 @@ import org.springframework.context.annotation.Import;
 		"spring.data.redis.database=15",
 		"jejari.queue.scheduler-enabled=false",
 		"jejari.risk.cache-resync-enabled=false",
-		"jejari.risk.batch-enabled=false"})
+		"jejari.risk.batch-enabled=false",
+		"jejari.train.sale-open-scheduler-enabled=false"})
 @AutoConfigureMockMvc
 @Import(BehaviorProbeController.class) // 행동 로그 통합 테스트용 엔드포인트 (테스트에만 있음)
 public @interface FullStackInfraTest {

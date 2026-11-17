@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v17)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v18)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -164,7 +164,7 @@ COMMENT ON COLUMN train_run.sale_event_id IS '명절 예매 행사 / 오픈 일�
 COMMENT ON COLUMN train_run.run_date IS '운행일 / 명절 기간';
 COMMENT ON COLUMN train_run.sale_open_at IS '예매 오픈 시각 / 트래픽 폭증 시점. 부하 테스트 시나리오 기준. 일반은 출발 2개월 전 07:00, 명절은 행사 오픈 시각';
 COMMENT ON COLUMN train_run.sale_close_at IS '판매 마감';
-COMMENT ON COLUMN train_run.status IS 'SCHEDULED / ON_SALE / CLOSED / DEPARTED / 판매 가능 여부 판단';
+COMMENT ON COLUMN train_run.status IS 'SCHEDULED / ON_SALE / CLOSED / DEPARTED / 판매 가능 여부 판단. 전이는 판매 오픈 스케줄러가 한다 — sale_open_at이 지나면 ON_SALE, sale_close_at이 지나면 CLOSED. 주기 app_policy sale.open_interval_sec';
 COMMENT ON COLUMN train_run.created_at IS '생성 시각';
 COMMENT ON COLUMN train_run.updated_at IS '수정 시각';
 
@@ -1263,6 +1263,7 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.signup_rate_per_hour', '10', 1, 'NUMBER', 'IP당 시간당 본인인증·가입 시도 한도 (rate:signup)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.verify_token_ttl_sec', '600', 1, 'NUMBER', '본인인증 1회용 토큰 유효 시간(초) (verify:{tokenHash})');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('seatmap.cache_ms', '1000', 1, 'NUMBER', '좌석 배치도 캐시(seatmap:{runId}) 유지 시간(ms). 길수록 DB·Redis 부하는 줄고 화면은 늦게 바뀜');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('sale.open_interval_sec', '10', 1, 'NUMBER', '판매 오픈 스케줄러가 train_run.status를 훑는 주기(초). 짧으면 오픈이 정확해지고 길면 DB 부하가 줄어듦');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (1, 1, 'PER_RESERVATION', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (2, 1, 'PER_RUN', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (3, 1, 'PER_HOLIDAY', 8, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');

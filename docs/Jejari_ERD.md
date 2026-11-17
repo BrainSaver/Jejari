@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v17 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-16
+> 스키마 v18 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-17
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -406,7 +406,7 @@ Oracle
 | `run_date` | DATE | NN | 생성 | 운행일 | 명절 기간 |
 | `sale_open_at` | TIMESTAMP | NN | 생성 | 예매 오픈 시각 | 트래픽 폭증 시점. 부하 테스트 시나리오 기준. 일반은 출발 2개월 전 07:00, 명절은 행사 오픈 시각 |
 | `sale_close_at` | TIMESTAMP |  | 생성 | 판매 마감 |  |
-| `status` | VARCHAR2(10) | NN | 시스템 | SCHEDULED / ON_SALE / CLOSED / DEPARTED | 판매 가능 여부 판단 |
+| `status` | VARCHAR2(10) | NN | 시스템 | SCHEDULED / ON_SALE / CLOSED / DEPARTED | 판매 가능 여부 판단. 전이는 판매 오픈 스케줄러가 한다 — sale_open_at이 지나면 ON_SALE, sale_close_at이 지나면 CLOSED. 주기 app_policy sale.open_interval_sec |
 
 > **제약·비고** UNIQUE(train_id, run_date) · UNIQUE(run_id, train_id) — seat_inventory 복합 FK의 참조 대상 · 일반 예매 오픈은 코레일 규칙대로 출발일 2개월 전 07:00: sale_open_at = run_date - 2개월 + 07:00. 명절 운행은 sale_event.sale_open_at을 그대로 복사합니다 (특별예매 일괄 오픈)
 
@@ -575,6 +575,7 @@ Oracle
 | auth.signup_rate_per_hour | 10 | 1 | NUMBER | IP당 시간당 본인인증·가입 시도 한도 (rate:signup) |
 | auth.verify_token_ttl_sec | 600 | 1 | NUMBER | 본인인증 1회용 토큰 유효 시간(초) (verify:{tokenHash}) |
 | seatmap.cache_ms | 1000 | 1 | NUMBER | 좌석 배치도 캐시(seatmap:{runId}) 유지 시간(ms). 길수록 DB·Redis 부하는 줄고 화면은 늦게 바뀜 |
+| sale.open_interval_sec | 10 | 1 | NUMBER | 판매 오픈 스케줄러가 train_run.status를 훑는 주기(초). 짧으면 오픈이 정확해지고 길면 DB 부하가 줄어듦 |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -2325,6 +2326,7 @@ Oracle
 | v15 | 회원가입·로그인 (강다인 요청): member·identity_verification ID 시퀀스, Redis 키 rate:signup·login:fail·verify, app_policy auth.login_rate_per_min(20)·signup_rate_per_hour(10)·verify_token_ttl_sec(600), login_attempt.result에 BANNED |
 | v16 | 좌석 선점 구현: reservation·reservation_history ID 시퀀스. behavior_log에 event_id + 유니크 인덱스 (강다인 요청, Kafka 재전달 중복 방지) |
 | v17 | 좌석 배치도·운행 검색 구현: seatmap:{runId} 값 형식(H/S, 빈 좌석은 필드 없음)과 app_policy seatmap.cache_ms(1000) |
+| v18 | 판매 오픈 스케줄러 (ADM-02): app_policy sale.open_interval_sec(10초). train_run.status 전이 주체를 스케줄러로 명시 |
 
 ## 참고 자료
 
