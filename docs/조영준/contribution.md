@@ -73,7 +73,7 @@
 | 상대 | 주고받는 것 | 약속한 내용 |
 |---|---|---|
 | 전체 | `BusinessException`·`ErrorCode`, `AuthPrincipal`, `Clock` | 실패는 도메인별 ErrorCode enum으로 던지기, 로그인 사용자는 `@AuthenticationPrincipal AuthPrincipal`, 시각은 `now(clock)` |
-| D 강다인 | 로그인 검증 ↔ 토큰 발급 | 비밀번호(Argon2id)·잠금·`login_attempt`는 D, 검증 후 `authTokenService.issue(MEMBER, memberId, clientInfo)` + `tokenResponses.ok()`는 E. `PasswordHasher`는 AUTH-05 관리자 로그인에서 재사용 |
+| D 강다인 | 로그인 검증 ↔ 토큰 발급 | 비밀번호(Argon2id)·잠금·`login_attempt`는 D, 검증 후 `authTokenService.issue(MEMBER, memberId, clientInfo)` + `tokenResponses.ok()`는 E. **✅ 연동 완료** (`LoginService` → `AuthTokenService`, `MemberAuthController` → `tokenResponses.ok()`), 2026-11-16 가입 → 로그인 → 대기열 진입까지 실제로 확인. `PasswordHasher`는 AUTH-05 관리자 로그인에서 재사용 |
 | A 김성원 | 대기열 개발 모드 · Redis | 개발 모드(`X-Member-Id`)는 로컬·부하 테스트 전용, 공용 서버에선 꺼야 함. Redis 즉시 실패(`RedisFailFastConfig`)와 기동 점검은 함께 동작 |
 | B 강동균 | ERD DDL · 시드 | Oracle 첫 기동 때 DDL → 시드 자동 적재. 스키마가 바뀌면 볼륨 재생성 |
 | 팀장 길동현 | 결정 요청 | 공용 서버 후보·사양, GitHub 결제 잠금, 기능설계서 9장 에러 코드 3개 추가, 코딩 규칙 공용 문서화 |
