@@ -1116,7 +1116,8 @@ const DOCS = {
   ['v15','회원가입·로그인 (강다인 요청): member·identity_verification ID 시퀀스, Redis 키 rate:signup·login:fail·verify, app_policy auth.login_rate_per_min(20)·signup_rate_per_hour(10)·verify_token_ttl_sec(600), login_attempt.result에 BANNED'],
   ['v16','좌석 선점 구현: reservation·reservation_history ID 시퀀스. behavior_log에 event_id + 유니크 인덱스 (강다인 요청, Kafka 재전달 중복 방지)'],
   ['v17','좌석 배치도·운행 검색 구현: seatmap:{runId} 값 형식(H/S, 빈 좌석은 필드 없음)과 app_policy seatmap.cache_ms(1000)'],
-  ['v18','판매 오픈 스케줄러 (ADM-02): app_policy sale.open_interval_sec(10초). train_run.status 전이 주체를 스케줄러로 명시']]}
+  ['v18','판매 오픈 스케줄러 (ADM-02): app_policy sale.open_interval_sec(10초). train_run.status 전이 주체를 스케줄러로 명시'],
+  ['v19','결제·취소 ID 시퀀스(payment·payment_method·cancellation, 길동현 요청). RISK-04 의심 케이스 자동 생성(강다인 요청): suspicious_case·case_marker 시퀀스, 대상당 열린 케이스 1건 유니크 인덱스, case_marker.session_id NULL 허용. 곧 쓸 시퀀스 waitlist·admin_action. 조회 인덱스 member(ci_hash)·payment_method(method_hash)·behavior_log{device_hash,ts}. 위험 점수 배치 Redis 키 risk:dirty·risk:dirty:work·risk:batch:lock']]}
 };
 // ===== 스키마 v5: 팀 검토 12건 반영 (2026-11-06) =====
 const V5_TABLES = [
@@ -1467,7 +1468,35 @@ const V18_OPS = [
   ['samples+','app_policy',[
     {policy_key:'sale.open_interval_sec',policy_value:'10',version:1,value_type:'NUMBER',description:'판매 오픈 스케줄러가 train_run.status를 훑는 주기(초). 짧으면 오픈이 정확해지고 길면 DB 부하가 줄어듦'}]],
 ];
-const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS} ];
+const V19_TABLES = [];
+const V19_OPS = [
+  // 1. 결제·취소 ID 시퀀스 (길동현 요청 — PAY-01~04·CNL 구현에 필요)
+  ['notes+','payment','CREATE SEQUENCE payment_seq CACHE 100;'],
+  ['notes+','payment_method','CREATE SEQUENCE payment_method_seq;'],
+  ['notes+','cancellation','CREATE SEQUENCE cancellation_seq;'],
+
+  // 2. RISK-04 의심 케이스 자동 생성 (강다인 요청)
+  ['notes+','suspicious_case',"CREATE SEQUENCE suspicious_case_seq; · 대상당 열린 케이스는 1건: CREATE UNIQUE INDEX ux_case_open_subject ON suspicious_case (CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_type END, CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_hash END); 같은 대상에 케이스가 겹쳐 열리는 것을 DB가 막는다 (닫힌 케이스는 인덱스에 들어가지 않아 다시 열 수 있음)"],
+  ['notes+','case_marker','CREATE SEQUENCE case_marker_seq;'],
+  // 구매 직후 취소 마커는 Oracle 기록만 보고 찍어서 녹화 세션이 없다 → NULL 허용 (v3에서 FK가 되며 v4 nn-auto가 NOT NULL을 붙였던 것을 되돌림)
+  ['set','case_marker','session_id',{keys:'FK',fk:'auth_session',desc:'표시할 세션 (없을 수 있음)',reason:'Oracle 기록만으로 찍는 마커(구매 직후 취소 등)는 녹화 세션이 없다. 세션이 있으면 재생기가 그 지점으로 이동'}],
+
+  // 3. 곧 쓸 ID 시퀀스 (취소표 대기·관리자 조치)
+  ['notes+','waitlist','CREATE SEQUENCE waitlist_seq;'],
+  ['notes+','admin_action','CREATE SEQUENCE admin_action_seq;'],
+
+  // 4. 조회 인덱스. 쓰는 쿼리: 같은 CI/카드를 쓰는 다른 계정 찾기 (RISK-04 연결 계정, ADM-05 타임라인)
+  ['notes+','member','CREATE INDEX ix_member_ci_hash ON member (ci_hash);'],
+  ['notes+','payment_method','CREATE INDEX ix_pay_method_hash ON payment_method (method_hash);'],
+  ['notes+','behavior_log','인덱스 { device_hash: 1, ts: 1 } (기기 단위 집계·의심 구간 조회)'],
+
+  // 5. 위험 점수 1분 배치(RISK-02)가 쓰는 Redis 키
+  ['add','redis_keys','risk:meta:synced_at',[
+    ['risk:dirty','SET','','시스템','다시 계산할 대상 ({subjectType}:{hash})','새 신호가 생긴 대상만 배치가 계산한다. 행동 로그 적재·예약 확정·취소 이벤트·감쇠 갱신이 SADD'],
+    ['risk:dirty:work','SET','','시스템','이번 회차가 넘겨받은 대상','work가 비었을 때만 RENAMENX risk:dirty → risk:dirty:work로 통째로 넘겨받는다. 계산 중 들어온 새 표시는 새 risk:dirty에 쌓여 SREM에 지워지지 않는다'],
+    ['risk:batch:lock','STRING+TTL','','시스템','배치 단독 실행 리스 (값은 실행 토큰)','앱이 여러 대여도 한 대만 돈다. SET NX PX로 잡고 자기 토큰일 때만 Lua로 푼다']]],
+];
+const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS} ];
 const SEED_VERSION = Math.max(2,...PATCHES.map(p=>p.v));
 const LAYOUT = [
  ['station','route','route_station','fare','common_code'],

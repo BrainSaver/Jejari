@@ -1,15 +1,22 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v18)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v19)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
 
 -- 시퀀스
 CREATE SEQUENCE member_seq;
+CREATE SEQUENCE payment_method_seq;
 CREATE SEQUENCE reservation_seq CACHE 100;
 CREATE SEQUENCE reservation_history_seq CACHE 100;
+CREATE SEQUENCE payment_seq CACHE 100;
+CREATE SEQUENCE cancellation_seq;
 CREATE SEQUENCE outbox_seq CACHE 1000;
+CREATE SEQUENCE waitlist_seq;
 CREATE SEQUENCE risk_score_history_seq;
+CREATE SEQUENCE admin_action_seq;
 CREATE SEQUENCE identity_verification_seq;
+CREATE SEQUENCE suspicious_case_seq;
+CREATE SEQUENCE case_marker_seq;
 
 CREATE TABLE station (
   station_id                 VARCHAR2(10) NOT NULL,
@@ -261,6 +268,7 @@ COMMENT ON COLUMN member.status IS 'ACTIVE / RESTRICTED / BANNED / 관리자 조
 COMMENT ON COLUMN member.created_at IS '가입 시각 / 신규 계정 판별 (기본 신뢰도 낮음)';
 COMMENT ON COLUMN member.withdrawn_at IS '탈퇴 시각 / 소프트 삭제. 위험 이력은 보존 기간 후 파기';
 COMMENT ON COLUMN member.updated_at IS '수정 시각';
+CREATE INDEX ix_member_ci_hash ON member (ci_hash);
 
 CREATE TABLE payment_method (
   method_id                  NUMBER NOT NULL,
@@ -279,6 +287,7 @@ COMMENT ON COLUMN payment_method.method_type IS 'CARD / ACCOUNT / PAY';
 COMMENT ON COLUMN payment_method.card_last4 IS '끝 4자리 / 화면 표시용';
 COMMENT ON COLUMN payment_method.created_at IS '생성 시각';
 COMMENT ON COLUMN payment_method.updated_at IS '수정 시각';
+CREATE INDEX ix_pay_method_hash ON payment_method (method_hash);
 
 CREATE TABLE member_device (
   device_hash                VARCHAR2(64) NOT NULL,
@@ -851,6 +860,7 @@ COMMENT ON COLUMN suspicious_case.evidence_hash IS '증거 조각 해시를 이�
 COMMENT ON COLUMN suspicious_case.closed_at IS '처리 소요 시간';
 COMMENT ON COLUMN suspicious_case.created_at IS '생성 시각';
 COMMENT ON COLUMN suspicious_case.updated_at IS '수정 시각';
+CREATE UNIQUE INDEX ux_case_open_subject ON suspicious_case (CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_type END, CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_hash END);
 
 CREATE TABLE case_session (
   case_id                    NUMBER NOT NULL,
@@ -874,7 +884,7 @@ COMMENT ON COLUMN case_session.updated_at IS '수정 시각';
 CREATE TABLE case_marker (
   marker_id                  NUMBER NOT NULL,
   case_id                    NUMBER NOT NULL,
-  session_id                 VARCHAR2(36) NOT NULL,
+  session_id                 VARCHAR2(36),
   at_ts                      TIMESTAMP NOT NULL,
   marker_type                VARCHAR2(10) NOT NULL,
   rule_code                  VARCHAR2(30) NOT NULL,
@@ -889,7 +899,7 @@ CREATE TABLE case_marker (
   CONSTRAINT ck_case_marker_severity CHECK (severity IN ('LOW', 'MID', 'HIGH'))
 );
 COMMENT ON TABLE case_marker IS '타임라인 마커 - 재생 타임라인의 북마크. 시스템이 자동으로 찍고 관리자가 메모를 더한다.';
-COMMENT ON COLUMN case_marker.session_id IS '표시할 세션';
+COMMENT ON COLUMN case_marker.session_id IS '표시할 세션 (없을 수 있음) / Oracle 기록만으로 찍는 마커(구매 직후 취소 등)는 녹화 세션이 없다. 세션이 있으면 재생기가 그 지점으로 이동';
 COMMENT ON COLUMN case_marker.at_ts IS '타임라인 위치 / 누르면 그 시점으로 이동';
 COMMENT ON COLUMN case_marker.marker_type IS 'AUTO / MANUAL / 시스템 탐지와 관리자 메모 구분';
 COMMENT ON COLUMN case_marker.rule_code IS 'FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / LINEAR_MOUSE / 어떤 규칙이 잡았는지';
