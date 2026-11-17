@@ -8,10 +8,19 @@ import { sleep } from 'k6';
 import { API, FIELDS, HEADERS, RUN_ID } from '../config.js';
 import { url, safeJson } from './helpers.js';
 
+// 이 VU가 쓰는 기기 ID. k6는 VU마다 모듈을 따로 읽으므로 VU 하나 = 기기 하나로 둘 수 있다
+let deviceId = null;
+
+/** 이후 모든 요청에 X-Device-Id를 붙인다 (봇 시뮬레이션: 다계정이 한 기기를 같이 쓰는 경우 등) */
+export function setDevice(id) {
+  deviceId = id;
+}
+
 /** JWT 요청 헤더. ip를 주면 X-Forwarded-For로 보낸다 (앱이 신뢰 프록시 옵션으로 떠 있을 때만 의미 있음) */
 export function bearer(accessToken, extra = {}, ip = null) {
   const h = { 'Content-Type': 'application/json', [HEADERS.loadTest]: '1' };
   if (accessToken) h.Authorization = `Bearer ${accessToken}`;
+  if (deviceId) h[HEADERS.deviceId] = deviceId;
   if (ip) h[HEADERS.forwardedFor] = ip;
   return Object.assign(h, extra);
 }
@@ -43,6 +52,17 @@ export function browse(runId, from, to) {
     tags: { name: 'run_detail' },
   });
   return s.status === 200 && d.status === 200;
+}
+
+/** 운행 상세에서 운행 날짜(YYYY-MM-DD)를 읽는다. 운행 검색(search)에 필요 */
+export function runDate(runId, from, to) {
+  const d = http.get(url(`${API.runDetail(runId)}?from=${from}&to=${to}`), { headers: bearer(null), tags: { name: 'run_detail' } });
+  return d.status === 200 ? (safeJson(d) || {}).runDate : null;
+}
+
+/** 운행 검색 (TRN-02). 토큰을 주면 회원 세션으로 남아 클릭 간격(interval_ms)이 계산된다 */
+export function search(token, from, to, date, name = 'run_search') {
+  return http.get(url(`${API.runSearch}?from=${from}&to=${to}&date=${date}`), { headers: bearer(token), tags: { name } });
 }
 
 // ── 대기열 ────────────────────────────────────────────────
