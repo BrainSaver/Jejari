@@ -68,6 +68,8 @@ class RiskScoreBatchInfraTest {
 	@AfterEach
 	void tearDown() {
 		for (String h : hashes) {
+			jdbc.update("DELETE FROM case_marker WHERE case_id IN (SELECT case_id FROM suspicious_case WHERE subject_hash = ?)", h);
+			jdbc.update("DELETE FROM suspicious_case WHERE subject_hash = ?", h);
 			jdbc.update("DELETE FROM risk_score_history WHERE subject_hash = ?", h);
 			jdbc.update("DELETE FROM risk_score WHERE subject_hash = ?", h);
 			jdbc.update("DELETE FROM admin_action WHERE subject_hash = ?", h);
@@ -297,6 +299,144 @@ class RiskScoreBatchInfraTest {
 		assertThat(r.scored()).isEqualTo(2); // work의 CI 1건 + 이어서 넘겨받은 DEVICE 1건, 깨진 원소는 버림
 		assertThat(redis.hasKey(RiskDirtyQueue.WORK_KEY)).isFalse();
 		assertThat(redis.hasKey(RiskDirtyQueue.DIRTY_KEY)).isFalse();
+	}
+
+	// ------------------------------------------------------------ RISK-04 의심 케이스
+
+	List<Document> fastClicks(long m, String ci, Instant t, int n, String session) {
+		List<Document> docs = new ArrayList<>();
+		for (int i = 0; i < n; i++) {
+			docs.add(event("VIEW_SEAT", m, ci, null, t.plusMillis(100L * i), 100, 200, null).append("session_id", session));
+		}
+		return docs;
+	}
+
+	@Test
+	void 마커_규칙에_걸리면_케이스와_마커가_열리고_검토_대기가_된다() {
+		String ci = hash();
+		long m = member(ci, Instant.now().minus(30, ChronoUnit.DAYS));
+		Instant t = Instant.now().minusSeconds(600);
+		String session = UUID.randomUUID().toString(); // auth_session에 없는 세션 → 마커 세션은 비움
+		mongo.getCollection("behavior_log").insertMany(fastClicks(m, ci, t, 30, session));
+		dirty.mark(new RiskSubject(SubjectType.CI, ci));
+
+		RiskScoreBatch.Result r = batch.run();
+
+		assertThat(r.opened()).isEqualTo(1);
+		var c = jdbc.queryForMap("""
+				SELECT case_id, trigger_type, trigger_detail, risk_score_at_open, window_from, window_to, status
+				  FROM suspicious_case WHERE subject_type = 'CI' AND subject_hash = ?""", ci);
+		assertThat(c.get("TRIGGER_TYPE")).isEqualTo("RULE");
+		assertThat(c.get("STATUS")).isEqualTo("OPEN");
+		assertThat((String) c.get("TRIGGER_DETAIL")).contains("200ms 미만 간격 요청 30회");
+		assertThat((BigDecimal) c.get("RISK_SCORE_AT_OPEN")).isEqualByComparingTo("40");
+		// 의심 구간 = 첫 빠른 클릭 - 1분 ~ 마지막 + 1분
+		Instant from = ((Timestamp) c.get("WINDOW_FROM")).toInstant();
+		Instant to = ((Timestamp) c.get("WINDOW_TO")).toInstant();
+		assertThat(from).isBetween(t.minusSeconds(61), t.minusSeconds(59));
+		assertThat(to).isBetween(t.plusSeconds(59), t.plusSeconds(64));
+
+		var markers = jdbc.queryForList("SELECT rule_code, marker_type, severity, session_id, label FROM case_marker WHERE case_id = ?",
+				c.get("CASE_ID"));
+		assertThat(markers).hasSize(1);
+		assertThat(markers.get(0).get("RULE_CODE")).isEqualTo("FAST_CLICK");
+		assertThat(markers.get(0).get("MARKER_TYPE")).isEqualTo("AUTO");
+		assertThat(markers.get(0).get("SESSION_ID")).isNull();
+		assertThat(jdbc.queryForObject("SELECT review_status FROM risk_score WHERE subject_hash = ?", String.class, ci))
+				.isEqualTo("PENDING");
+	}
+
+	@Test
+	void 열린_케이스가_있으면_새_증거가_와도_하나만_둔다() {
+		String ci = hash();
+		long m = member(ci, Instant.now().minus(30, ChronoUnit.DAYS));
+		Instant t = Instant.now().minusSeconds(900);
+		mongo.getCollection("behavior_log").insertMany(fastClicks(m, ci, t, 25, null));
+		RiskSubject s = new RiskSubject(SubjectType.CI, ci);
+		dirty.mark(s);
+		batch.run();
+		mongo.getCollection("behavior_log").insertMany(fastClicks(m, ci, t.plusSeconds(300), 50, null)); // 더 나빠짐
+		dirty.mark(s);
+
+		RiskScoreBatch.Result r = batch.run();
+
+		assertThat(r.written()).isEqualTo(1);
+		assertThat(r.opened()).isZero();
+		assertThat(caseCount(ci)).isEqualTo(1);
+	}
+
+	@Test
+	void 판정해_닫은_뒤_같은_증거로는_다시_열리지_않는다() {
+		String ci = hash();
+		long m = member(ci, Instant.now().minus(30, ChronoUnit.DAYS));
+		mongo.getCollection("behavior_log").insertMany(fastClicks(m, ci, Instant.now().minusSeconds(600), 25, null));
+		RiskSubject s = new RiskSubject(SubjectType.CI, ci);
+		dirty.mark(s);
+		batch.run();
+		jdbc.update("UPDATE suspicious_case SET status = 'CONFIRMED', closed_at = SYSTIMESTAMP WHERE subject_hash = ?", ci);
+		dirty.mark(s);
+
+		RiskScoreBatch.Result r = batch.run();
+
+		assertThat(r.opened()).isZero();
+		assertThat(caseCount(ci)).isEqualTo(1);
+	}
+
+	@Test
+	void 감쇠만으로_80점_이상이면_케이스를_열지_않는다() {
+		String ci = hash();
+		member(ci, Instant.now().minus(60, ChronoUnit.DAYS));
+		insertScore(SubjectType.CI, ci, "100.00", Instant.now().minus(2, ChronoUnit.DAYS), "NONE");
+
+		RiskScoreBatch.Result r = batch.run(); // 감쇠 갱신으로 저장은 됨 (100 → 95.5)
+
+		assertThat(r.written()).isGreaterThanOrEqualTo(1);
+		assertThat(finalScore(SubjectType.CI, ci)).isGreaterThan(new BigDecimal("80"));
+		assertThat(caseCount(ci)).isZero();
+	}
+
+	@Test
+	void 구매_직후_취소_마커는_세션_없이_취소_시각에_찍힌다() {
+		String ci = hash();
+		long m = member(ci, Instant.now().minus(30, ChronoUnit.DAYS));
+		for (int i = 0; i < 2; i++) {
+			userCancel(confirmedReservation(m, ci, 1), 3, 600);
+		}
+		dirty.mark(new RiskSubject(SubjectType.CI, ci));
+
+		batch.run();
+
+		var marker = jdbc.queryForMap("""
+				SELECT k.rule_code, k.session_id, k.label, k.at_ts FROM case_marker k
+				  JOIN suspicious_case c ON c.case_id = k.case_id WHERE c.subject_hash = ?""", ci);
+		assertThat(marker.get("RULE_CODE")).isEqualTo("CANCEL_AFTER_PAY");
+		assertThat(marker.get("SESSION_ID")).isNull();
+		assertThat((String) marker.get("LABEL")).isEqualTo("구매 후 30분 안 취소 2건");
+		assertThat(((Timestamp) marker.get("AT_TS")).toInstant()).isAfter(Instant.now().minusSeconds(120));
+	}
+
+	@Test
+	void CLEARED_대상은_케이스가_열려도_검토_상태를_바꾸지_않는다() {
+		String ci = hash();
+		long m = member(ci, Instant.now().minus(30, ChronoUnit.DAYS));
+		Instant clearedAt = Instant.now().minusSeconds(3600);
+		insertScore(SubjectType.CI, ci, "0", clearedAt, "CLEARED");
+		jdbc.update("INSERT INTO admin_user (admin_id, login_id, password_hash, role, status) "
+				+ "VALUES (?, ?, 'x', 'SUPERVISOR', 'ACTIVE')", ADMIN_ID, "risk-batch-test");
+		jdbc.update("INSERT INTO admin_action (action_id, admin_id, subject_type, subject_hash, action_type, acted_at) "
+				+ "VALUES (?, ?, 'CI', ?, 'CLEAR', ?)", NEXT_ID.getAndIncrement(), ADMIN_ID, ci, Timestamp.from(clearedAt));
+		mongo.getCollection("behavior_log").insertMany(fastClicks(m, ci, Instant.now().minusSeconds(600), 25, null)); // CLEAR 이후
+		dirty.mark(new RiskSubject(SubjectType.CI, ci));
+
+		RiskScoreBatch.Result r = batch.run();
+
+		assertThat(r.opened()).isEqualTo(1);
+		assertThat(jdbc.queryForObject("SELECT review_status FROM risk_score WHERE subject_hash = ?", String.class, ci))
+				.isEqualTo("CLEARED");
+	}
+
+	int caseCount(String h) {
+		return jdbc.queryForObject("SELECT COUNT(*) FROM suspicious_case WHERE subject_hash = ?", Integer.class, h);
 	}
 
 	// ------------------------------------------------------------ 도우미

@@ -20,6 +20,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.jejari.risk.PreviousScore;
 import com.jejari.risk.RiskEngine;
@@ -67,6 +68,8 @@ public class RiskScoreBatch {
 	private final RiskInputReader reader;
 	private final RiskPolicySource policies;
 	private final RiskScoreStore store;
+	private final SuspiciousCaseOpener cases;
+	private final TransactionTemplate tx;
 	private final RiskJobRunner runner;
 	private final StringRedisTemplate redis;
 	private final JdbcTemplate jdbc;
@@ -79,6 +82,7 @@ public class RiskScoreBatch {
 	private final boolean scheduleEnabled;
 
 	public RiskScoreBatch(RiskDirtyQueue dirty, RiskInputReader reader, RiskPolicySource policies, RiskScoreStore store,
+			SuspiciousCaseOpener cases, TransactionTemplate tx,
 			RiskJobRunner runner, StringRedisTemplate redis, JdbcTemplate jdbc, Clock clock,
 			@Value("${jejari.risk.batch-interval:1m}") Duration interval,
 			@Value("${jejari.risk.behavior-window:1d}") Duration behaviorWindow,
@@ -90,6 +94,8 @@ public class RiskScoreBatch {
 		this.reader = reader;
 		this.policies = policies;
 		this.store = store;
+		this.cases = cases;
+		this.tx = tx;
 		this.runner = runner;
 		this.redis = redis;
 		this.jdbc = jdbc;
@@ -113,7 +119,7 @@ public class RiskScoreBatch {
 		try {
 			Result r = run();
 			if (r.scored() > 0 || r.failed() > 0) {
-				log.info("위험 점수 배치: 계산 {}건, 저장 {}건, 실패 {}건, 남은 대상 {}건", r.scored(), r.written(), r.failed(),
+				log.info("위험 점수 배치: 계산 {}건, 저장 {}건, 케이스 {}건, 실패 {}건, 남은 대상 {}건", r.scored(), r.written(), r.opened(), r.failed(),
 						r.pending());
 			}
 		} catch (RuntimeException e) {
@@ -127,7 +133,7 @@ public class RiskScoreBatch {
 		Duration lockTtl = maxRun.plus(Duration.ofMinutes(1));
 		if (!Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(LOCK_KEY, token, lockTtl.toMillis(),
 				TimeUnit.MILLISECONDS))) {
-			return new Result(0, 0, 0, -1);
+			return new Result(0, 0, 0, 0, -1);
 		}
 		try {
 			return runLocked();
@@ -142,6 +148,7 @@ public class RiskScoreBatch {
 		RiskEngine engine = new RiskEngine(policies.current());
 		int scored = 0;
 		int written = 0;
+		int opened = 0;
 		int failed = 0;
 		while (Duration.between(started, clock.instant()).compareTo(maxRun) < 0) {
 			List<RiskSubject> batch = dirty.claim(CLAIM);
@@ -150,8 +157,12 @@ public class RiskScoreBatch {
 			}
 			for (RiskSubject s : batch) {
 				try {
-					if (score(engine, s, clock.instant())) {
+					Outcome o = score(engine, s, clock.instant());
+					if (o != Outcome.UNCHANGED) {
 						written++;
+					}
+					if (o == Outcome.OPENED) {
+						opened++;
 					}
 					scored++;
 					dirty.done(s);
@@ -162,7 +173,7 @@ public class RiskScoreBatch {
 				}
 			}
 		}
-		return new Result(scored, written, failed, dirty.pending());
+		return new Result(scored, written, opened, failed, dirty.pending());
 	}
 
 	/**
@@ -184,8 +195,7 @@ public class RiskScoreBatch {
 		dirty.markAll(stale);
 	}
 
-	/** @return 저장했으면 true */
-	boolean score(RiskEngine engine, RiskSubject s, Instant now) {
+	Outcome score(RiskEngine engine, RiskSubject s, Instant now) {
 		StoredScore stored = reader.stored(s);
 		PreviousScore prev = stored == null ? null : stored.previous();
 		Instant behaviorFrom = now.minus(behaviorWindow);
@@ -200,10 +210,24 @@ public class RiskScoreBatch {
 		reader.accounts(c, s, now);
 		RiskResult r = engine.score(c.build(), prev, now);
 		if (!shouldWrite(stored, r, decayRefreshAfter)) {
-			return false;
+			return Outcome.UNCHANGED;
 		}
-		store.save(r);
-		return true;
+		// 증거 조회(MongoDB)는 트랜잭션 밖에서. 점수 저장과 케이스 생성은 한 트랜잭션 (RISK-04, SuspiciousCaseOpener.open)
+		SuspiciousCaseOpener.Plan plan = cases.plan(engine.policy(), s, r, behaviorFrom, purchaseFrom);
+		Long caseId = tx.execute(st -> {
+			store.save(r);
+			return plan == null ? null : cases.open(plan);
+		});
+		return caseId == null ? Outcome.WRITTEN : Outcome.OPENED;
+	}
+
+	enum Outcome {
+		/** 바뀐 게 없어 저장하지 않음 */
+		UNCHANGED,
+		/** 점수 저장 */
+		WRITTEN,
+		/** 점수 저장 + 의심 케이스 생성 */
+		OPENED
 	}
 
 	/**
@@ -242,6 +266,6 @@ public class RiskScoreBatch {
 	}
 
 	/** @param pending 남은 대상 수. 락을 못 잡아 건너뛰었으면 -1 */
-	public record Result(int scored, int written, int failed, long pending) {
+	public record Result(int scored, int written, int opened, int failed, long pending) {
 	}
 }
