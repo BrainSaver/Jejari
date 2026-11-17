@@ -3,6 +3,7 @@ import AdminLayout from './admin/AdminLayout.jsx';
 import AdminLogin from './admin/AdminLogin.jsx';
 import Dashboard from './admin/Dashboard.jsx';
 import Soon from './admin/Soon.jsx';
+import Master from './admin/Master.jsx';
 import Runs from './admin/Runs.jsx';
 import Home from './user/Home.jsx';
 
@@ -17,7 +18,7 @@ export default function App() {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="risk" element={<Soon id="A-05" title="위험 사용자" owner="강다인" />} />
         <Route path="cases" element={<Soon id="A-06" title="케이스 상세" owner="강다인" />} />
-        <Route path="master" element={<Soon id="A-02" title="기준 데이터" owner="강동균" />} />
+        <Route path="master" element={<Master />} />
         <Route path="runs" element={<Runs />} />
         <Route path="settings" element={<Soon id="A-07" title="운영 설정" owner="조영준" />} />
       </Route>
