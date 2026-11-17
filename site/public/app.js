@@ -2317,7 +2317,7 @@ function searchOpen(q0) {
   const m = openModal(`<div class="sr">
       <div class="sr-box">${svgI('search', 18)}<input type="search" id="srQ" placeholder="문서·화면·로드맵 카드·남긴 말 검색" autocomplete="off" aria-label="검색"><kbd>Esc</kbd></div>
       <div class="sr-list" id="srList" role="listbox"><p class="muted sr-hint">찾을 말을 쓰세요. 띄어 쓰면 모두 들어 있는 것만 찾아요. 예: <code>결제 saga</code>, <code>RSV-02</code>, <code>강동균 좌석</code></p></div>
-      <p class="muted sr-foot">↑↓로 고르고 Enter로 열어요 · 어디서든 <kbd>Ctrl</kbd>+<kbd>K</kbd> 또는 <kbd>/</kbd></p></div>`, { wide: true });
+      <p class="muted sr-foot">↑↓로 고르고 Enter로 열어요 · 어디서든 <kbd>Shift</kbd> 두 번, <kbd>Ctrl</kbd>+<kbd>K</kbd>, <kbd>/</kbd></p></div>`, { wide: true });
   m.classList.add('sr-modal');
   const input = $('#srQ', m), list = $('#srList', m);
   let ready = false;
@@ -2357,6 +2357,15 @@ document.addEventListener('keydown', (e) => {
   const typing = /INPUT|TEXTAREA|SELECT/.test(tag) || (e.target && e.target.isContentEditable);
   if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (!$('#srQ')) searchOpen(); else $('#srQ').focus(); }
   else if (e.key === '/' && !typing && $('#modalBack').hidden) { e.preventDefault(); searchOpen(); }
+});
+// Shift를 두 번 빠르게 (다른 키 없이) 눌러도 검색이 열린다
+let shiftAt = 0;
+document.addEventListener('keydown', (e) => { if (e.key !== 'Shift') shiftAt = 0; }, true);
+document.addEventListener('keyup', (e) => {
+  if (e.key !== 'Shift' || e.repeat) return;
+  const now = Date.now();
+  if (now - shiftAt < 400) { shiftAt = 0; if (!$('#srQ')) searchOpen(); else $('#srQ').focus(); }
+  else shiftAt = now;
 });
 $('#searchBtn').addEventListener('click', () => searchOpen());
 
