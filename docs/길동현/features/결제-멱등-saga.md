@@ -62,5 +62,7 @@ Idempotency-Key: <버튼 누를 때 만든 UUID, 재시도는 같은 값>
 ## 주의할 점·남은 것
 
 - 카드번호 원문은 저장하지 않음 (HMAC 해시 + 끝 4자리). HMAC 키가 없으면 해시 없이 저장하고 경고 로그
-- 늦은 승인 환불(PAY-05, P2)은 아직 로그만 남김
+- **늦은 승인 환불(PAY-05)**: 실패로 정리한 뒤 승인이 오거나, 승인됐는데 좌석을 잃었으면 예약은 되살리지 않고 전액 환불 (`LateApprovalRefund`, §7.3)
+  - 결제를 APPROVED로 바꾸는 트랜잭션에서 `cancellation`(PAY_FAILED, 전액, 수수료 0, REQUESTED)을 같이 남김 → 커밋 뒤 PG 환불 → 성공하면 DONE·결제 REFUNDED·`REFUND_COMPLETED`(알림)
+  - PG 환불이 실패하면 FAILED로 남김. 다시 시도하는 배치(CNL-03)는 아직 없음 (같은 `refund(cancelId)`를 부르면 됨)
 - PG 콜백 API는 실제 PG로 바꿀 때 추가
