@@ -86,6 +86,13 @@ export async function adminLogin(loginId, password) {
   return tokenClaims();
 }
 
+/** 회원 로그인 (U-01). 관리자와 같은 리프레시 쿠키를 쓰므로 한 브라우저에서는 한 사람만 로그인한다 */
+export async function memberLogin(email, password) {
+  const r = await send('POST', '/api/v1/auth/login', { email, password }, { auth: false });
+  setToken(r.accessToken);
+  return tokenClaims();
+}
+
 export async function logout() {
   try {
     if (accessToken) await send('POST', '/api/v1/auth/logout');
@@ -96,8 +103,8 @@ export async function logout() {
 
 // ------------------------------------------------------------ 요청
 
-async function send(method, path, body, { auth = true } = {}) {
-  const headers = { Accept: 'application/json' };
+async function send(method, path, body, { auth = true, extra } = {}) {
+  const headers = { Accept: 'application/json', ...(extra || {}) };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (auth && accessToken) headers.Authorization = 'Bearer ' + accessToken;
 
@@ -132,19 +139,22 @@ function safeJson(text) {
   }
 }
 
-/** 토큰을 붙여 부르고, 401이면 한 번 재발급 후 다시 부른다 */
-export async function api(method, path, body) {
+/**
+ * 토큰을 붙여 부르고, 401이면 한 번 재발급 후 다시 부른다.
+ * @param headers 더 붙일 헤더 (예: X-Queue-Token, Idempotency-Key)
+ */
+export async function api(method, path, body, headers) {
   try {
-    return await send(method, path, body);
+    return await send(method, path, body, { extra: headers });
   } catch (e) {
     if (e instanceof ApiError && e.status === 401 && (await refresh())) {
-      return send(method, path, body);
+      return send(method, path, body, { extra: headers });
     }
     throw e;
   }
 }
 
-export const get = (path) => api('GET', path);
-export const post = (path, body) => api('POST', path, body ?? {});
+export const get = (path, headers) => api('GET', path, undefined, headers);
+export const post = (path, body, headers) => api('POST', path, body ?? {}, headers);
 export const put = (path, body) => api('PUT', path, body);
 export const del = (path) => api('DELETE', path);

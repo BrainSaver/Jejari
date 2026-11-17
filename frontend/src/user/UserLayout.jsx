@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
+import { logout } from '../api/client.js';
 import Icon, { Seal } from '../admin/Icon.jsx';
+import { useMember } from './useMember.js';
 
 /**
  * 사용자 화면 공통 틀 (시안 docs/ui/U-*.html): 위쪽 "편안한 화면" 도우미 줄 + PC 위쪽 메뉴 / 모바일 아래 탭.
@@ -28,6 +30,8 @@ function loadEase() {
 export default function UserLayout() {
   const [ease, setEase] = useState(loadEase);
   const { pathname } = useLocation();
+  const { member } = useMember();
+  const navigate = useNavigate();
 
   useEffect(() => {
     try {
@@ -86,7 +90,14 @@ export default function UserLayout() {
               <NavLink key={to} to={to} end className={({ isActive }) => (isActive ? 'on' : '')}>{label}</NavLink>
             ))}
           </nav>
-          <Link className="me" to="/me"><i><Icon name="person" /></i>로그인</Link>
+          {member ? (
+            <button type="button" className="me" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }}
+              onClick={() => logout().then(() => navigate('/'))}>
+              <i><Icon name="person" /></i>회원 #{member.sub} · 로그아웃
+            </button>
+          ) : (
+            <Link className="me" to={`/login?next=${encodeURIComponent(pathname)}`}><i><Icon name="person" /></i>로그인</Link>
+          )}
         </header>
 
         <Outlet />

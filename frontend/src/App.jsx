@@ -5,7 +5,11 @@ import Dashboard from './admin/Dashboard.jsx';
 import Soon from './admin/Soon.jsx';
 import Master from './admin/Master.jsx';
 import Runs from './admin/Runs.jsx';
+import Login from './user/Login.jsx';
+import PayNext from './user/PayNext.jsx';
+import Queue from './user/Queue.jsx';
 import Search from './user/Search.jsx';
+import Seats from './user/Seats.jsx';
 import UserLayout from './user/UserLayout.jsx';
 import UserSoon from './user/UserSoon.jsx';
 
@@ -15,7 +19,10 @@ export default function App() {
     <Routes>
       <Route element={<UserLayout />}>
         <Route path="/" element={<Search />} />
-        <Route path="/queue/:runId" element={<UserSoon id="U-04" title="줄 서기" owner="김성원" />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/queue/:runId" element={<Queue />} />
+        <Route path="/runs/:runId/seats" element={<Seats />} />
+        <Route path="/pay/:reservationId" element={<PayNext />} />
         <Route path="/reservations" element={<UserSoon id="U-08" title="예매 내역" owner="강다인" />} />
         <Route path="/waitlist" element={<UserSoon id="U-10" title="취소표" owner="강다인" />} />
         <Route path="/notifications" element={<UserSoon id="U-11" title="알림" owner="길동현" />} />
