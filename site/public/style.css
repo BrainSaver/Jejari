@@ -752,3 +752,5 @@ body.sim-on .ai-fab{display:none}
 }
 mark.sr-hit{background:var(--warn);color:var(--warn-fg);border-radius:3px;padding:0 2px;outline:2px solid var(--warn-fg);transition:background 1s,outline-color 1s}
 mark.sr-hit.fade{outline-color:transparent}
+.rm-matrix td.dim,.rm-matrix tr.dimrow th{opacity:.3}
+.rm-matrix td.hl{background:var(--accent-soft)}

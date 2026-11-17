@@ -1631,7 +1631,7 @@ function rmPartStrip() {
     const done = mine.filter((x) => x.roles[p].done).length;
     const pct = mine.length ? Math.round((done / mine.length) * 100) : 0;
     const msgs = (RM.data.msgs || []).filter((m) => m.to === p).length;
-    return `<button class="rm-part${RM.f.part === p ? ' on' : ''}" data-fpart="${p}" style="--pc:${partColor(p)}" title="누르면 ${esc(partName(p))} 카드만 보여요" aria-pressed="${RM.f.part === p}">
+    return `<button class="rm-part${RM.f.part === p ? ' on' : ''}" data-fpart="${p}" style="--pc:${partColor(p)}" title="누르면 모든 탭에서 ${esc(partName(p))} 것만 보여요 (다시 누르면 풀림)" aria-pressed="${RM.f.part === p}">
       <span class="rm-part-head"><b>${esc(partName(p))}</b><span class="muted">${esc(RM.data.parts[p].label)}</span></span>
       <span class="rm-bar"><i style="width:${pct}%"></i></span>
       <span class="rm-part-nums"><b>${pct}%</b><span>${done}/${mine.length} 했음</span>${RM.f.part === p ? '<span class="rm-part-on" title="다시 누르면 풀려요">선택됨</span>' : ''}${msgs ? `<span class="rm-to">${svgI('msg', 14)} 받은 말 ${msgs}</span>` : ''}</span>
@@ -1699,13 +1699,14 @@ function rmDepsView(by) {
   const cnt = (a, b) => new Set(edges.filter((e) => e.p === a && e.q === b).map((e) => e.it.id + e.d.id)).size;
   const groups = {};
   edges.forEach((e) => { const g = (groups[e.d.id] = groups[e.d.id] || { d: e.d, list: new Map(), q: new Set(), p: new Set() }); g.list.set(e.it.id, e.it); g.q.add(e.q); g.p.add(e.p); });
-  const hot = Object.values(groups).sort((a, b) => b.list.size - a.list.size);
-  const ready = RM_PARTS.map((p) => [p, RM.data.items.filter((x) => x.roles && x.roles[p] && !x.roles[p].done && !waitingOn(x, by).length).sort(sortItems)]);
+  const fp = RM.f.part;
+  const hot = Object.values(groups).filter((g) => !fp || g.q.has(fp) || g.p.has(fp)).sort((a, b) => b.list.size - a.list.size);
+  const ready = RM_PARTS.filter((p) => !fp || p === fp).map((p) => [p, RM.data.items.filter((x) => x.roles && x.roles[p] && !x.roles[p].done && !waitingOn(x, by).length).sort(sortItems)]);
   return `<p class="muted" style="margin:0 0 10px">다른 파트가 먼저 끝내야 시작할 수 있는 카드 수예요. 숫자를 누르면 아래 목록이 그 칸만 보여요.</p>
   <div class="tbl-wrap"><table class="rm-matrix"><thead><tr><th>기다리는 파트 ↓ / 먼저 끝낼 파트 →</th>${RM_PARTS.map((p) => `<th style="color:${partColor(p)}">${esc(partName(p))}</th>`).join('')}</tr></thead>
-  <tbody>${RM_PARTS.map((a) => `<tr><th style="color:${partColor(a)}">${esc(partName(a))}</th>${RM_PARTS.map((b) => {
+  <tbody>${RM_PARTS.map((a) => `<tr${fp && a !== fp ? ' class="dimrow"' : ''}><th style="color:${partColor(a)}">${esc(partName(a))}</th>${RM_PARTS.map((b) => {
     const c = a === b ? 0 : cnt(a, b);
-    return `<td>${a === b ? '<span class="muted">-</span>' : c ? `<button class="rm-cell" data-a="${a}" data-b="${b}" style="--heat:${Math.min(1, c / 6)}">${c}</button>` : '<span class="muted">0</span>'}</td>`;
+    return `<td${fp && a !== fp && b !== fp ? ' class="dim"' : fp && (a === fp || b === fp) ? ' class="hl"' : ''}>${a === b ? '<span class="muted">-</span>' : c ? `<button class="rm-cell" data-a="${a}" data-b="${b}" style="--heat:${Math.min(1, c / 6)}">${c}</button>` : '<span class="muted">0</span>'}</td>`;
   }).join('')}</tr>`).join('')}</tbody></table></div>
   <div class="section-title">먼저 끝내면 여러 카드가 풀리는 작업</div>
   <div>${hot.length ? hot.map((g) => `<div class="rm-edge" data-q="${[...g.q].join(' ')}" data-p="${[...g.p].join(' ')}">
@@ -2260,7 +2261,6 @@ function rmAsk(k) {
 async function pageRoadmap(view) {
   RM.view = ['flow', 'order', 'board', 'parts', 'deps', 'log'].includes(view) ? view : 'flow';
   // 이름 칸 선택은 보드·할 순서에서만 쓰므로 다른 탭으로 가면 푼다
-  if (RM.f.part && !['board', 'order', 'flow', 'parts'].includes(RM.view)) { RM.f.part = ''; store.set('rm-f2', RM.f); }
   if (RM.data) {
     // 탭을 옮기거나 다시 열 때는 가진 것으로 바로 그리고, 오래됐으면 뒤에서 새로 받아 바뀐 경우만 다시 그린다
     rmRender(); rmPoll(); rmPendingOpen();
@@ -2433,8 +2433,15 @@ function rmRender() {
   else if (RM.view === 'parts') body = rmPartsView(by);
   else if (RM.view === 'deps') body = rmDepsView(by);
   else {
-    const log = RM.data.log;
-    body = log.length ? `<div class="rm-logs">${log.map((e) => rmLogLine(e, by)).join('')}</div><p class="muted">최근 ${log.length}건까지 보여요. 체크·풀기는 3분 뒤에 올라오고, 3분 안에 되돌리면 남지 않아요. 카드를 열면 그 카드의 전체 기록이 있어요.${S.admin ? ' 팀장은 줄마다 연필·휴지통으로 기록을 고치거나 지울 수 있어요.' : ''}</p>` : '<p class="empty">아직 기록이 없어요.</p>';
+    const fp = RM.f.part;
+    const owner = fp && partOwner(fp);
+    const log = RM.data.log.filter((e) => {
+      if (!fp) return true;
+      if (e.who === owner || e.part === fp || e.to === fp) return true;
+      const it = e.item && by.get(e.item);
+      return !!(it && it.roles && it.roles[fp]) || (e.changes || []).some((c) => c[1] === fp);
+    });
+    body = !log.length && fp ? `<p class="empty">${esc(partName(fp))}에 관한 최근 기록이 없어요.</p>` : log.length ? `<div class="rm-logs">${log.map((e) => rmLogLine(e, by)).join('')}</div><p class="muted">최근 ${log.length}건까지 보여요. 체크·풀기는 3분 뒤에 올라오고, 3분 안에 되돌리면 남지 않아요. 카드를 열면 그 카드의 전체 기록이 있어요.${S.admin ? ' 팀장은 줄마다 연필·휴지통으로 기록을 고치거나 지울 수 있어요.' : ''}</p>` : '<p class="empty">아직 기록이 없어요.</p>';
   }
   main.innerHTML = `<div class="wide rm">
     <div class="rm-head"><div><h1 class="page">로드맵</h1>
@@ -2471,7 +2478,7 @@ function rmBind(root) {
   const lg = $('[data-login]', root); if (lg) lg.addEventListener('click', () => loginModal(() => rmRender()));
   $$('[data-fpart]', root).forEach((b) => b.addEventListener('click', () => {
     RM.f.part = RM.f.part === b.dataset.fpart ? '' : b.dataset.fpart; save();
-    if (!['board', 'order', 'flow', 'parts'].includes(RM.view)) location.hash = '#/roadmap/board'; else rmRender();
+    rmRender();
   }));
   $$('.rm-cell', root).forEach((b) => b.addEventListener('click', () => {
     const on = b.classList.toggle('on');
