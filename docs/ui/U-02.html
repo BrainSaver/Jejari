@@ -59,8 +59,8 @@ button{font:inherit;color:inherit}
 .card{background:var(--card);border-radius:4px;padding:16px;border:1px solid var(--line)}
 .ticket{background:var(--card);border-radius:4px;padding:16px 16px 16px 22px;position:relative;border:1px solid var(--line);border-left:0}
 .ticket::before{content:"";position:absolute;left:0;top:-1px;bottom:-1px;width:6px;background:var(--line)}
-.ticket:has(.st.go)::before{background:var(--go)}.ticket:has(.st.stop)::before{background:var(--stop)}
-.ticket:has(.st.amber)::before{background:var(--amber)}.ticket:has(.st.sky)::before{background:var(--ink)}
+.ticket:has(.st.go:not([hidden]))::before{background:var(--go)}.ticket:has(.st.stop:not([hidden]))::before{background:var(--stop)}
+.ticket:has(.st.amber:not([hidden]))::before{background:var(--amber)}.ticket:has(.st.sky:not([hidden]))::before{background:var(--ink)}
 .perf{height:0;border-top:2px solid var(--line2);margin:14px 0}
 
 .tno{font-size:13px;font-weight:700;color:var(--mut);display:inline-flex;align-items:center;gap:6px}
@@ -137,6 +137,41 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink);box
 .demo button{border:0;background:transparent;border-radius:2px;padding:4px 9px;font-size:12px;font-weight:800;color:var(--mut);cursor:pointer}
 .demo button.on{background:var(--sign);color:var(--ink)}
 
+
+/* 어르신 모드 */
+.sm-btn{align-self:center;display:inline-flex;align-items:center;gap:6px;border:2px solid var(--sign);background:transparent;color:var(--sign);font:inherit;font-weight:800;font-size:14px;padding:6px 12px;border-radius:3px;cursor:pointer;white-space:nowrap}
+.sm-btn .ic{width:18px;height:18px}
+.sm-btn[aria-pressed=true]{background:var(--sign);color:var(--ink)}
+.sm-fab{position:fixed;right:12px;bottom:84px;z-index:15;display:inline-flex;align-items:center;gap:6px;background:var(--sign);color:var(--ink);border:0;border-radius:999px;padding:11px 16px;font:inherit;font-weight:900;font-size:14px;box-shadow:0 6px 18px rgba(10,27,54,.3);cursor:pointer}
+.sm-fab .ic{width:18px;height:18px}
+html.senior .sm-fab{display:none}
+.sbar{display:none;position:relative;z-index:6;align-items:center;flex-wrap:wrap;gap:8px 10px;padding:10px 16px;background:var(--sign-t);border-bottom:3px solid var(--sign);color:var(--ink);font-size:15px;font-weight:800}
+html.senior .sbar{display:flex}
+.sb-seg{display:inline-flex;border:2px solid var(--ink);border-radius:3px;overflow:hidden}
+.sb-seg button{border:0;background:var(--card);padding:6px 12px;font:inherit;font-weight:800;cursor:pointer}
+.sb-seg button.on{background:var(--ink);color:#fff}
+.sb-btn{border:2px solid var(--ink);background:var(--card);border-radius:3px;padding:6px 12px;font:inherit;font-weight:800;cursor:pointer}
+.sb-btn[aria-pressed=true]{background:var(--ink);color:#fff}
+.sb-call{display:inline-flex;align-items:center;gap:6px;background:var(--stop);color:#fff;text-decoration:none;border-radius:3px;padding:7px 12px}
+.sb-call .ic{width:18px;height:18px}
+.sb-x{margin-left:auto;border:0;background:none;font:inherit;font-weight:700;color:var(--ink2);text-decoration:underline;cursor:pointer;padding:6px 0}
+.guide{display:none;align-items:flex-start;gap:10px;margin:0;padding:14px 16px;background:var(--card);border:2px solid var(--sign);border-radius:4px;font-size:17px;font-weight:700;line-height:1.5;color:var(--ink)}
+.guide .ic{color:var(--sign-d);margin-top:2px}
+html.senior .guide{display:flex}
+.hero .guide{margin-bottom:16px}
+@media (max-width:959px){.sbar{flex-wrap:nowrap;overflow-x:auto;padding:8px 12px;gap:6px;font-size:13.5px;scrollbar-width:none}.sbar>*{flex:none}.sb-t{display:none}.sb-x{margin-left:4px}}
+html.senior body{zoom:var(--z,1.15)}
+html.senior{--mut:#3E4B5E;--faint:#465365}
+html.senior .btn{min-height:58px;font-size:17px}
+.flow{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;font-size:12.5px;font-weight:800}
+.flow li{display:flex;align-items:center;gap:6px;padding:7px 0 0;border-top:4px solid var(--line);color:inherit;opacity:.6}
+.flow li b{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--line);color:var(--ink);font-size:11px;flex:none;font-family:var(--num)}
+.flow li.done{border-top-color:var(--go);opacity:1}.flow li.done b{background:var(--go);color:#fff}
+.flow li.now{border-top-color:var(--sign);opacity:1}.flow li.now b{background:var(--sign);color:var(--ink)}
+.top .back.wl{width:auto;height:40px;margin:0 6px 0 -4px;padding:0 12px 0 6px;display:inline-flex;align-items:center;gap:2px;font-size:14px;font-weight:800;text-decoration:none;box-shadow:inset 0 0 0 2px var(--line);white-space:nowrap}
+.top .back.wl .ic{width:18px;height:18px}
+@media (min-width:960px){.sm-fab{display:none}.flow{font-size:14px}.sbar{padding:10px max(32px,calc((100% - 1120px) / 2))}}
+
 /* 반응형: 좁은 폭에서는 아래 탭, 넓은 폭(PC)에서는 위쪽 메뉴와 2단 */
 .gnb,.d-only{display:none}
 .lay{display:flex;flex-direction:column;gap:12px}
@@ -202,9 +237,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink);box
 </svg><div class="row" style="gap:12px"><svg width="36" height="36" viewBox="0 0 32 32" aria-hidden="true"><path d="M2.5 3.5 Q2 2 3.5 2 H28 Q30.5 2.2 30 4 L29.6 28 Q30 30.4 27.5 30 H4 Q1.8 30.2 2.2 27.6 Z" fill="#B41A23"/><rect x="5" y="5" width="22" height="22" fill="none" stroke="#fff" stroke-width="1.4"/><text x="16" y="22.2" text-anchor="middle" font-family="Nanum Myeongjo,serif" font-weight="800" font-size="16" fill="#fff">제</text></svg><b style="font-size:18px">제자리</b></div>
 <div><div class="num" style="font-size:22px;color:var(--sign);font-weight:600">2027 설 승차권은 1월 20일 오전 10시에 열려요</div><h2 style="font-size:48px;line-height:1.25;margin:14px 0 16px;font-weight:800;font-family:var(--serif)">한 사람,<br>한 자리.</h2><p style="font-size:17px;color:#D3D9E6;max-width:440px;line-height:1.7;margin:0">본인인증으로 한 사람이 한 계정만 쓰게 해요. 여러 계정으로 줄을 서는 일을 막기 위해서예요.</p></div>
 <p style="font-size:13px;color:#A9B6CC;margin:0">매크로·다중 계정 예매는 자동으로 걸러져요.</p></aside>
-<div class="app-side">
-<header class="top "><a class="back" href="U-01.html" aria-label="뒤로"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a><h1>회원가입</h1></header>
-<main class="body" style="justify-content:flex-start">
+<div class="app-side"><div class="sbar" role="region" aria-label="어르신 모드 도구">
+<span class="sb-t">글자 크기</span><span class="sb-seg" role="group" aria-label="글자 크기"><button type="button" data-z="1.15">크게</button><button type="button" data-z="1.3">아주 크게</button></span>
+<button type="button" class="sb-btn" data-voice aria-pressed="false">음성 안내 듣기</button>
+<a class="sb-call" href="#"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>전화 도움 1588-0000</a>
+<button type="button" class="sb-x" data-senior aria-pressed="false"><span class="lbl">어르신 모드 끄기</span></button></div>
+<header class="top "><a class="back wl" href="U-01.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg><span>로그인으로</span></a><h1>회원가입</h1></header>
+<main class="body" style="justify-content:flex-start"><p class="guide"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8v.3"/></svg><span>본인인증을 먼저 하고, 다음 화면에서 이메일과 비밀번호를 정하면 가입이 끝나요.</span></p>
   <ol class="steps" style="list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:6px">
     <li data-state="s1" style="border-top:3px solid var(--ink);padding-top:8px;font-size:13px;font-weight:700">1 본인인증</li>
     <li data-state="s1" style="border-top:3px solid var(--line);padding-top:8px;font-size:13px;color:var(--faint)">2 계정 만들기</li>
@@ -230,7 +269,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink);box
   </section>
 </main>
 <div class="demo"><span>시안 상태</span><button data-show="s1" class="on">1단계 본인인증</button><button data-show="s2">2단계 계정</button></div>
-</div></div>
+</div></div><button type="button" class="sm-fab" data-senior aria-pressed="false"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c1-3.6 3.8-5.2 7-5.2s6 1.6 7 5.2"/></svg><span class="lbl">어르신 모드</span></button>
 <script>
 (function(){
   var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));};
@@ -253,6 +292,26 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink);box
   });
   $$('[data-open]').forEach(function(b){b.addEventListener('click',function(){var s=document.getElementById(b.getAttribute('data-open'));if(s)s.hidden=false;});});
   $$('.scrim').forEach(function(s){s.addEventListener('click',function(e){if(e.target===s||e.target.closest('[data-close]'))s.hidden=true;});});
+
+  // 어르신 모드: 큰 글씨, 화면마다 안내 한 줄, 음성 안내, 전화 도움. 기본은 꺼짐, 켜면 다른 화면으로 가도 유지
+  // (시안은 사이트 미리보기 틀 안에서 열려 localStorage를 못 쓰므로 window.name에도 저장. 실제 앱은 회원 설정에 저장)
+  var KEY='jejari-senior:';
+  function load(){try{var s=localStorage.getItem('jejari-senior');if(s)return JSON.parse(s);}catch(e){}
+    if(window.name.indexOf(KEY)===0){try{return JSON.parse(window.name.slice(KEY.length));}catch(e){}}return {on:0,z:1.15,voice:0};}
+  function save(o){window.name=KEY+JSON.stringify(o);try{localStorage.setItem('jejari-senior',JSON.stringify(o));}catch(e){}}
+  var st=load(),root=document.documentElement;
+  function speak(){if(!st.on||!st.voice||!window.speechSynthesis)return;var g=document.querySelector('.guide span');if(!g)return;
+    try{speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(g.textContent);u.lang='ko-KR';u.rate=.9;speechSynthesis.speak(u);}catch(e){}}
+  function apply(){root.classList.toggle('senior',!!st.on);root.style.setProperty('--z',st.z);
+    $$('[data-senior]').forEach(function(b){b.setAttribute('aria-pressed',st.on?'true':'false');var l=b.querySelector('.lbl');if(l)l.textContent=b.classList.contains('sb-x')?'어르신 모드 끄기':(st.on?'어르신 모드 켜짐':'어르신 모드');});
+    $$('[data-z]').forEach(function(b){var on=+b.getAttribute('data-z')===+st.z;b.classList.toggle('on',on);b.setAttribute('aria-pressed',on?'true':'false');});
+    $$('[data-voice]').forEach(function(b){b.setAttribute('aria-pressed',st.voice?'true':'false');b.textContent=st.voice?'음성 안내 끄기':'음성 안내 듣기';});}
+  document.addEventListener('click',function(e){var b=e.target.closest('[data-senior],[data-z],[data-voice]');if(!b)return;
+    if(b.hasAttribute('data-senior'))st.on=st.on?0:1;
+    if(b.hasAttribute('data-z'))st.z=+b.getAttribute('data-z');
+    if(b.hasAttribute('data-voice')){st.voice=st.voice?0:1;if(!st.voice&&window.speechSynthesis)speechSynthesis.cancel();}
+    save(st);apply();speak();});
+  apply();speak();
 })();
 </script>
 </body>
