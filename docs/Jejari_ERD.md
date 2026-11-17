@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v18 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-17
+> 스키마 v19 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-17
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -39,7 +39,7 @@
 | 테이블 | 60개 (운영 56 + 확장 예정 4) |
 | 저장소 | Oracle 44 · MongoDB 11 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 518개 |
+| 컬럼 | 521개 |
 | 관계 (FK) | 85개 (Oracle 제약 60 · 논리 참조 20) |
 
 | 영역 | 저장소 | 테이블 |
@@ -721,7 +721,7 @@ Oracle
 | `created_at` | TIMESTAMP |  | 생성 | 가입 시각 | 신규 계정 판별 (기본 신뢰도 낮음) |
 | `withdrawn_at` | TIMESTAMP |  | 시스템 | 탈퇴 시각 | 소프트 삭제. 위험 이력은 보존 기간 후 파기 |
 
-> **제약·비고** ci_hash는 UNIQUE를 걸지 않음. 다계정 어뷰저를 재현하려면 같은 CI가 여러 계정에 있어야 함. · ci_hash는 변경 불가 (본인인증 결과가 바뀌면 신규 회원으로 처리). 그래서 reservation.ci_hash 비정규화가 안전함 · CREATE SEQUENCE member_seq;
+> **제약·비고** ci_hash는 UNIQUE를 걸지 않음. 다계정 어뷰저를 재현하려면 같은 CI가 여러 계정에 있어야 함. · ci_hash는 변경 불가 (본인인증 결과가 바뀌면 신규 회원으로 처리). 그래서 reservation.ci_hash 비정규화가 안전함 · CREATE SEQUENCE member_seq; · CREATE INDEX ix_member_ci_hash ON member (ci_hash);
 
 **관계** [`payment_method`](#payment-method).member_id → 이 테이블 · [`member_device`](#member-device).member_id → 이 테이블 · [`reservation`](#reservation).member_id → 이 테이블 · [`waitlist`](#waitlist).member_id → 이 테이블 · [`notification`](#notification).member_id → 이 테이블 · [`behavior_log`](#behavior-log).member_id → 이 테이블 · [`queue_log`](#queue-log).member_id → 이 테이블 · [`synthetic_label`](#synthetic-label).member_id → 이 테이블 · [`member_credential`](#member-credential).member_id → 이 테이블 · [`identity_verification`](#identity-verification).member_id → 이 테이블 · [`auth_session`](#auth-session).member_id → 이 테이블 · [`login_attempt`](#login-attempt).member_id → 이 테이블 · [`replay_session`](#replay-session).member_id → 이 테이블 · [`case_session`](#case-session).member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).from_member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).to_member_id → 이 테이블 · [`member_push_token`](#member-push-token).member_id → 이 테이블 · [`password_reset_token`](#password-reset-token).member_id → 이 테이블
 
@@ -739,6 +739,8 @@ Oracle
 | `method_hash` | VARCHAR2(64) |  | 생성 | 카드 번호 해시 | 묶음 단위. 여러 계정이 같은 카드를 쓰면 연결 |
 | `method_type` | VARCHAR2(10) | NN | 생성 | CARD / ACCOUNT / PAY |  |
 | `card_last4` | CHAR(4) |  | 생성 | 끝 4자리 | 화면 표시용 |
+
+> **제약·비고** CREATE SEQUENCE payment_method_seq; · CREATE INDEX ix_pay_method_hash ON payment_method (method_hash);
 
 **관계** member_id → [`member`](#member) · [`payment`](#payment).method_id → 이 테이블
 
@@ -857,7 +859,7 @@ erDiagram
   auth_session ||--o{ replay_session : "session_id"
   admin_user |o--o{ suspicious_case : "assignee_id"
   auth_session ||--o{ case_session : "session_id"
-  auth_session ||--o{ case_marker : "session_id"
+  auth_session |o--o{ case_marker : "session_id"
   admin_user |o--o{ case_marker : "created_by"
   admin_user |o--o{ evidence_snapshot : "frozen_by"
   admin_user ||--o{ replay_access_log : "admin_id"
@@ -1214,7 +1216,7 @@ PG 결제 요청과 결과. 실패 시 Saga 보상 트리거.
 | `approved_at` | TIMESTAMP |  | 시스템 | 승인 시각 |  |
 | `next_check_at` | TIMESTAMP |  | 시스템 | PG 결과 조회 예정 시각 | 결제 시작 때 마감 값으로 시작. PG 결과를 모르면 payment.pg_recheck_sec만큼 미뤄 스캐너가 같은 건을 매 회차 다시 보지 않게 함 |
 
-> **제약·비고** UNIQUE(reservation_id, idempotency_key) · 예약당 승인 1건: CREATE UNIQUE INDEX ux_payment_approved ON payment (CASE WHEN status = 'APPROVED' THEN reservation_id END) · payment.status=REFUNDED는 cancellation.refund_status=DONE과 같은 트랜잭션에서 갱신 · 절차: concurrency.md §1 멱등, §4 결제 시작(REQUESTED), §5 확정, §6 스캐너가 REQUESTED 건은 PG 조회 후 확정 또는 실패 처리 (결과 모르면 자동 만료 안 함), §7.3 늦은 승인 환불 · CREATE INDEX ix_pay_recheck ON payment (CASE WHEN status = 'REQUESTED' THEN next_check_at END); 결제 결과 확인 스캐너용 (concurrency.md §6.2) · payment 상태를 바꾸는 트랜잭션은 그 예약의 reservation 행을 먼저 잠금 (§5) · FAILED 뒤 승인이 오면 APPROVED로 기록하고 전액 환불 (§5.1)
+> **제약·비고** UNIQUE(reservation_id, idempotency_key) · 예약당 승인 1건: CREATE UNIQUE INDEX ux_payment_approved ON payment (CASE WHEN status = 'APPROVED' THEN reservation_id END) · payment.status=REFUNDED는 cancellation.refund_status=DONE과 같은 트랜잭션에서 갱신 · 절차: concurrency.md §1 멱등, §4 결제 시작(REQUESTED), §5 확정, §6 스캐너가 REQUESTED 건은 PG 조회 후 확정 또는 실패 처리 (결과 모르면 자동 만료 안 함), §7.3 늦은 승인 환불 · CREATE INDEX ix_pay_recheck ON payment (CASE WHEN status = 'REQUESTED' THEN next_check_at END); 결제 결과 확인 스캐너용 (concurrency.md §6.2) · payment 상태를 바꾸는 트랜잭션은 그 예약의 reservation 행을 먼저 잠금 (§5) · FAILED 뒤 승인이 오면 APPROVED로 기록하고 전액 환불 (§5.1) · CREATE SEQUENCE payment_seq CACHE 100;
 
 **관계** reservation_id → [`reservation`](#reservation) · method_id → [`payment_method`](#payment-method)
 
@@ -1240,7 +1242,7 @@ Oracle
 | `refund_status` | VARCHAR2(10) |  | 시스템 | REQUESTED / DONE / FAILED | 환불 실패 재시도 |
 | `resold_yn` | CHAR(1) | NN | 시스템 | 재판매 여부 | INSERT 때 N, 운행 출발 후 배치가 갱신 (concurrency.md §8.3) |
 
-> **제약·비고** 절차: concurrency.md §7.3 늦은 승인 환불(PAY_FAILED: 환불액 = 결제 금액, 수수료 0, 정책·분 컬럼 NULL), §8 확정 예약 취소(USER·ADMIN, 확정 예약도 purchase_counter 감소), §8.3 resold_yn 배치 · refund_status·resold_yn을 나중에 UPDATE하므로 INSERT만 하는 테이블이 아님
+> **제약·비고** 절차: concurrency.md §7.3 늦은 승인 환불(PAY_FAILED: 환불액 = 결제 금액, 수수료 0, 정책·분 컬럼 NULL), §8 확정 예약 취소(USER·ADMIN, 확정 예약도 purchase_counter 감소), §8.3 resold_yn 배치 · refund_status·resold_yn을 나중에 UPDATE하므로 INSERT만 하는 테이블이 아님 · CREATE SEQUENCE cancellation_seq;
 
 **관계** reservation_id → [`reservation`](#reservation) · fee_policy_id → [`cancel_fee_policy`](#cancel-fee-policy)
 
@@ -1453,7 +1455,7 @@ Oracle
 | `offered_reservation_id` | NUMBER | FK → reservation | 시스템 | 제안된 예약 |  |
 | `status` | VARCHAR2(10) | NN | 시스템 | WAITING / OFFERED / ACCEPTED / EXPIRED / CANCELED / SKIPPED | SKIPPED = 제안 시 매수 한도 초과로 건너뜀 |
 
-> **제약·비고** CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, priority_at, waitlist_id); 다음 대기자 조회용 (ORDER BY priority_at, waitlist_id) · CHECK(penalty_ms >= 0) · 제안 예약의 idempotency_key = 'wl:' || waitlist_id (신청 하나에 제안 하나) · 대기자 우선: 취소로 풀린 좌석은 seat:hold를 REOFFER 값으로 잠시 막고 먼저 제안 · 제안 예약도 purchase_counter 증가, 한도에 걸리면 SKIPPED · 절차: concurrency.md §9, 대기 순서 §9.3
+> **제약·비고** CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, priority_at, waitlist_id); 다음 대기자 조회용 (ORDER BY priority_at, waitlist_id) · CHECK(penalty_ms >= 0) · 제안 예약의 idempotency_key = 'wl:' || waitlist_id (신청 하나에 제안 하나) · 대기자 우선: 취소로 풀린 좌석은 seat:hold를 REOFFER 값으로 잠시 막고 먼저 제안 · 제안 예약도 purchase_counter 증가, 한도에 걸리면 SKIPPED · 절차: concurrency.md §9, 대기 순서 §9.3 · CREATE SEQUENCE waitlist_seq;
 
 **관계** member_id → [`member`](#member) · run_id → [`train_run`](#train-run) · from_station_id → [`station`](#station) · to_station_id → [`station`](#station) · offered_reservation_id → [`reservation`](#reservation)
 
@@ -1579,7 +1581,7 @@ Oracle
 | `reservation_id` | NUMBER |  | 시스템 | 관련 예약 (예약 대상 조치일 때) | 강제 취소·결제 결과 수동 처리 추적. NULL 허용이라 FK는 비고로 선언 |
 | `acted_at` | TIMESTAMP | NN | 시스템 | 조치 시각 |  |
 
-> **제약·비고** 회원 상태 변경(RESTRICT·BAN)은 member.status와 같은 트랜잭션에서 갱신 · FK(reservation_id) → reservation(reservation_id) · CANCEL_RESERVATION·RESOLVE_PAYMENT는 reservation_id 필수: CHECK(action_type NOT IN ('CANCEL_RESERVATION', 'RESOLVE_PAYMENT') OR reservation_id IS NOT NULL)
+> **제약·비고** 회원 상태 변경(RESTRICT·BAN)은 member.status와 같은 트랜잭션에서 갱신 · FK(reservation_id) → reservation(reservation_id) · CANCEL_RESERVATION·RESOLVE_PAYMENT는 reservation_id 필수: CHECK(action_type NOT IN ('CANCEL_RESERVATION', 'RESOLVE_PAYMENT') OR reservation_id IS NOT NULL) · CREATE SEQUENCE admin_action_seq;
 
 **관계** admin_id → [`admin_user`](#admin-user) · [`suspicious_case`](#suspicious-case).admin_action_id → 이 테이블
 
@@ -1677,7 +1679,7 @@ erDiagram
   auth_session ||--o{ case_session : "session_id"
   member ||--o{ case_session : "member_id"
   suspicious_case ||--o{ case_marker : "case_id"
-  auth_session ||--o{ case_marker : "session_id"
+  auth_session |o--o{ case_marker : "session_id"
   admin_user |o--o{ case_marker : "created_by"
   suspicious_case |o--o{ evidence_snapshot : "case_id"
   replay_session |o--o{ evidence_snapshot : "session_id"
@@ -1769,6 +1771,8 @@ Oracle
 | `opened_at` | TIMESTAMP | NN | 시스템 |  |  |
 | `closed_at` | TIMESTAMP |  | 시스템 |  | 처리 소요 시간 |
 
+> **제약·비고** CREATE SEQUENCE suspicious_case_seq; · 대상당 열린 케이스는 1건: CREATE UNIQUE INDEX ux_case_open_subject ON suspicious_case (CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_type END, CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_hash END); 같은 대상에 케이스가 겹쳐 열리는 것을 DB가 막는다 (닫힌 케이스는 인덱스에 들어가지 않아 다시 열 수 있음)
+
 **관계** assignee_id → [`admin_user`](#admin-user) · admin_action_id → [`admin_action`](#admin-action) · [`case_session`](#case-session).case_id → 이 테이블 · [`case_marker`](#case-marker).case_id → 이 테이블 · [`evidence_snapshot`](#evidence-snapshot).case_id → 이 테이블 · [`replay_access_log`](#replay-access-log).case_id → 이 테이블
 
 <a id="case-session"></a>
@@ -1799,13 +1803,15 @@ Oracle
 |---|---|---|---|---|---|
 | `marker_id` | NUMBER | PK | 시스템 |  |  |
 | `case_id` | NUMBER | FK, NN → suspicious_case | 시스템 |  |  |
-| `session_id` | VARCHAR2(36) | FK, NN → auth_session | 시스템 | 표시할 세션 |  |
+| `session_id` | VARCHAR2(36) | FK → auth_session | 시스템 | 표시할 세션 (없을 수 있음) | Oracle 기록만으로 찍는 마커(구매 직후 취소 등)는 녹화 세션이 없다. 세션이 있으면 재생기가 그 지점으로 이동 |
 | `at_ts` | TIMESTAMP | NN | 시스템 | 타임라인 위치 | 누르면 그 시점으로 이동 |
 | `marker_type` | VARCHAR2(10) | NN | 시스템 | AUTO / MANUAL | 시스템 탐지와 관리자 메모 구분 |
 | `rule_code` | VARCHAR2(30) | NN | 시스템 | FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / LINEAR_MOUSE | 어떤 규칙이 잡았는지 |
 | `label` | VARCHAR2(200) | NN | 시스템 | 예: 0.1초 간격 좌석 클릭 28회 |  |
 | `severity` | VARCHAR2(6) | NN | 시스템 | LOW / MID / HIGH |  |
 | `created_by` | NUMBER | FK → admin_user | 시스템 | 작성 관리자 (AUTO는 null) |  |
+
+> **제약·비고** CREATE SEQUENCE case_marker_seq;
 
 **관계** case_id → [`suspicious_case`](#suspicious-case) · session_id → [`auth_session`](#auth-session) · created_by → [`admin_user`](#admin-user)
 
@@ -1912,7 +1918,7 @@ MongoDB · 🅱 빅데이터
 | `response_status` | Int |  | 시스템 | HTTP 상태 | 차단·에러 분석 |
 | `meta` | Object |  | 시스템 | 이벤트별 추가 정보 | 스키마 변경 없이 필드 확장 |
 
-> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 }, { member_id: 1, ts: 1 } (타임라인 ADM-05) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13 · 유니크 { event_id: 1 }, partialFilterExpression: { event_id: { $type: "string" } } (재전달 중복 방지, 중복 키 오류는 무시. event_id가 없는 옛 문서끼리는 충돌하지 않게 부분 인덱스)
+> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 }, { member_id: 1, ts: 1 } (타임라인 ADM-05) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13 · 유니크 { event_id: 1 }, partialFilterExpression: { event_id: { $type: "string" } } (재전달 중복 방지, 중복 키 오류는 무시. event_id가 없는 옛 문서끼리는 충돌하지 않게 부분 인덱스) · 인덱스 { device_hash: 1, ts: 1 } (기기 단위 집계·의심 구간 조회)
 
 **관계** member_id → [`member`](#member) · session_id → [`auth_session`](#auth-session) · run_id → [`train_run`](#train-run)
 
@@ -1970,6 +1976,9 @@ Redis
 | `limit:dec:{reservationId}` | STRING+TTL |  | 시스템 | 값: 1 (이 예약의 한도 감소 완료 표시) | limit_decr.lua가 SET NX에 성공할 때만 감소 → 커밋 직후 앱과 outbox 소비자가 둘 다 실행해도 한 번만 감소 |
 | `risk:{subjectType}:{hash}` | STRING |  | 시스템 | final_score 캐시 (0~100 숫자 문자열). TTL 없음 | 대기열 진입 시 DB 미조회. TTL을 두면 시간이 지나 패널티가 저절로 풀려 "쉬었다 오면 통과"가 된다. 0점이 되는 순간 지운다 |
 | `risk:meta:synced_at` | STRING |  | 시스템 | Oracle → Redis 재동기화 완료 시각 | 이 키가 있을 때만 risk:* 캐시를 믿는다. 없으면 대기열이 캐시 대신 Oracle risk_score를 직접 조회하고, 조회가 실패하면 100점(안전한 쪽). 재동기화는 risk:*를 모두 쓴 다음에 이 키를 SET |
+| `risk:dirty` | SET |  | 시스템 | 다시 계산할 대상 ({subjectType}:{hash}) | 새 신호가 생긴 대상만 배치가 계산한다. 행동 로그 적재·예약 확정·취소 이벤트·감쇠 갱신이 SADD |
+| `risk:dirty:work` | SET |  | 시스템 | 이번 회차가 넘겨받은 대상 | work가 비었을 때만 RENAMENX risk:dirty → risk:dirty:work로 통째로 넘겨받는다. 계산 중 들어온 새 표시는 새 risk:dirty에 쌓여 SREM에 지워지지 않는다 |
+| `risk:batch:lock` | STRING+TTL |  | 시스템 | 배치 단독 실행 리스 (값은 실행 토큰) | 앱이 여러 대여도 한 대만 돈다. SET NX PX로 잡고 자기 토큰일 때만 Lua로 푼다 |
 | `seatmap:{runId}` | HASH |  | 시스템 | seatId → 상태 (H 선점·대기자 보류 / S 판매). 빈 좌석은 필드 없음, 필드 _ 는 캐시가 있다는 표시 | 배치도·남은 좌석 수 조회를 DB에서 분리. 원천은 seat:hold 키(실시간)와 seat_inventory SOLD 행. 최종 판정은 선점 때 (concurrency.md §2). 유지 시간 app_policy seatmap.cache_ms |
 | `rate:login:{ipHash}` | STRING+TTL |  | 시스템 | IP당 분당 로그인 시도 수 | Argon2 연산 남용·크리덴셜 스터핑 차단. 한도 app_policy auth.login_rate_per_min, 넘으면 해시 계산 없이 AUTH_RATE_LIMITED |
 | `rate:signup:{ipHash}` | STRING+TTL |  | 시스템 | IP당 시간당 본인인증·가입 시도 수 | 가입 남용·대량 계정 생성 차단. 한도 app_policy auth.signup_rate_per_hour |
@@ -2327,6 +2336,7 @@ Oracle
 | v16 | 좌석 선점 구현: reservation·reservation_history ID 시퀀스. behavior_log에 event_id + 유니크 인덱스 (강다인 요청, Kafka 재전달 중복 방지) |
 | v17 | 좌석 배치도·운행 검색 구현: seatmap:{runId} 값 형식(H/S, 빈 좌석은 필드 없음)과 app_policy seatmap.cache_ms(1000) |
 | v18 | 판매 오픈 스케줄러 (ADM-02): app_policy sale.open_interval_sec(10초). train_run.status 전이 주체를 스케줄러로 명시 |
+| v19 | 결제·취소 ID 시퀀스(payment·payment_method·cancellation, 길동현 요청). RISK-04 의심 케이스 자동 생성(강다인 요청): suspicious_case·case_marker 시퀀스, 대상당 열린 케이스 1건 유니크 인덱스, case_marker.session_id NULL 허용. 곧 쓸 시퀀스 waitlist·admin_action. 조회 인덱스 member(ci_hash)·payment_method(method_hash)·behavior_log{device_hash,ts}. 위험 점수 배치 Redis 키 risk:dirty·risk:dirty:work·risk:batch:lock |
 
 ## 참고 자료
 

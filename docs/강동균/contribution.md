@@ -138,6 +138,8 @@
 | D 강다인 | ERD v13 | `risk_score_history_seq` 시퀀스 추가 → 점수 저장 때 이력도 기록 |
 | D 강다인 | 행동 로그 | 내 API 4곳에 `BehaviorLog.mark`: VIEW_TRAIN·VIEW_SEAT·SEAT_HOLD·CANCEL. 실패 요청도 `errorCode`와 함께 남김 (MongoDB 적재 확인) |
 | D 강다인 | ERD v15 | 회원가입·로그인용 시퀀스 2개, Redis 키 3개, `app_policy` 한도 3개, `login_attempt.result` BANNED |
+| C 길동현 | ERD v19 | `payment_seq`(CACHE 100)·`payment_method_seq`·`cancellation_seq` 추가 |
+| D 강다인 | ERD v19 | RISK-04: `suspicious_case_seq`·`case_marker_seq`, 대상당 열린 케이스 1건 유니크 인덱스, `case_marker.session_id` NULL 허용. 곧 쓸 `waitlist_seq`·`admin_action_seq`. 조회 인덱스 `member(ci_hash)`·`payment_method(method_hash)`·`behavior_log{device_hash,ts}`. Redis 키 `risk:dirty`·`risk:dirty:work`·`risk:batch:lock` |
 | A 김성원 | 판매 오픈 자동화 | `JdbcOnSaleRunProvider`가 보는 운행이 시각에 맞춰 늘고 줄어든다. `9003`은 오픈 시각(내일 07:00)에 자동으로 열림 |
 | E 조영준 | 부하 시나리오 | 오픈 순간 트래픽을 실제로 재현할 수 있다 — `sale_open_at`을 몇 초 뒤로 넣으면 그 시각에 열림 |
 | A 김성원 | 대기열 숫자 | 현황 API가 `QueueKeys`의 `queue:{runId}`·`queue:active:{runId}`·`queue:throughput:{runId}`를 읽기만 함. 키 이름이 바뀌면 알려 주세요 |
