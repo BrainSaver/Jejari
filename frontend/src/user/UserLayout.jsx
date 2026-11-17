@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
-import { logout } from '../api/client.js';
+import { get, logout } from '../api/client.js';
 import Icon, { Seal } from '../admin/Icon.jsx';
+import { AUTH_ART } from './art.js';
+import { EaseBar, EaseRoot } from './ease.jsx';
 import { useMember } from './useMember.js';
 
 /**
- * 사용자 화면 공통 틀 (시안 docs/ui/U-*.html): 위쪽 "편안한 화면" 도우미 줄 + PC 위쪽 메뉴 / 모바일 아래 탭.
- * 글자 크기·음성 안내는 다른 화면으로 가도 유지된다 (지금은 이 브라우저에만 저장. 실제로는 회원 설정에 저장할 예정)
+ * 사용자 화면 공통 틀 (시안 docs/ui/U-*.html): 도우미 줄 + PC 위쪽 메뉴 / 모바일 아래 탭.
+ * 알림 배지는 읽지 않은 알림 수 (로그인했을 때만, 화면을 옮길 때마다 다시 읽음)
  */
-const EASE_KEY = 'jejari-ease';
 const MENU = [
   ['/', 'search', '검색'],
   ['/reservations', 'ticket', '예매 내역'],
@@ -17,77 +18,24 @@ const MENU = [
   ['/me', 'person', '내 정보'],
 ];
 
-function loadEase() {
-  try {
-    const s = JSON.parse(localStorage.getItem(EASE_KEY) || 'null');
-    if (s && [1, 1.15, 1.3].includes(s.z)) return { z: s.z, voice: !!s.voice };
-  } catch {
-    /* 저장소를 못 쓰는 브라우저 → 기본값 */
-  }
-  return { z: 1, voice: false };
-}
-
 export default function UserLayout() {
-  const [ease, setEase] = useState(loadEase);
   const { pathname } = useLocation();
   const { member } = useMember();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(EASE_KEY, JSON.stringify(ease));
-    } catch {
-      /* 저장 못 해도 지금 화면에는 적용됨 */
-    }
-  }, [ease]);
-
-  // 음성 안내: 켜 두면 화면이 바뀔 때마다 그 화면의 안내 한 줄(.guide)을 읽는다
-  useEffect(() => {
-    if (!ease.voice || !window.speechSynthesis) return;
-    const t = setTimeout(() => {
-      const g = document.querySelector('.user .guide span');
-      if (!g) return;
-      try {
-        speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(g.textContent);
-        u.lang = 'ko-KR';
-        u.rate = 0.9;
-        speechSynthesis.speak(u);
-      } catch {
-        /* 음성 합성이 없는 환경 */
-      }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [ease.voice, pathname]);
-
-  const toggleVoice = () => {
-    if (ease.voice && window.speechSynthesis) speechSynthesis.cancel();
-    setEase({ ...ease, voice: !ease.voice });
-  };
+  const unread = useUnread(member, pathname);
 
   return (
-    <div className="user" style={{ '--z': ease.z }}>
+    <EaseRoot>
       <div className="app">
-        <div className="sbar" role="region" aria-label="편안한 화면 도우미">
-          <span className="sb-t"><i />편안한 화면<span> · 큼직한 글씨와 쉬운 안내</span></span>
-          <span className="sb-seg" role="group" aria-label="글자 크기">
-            {[[1, '보통'], [1.15, '크게'], [1.3, '아주 크게']].map(([z, label]) => (
-              <button key={z} type="button" className={ease.z === z ? 'on' : ''} aria-pressed={ease.z === z} onClick={() => setEase({ ...ease, z })}>
-                {label}
-              </button>
-            ))}
-          </span>
-          <button type="button" className="sb-btn" aria-pressed={ease.voice} onClick={toggleVoice}>
-            {ease.voice ? '음성 안내 켜짐' : '음성 안내 듣기'}
-          </button>
-          <a className="sb-call" href="tel:1588-0000"><Icon name="phone" />전화 도움 1588-0000</a>
-        </div>
-
+        <EaseBar />
         <header className="gnb">
           <Link className="logo" to="/"><Seal />제자리</Link>
           <nav aria-label="주요 메뉴">
             {MENU.map(([to, , label]) => (
-              <NavLink key={to} to={to} end className={({ isActive }) => (isActive ? 'on' : '')}>{label}</NavLink>
+              <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'on' : '')}>
+                {label}
+                {to === '/notifications' && unread > 0 && <span className="cnt">{unread}</span>}
+              </NavLink>
             ))}
           </nav>
           {member ? (
@@ -104,13 +52,54 @@ export default function UserLayout() {
 
         <nav className="tabbar" aria-label="주요 메뉴">
           {MENU.map(([to, icon, label]) => (
-            <NavLink key={to} to={to} end className={({ isActive }) => (isActive ? 'on' : '')}>
-              <span><Icon name={icon} /></span>
+            <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'on' : '')}>
+              <span className={to === '/notifications' && unread > 0 ? 'dot' : ''}><Icon name={icon} /></span>
               {label}
             </NavLink>
           ))}
         </nav>
       </div>
-    </div>
+    </EaseRoot>
+  );
+}
+
+function useUnread(member, pathname) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (!member) return setN(0);
+    get('/api/v1/notifications?size=1')
+      .then((r) => setN(r?.unreadCount || 0))
+      .catch(() => {});
+  }, [member, pathname]);
+  return n;
+}
+
+/**
+ * 로그인·회원가입 틀 (시안 U-01·U-02의 .app.auth): PC는 왼쪽 남색 그림판 + 오른쪽 폼, 모바일은 폼만
+ */
+export function AuthLayout() {
+  return (
+    <EaseRoot>
+      <div className="app auth">
+        <aside className="auth-hero">
+          <div className="art" aria-hidden="true" dangerouslySetInnerHTML={{ __html: AUTH_ART }} />
+          <div className="row" style={{ gap: 12 }}><Seal size={36} /><b style={{ fontSize: 18 }}>제자리</b></div>
+          <div>
+            <div className="num" style={{ fontSize: 22, color: 'var(--sign)', fontWeight: 600 }}>명절 승차권 공정 예매</div>
+            <h2 style={{ fontSize: 48, lineHeight: 1.25, margin: '14px 0 16px', fontWeight: 800, fontFamily: 'var(--serif)' }}>
+              명절 열차,<br />줄 선 순서대로.
+            </h2>
+            <p style={{ fontSize: 17, color: '#D3D9E6', maxWidth: 440, lineHeight: 1.7, margin: 0 }}>
+              먼저 줄 선 사람이 먼저 앉습니다. 대기열 순번, 좌석 선점, 결제 기한을 모두가 같은 규칙으로 지켜요.
+            </p>
+          </div>
+          <p style={{ fontSize: 13, color: '#A9B6CC', margin: 0 }}>매크로·다중 계정 예매는 자동으로 걸러져요.</p>
+        </aside>
+        <div className="app-side">
+          <EaseBar />
+          <Outlet />
+        </div>
+      </div>
+    </EaseRoot>
   );
 }

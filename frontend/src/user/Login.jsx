@@ -1,21 +1,31 @@
-import { useState } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router';
+import { useRef, useState } from 'react';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { memberLogin } from '../api/client.js';
-import Icon from '../admin/Icon.jsx';
+import Icon, { Seal } from '../admin/Icon.jsx';
 import { useMember } from './useMember.js';
 
 /**
- * U-01 로그인 — 최소판. 예매 흐름(U-03 → U-04 → U-05)을 이어 보려고 만든 것이라 시안의 왼쪽 그림판·회원가입 링크는 없다.
- * 담당(강다인·조영준)이 시안 docs/ui/U-01.html대로 다듬는다. ?next= 로 로그인 뒤 돌아갈 곳을 받는다.
+ * U-01 로그인 (AUTH-03). POST /api/v1/auth/login → 액세스 토큰(메모리) + 리프레시 토큰(httpOnly 쿠키)
+ * ?next= 로 로그인 뒤 돌아갈 곳(예: 줄 서기)을 받는다. 가입 직후에는 ?joined=1 로 와서 안내를 띄운다.
+ * 실패하면 비밀번호 칸만 비운다. 어느 쪽이 틀렸는지는 말하지 않는다 (계정 존재 여부를 흘리지 않게).
  */
+const MESSAGES = {
+  AUTH_INVALID_CREDENTIALS: '이메일 또는 비밀번호가 맞지 않아요. 다시 입력해 주세요.',
+  AUTH_LOCKED: '여러 번 틀려서 잠시 잠겼어요. 15분 뒤에 다시 시도해 주세요.',
+  AUTH_RATE_LIMITED: '시도가 너무 많아요. 잠시 후 다시 시도해 주세요.',
+  AUTH_BANNED: '이용이 정지된 계정이에요. 1588-0000으로 문의해 주세요.',
+};
+
 export default function Login() {
   const [params] = useSearchParams();
   const next = safeNext(params.get('next'));
   const { member, checking } = useMember();
   const navigate = useNavigate();
-  const [f, setF] = useState({ email: '', password: '' });
+  const [email, setEmail] = useState(params.get('email') || '');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const pwRef = useRef(null);
 
   if (!checking && member) return <Navigate to={next} replace />;
 
@@ -24,39 +34,48 @@ export default function Login() {
     setBusy(true);
     setError(null);
     try {
-      await memberLogin(f.email.trim(), f.password);
+      await memberLogin(email.trim(), password);
       navigate(next, { replace: true });
     } catch (err) {
-      setError(err);
+      setError(MESSAGES[err.code] || err.message);
+      setPassword('');
+      pwRef.current?.focus();
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <>
-      <header className="top narrow"><h1>로그인</h1></header>
-      <main className="body narrow">
-        <p className="guide"><Icon name="info" /><span>가입할 때 쓴 이메일과 비밀번호를 넣고 [로그인]을 누르세요.</span></p>
-        {error && (
-          <div className="alert stop" role="alert"><Icon name="info" /><span>{error.message}</span></div>
-        )}
-        <form className="card" onSubmit={submit}>
-          <div className="field">
-            <label htmlFor="em">이메일</label>
-            <input id="em" type="email" autoComplete="username" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} required />
-          </div>
-          <div className="field">
-            <label htmlFor="pw">비밀번호</label>
-            <input id="pw" type="password" autoComplete="current-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} required />
-          </div>
-          <button className="btn" type="submit" disabled={busy}>{busy ? '확인하는 중' : '로그인'}</button>
-        </form>
-        <p className="faint" style={{ fontSize: 12.5, textAlign: 'center', margin: 0 }}>최소판 화면이에요 · 시안 docs/ui/U-01.html · 담당 강다인·조영준</p>
-      </main>
-    </>
+    <main className="body" style={{ paddingTop: 56 }}>
+      <p className="guide"><Icon name="info" /><span>이메일과 비밀번호를 넣고 [로그인]을 누르세요. 처음이면 아래 [회원가입]을 누르세요.</span></p>
+      <div className="m-only" style={{ padding: '0 4px 18px' }}>
+        <Seal size={40} />
+        <h1 style={{ fontSize: 30, lineHeight: 1.3, margin: '18px 0 6px', fontWeight: 800, fontFamily: 'var(--serif)' }}>명절 열차,<br />줄 선 순서대로.</h1>
+        <p className="mut" style={{ margin: 0 }}>제자리에 로그인하고 예매를 이어가세요.</p>
+      </div>
+      <h1 className="d-only" style={{ fontSize: 26, margin: '0 0 4px' }}>로그인</h1>
+      {params.get('joined') && !error && (
+        <div className="alert go"><Icon name="info" /><span>가입했어요. 방금 정한 비밀번호로 로그인해 주세요.</span></div>
+      )}
+      {error && <div className="alert stop" role="alert"><Icon name="info" /><span>{error}</span></div>}
+      <form onSubmit={submit} className="stack" style={{ gap: 0 }}>
+        <div className="field">
+          <label htmlFor="em">이메일</label>
+          <input id="em" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label htmlFor="pw">비밀번호</label>
+          <input id="pw" ref={pwRef} type="password" autoComplete="current-password" placeholder="비밀번호" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        </div>
+        <button className="btn" type="submit" disabled={busy}>{busy ? '확인하는 중…' : '로그인'}</button>
+      </form>
+      <p className="mut" style={{ textAlign: 'center', margin: '6px 0 0', fontSize: 14 }}>
+        처음이신가요? <Link className="link" to={`/signup?next=${encodeURIComponent(next)}`}>회원가입</Link>
+      </p>
+      <p style={{ textAlign: 'center', margin: 0 }}><Link className="link" to="/" style={{ fontSize: 14 }}>로그인 없이 열차 찾기</Link></p>
+    </main>
   );
 }
 
 /** 다른 사이트로 보내는 주소(//evil.com 등)는 받지 않는다 */
-const safeNext = (n) => (n && n.startsWith('/') && !n.startsWith('//') ? n : '/');
+export const safeNext = (n) => (n && n.startsWith('/') && !n.startsWith('//') ? n : '/');

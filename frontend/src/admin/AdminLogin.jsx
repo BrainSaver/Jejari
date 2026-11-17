@@ -4,7 +4,12 @@ import { adminLogin } from '../api/client.js';
 import { Seal } from './Icon.jsx';
 import { useAdminAuth } from './useAdminAuth.js';
 
-/** A-01 관리자 로그인 (최소판: 시안의 왼쪽 그림판은 아직 없음) */
+/** A-01 관리자 로그인 (AUTH-05). 성공하면 A-04 실시간 현황으로. 어느 쪽이 틀렸는지는 말하지 않는다 */
+const MESSAGES = {
+  AUTH_INVALID_CREDENTIALS: '아이디 또는 비밀번호가 맞지 않아요.',
+  AUTH_LOCKED: '여러 번 틀려 잠긴 계정이에요. 잠시 후 다시 시도해 주세요.',
+  AUTH_RATE_LIMITED: '시도가 너무 많아요. 잠시 후 다시 시도해 주세요.',
+};
 export default function AdminLogin() {
   const { claims, checking } = useAdminAuth();
   const navigate = useNavigate();
@@ -42,7 +47,7 @@ export default function AdminLogin() {
           </div>
           {error && (
             <div className="alert stop" role="alert">
-              {error.message}
+              {MESSAGES[error.code] || error.message}
               {error.traceId && <div className="faint" style={{ fontSize: 12 }}>traceId {error.traceId}</div>}
             </div>
           )}

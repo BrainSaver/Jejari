@@ -32,8 +32,9 @@ src/
   styles/tokens.css    디자인 토큰 (docs/ui/DESIGN.md · 시안 :root와 같은 값). 색·크기는 변수로만
   styles/admin.css     관리자 화면 스타일 (.admin 아래로 묶음)
   styles/user.css      사용자 화면 스타일 = 시안 U-*.html의 <style>을 .user 아래로 묶은 것
-  admin/               관리자 화면 (A-01 로그인, A-04 실시간 현황, 나머지는 자리만)
-  user/                사용자 화면 (U-03 검색, 나머지는 자리만)
+  admin/               관리자 화면 A-01~A-07
+  user/                사용자 화면 U-01~U-11 (화면 목록: docs/강동균/features/전체-화면.md)
+  lib/                 시각(서울)·입장 토큰 보관
 ```
 
 ## 화면을 추가할 때

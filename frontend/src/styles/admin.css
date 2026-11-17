@@ -83,3 +83,23 @@
 @media (max-width:1100px){.admin .kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.admin .kpi:nth-child(3n+1){border-left:0}.admin .cols{grid-template-columns:1fr}}
 /* 좁은 화면: 왼쪽 메뉴를 위쪽 가로 줄로 (시안은 숨겼지만 그러면 로그아웃·이동이 안 된다) */
 @media (max-width:720px){.admin .wrap{flex-direction:column}.admin .side{position:static;width:100%;height:auto;flex-direction:row;align-items:center;overflow-x:auto;padding:0;border-right:0;border-bottom:5px solid;border-image:var(--saek) 1}.admin .side>div{display:flex}.admin .brand{padding:10px 12px}.admin .brand small,.admin .side .grp{display:none}.admin .side a,.admin .side button.link{padding:12px 10px;white-space:nowrap;border-left:0;border-bottom:4px solid transparent;width:auto}.admin .side a.active{border-bottom-color:var(--sign)}.admin .side .out{margin:0 0 0 auto}.admin .main{padding:16px}.admin .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.admin .kpi:nth-child(odd){border-left:0}}
+
+/* A-05·A-06 위험 사용자·케이스 (시안 docs/ui/A-05.html·A-06.html) */
+.admin .head .crumb{font-size:13px;color:var(--mut);font-weight:700}
+.admin .score{font-family:var(--num);font-size:20px;font-weight:900}
+.admin .score.hi{color:var(--stop)}.admin .score.mid{color:var(--amber-d)}
+.admin .meter{height:8px;background:var(--line2);overflow:hidden;width:64px;display:inline-block;vertical-align:middle;margin-left:8px}
+.admin .meter i{display:block;height:100%;background:var(--stop)}
+.admin hr.sep{border:0;border-top:2px solid var(--line2);margin:18px 0}
+.admin textarea{font:inherit;color:var(--ink);padding:8px 12px;border:2px solid var(--line);border-radius:12px;background:var(--card);width:100%;min-height:80px;resize:vertical}
+.admin .link{color:var(--ink);font-weight:800;text-decoration:underline;text-decoration-color:var(--sign);text-underline-offset:3px}
+.admin .tl{list-style:none;margin:0;padding:0 0 0 18px;position:relative}
+.admin .tl::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--line)}
+.admin .tl li{position:relative;display:flex;gap:12px;align-items:center;padding:8px 10px;border-radius:8px;font-size:13.5px}
+.admin .tl li::before{content:"";position:absolute;left:-17px;top:50%;margin-top:-5px;width:10px;height:10px;border-radius:50%;background:var(--card);border:2px solid var(--faint)}
+.admin .tl li.hl{background:var(--stop-t)}.admin .tl li.hl::before{border-color:var(--stop);background:var(--stop)}
+.admin .tl li.out{opacity:.55}
+.admin .tl .mono{font-family:var(--num);font-size:14px;color:var(--ink2);min-width:96px}
+.admin .tl .who-c{font-weight:700;min-width:52px}
+.admin .tl li.gap::before{display:none}
+.admin .tl .gap,.admin .tl li.gap{font-size:12px;color:var(--mut);padding:2px 10px 2px 0;margin-left:-4px}

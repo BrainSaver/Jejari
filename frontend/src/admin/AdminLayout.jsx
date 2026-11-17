@@ -4,7 +4,7 @@ import Icon, { Seal } from './Icon.jsx';
 import { useAdminAuth } from './useAdminAuth.js';
 
 const MENU = [
-  ['운영', [['dashboard', 'pulse', '실시간 현황'], ['risk', 'shield', '위험 사용자'], ['cases', 'folder', '케이스 상세']]],
+  ['운영', [['dashboard', 'pulse', '실시간 현황'], ['risk', 'shield', '위험 사용자'], ['cases', 'folder', '케이스']]],
   ['기준·설정', [['master', 'train', '기준 데이터'], ['runs', 'calendar', '운행·행사'], ['settings', 'gear', '운영 설정']]],
 ];
 
