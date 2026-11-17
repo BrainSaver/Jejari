@@ -91,6 +91,11 @@ jejari:
     purchase-window: 30d        # 구매·취소 집계 기간
     decay-refresh-after: 1d     # 새 신호가 없어도 이만큼 지난 점수는 감쇠를 반영해 다시 계산
     signal-listener-enabled: true  # 예약 확정·취소 이벤트 소비 (risk-signal)
+  # 첫 관리자 계정 (AUTH-05, AdminBootstrap). admin_user가 비어 있을 때만 SUPERVISOR 1명을 만듭니다
+  admin:
+    bootstrap:
+      login-id: ${JEJARI_ADMIN_BOOTSTRAP_ID:}
+      password: ${JEJARI_ADMIN_BOOTSTRAP_PASSWORD:}
   jwt:
     issuer: jejari
     access-ttl: 15m

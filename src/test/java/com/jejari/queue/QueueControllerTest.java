@@ -18,6 +18,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.jejari.auth.ActorType;
+import com.jejari.auth.AdminRole;
 import com.jejari.auth.jwt.AccessTokenIssuer;
 import com.jejari.common.error.BusinessException;
 import com.jejari.queue.api.QueueController;
@@ -46,7 +47,8 @@ class QueueControllerTest {
 	QueuePassService pass; // 좌석 토큰 인터셉터(QueueWebConfig)가 필요로 함
 
 	String bearer(ActorType type, long id) {
-		return "Bearer " + issuer.issue(type, id, SID).value();
+		// 관리자 토큰은 세부 권한(adm)이 있어야 유효 (AUTH-05)
+		return "Bearer " + issuer.issue(type, id, SID, type == ActorType.ADMIN ? AdminRole.VIEWER : null).value();
 	}
 
 	private static QueueStatus waiting(long rank) {

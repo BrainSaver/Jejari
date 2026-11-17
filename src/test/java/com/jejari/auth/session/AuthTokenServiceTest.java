@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -14,12 +15,15 @@ import static org.mockito.Mockito.when;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import com.jejari.auth.ActorType;
+import com.jejari.auth.AdminRole;
 import com.jejari.auth.AuthErrorCode;
 import com.jejari.auth.AuthPrincipal;
 import com.jejari.auth.jwt.AccessTokenIssuer;
@@ -37,7 +41,10 @@ class AuthTokenServiceTest {
 	final AuthSessionRepository repository = mock(AuthSessionRepository.class);
 	final AccessTokenIssuer issuer = mock(AccessTokenIssuer.class);
 	final MutableClock clock = new MutableClock();
-	final AuthTokenService service = new AuthTokenService(repository, issuer, TestJwt.props(), clock);
+	/** 활성 관리자 adminId → 권한. 없으면 비활성·삭제 */
+	final Map<Long, AdminRole> activeAdmins = new HashMap<>();
+	final AuthTokenService service = new AuthTokenService(repository, issuer, TestJwt.props(), clock,
+			id -> Optional.ofNullable(activeAdmins.get(id)));
 
 	LocalDateTime now() {
 		return LocalDateTime.now(clock);
@@ -50,7 +57,7 @@ class AuthTokenServiceTest {
 
 	@Test
 	void 로그인_발급_시_해시만_저장하고_세션ID가_토큰_앞부분() {
-		when(issuer.issue(eq(ActorType.MEMBER), eq(1001L), anyString()))
+		when(issuer.issue(eq(ActorType.MEMBER), eq(1001L), anyString(), isNull()))
 				.thenReturn(new IssuedAccessToken("access", Instant.now()));
 
 		IssuedTokens tokens = service.issue(ActorType.MEMBER, 1001L, ClientInfo.none());
@@ -69,7 +76,7 @@ class AuthTokenServiceTest {
 		RefreshToken current = RefreshToken.generate(SID);
 		when(repository.rotate(eq(SID), eq(current.hash()), anyString())).thenReturn(1);
 		when(repository.findById(SID)).thenReturn(Optional.of(activeSession(current)));
-		when(issuer.issue(ActorType.MEMBER, 1001L, SID)).thenReturn(new IssuedAccessToken("access-2", Instant.now()));
+		when(issuer.issue(ActorType.MEMBER, 1001L, SID, null)).thenReturn(new IssuedAccessToken("access-2", Instant.now()));
 
 		IssuedTokens tokens = service.refresh(current.value());
 
@@ -123,5 +130,53 @@ class AuthTokenServiceTest {
 	void 로그아웃은_현재_세션만_폐기() {
 		service.logout(new AuthPrincipal(ActorType.MEMBER, 1001L, SID));
 		verify(repository).revoke(SID, "LOGOUT");
+	}
+
+	// ---------- 관리자 (AUTH-05) ----------
+
+	AuthSession adminSession(RefreshToken current) {
+		return AuthSession.open(SID, "family-a", ActorType.ADMIN, 7L, current.hash(), ClientInfo.none(),
+				now(), now().plusDays(14));
+	}
+
+	@Test
+	void 관리자_발급_때_현재_권한을_토큰에_담는다() {
+		activeAdmins.put(7L, AdminRole.REVIEWER);
+		when(issuer.issue(eq(ActorType.ADMIN), eq(7L), anyString(), eq(AdminRole.REVIEWER)))
+				.thenReturn(new IssuedAccessToken("admin-access", Instant.now()));
+
+		assertThat(service.issue(ActorType.ADMIN, 7L, ClientInfo.none()).accessToken()).isEqualTo("admin-access");
+	}
+
+	@Test
+	void 비활성_관리자에게는_발급하지_않는다() {
+		assertThatThrownBy(() -> service.issue(ActorType.ADMIN, 7L, ClientInfo.none()))
+				.isInstanceOf(BusinessException.class)
+				.extracting("errorCode").isEqualTo(AuthErrorCode.AUTH_INVALID_CREDENTIALS);
+		verify(repository, never()).save(any());
+	}
+
+	@Test
+	void 관리자_재발급은_DB의_최신_권한으로() {
+		RefreshToken current = RefreshToken.generate(SID);
+		activeAdmins.put(7L, AdminRole.SUPERVISOR); // 로그인 뒤 권한이 바뀐 상황
+		when(repository.rotate(eq(SID), eq(current.hash()), anyString())).thenReturn(1);
+		when(repository.findById(SID)).thenReturn(Optional.of(adminSession(current)));
+		when(issuer.issue(ActorType.ADMIN, 7L, SID, AdminRole.SUPERVISOR))
+				.thenReturn(new IssuedAccessToken("admin-access-2", Instant.now()));
+
+		assertThat(service.refresh(current.value()).accessToken()).isEqualTo("admin-access-2");
+	}
+
+	@Test
+	void 비활성화된_관리자는_재발급하면_세션이_닫힌다() {
+		RefreshToken current = RefreshToken.generate(SID);
+		when(repository.rotate(eq(SID), eq(current.hash()), anyString())).thenReturn(1);
+		when(repository.findById(SID)).thenReturn(Optional.of(adminSession(current)));
+
+		assertThatThrownBy(() -> service.refresh(current.value()))
+				.isInstanceOf(BusinessException.class)
+				.extracting("errorCode").isEqualTo(AuthErrorCode.AUTH_REFRESH_INVALID);
+		verify(repository).revoke(SID, "ADMIN");
 	}
 }

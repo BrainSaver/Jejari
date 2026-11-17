@@ -205,6 +205,7 @@ class PseudonymizerTest {
             case PAYMENT -> "4111111111111111";
             case DEVICE -> "fp-1";
             case IP -> "203.0.113.7";
+            case ADMIN_LOGIN -> "admin";
         };
     }
 }

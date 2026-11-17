@@ -9,8 +9,14 @@ import com.jejari.common.error.CommonErrorCode;
  * @param actorType 회원 / 관리자
  * @param actorId   member_id 또는 admin_id
  * @param sessionId auth_session.session_id (CCTV 녹화·행동 로그 연결 키)
+ * @param adminRole 관리자 세부 권한. 회원이면 null
  */
-public record AuthPrincipal(ActorType actorType, long actorId, String sessionId) {
+public record AuthPrincipal(ActorType actorType, long actorId, String sessionId, AdminRole adminRole) {
+
+	/** 회원 (세부 권한 없음) */
+	public AuthPrincipal(ActorType actorType, long actorId, String sessionId) {
+		this(actorType, actorId, sessionId, null);
+	}
 
 	/** 회원 API에서 member_id가 필요할 때. 관리자 토큰이면 403. */
 	public long memberId() {
