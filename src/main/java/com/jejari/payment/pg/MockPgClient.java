@@ -71,6 +71,23 @@ public class MockPgClient implements PgClient {
 		return now == null || now.state() == State.BLOCKED || now.state() == State.FAILED;
 	}
 
+	private final Map<String, RefundResult> refunds = new ConcurrentHashMap<>();
+
+	/** 환불은 바로 성공한다 (1차 범위: 기능설계서 1.1 CNL-03). 승인 거래 ID가 없거나 금액이 음수면 실패 */
+	@Override
+	public RefundResult refund(long orderId, String pgTxId, long amount, String refundKey) {
+		RefundResult r = refunds.computeIfAbsent(refundKey, k -> pgTxId == null || amount < 0
+				? new RefundResult(false, null, "NO_APPROVED_TX")
+				: new RefundResult(true, "mock-refund-" + UUID.randomUUID(), null));
+		log.info("[MockPG] 환불 요청 주문 {} 금액 {} → {}", orderId, amount, r.done() ? "DONE" : r.reason());
+		return r;
+	}
+
+	/** 환불 요청을 실제로 처리한 횟수 (같은 환불 키 재요청은 세지 않음) */
+	public int refundCount() {
+		return refunds.size();
+	}
+
 	/** 승인 요청을 실제로 처리한 횟수 */
 	public int processedCount() {
 		return processed.get();
