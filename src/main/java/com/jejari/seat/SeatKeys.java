@@ -14,6 +14,19 @@ public final class SeatKeys {
 		return "seat:hold:" + runId + ":" + seatId + ":" + segmentNo;
 	}
 
+	/**
+	 * 대기자 몫으로 막아 둔 좌석의 <b>값</b> (키가 아니다). {@code reoffer.lua}가 쓰고,
+	 * {@code hold.lua}에 인계 값으로 넘기면 그 좌석을 덮어쓸 수 있다 (§9.1-6).
+	 */
+	public static String reoffer(long reservationId) {
+		return "REOFFER:" + reservationId;
+	}
+
+	/** 판매 확정된 좌석의 값 ({@code sold.lua}) */
+	public static String sold(long reservationId) {
+		return "SOLD:" + reservationId;
+	}
+
 	/** 요청 멱등 키. 값: reservation_id */
 	public static String idem(long memberId, String key) {
 		return "idem:" + memberId + ":" + key;

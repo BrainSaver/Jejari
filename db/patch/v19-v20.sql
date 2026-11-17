@@ -1,4 +1,4 @@
--- ERD v18 → v19 델타. 이미 데이터가 들어 있는 Oracle에 v19 변경만 더합니다.
+-- ERD v18 → v20 델타. 이미 데이터가 들어 있는 Oracle에 v19·v20 변경만 더합니다.
 --
 -- 원칙은 "스키마가 바뀌면 볼륨을 지우고 다시 띄운다"입니다 (docker/oracle/init/01-schema.sh).
 -- 그런데 지금은 각자 로컬에 예약·결제 데이터가 쌓여 있어, 지우지 않고 이어서 쓰고 싶을 때를 위해 둡니다.
@@ -28,7 +28,8 @@ DECLARE
     'CREATE SEQUENCE suspicious_case_seq',
     'CREATE SEQUENCE case_marker_seq',
     'CREATE SEQUENCE waitlist_seq',
-    'CREATE SEQUENCE admin_action_seq');
+    'CREATE SEQUENCE admin_action_seq',
+    'CREATE SEQUENCE notification_seq CACHE 100');   -- v20 (취소표 제안 알림)
 BEGIN
   FOR i IN 1 .. seqs.COUNT LOOP
     BEGIN
@@ -81,7 +82,7 @@ COMMIT;
 
 -- 확인 -------------------------------------------------------------------
 SET PAGESIZE 60 LINESIZE 120
-SELECT COUNT(*) AS "시퀀스(13이어야 함)" FROM user_sequences;
+SELECT COUNT(*) AS "시퀀스(14여야 함)" FROM user_sequences;
 SELECT nullable AS "case_marker.session_id(Y여야 함)" FROM user_tab_columns
  WHERE table_name = 'CASE_MARKER' AND column_name = 'SESSION_ID';
 SELECT index_name AS "새 인덱스(3개)" FROM user_indexes

@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v19 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-17
+> 스키마 v20 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-17
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -1477,6 +1477,8 @@ Oracle
 | `sent_at` | TIMESTAMP |  | 시스템 | 발송 시각 | 알림→결제 전환 분석 |
 | `read_at` | TIMESTAMP |  | 시스템 | 확인 시각 |  |
 
+> **제약·비고** CREATE SEQUENCE notification_seq CACHE 100;
+
 **관계** member_id → [`member`](#member)
 
 <a id="g-risk"></a>
@@ -2337,6 +2339,7 @@ Oracle
 | v17 | 좌석 배치도·운행 검색 구현: seatmap:{runId} 값 형식(H/S, 빈 좌석은 필드 없음)과 app_policy seatmap.cache_ms(1000) |
 | v18 | 판매 오픈 스케줄러 (ADM-02): app_policy sale.open_interval_sec(10초). train_run.status 전이 주체를 스케줄러로 명시 |
 | v19 | 결제·취소 ID 시퀀스(payment·payment_method·cancellation, 길동현 요청). RISK-04 의심 케이스 자동 생성(강다인 요청): suspicious_case·case_marker 시퀀스, 대상당 열린 케이스 1건 유니크 인덱스, case_marker.session_id NULL 허용. 곧 쓸 시퀀스 waitlist·admin_action. 조회 인덱스 member(ci_hash)·payment_method(method_hash)·behavior_log{device_hash,ts}. 위험 점수 배치 Redis 키 risk:dirty·risk:dirty:work·risk:batch:lock |
+| v20 | 취소표 구현 (WL-01~03): notification.notification_id 시퀀스. 제안·건너뜀 알림을 제안 트랜잭션과 같이 커밋하려면 ID가 필요 |
 
 ## 참고 자료
 
