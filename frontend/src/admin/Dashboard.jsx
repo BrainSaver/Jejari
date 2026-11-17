@@ -9,7 +9,7 @@ import RequestLog from './RequestLog.jsx';
 import { hasRole } from './useAdminAuth.js';
 
 /**
- * A-04 실시간 예매 현황 (ADM-03). GET /api/v1/admin/dashboard/runs/{runId}를 10초마다 부른다.
+ * A-04 실시간 예매 현황 (ADM-03). GET /api/v1/admin/dashboard/runs/{runId}와 그 분당 이력(/minutes)을 10초마다 부른다.
  *
  * 관리자 화면은 "백엔드가 지금 무엇을 하고 있는지"가 보이게 만든다.
  *  - 숫자마다 어디서 읽었는지(Redis 캐시 / Redis 대기열 키 / Oracle 집계)와 얼마나 늦을 수 있는지 적는다
@@ -17,7 +17,7 @@ import { hasRole } from './useAdminAuth.js';
  *  - 최근 요청 기록 표 (이 화면이 보낸 요청 그대로)
  */
 const POLL_MS = 10_000;
-const HISTORY_MAX = 30; // 10초 × 30 = 5분
+const HISTORY_MIN = 30; // 그래프 칸 수 = 최근 30분 (서버 최대 60)
 const GRAFANA = import.meta.env.VITE_GRAFANA_URL; // 비우면 버튼을 숨긴다 (Grafana는 127.0.0.1에만 열려 있음)
 
 export default function Dashboard() {
@@ -26,12 +26,9 @@ export default function Dashboard() {
   const { runs, error: runsError } = useOnSaleRuns();
   const runId = params.get('run') || (runs.length ? String(runs[0].runId) : null);
 
-  const { data, error, refreshNow } = usePolling(
-    () => (runId ? get(`/api/v1/admin/dashboard/runs/${runId}`) : Promise.resolve(null)),
-    POLL_MS,
-    [runId],
-  );
-  const history = useHistory(runId, data);
+  const { data, error, refreshNow } = usePolling(() => (runId ? readDashboard(runId) : Promise.resolve(null)), POLL_MS, [
+    runId,
+  ]);
   const lastReq = useLastRequest(runId);
 
   return (
@@ -64,7 +61,7 @@ export default function Dashboard() {
       )}
 
       {data && <Kpis d={data} />}
-      {data && <RateChart history={history} windowSec={data.windowSec} />}
+      {data && <RateChart history={data.history} rates={data.rates} windowSec={data.windowSec} />}
 
       <div className="cols">
         <RequestLog />
@@ -120,22 +117,15 @@ function runLabel(id, m) {
 }
 
 /**
- * 분당 수치는 서버가 "지금 기준 최근 60초" 한 묶음만 준다 (이력은 안 준다).
- * 그래서 10초마다 받은 값을 화면에서 쌓아 그래프를 그린다. 이 화면을 연 뒤부터의 기록이다.
+ * 현황 + 분당 이력을 한 번에 읽는다. 이력은 그래프 하나만 쓰므로, 실패해도 숫자 카드는 그대로 보이게
+ * 이력만 null로 둔다 (그래프 자리에 안내 문구).
  */
-function useHistory(runId, data) {
-  const [hist, setHist] = useState([]);
-  const lastAsOf = useRef(null);
-  useEffect(() => {
-    setHist([]);
-    lastAsOf.current = null;
-  }, [runId]);
-  useEffect(() => {
-    if (!data || data.asOf === lastAsOf.current) return;
-    lastAsOf.current = data.asOf;
-    setHist((h) => [...h, { asOf: data.asOf, ...data.rates }].slice(-HISTORY_MAX));
-  }, [data]);
-  return hist;
+async function readDashboard(runId) {
+  const [now, history] = await Promise.all([
+    get(`/api/v1/admin/dashboard/runs/${runId}`),
+    get(`/api/v1/admin/dashboard/runs/${runId}/minutes?minutes=${HISTORY_MIN}`).catch(() => null),
+  ]);
+  return { ...now, history };
 }
 
 /** 이 운행 현황 API의 마지막 응답 (응답 시간·traceId 표시용) */
@@ -241,18 +231,22 @@ const SERIES = [
   ['cancels', '취소', 'var(--stop)'],
 ];
 
-function RateChart({ history, windowSec }) {
+/**
+ * 분 경계로 자른 막대(서버 /minutes). 화면을 열자마자 지난 30분이 보이고, 마지막 칸은 진행 중인 분이라
+ * 10초마다 자라며 흐리게 그린다. 범례 숫자는 카드와 같은 "최근 60초" 값이다.
+ */
+function RateChart({ history, rates, windowSec }) {
   const W = 1000;
   const H = 120;
-  const max = Math.max(10, ...history.flatMap((h) => SERIES.map(([k]) => h[k])));
+  const rows = history?.minutes || [];
+  const max = Math.max(10, ...rows.flatMap((h) => SERIES.map(([k]) => h[k])));
   const top = niceCeil(max);
-  const slot = (W - 40) / HISTORY_MAX;
+  const slot = (W - 40) / Math.max(rows.length, 1);
   const bw = Math.max(2, (slot - 6) / 3);
   const y = (v) => H - (v / top) * (H - 8);
-  const last = history[history.length - 1];
-  const label = last
-    ? `최근 ${windowSec}초 예약 ${last.reservations}건, 결제 ${last.payments}건, 취소 ${last.cancels}건`
-    : '아직 받은 값이 없음';
+  const label = rows.length
+    ? `최근 ${rows.length}분 분당 예약·결제·취소. 최근 ${windowSec}초 예약 ${rates.reservations}건, 결제 ${rates.payments}건, 취소 ${rates.cancels}건`
+    : '분당 이력을 못 읽음';
 
   return (
     <section className="panel">
@@ -262,39 +256,45 @@ function RateChart({ history, windowSec }) {
           {SERIES.map(([k, name, color]) => (
             <span key={k}>
               <i className="dot" style={{ background: color }} />
-              {name} {last ? <b className="num">{last[k]}</b> : null}
+              {name} <b className="num">{rates[k]}</b>
             </span>
           ))}
         </span>
       </h2>
       <p className="sub">
-        10초마다 잰 "최근 {windowSec}초 건수" (Oracle 집계, 캐시 없음). 서버는 지금 값만 주므로 이 화면을 연 뒤부터 쌓여요 · 최대 5분
+        막대 한 칸 = 1분 (Oracle 집계, 캐시 없음) · 최근 {rows.length || HISTORY_MIN}분 · 마지막 흐린 칸은 진행 중인 분 ·
+        범례 숫자는 최근 {windowSec}초
       </p>
-      <svg viewBox={`0 -8 ${W} ${H + 30}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label={label}>
-        {[0, 0.5, 1].map((f) => (
-          <g key={f}>
-            <line x1="32" x2={W} y1={y(top * f)} y2={y(top * f)} stroke="var(--line2)" />
-            <text x="24" y={y(top * f) + 4} textAnchor="end" fontSize="11" fill="var(--faint)">{Math.round(top * f)}</text>
-          </g>
-        ))}
-        {history.map((h, i) => {
-          const x0 = 40 + i * slot;
-          return (
-            <g key={h.asOf}>
-              {SERIES.map(([k, , color], j) => (
-                <rect key={k} className="chartbar" x={x0 + j * bw} y={y(h[k])} width={bw - 1} height={Math.max(1, H - y(h[k]))} rx="2" fill={color} />
-              ))}
-              {(i % 6 === 0 || i === history.length - 1) && (
-                <text x={x0 + bw * 1.5} y={H + 18} textAnchor="middle" fontSize="12" fill="var(--mut)">{h.asOf.slice(11, 16)}</text>
-              )}
+      {!rows.length ? (
+        <div className="soon-box">분당 이력을 못 읽었어요. 숫자 카드는 그대로 갱신돼요.</div>
+      ) : (
+        <svg viewBox={`0 -8 ${W} ${H + 30}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label={label}>
+          {[0, 0.5, 1].map((f) => (
+            <g key={f}>
+              <line x1="32" x2={W} y1={y(top * f)} y2={y(top * f)} stroke="var(--line2)" />
+              <text x="24" y={y(top * f) + 4} textAnchor="end" fontSize="11" fill="var(--faint)">{Math.round(top * f)}</text>
             </g>
-          );
-        })}
-      </svg>
+          ))}
+          {rows.map((h, i) => {
+            const x0 = 40 + i * slot;
+            const live = i === rows.length - 1;
+            return (
+              <g key={h.minute} opacity={live ? 0.5 : 1}>
+                <title>{`${h.minute.slice(11, 16)}${live ? ' (진행 중)' : ''} · 예약 ${h.reservations} · 결제 ${h.payments} · 취소 ${h.cancels}`}</title>
+                {SERIES.map(([k, , color], j) => (
+                  <rect key={k} className="chartbar" x={x0 + j * bw} y={y(h[k])} width={bw - 1} height={Math.max(1, H - y(h[k]))} rx="2" fill={color} />
+                ))}
+                {((Number(h.minute.slice(14, 16)) % 5 === 0 && i < rows.length - 2) || live) && (
+                  <text x={x0 + bw * 1.5} y={H + 18} textAnchor="middle" fontSize="12" fill="var(--mut)">{h.minute.slice(11, 16)}</text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      )}
     </section>
   );
 }
-
 
 // ------------------------------------------------------------ 작은 도우미
 

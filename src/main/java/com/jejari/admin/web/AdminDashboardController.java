@@ -6,9 +6,11 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.jejari.admin.DashboardService;
+import com.jejari.admin.RateHistory;
 import com.jejari.admin.RunDashboard;
 import com.jejari.train.TrainRunReader;
 
@@ -45,5 +47,14 @@ public class AdminDashboardController {
 	@GetMapping("/runs/{runId}")
 	public RunDashboard run(@PathVariable long runId) {
 		return dashboard.of(runId);
+	}
+
+	/**
+	 * 분 경계로 자른 분당 예약·결제·취소 (기본 30분, 최대 60분). 화면 그래프가 열자마자 지난 흐름을 보여 준다.
+	 * 마지막 칸은 진행 중인 분이라 폴링할 때마다 커진다.
+	 */
+	@GetMapping("/runs/{runId}/minutes")
+	public RateHistory minutes(@PathVariable long runId, @RequestParam(required = false) Integer minutes) {
+		return dashboard.history(runId, minutes);
 	}
 }

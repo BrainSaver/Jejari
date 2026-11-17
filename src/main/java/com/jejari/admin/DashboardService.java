@@ -30,6 +30,10 @@ public class DashboardService {
 	/** 분당 수치를 세는 창. 기능설계서가 "분당"으로 못박은 값이라 정책으로 빼지 않았다 */
 	static final int WINDOW_SEC = 60;
 
+	/** 분당 이력 기본·최대 길이. 화면 그래프는 30칸, 최대는 운행 하나의 행만 읽는 비용이 가벼운 선에서 1시간 */
+	static final int HISTORY_DEFAULT_MIN = 30;
+	static final int HISTORY_MAX_MIN = 60;
+
 	private final TrainRunReader runs;
 	private final SeatMapService seatMap;
 	private final ReservationStatsReader stats;
@@ -46,13 +50,27 @@ public class DashboardService {
 	}
 
 	public RunDashboard of(long runId) {
-		RunInfo run = runs.find(runId)
-				.orElseThrow(() -> new BusinessException(CommonErrorCode.NOT_FOUND, "운행을 찾을 수 없습니다."));
+		RunInfo run = find(runId);
 		return new RunDashboard(runId, run.status(), LocalDateTime.now(clock), WINDOW_SEC,
 				seats(runId, run.trainId()),
 				stats.rates(runId, WINDOW_SEC),
 				queue.read(runId),
 				new RunDashboard.Payments(stats.unknownPayments()));
+	}
+
+	/**
+	 * 최근 {@code minutes}분의 분별 예약·결제·취소. 범위 밖 값은 1~60분으로 자른다 (오류 대신 가까운 값).
+	 * 캐시하지 않는다 — 마지막 칸(진행 중인 분)이 10초마다 늘어나는 게 보여야 해서다.
+	 */
+	public RateHistory history(long runId, Integer minutes) {
+		find(runId);
+		int n = minutes == null ? HISTORY_DEFAULT_MIN : Math.clamp(minutes, 1, HISTORY_MAX_MIN);
+		return stats.history(runId, n);
+	}
+
+	private RunInfo find(long runId) {
+		return runs.find(runId)
+				.orElseThrow(() -> new BusinessException(CommonErrorCode.NOT_FOUND, "운행을 찾을 수 없습니다."));
 	}
 
 	private RunDashboard.Seats seats(long runId, long trainId) {
