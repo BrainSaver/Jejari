@@ -37,6 +37,7 @@ import com.jejari.seat.SeatReleaseService.ReturnedSeats;
 		"spring.data.redis.database=15",
 		"jejari.queue.scheduler-enabled=false",
 		"jejari.risk.cache-resync-enabled=false",
+		"jejari.risk.batch-enabled=false",
 		"jejari.seat.expiry-scanner-enabled=false",
 		"jejari.train.sale-open-scheduler-enabled=false"})
 class SeatPaymentInfraTest {

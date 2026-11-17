@@ -39,6 +39,7 @@ import tools.jackson.databind.json.JsonMapper;
 		"spring.data.redis.database=15",
 		"jejari.queue.scheduler-enabled=false",
 		"jejari.risk.cache-resync-enabled=false",
+		"jejari.risk.batch-enabled=false",
 		"jejari.seat.expiry-scanner-enabled=false",
 		"jejari.train.sale-open-scheduler-enabled=false"})
 @AutoConfigureMockMvc
