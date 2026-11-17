@@ -55,6 +55,13 @@ tasks.named('test') {
 	}
 }
 
+// 테스트 중에는 알림 소비자·기한 임박 스캐너를 끕니다. 켜 두면 다른 테스트의 회원에게 알림 행이 생겨
+// 그 테스트가 끝날 때 회원을 지우다 FK 오류가 납니다. 알림 테스트는 처리 메서드를 직접 부릅니다.
+tasks.withType(Test).configureEach {
+	systemProperty 'jejari.notification.consumer-enabled', 'false'
+	systemProperty 'jejari.notification.reminder-enabled', 'false'
+}
+
 tasks.register('infraTest', Test) {
 	description = '인프라(Redis 등)가 떠 있어야 하는 통합 테스트 (@Tag("infra"))'
 	group = 'verification'
