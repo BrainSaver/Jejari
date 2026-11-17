@@ -1451,6 +1451,8 @@ async function newPersonDoc(name, kind) {
 
 // ---------- 선 아이콘 (SVG, 24칸 기준, 글자색을 따름) ----------
 const ICON_PATHS = {
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+  doc: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M10 12h5M10 16h5"/>',
   play: '<path d="M7 4.5v15l12-7.5z"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   skip: '<path d="M5 5l9 7-9 7z"/><path d="M18 5v14"/>',
@@ -2234,7 +2236,7 @@ async function pageRoadmap(view) {
   if (RM.f.part && !['board', 'order'].includes(RM.view)) { RM.f.part = ''; store.set('rm-f2', RM.f); }
   if (RM.data) {
     // 탭을 옮기거나 다시 열 때는 가진 것으로 바로 그리고, 오래됐으면 뒤에서 새로 받아 바뀐 경우만 다시 그린다
-    rmRender(); rmPoll();
+    rmRender(); rmPoll(); rmPendingOpen();
     if (Date.now() - (RM.at || 0) > 10000) {
       const old = RM.rev;
       rmLoad().then(() => { if (RM.rev !== old && $('#modalBack').hidden && !RM.edit) rmRender(); }).catch(() => {});
@@ -2245,7 +2247,118 @@ async function pageRoadmap(view) {
   await rmLoad();
   rmRender();
   rmPoll();
+  rmPendingOpen();
 }
+
+function rmPendingOpen() {
+  const p = RM.pending; RM.pending = null;
+  if (!p) return;
+  setTimeout(() => { if (p.card && rmById().get(p.card)) rmOpen(p.card); else if (p.area) rmArea(p.area); }, 30);
+}
+
+// ---------- 사이트 전체 검색 (Ctrl+K, /) ----------
+// 문서는 섹션 단위, 화면설계는 화면, 로드맵은 카드·칸·남긴 말·지금 하는 일. 받아 둔 내용(CACHE)을 써서 빠르다
+const SR = { idx: null, ref: null, sel: 0, hits: [] };
+async function searchIndex() {
+  if (SR.idx && SR.ref === S.ref && SR.rev === RM.rev) return SR.idx;
+  const out = [];
+  const docs = await Promise.all(Object.values(DOCS).map((d) => fetchFile(d.path, S.ref).catch(() => null).then((f) => [d, f])));
+  for (const [d, f] of docs) {
+    if (!f) continue;
+    for (const s of splitSections(f.content)) {
+      const head = cleanHead(headOf(s));
+      const body = s.text.replace(/^#+ .*\n?/, '').replace(/<[^>]+>/g, ' ').replace(/[`*>|#]+/g, ' ').replace(/-{3,}/g, ' ').replace(/\s+/g, ' ').trim();
+      out.push({ kind: 'doc', group: d.title, title: head, text: body, go: () => jumpTo(d.path, headOf(s)) });
+    }
+  }
+  try {
+    for (const u of await uiIndex()) out.push({ kind: 'ui', group: '화면설계', title: `${u.id} ${u.name}`, text: `${u.summary || ''} ${(u.features || []).join(' ')} ${u.owner || ''}`, go: () => { location.hash = '#/ui/' + u.id; } });
+  } catch {}
+  try {
+    if (!RM.data) await rmLoad();
+    const goRm = (pending, view) => { RM.pending = pending; const h = '#/roadmap/' + view; if (location.hash === h) { rmPendingOpen(); } else location.hash = h; };
+    for (const it of RM.data.items) {
+      const who = rolesOf(it).map((p) => `${p} ${S.members[partOwner(p)] || ''}`).join(' ');
+      out.push({ kind: 'card', group: '로드맵 카드', title: `${it.code || ''} ${it.title}`.trim(), text: `${areaLabel(it.area)} · ${who} · ${ST_LABEL[stateOf(it)]}${it.note ? ' · ' + it.note : ''}`, done: isDone(it), go: () => goRm({ card: it.id }, 'board') });
+    }
+    for (const a of RM.data.areas) out.push({ kind: 'area', group: '로드맵 칸', title: a.label, text: areaParts(a.k).map((x) => `${x.p} ${S.members[partOwner(x.p)] || ''}`).join(' '), go: () => goRm({ area: a.k }, 'flow') });
+    for (const m of RM.data.msgs || []) if (m.text) out.push({ kind: 'msg', group: '남긴 말', title: `${rmWho(m.who).replace(/<[^>]+>/g, '')} → ${partName(m.to)} · ${m.code || m.title || ''}`, text: m.text, go: () => goRm({ card: m.item }, 'board') });
+    for (const n of RM.data.now || []) if (n.text) out.push({ kind: 'now', group: '지금 하는 일', title: `${partName(n.part)} · ${areaLabel(n.area)}`, text: n.text, go: () => goRm({ area: n.area }, 'flow') });
+  } catch {}
+  SR.idx = out; SR.ref = S.ref; SR.rev = RM.rev;
+  return out;
+}
+const srTerms = (q) => q.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
+function srFind(q) {
+  const terms = srTerms(q); if (!terms.length || !SR.idx) return [];
+  const order = { card: 0, area: 1, ui: 2, doc: 3, msg: 4, now: 5 };
+  return SR.idx.map((e) => {
+    const t = e.title.toLowerCase(), x = e.text.toLowerCase();
+    let score = 0;
+    for (const w of terms) { if (t.includes(w)) score += t.startsWith(w) ? 6 : 4; else if (x.includes(w)) score += 1; else return null; }
+    if (e.done) score -= 0.5;
+    return { e, score };
+  }).filter(Boolean).sort((p, q2) => q2.score - p.score || order[p.e.kind] - order[q2.e.kind]).slice(0, 40).map((x) => x.e);
+}
+function srMark(s, terms) {
+  let h = esc(s);
+  for (const w of terms) { const ew = esc(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); h = h.replace(new RegExp(ew, 'gi'), (m) => `<mark>${m}</mark>`); }
+  return h;
+}
+function srSnippet(text, terms) {
+  const low = text.toLowerCase();
+  const i = Math.min(...terms.map((w) => { const k = low.indexOf(w); return k < 0 ? Infinity : k; }));
+  if (!isFinite(i)) return text.slice(0, 110);
+  const s = Math.max(0, i - 40);
+  return (s ? '…' : '') + text.slice(s, s + 130) + (s + 130 < text.length ? '…' : '');
+}
+const SR_ICON = { card: 'check', area: 'map', ui: 'monitor', doc: 'doc', msg: 'msg', now: 'pencil' };
+function searchOpen(q0) {
+  const m = openModal(`<div class="sr">
+      <div class="sr-box">${svgI('search', 18)}<input type="search" id="srQ" placeholder="문서·화면·로드맵 카드·남긴 말 검색" autocomplete="off" aria-label="검색"><kbd>Esc</kbd></div>
+      <div class="sr-list" id="srList" role="listbox"><p class="muted sr-hint">찾을 말을 쓰세요. 띄어 쓰면 모두 들어 있는 것만 찾아요. 예: <code>결제 saga</code>, <code>RSV-02</code>, <code>강동균 좌석</code></p></div>
+      <p class="muted sr-foot">↑↓로 고르고 Enter로 열어요 · 어디서든 <kbd>Ctrl</kbd>+<kbd>K</kbd> 또는 <kbd>/</kbd></p></div>`, { wide: true });
+  m.classList.add('sr-modal');
+  const input = $('#srQ', m), list = $('#srList', m);
+  let ready = false;
+  const draw = () => {
+    const q = input.value.trim(); const terms = srTerms(q);
+    if (!q) { SR.hits = []; return; }
+    if (!ready) { list.innerHTML = '<p class="muted sr-hint">찾는 중…</p>'; return; }
+    SR.hits = srFind(q); SR.sel = 0;
+    if (!SR.hits.length) { list.innerHTML = `<p class="muted sr-hint">"${esc(q)}"에 맞는 게 없어요.</p>`; return; }
+    let last = '';
+    list.innerHTML = SR.hits.map((e, i) => {
+      const g = e.group !== last ? `<div class="sr-group">${esc(e.group)}</div>` : ''; last = e.group;
+      return `${g}<button class="sr-item${i ? '' : ' on'}${e.done ? ' done' : ''}" data-i="${i}" role="option"><span class="sr-ic">${svgI(SR_ICON[e.kind], 16)}</span><span class="sr-txt"><b>${srMark(e.title, terms)}</b><small>${srMark(srSnippet(e.text, terms), terms)}</small></span></button>`;
+    }).join('');
+    $$('.sr-item', list).forEach((b) => {
+      b.addEventListener('click', () => srGo(+b.dataset.i));
+      b.addEventListener('mousemove', () => srSel(+b.dataset.i, list, false));
+    });
+  };
+  let t; input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(draw, 60); });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (SR.hits.length) srSel((SR.sel + (e.key === 'ArrowDown' ? 1 : -1) + SR.hits.length) % SR.hits.length, list, true); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (SR.hits.length) srGo(SR.sel); }
+  });
+  if (q0) input.value = q0;
+  input.focus(); setTimeout(() => input.focus(), 30);
+  searchIndex().then(() => { ready = true; draw(); }).catch((x) => { list.innerHTML = `<p class="err sr-hint">${esc(x.message)}</p>`; });
+}
+function srSel(i, list, scroll) {
+  SR.sel = i;
+  $$('.sr-item', list).forEach((b) => b.classList.toggle('on', +b.dataset.i === i));
+  const b = $(`.sr-item[data-i="${i}"]`, list); if (b && scroll) b.scrollIntoView({ block: 'nearest' });
+}
+function srGo(i) { const e = SR.hits[i]; if (!e) return; closeModal(); e.go(); }
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  const typing = /INPUT|TEXTAREA|SELECT/.test(tag) || (e.target && e.target.isContentEditable);
+  if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (!$('#srQ')) searchOpen(); else $('#srQ').focus(); }
+  else if (e.key === '/' && !typing && $('#modalBack').hidden) { e.preventDefault(); searchOpen(); }
+});
+$('#searchBtn').addEventListener('click', () => searchOpen());
 
 function rmRender() {
   if (!RM.data || !/^#\/roadmap/.test(location.hash)) return;

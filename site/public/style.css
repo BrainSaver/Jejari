@@ -724,3 +724,29 @@ input[type=date]{font:inherit;color:var(--fg);background:var(--bg);border:1px so
 .fl-ibtn:disabled{opacity:.4;cursor:default}
 body.sim-on .ai-fab{display:none}
 @media (max-width:760px){.sim-panel{bottom:8px;max-height:55vh}.sim-auto{order:9}}
+
+/* 검색 */
+.top-mid{gap:10px}
+.search-btn{display:inline-flex;align-items:center;gap:8px;min-width:220px;padding:6px 10px;border:1px solid var(--line2);border-radius:9px;background:var(--bg);color:var(--muted);font:inherit;font-size:13.5px;cursor:pointer}
+.search-btn:hover{border-color:var(--accent);color:var(--fg)}
+.search-btn kbd,.sr kbd{margin-left:auto;font-family:inherit;font-size:11px;border:1px solid var(--line2);border-radius:5px;padding:0 5px;color:var(--muted);background:var(--bg2)}
+.sr-modal.modal{max-width:680px;padding:0;align-self:flex-start;margin-top:8vh}
+.sr-box{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);color:var(--muted)}
+.sr-box input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--fg);font:inherit;font-size:17px}
+.sr-list{max-height:60vh;overflow:auto;padding:6px}
+.sr-hint{padding:14px 10px;margin:0}
+.sr-group{font-size:12px;font-weight:700;color:var(--muted);padding:8px 10px 3px}
+.sr-item{display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;border:1px solid transparent;background:none;border-radius:9px;padding:7px 10px;cursor:pointer;color:var(--fg);font:inherit}
+.sr-item.on{background:var(--accent-soft);border-color:var(--accent)}
+.sr-item.done .sr-txt b{color:var(--muted)}
+.sr-ic{flex:none;width:28px;height:28px;border-radius:8px;background:var(--code);color:var(--accent);display:flex;align-items:center;justify-content:center}
+.sr-txt{display:flex;flex-direction:column;min-width:0}
+.sr-txt b{font-size:14.5px}
+.sr-txt small{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.sr mark{background:var(--warn);color:var(--warn-fg);border-radius:3px;padding:0 1px}
+.sr-foot{border-top:1px solid var(--line);margin:0;padding:8px 14px;font-size:12px}
+@media (max-width:760px){
+  .search-btn{min-width:0;padding:6px 8px}
+  .search-btn .search-l,.search-btn kbd{display:none}
+  .sr-modal.modal{margin-top:0}
+}
