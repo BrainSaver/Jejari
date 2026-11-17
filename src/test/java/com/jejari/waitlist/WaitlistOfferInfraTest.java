@@ -45,7 +45,10 @@ import com.jejari.waitlist.offer.WaitlistOfferTx;
 		"jejari.risk.cache-resync-enabled=false",
 		"jejari.risk.batch-enabled=false",
 		"jejari.seat.expiry-scanner-enabled=false",
-		"jejari.train.sale-open-scheduler-enabled=false"})
+		"jejari.train.sale-open-scheduler-enabled=false",
+		// 이 테스트는 소비자가 할 일을 직접 부른다. 켜 두면 배경의 소비자가 Kafka로 이벤트를 먼저 받아
+		// 대기자에게 제안해 버려서, 내가 부를 때는 WAITING인 대기자가 남지 않는다
+		"jejari.waitlist.offer-enabled=false"})
 class WaitlistOfferInfraTest {
 
 	static final long RUN = 9001;
