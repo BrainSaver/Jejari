@@ -169,4 +169,49 @@ class RiskBatchUnitTest {
 		assertThat(s.maxSameSeatFailures()).isEqualTo(1);
 		assertThat(s.intervalCount()).isZero();
 	}
+
+	// ---- RISK-04 케이스 조건
+
+	@Test
+	void 케이스는_새_증거일_때만_연다() {
+		RiskPolicy p = engine.policy();
+		assertThat(SuspiciousCaseOpener.triggerOf(score(25, null, NOW), p)).isEqualTo("RULE"); // FAST_CLICK = 마커
+		assertThat(SuspiciousCaseOpener.triggerOf(score(0, null, NOW), p)).isNull();
+
+		// 이전 90점이 감쇠 중이고 이번 증거는 25점: 감쇠가 지배 → 열지 않음 (닫힌 케이스가 매번 다시 열리는 것 방지)
+		PreviousScore p90 = new PreviousScore(new BigDecimal("90.00"), NOW, PreviousScore.ReviewStatus.NONE, null);
+		RiskResult decaying = score(25, p90, NOW.plus(DAY));
+		assertThat(decaying.openCase()).isTrue(); // 엔진은 80 이상이라 열라고 하지만
+		assertThat(SuspiciousCaseOpener.triggerOf(decaying, p)).isNull();
+	}
+
+	@Test
+	void 보조_신호만으로_80점을_넘으면_점수_기준으로_연다() {
+		SignalCollector c = new SignalCollector(engine.policy(), SubjectType.CI, H, NOW.minus(DAY));
+		for (int i = 0; i < 6; i++) {
+			c.purchase(10); // 누적 60매 → BULK HIGH 20
+			c.userCancel(120, 60); // 출발 직전 6건 → LAST_MINUTE HIGH 15, 취소 비율 100% → 20
+		}
+		c.linkedAccounts(5).oldestAccountCreatedAt(NOW.minus(Duration.ofDays(1)), NOW); // 20 + 신규 5
+		for (int i = 0; i < 40; i++) {
+			c.interval(1000); // 같은 간격 → REGULAR 15
+		}
+		RiskResult r = engine.score(c.build(), null, NOW);
+		assertThat(r.markerReasons()).isEmpty();
+		assertThat(r.ruleScore()).isGreaterThanOrEqualTo(new BigDecimal("80"));
+		assertThat(SuspiciousCaseOpener.triggerOf(r, engine.policy())).isEqualTo("RISK_THRESHOLD");
+	}
+
+	@Test
+	void 설명은_200바이트를_넘지_않게_글자_단위로_자른다() {
+		String longKo = "가".repeat(100); // 300바이트
+		String cut = SuspiciousCaseOpener.cut(longKo);
+		assertThat(cut.getBytes(java.nio.charset.StandardCharsets.UTF_8).length).isLessThanOrEqualTo(200);
+		assertThat(cut).endsWith("…").startsWith("가가");
+		assertThat(SuspiciousCaseOpener.cut("짧은 설명")).isEqualTo("짧은 설명");
+		String emoji = "😀".repeat(60); // 4바이트 문자: 반쪽(서로게이트)만 남지 않게
+		assertThat(SuspiciousCaseOpener.cut(emoji).codePoints().filter(cp -> cp == 0xFFFD).count()).isZero();
+		assertThat(SuspiciousCaseOpener.cut(emoji).getBytes(java.nio.charset.StandardCharsets.UTF_8).length)
+				.isLessThanOrEqualTo(200);
+	}
 }

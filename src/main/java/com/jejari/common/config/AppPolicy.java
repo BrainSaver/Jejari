@@ -1,4 +1,4 @@
-package com.jejari.seat;
+package com.jejari.common.config;
 
 import java.util.List;
 import java.util.Map;
@@ -9,13 +9,16 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * 좌석 선점이 쓰는 운영 값 (app_policy). TTL·마감을 코드에 박지 않기 위한 장치입니다 (CLAUDE.md "Redis").
+ * 운영 값 읽기 (app_policy). TTL·마감·주기를 코드에 박지 않기 위한 장치입니다 (CLAUDE.md "Redis").
+ *
+ * <p>좌석(seat)·열차(train) 양쪽이 쓰므로 common에 둡니다. seat가 이미 train을 참조하고 있어
+ * 어느 한쪽에 두면 패키지가 서로를 참조하게 됩니다.
  *
  * <p>읽는 순서: Redis {@code policy:cache} → Oracle {@code app_policy} → 아래 기본값(ERD 예시값).
  * 요청마다 Redis·DB를 왕복하지 않도록 앱 안에서 1초 들고 있습니다. 바꾸면 최대 1초 뒤 반영됩니다.
  */
 @Component
-public class SeatPolicy {
+public class AppPolicy {
 
 	public static final String PAY_DEADLINE_MIN = "reservation.pay_deadline_min";
 	public static final String IDEM_TTL_SEC = "idem.ttl_sec";
@@ -23,6 +26,7 @@ public class SeatPolicy {
 	public static final String SCANNER_BATCH_SIZE = "scanner.batch_size";
 	public static final String REOFFER_HOLD_SEC = "waitlist.reoffer_hold_sec";
 	public static final String SEATMAP_CACHE_MS = "seatmap.cache_ms";
+	public static final String SALE_OPEN_INTERVAL_SEC = "sale.open_interval_sec";
 
 	private static final Map<String, String> DEFAULTS = Map.of(
 			PAY_DEADLINE_MIN, "10",
@@ -30,7 +34,8 @@ public class SeatPolicy {
 			SCANNER_HOLD_INTERVAL_SEC, "5",
 			SCANNER_BATCH_SIZE, "500",
 			REOFFER_HOLD_SEC, "60",
-			SEATMAP_CACHE_MS, "1000");
+			SEATMAP_CACHE_MS, "1000",
+			SALE_OPEN_INTERVAL_SEC, "10");
 	private static final long CACHE_NANOS = 1_000_000_000L;
 
 	private record Cached(String value, long expiresAtNanos) {
@@ -40,7 +45,7 @@ public class SeatPolicy {
 	private final JdbcTemplate jdbc;
 	private final Map<String, Cached> cache = new ConcurrentHashMap<>();
 
-	public SeatPolicy(StringRedisTemplate redis, JdbcTemplate jdbc) {
+	public AppPolicy(StringRedisTemplate redis, JdbcTemplate jdbc) {
 		this.redis = redis;
 		this.jdbc = jdbc;
 	}

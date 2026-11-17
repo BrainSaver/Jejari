@@ -14,6 +14,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.jejari.common.config.AppPolicy;
 import com.jejari.common.error.BusinessException;
 import com.jejari.seat.SeatReleaseTx.Released;
 import com.jejari.seat.SeatReleaseTx.ReturnedSold;
@@ -64,14 +65,14 @@ public class SeatReleaseService {
 	private final SeatReleaseTx releaseTx;
 	private final TrainRunReader runs;
 	private final SeatScripts scripts;
-	private final SeatPolicy policy;
+	private final AppPolicy policy;
 	private final StringRedisTemplate redis;
 	private final JdbcTemplate jdbc;
 	private final TransactionTemplate tx;
 	private final MeterRegistry meters;
 	private final SeatMapService seatMap;
 
-	public SeatReleaseService(SeatReleaseTx releaseTx, TrainRunReader runs, SeatScripts scripts, SeatPolicy policy,
+	public SeatReleaseService(SeatReleaseTx releaseTx, TrainRunReader runs, SeatScripts scripts, AppPolicy policy,
 			StringRedisTemplate redis, JdbcTemplate jdbc, TransactionTemplate tx, MeterRegistry meters,
 			SeatMapService seatMap) {
 		this.releaseTx = releaseTx;
@@ -195,7 +196,7 @@ public class SeatReleaseService {
 			if (!seatKeys.isEmpty()) {
 				// HOLD 만료라 TTL로 이미 사라졌으면 아무 일 없음
 				redis.execute(scripts.reoffer, seatKeys, Long.toString(reservationId),
-						Long.toString(policy.getLong(SeatPolicy.REOFFER_HOLD_SEC) * 1000));
+						Long.toString(policy.getLong(AppPolicy.REOFFER_HOLD_SEC) * 1000));
 			}
 			RunInfo run = runs.find(runId).orElse(null);
 			List<String> keys = new ArrayList<>();

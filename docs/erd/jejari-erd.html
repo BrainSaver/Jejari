@@ -1115,7 +1115,8 @@ const DOCS = {
   ['v14','취소표 대기 위험 패널티 확정 (강다인): app_policy waitlist.penalty_ms_per_point 60000 → 180000 (1점 = 3분, 80점 = 4시간)'],
   ['v15','회원가입·로그인 (강다인 요청): member·identity_verification ID 시퀀스, Redis 키 rate:signup·login:fail·verify, app_policy auth.login_rate_per_min(20)·signup_rate_per_hour(10)·verify_token_ttl_sec(600), login_attempt.result에 BANNED'],
   ['v16','좌석 선점 구현: reservation·reservation_history ID 시퀀스. behavior_log에 event_id + 유니크 인덱스 (강다인 요청, Kafka 재전달 중복 방지)'],
-  ['v17','좌석 배치도·운행 검색 구현: seatmap:{runId} 값 형식(H/S, 빈 좌석은 필드 없음)과 app_policy seatmap.cache_ms(1000)']]}
+  ['v17','좌석 배치도·운행 검색 구현: seatmap:{runId} 값 형식(H/S, 빈 좌석은 필드 없음)과 app_policy seatmap.cache_ms(1000)'],
+  ['v18','판매 오픈 스케줄러 (ADM-02): app_policy sale.open_interval_sec(10초). train_run.status 전이 주체를 스케줄러로 명시']]}
 };
 // ===== 스키마 v5: 팀 검토 12건 반영 (2026-11-06) =====
 const V5_TABLES = [
@@ -1459,7 +1460,14 @@ const V17_OPS = [
   ['samples+','app_policy',[
     {policy_key:'seatmap.cache_ms',policy_value:'1000',version:1,value_type:'NUMBER',description:'좌석 배치도 캐시(seatmap:{runId}) 유지 시간(ms). 길수록 DB·Redis 부하는 줄고 화면은 늦게 바뀜'}]],
 ];
-const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS} ];
+const V18_TABLES = [];
+const V18_OPS = [
+  // 판매 오픈 스케줄러(ADM-02): train_run.status를 바꾸는 주체와 그 주기
+  ['set','train_run','status',{desc:'SCHEDULED / ON_SALE / CLOSED / DEPARTED',reason:'판매 가능 여부 판단. 전이는 판매 오픈 스케줄러가 한다 — sale_open_at이 지나면 ON_SALE, sale_close_at이 지나면 CLOSED. 주기 app_policy sale.open_interval_sec'}],
+  ['samples+','app_policy',[
+    {policy_key:'sale.open_interval_sec',policy_value:'10',version:1,value_type:'NUMBER',description:'판매 오픈 스케줄러가 train_run.status를 훑는 주기(초). 짧으면 오픈이 정확해지고 길면 DB 부하가 줄어듦'}]],
+];
+const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS} ];
 const SEED_VERSION = Math.max(2,...PATCHES.map(p=>p.v));
 const LAYOUT = [
  ['station','route','route_station','fare','common_code'],

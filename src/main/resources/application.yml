@@ -119,6 +119,10 @@ server:
     # 실패 응답은 GlobalExceptionHandler가 { code, message, traceId }로 만듭니다
     include-message: never
     include-stacktrace: never
+  tomcat:
+    # Tomcat 요청 스레드 사용량 메트릭(tomcat_threads_busy_threads) — 스레드가 다 찼는지 보려고 (Grafana)
+    mbeanregistry:
+      enabled: true
 
 management:
   endpoints:
@@ -132,6 +136,18 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    # p95·p99 응답 시간을 Prometheus에서 계산하려면 히스토그램 버킷이 필요합니다 (k6 개선 전후 비교, Grafana)
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        lettuce: true
+        hikaricp.connections.acquire: true
+      minimum-expected-value:
+        http.server.requests: 1ms
+        lettuce: 100us
+      maximum-expected-value:
+        http.server.requests: 10s
+        lettuce: 1s
 
 logging:
   pattern:
