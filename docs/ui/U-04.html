@@ -52,6 +52,7 @@ button{font:inherit;color:inherit}
 .perf::before{left:-9px}.perf::after{right:-9px}
 
 .tno{font-size:13px;font-weight:600;color:var(--mut)}
+.tno .dd{margin-left:10px;color:var(--ink2);font-weight:500}
 .tno b{font-family:var(--num);font-size:17px;color:var(--ink);font-weight:600;margin-right:2px}
 .route{display:grid;grid-template-columns:auto 1fr auto;align-items:end;gap:12px;margin-top:6px}
 .route .t{font-family:var(--num);font-size:36px;line-height:1;font-weight:600;font-variant-numeric:tabular-nums}
@@ -192,7 +193,7 @@ input.bad{border-color:var(--stop)}
   <section style="padding:22px 0 6px">
     <div style="font-size:15px;color:#B9C1D3">내 순번</div>
     <div class="q-num" id="qn">1,284</div>
-    <div style="margin-top:12px;font-size:16px">앞에 <b id="qa">1,283</b>명 · 예상 <b id="qt">2분 10초</b></div>
+    <div style="margin-top:12px;font-size:16px">앞에 <b id="qa">1,283</b>명이 있어요. 예상 대기 <b id="qt">2분 10초</b></div>
   </section>
   <div class="track" aria-hidden="true">
     <div class="rail"></div><div class="done" id="qd" style="width:62%"></div>
@@ -204,7 +205,7 @@ input.bad{border-color:var(--stop)}
     새로고침하거나 창을 닫았다 열어도 순번은 그대로예요.<br>차례가 오면 자동으로 좌석 선택으로 넘어가고, 그때부터 5분 안에 좌석을 골라야 해요.
   </div>
   <div class="stack qbtns" style="margin-top:auto">
-    <a class="btn" href="U-05.html" style="background:#FFD27A;color:var(--ink)">차례가 됐어요 (시안) · 좌석 선택</a>
+    <a class="btn" href="U-05.html" style="background:#FFD27A;color:var(--ink)">좌석 고르기 (시안: 차례가 됨)</a>
     <a class="btn ghost" href="U-03.html">대기 그만두기</a>
   </div>
 </main>

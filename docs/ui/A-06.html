@@ -49,7 +49,7 @@ body{font-size:14px;background:#F3F5F4}
 .head{display:flex;align-items:center;gap:12px;margin-bottom:20px}
 .head h1{font-size:22px;margin:0;font-weight:700}
 .head .crumb{font-size:13px;color:var(--mut)}
-.who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut)}
+.who{display:flex;align-items:center;gap:8px;white-space:nowrap;font-size:13px;color:var(--mut)}
 .who i{width:28px;height:28px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-style:normal;font-weight:700;font-size:12px}
 .ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
@@ -117,9 +117,9 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:18px 0}
 .tl li.gap::before{display:none}
 .gap{font-size:12px;color:var(--mut);padding:2px 10px 2px 0;margin-left:-4px}
 </style>
-<div class="head"><h1>케이스 C-1021</h1><span class="crumb"><a href="A-05.html" class="link">위험 사용자</a> / CI · 홍*동</span><span style="flex:1"></span><div class="who"><i>A</i>admin01 · 운영자</div></div>
+<div class="head"><h1>케이스 C-1021</h1><span class="crumb"><a href="A-05.html" class="link">위험 사용자</a> / CI 홍*동</span><span style="flex:1"></span><div class="who"><i>A</i>admin01 <span style="color:var(--faint)">운영자</span></div></div>
 <div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
-  <div class="kpi alarm"><div class="l">위험 점수</div><div class="n">92</div><div class="d">CI · 홍*동 (a91f…)</div></div>
+  <div class="kpi alarm"><div class="l">위험 점수</div><div class="n">92</div><div class="d">CI 홍*동 (a91f…)</div></div>
   <div class="kpi"><div class="l">같은 CI로 묶인 계정</div><div class="n">4</div><div class="d">모두 01-12 이후 가입</div></div>
   <div class="kpi"><div class="l">이 기간 예매</div><div class="n">8<span style="font-size:18px">매</span></div><div class="d">1인 제한 8매 꽉 참</div></div>
   <div class="kpi"><div class="l">상태</div><div class="n" style="font-size:22px;padding:6px 0"><span class="st amber" style="font-size:14px">OPEN</span></div><div class="d">3분 전 열림</div></div>
@@ -128,21 +128,21 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:18px 0}
   <section class="panel">
     <h2><span class="grow">타임라인 <span class="mut" style="font-weight:500">01-20 10:00:00 ~ 10:03:00</span></span><button class="btn ghost sm" type="button" disabled style="opacity:.6"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>재생 (P2)</button></h2>
     <ol class="tl">
-      <li class=""><span class="mono num">10:00:00.120</span><span class="who-c">계정1</span><span class="grow">QUEUE_ENTER · 101</span></li>
-      <li class="hl"><span class="mono num">10:00:00.140</span><span class="who-c">계정2</span><span class="grow">QUEUE_ENTER · 101</span><span class="st stop plain">MULTI_ACCOUNT_SYNC</span></li>
-      <li class="hl"><span class="mono num">10:00:00.151</span><span class="who-c">계정3</span><span class="grow">QUEUE_ENTER · 101</span><span class="faint" style="font-size:12px">31ms 안에 3계정</span></li>
-      <li class="gap">· · · 1분 12초</li>
-      <li class=""><span class="mono num">10:01:12.004</span><span class="who-c">계정1</span><span class="grow">SEAT_HOLD · 2A, 2B</span></li>
-      <li class="hl"><span class="mono num">10:01:12.090</span><span class="who-c">계정2</span><span class="grow">SEAT_HOLD · 3A, 3B</span><span class="st amber plain">FAST_CLICK</span></li>
-      <li class=""><span class="mono num">10:02:40.500</span><span class="who-c">계정1</span><span class="grow">PAY · 119,600원</span></li>
-      <li class="gap">· · · 38분</li>
+      <li class=""><span class="mono num">10:00:00.120</span><span class="who-c">계정1</span><span class="grow">QUEUE_ENTER 101</span></li>
+      <li class="hl"><span class="mono num">10:00:00.140</span><span class="who-c">계정2</span><span class="grow">QUEUE_ENTER 101</span><span class="st stop plain">MULTI_ACCOUNT_SYNC</span></li>
+      <li class="hl"><span class="mono num">10:00:00.151</span><span class="who-c">계정3</span><span class="grow">QUEUE_ENTER 101</span><span class="faint" style="font-size:12px">31ms 안에 3계정</span></li>
+      <li class="gap">1분 12초 뒤</li>
+      <li class=""><span class="mono num">10:01:12.004</span><span class="who-c">계정1</span><span class="grow">SEAT_HOLD 2A, 2B</span></li>
+      <li class="hl"><span class="mono num">10:01:12.090</span><span class="who-c">계정2</span><span class="grow">SEAT_HOLD 3A, 3B</span><span class="st amber plain">FAST_CLICK</span></li>
+      <li class=""><span class="mono num">10:02:40.500</span><span class="who-c">계정1</span><span class="grow">PAY 119,600원</span></li>
+      <li class="gap">38분 뒤</li>
       <li class="hl"><span class="mono num">10:41:03.000</span><span class="who-c">계정1</span><span class="grow">CANCEL</span><span class="st amber plain">CANCEL_AFTER_PAY</span></li>
     </ol>
   </section>
   <section class="panel">
     <h2>판정과 조치</h2>
-    <div class="field"><label for="jd">판정</label><select id="jd"><option>RESELLER · 되팔이</option><option>MACRO · 매크로</option><option>CANCEL_ABUSE · 취소 남용</option><option>NORMAL · 오탐</option></select></div>
-    <div class="field"><label for="ac">조치</label><select id="ac"><option>CONFIRM · 확정만</option><option>CLEAR · 해제</option><option>RESTRICT · 예매 제한</option><option>BAN · 이용 정지</option></select></div>
+    <div class="field"><label for="jd">판정</label><select id="jd"><option>RESELLER (되팔이)</option><option>MACRO (매크로)</option><option>CANCEL_ABUSE (취소 남용)</option><option>NORMAL (오탐)</option></select></div>
+    <div class="field"><label for="ac">조치</label><select id="ac"><option>CONFIRM (확정만)</option><option>CLEAR (해제)</option><option>RESTRICT (예매 제한)</option><option>BAN (이용 정지)</option></select></div>
     <div class="field"><label for="re">사유</label><textarea id="re" rows="3">같은 CI 4계정이 0.03초 안에 동시 진입·선점</textarea></div>
     <a class="btn wide" href="A-05.html">판정 저장</a>
     <hr class="sep">

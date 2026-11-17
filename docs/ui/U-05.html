@@ -52,6 +52,7 @@ button{font:inherit;color:inherit}
 .perf::before{left:-9px}.perf::after{right:-9px}
 
 .tno{font-size:13px;font-weight:600;color:var(--mut)}
+.tno .dd{margin-left:10px;color:var(--ink2);font-weight:500}
 .tno b{font-family:var(--num);font-size:17px;color:var(--ink);font-weight:600;margin-right:2px}
 .route{display:grid;grid-template-columns:auto 1fr auto;align-items:end;gap:12px;margin-top:6px}
 .route .t{font-family:var(--num);font-size:36px;line-height:1;font-weight:600;font-variant-numeric:tabular-nums}
@@ -213,7 +214,7 @@ input.bad{border-color:var(--stop)}
   <aside class="c2 stick">
     <div class="timer" style="order:1"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg><span class="grow">좌석을 고를 수 있는 시간</span><b id="tm">4:12</b></div>
     <div class="card" style="padding:14px 16px;order:2">
-      <div class="row"><span class="tno grow"><b>101</b> 열차 · 2월 6일(토)</span></div>
+      <div class="row"><span class="tno grow"><b>101</b> 열차<span class="dd">2월 6일(토)</span></span></div>
       <div class="d-only"><div class="route sm"><div><div class="t">06:00</div><div class="s">서울</div></div><div class="mid"><i></i><span>2시간 40분</span></div><div class="end"><div class="t">08:40</div><div class="s">부산</div></div></div></div>
       <div class="m-only" style="font-size:14px;margin-top:2px">서울 06:00 → 부산 08:40</div>
       <div class="row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line2)"><span class="grow"><b>어른</b> <span class="mut" style="font-size:13px">1인 최대 8매</span></span><div class="qty" id="q" data-max="8"><button type="button" data-q="-1" aria-label="한 명 빼기">−</button><b>2</b><button type="button" data-q="1" aria-label="한 명 더하기">+</button></div></div>

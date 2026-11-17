@@ -52,6 +52,7 @@ button{font:inherit;color:inherit}
 .perf::before{left:-9px}.perf::after{right:-9px}
 
 .tno{font-size:13px;font-weight:600;color:var(--mut)}
+.tno .dd{margin-left:10px;color:var(--ink2);font-weight:500}
 .tno b{font-family:var(--num);font-size:17px;color:var(--ink);font-weight:600;margin-right:2px}
 .route{display:grid;grid-template-columns:auto 1fr auto;align-items:end;gap:12px;margin-top:6px}
 .route .t{font-family:var(--num);font-size:36px;line-height:1;font-weight:600;font-variant-numeric:tabular-nums}
@@ -193,7 +194,7 @@ input.bad{border-color:var(--stop)}
   </section>
 
   <article class="ticket" data-state="ok wait">
-    <div class="row"><span class="tno grow"><b>101</b> 열차 · 2월 6일(토)</span><span class="st go" data-state="ok">확정</span><span class="st amber" data-state="wait" hidden>확인 중</span></div>
+    <div class="row"><span class="tno grow"><b>101</b> 열차<span class="dd">2월 6일(토)</span></span><span class="st go" data-state="ok">확정</span><span class="st amber" data-state="wait" hidden>확인 중</span></div>
     <div class="route sm"><div><div class="t">06:00</div><div class="s">서울</div></div><div class="mid"><i></i><span>2시간 40분</span></div><div class="end"><div class="t">08:40</div><div class="s">부산</div></div></div>
     <div class="kv" style="margin-top:8px"><span>좌석</span><span>2호차 2A, 2B</span></div>
     <div class="kv"><span>결제 금액</span><span>119,600원</span></div>

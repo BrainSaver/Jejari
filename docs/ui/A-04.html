@@ -49,7 +49,7 @@ body{font-size:14px;background:#F3F5F4}
 .head{display:flex;align-items:center;gap:12px;margin-bottom:20px}
 .head h1{font-size:22px;margin:0;font-weight:700}
 .head .crumb{font-size:13px;color:var(--mut)}
-.who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut)}
+.who{display:flex;align-items:center;gap:8px;white-space:nowrap;font-size:13px;color:var(--mut)}
 .who i{width:28px;height:28px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-style:normal;font-weight:700;font-size:12px}
 .ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
@@ -106,15 +106,15 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:18px 0}
 <div class="grp">운영</div><a href="A-04.html" class="on" aria-current="page"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg>실시간 현황</a><a href="A-05.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6z"/><path d="M12 8.5v4M12 15.5v.3"/></svg>위험 사용자</a><a href="A-06.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>케이스 상세</a>
 <div class="grp">기준·설정</div><a href="A-02.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3.5" width="12" height="13" rx="3"/><path d="M6 11h12M9 20.5l1.5-4M15 20.5l-1.5-4M9 14v.3M15 14v.3"/></svg>기준 데이터</a><a href="A-03.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>운행·행사</a><a href="A-07.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3L5.5 5.5"/></svg>운영 설정</a>
 <a class="out" href="A-01.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/></svg>로그아웃</a></nav><main class="main">
-<div class="head"><h1>실시간 예매 현황</h1><select style="width:auto;min-height:34px;margin-left:8px"><option>101 · 02-06 (토) 서울→부산</option><option>103 · 02-06 (토) 서울→부산</option></select><span style="flex:1"></span><div class="who"><i>A</i>admin01 · 운영자</div></div>
-<div class="row" style="margin:-8px 0 16px;font-size:13px;color:var(--mut)"><span class="st go">실시간</span><span>10초마다 갱신 · 마지막 10:42:30</span><span class="grow"></span><a class="btn ghost sm" href="#"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>Grafana</a></div>
+<div class="head"><h1>실시간 예매 현황</h1><select style="width:auto;min-height:34px;margin-left:8px"><option>101 열차, 02-06 (토) 서울→부산</option><option>103 열차, 02-06 (토) 서울→부산</option></select><span style="flex:1"></span><div class="who"><i>A</i>admin01 <span style="color:var(--faint)">운영자</span></div></div>
+<div class="row" style="margin:-8px 0 16px;font-size:13px;color:var(--mut)"><span class="st go">실시간</span><span>10초마다 갱신, 마지막 10:42:30</span><span class="grow"></span><a class="btn ghost sm" href="#"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>Grafana</a></div>
 <div class="kpis">
   <div class="kpi"><div class="l">판매</div><div class="n">318</div><div class="d">412석 중 77%</div></div>
   <div class="kpi"><div class="l">선점 중 (결제 대기)</div><div class="n">54</div><div class="d">10분 기한</div></div>
-  <div class="kpi"><div class="l">남은 좌석</div><div class="n">40</div><div class="d">특실 3 · 일반실 37</div></div>
+  <div class="kpi"><div class="l">남은 좌석</div><div class="n">40</div><div class="d">특실 3, 일반실 37</div></div>
   <div class="kpi"><div class="l">대기열</div><div class="n">12,480</div><div class="d">예상 소진 1분 2초</div></div>
   <div class="kpi"><div class="l">입장 속도</div><div class="n">200<span style="font-size:18px">/초</span></div><div class="d">설정값 queue.admit_per_sec</div></div>
-  <div class="kpi alarm"><div class="l">결제 결과 모름</div><div class="n">2</div><div class="d">30분 넘음 · 직접 처리</div></div>
+  <div class="kpi alarm"><div class="l">결제 결과 모름</div><div class="n">2</div><div class="d">30분 넘어 직접 처리</div></div>
 </div>
 <section class="panel">
   <h2><span class="grow">분당 예약·결제·취소</span><span class="row" style="font-size:12.5px;font-weight:500;color:var(--mut);gap:14px"><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--ink);margin-right:5px"></i>예약</span><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--go);margin-right:5px"></i>결제</span><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--stop);margin-right:5px"></i>취소</span></span></h2>
@@ -133,7 +133,7 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:18px 0}
     <h2>예약 강제 취소</h2>
     <div class="field"><label for="rv">예약 번호</label><input id="rv" value="R-501233"></div>
     <div class="field"><label for="rs">사유</label><input id="rs" value="부정 예매 확정 케이스 C-1021"><span class="hint">필수예요. 감사 기록에 남아요.</span></div>
-    <button class="btn danger wide" type="button" data-confirm="한 번 더 누르면 강제 취소" data-done="취소했어요 · 좌석 반환 중">강제 취소</button>
+    <button class="btn danger wide" type="button" data-confirm="한 번 더 누르면 강제 취소" data-done="취소했어요. 좌석을 돌려놓는 중">강제 취소</button>
   </section>
 </div></main></div>
 <script>

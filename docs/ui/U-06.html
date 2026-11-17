@@ -52,6 +52,7 @@ button{font:inherit;color:inherit}
 .perf::before{left:-9px}.perf::after{right:-9px}
 
 .tno{font-size:13px;font-weight:600;color:var(--mut)}
+.tno .dd{margin-left:10px;color:var(--ink2);font-weight:500}
 .tno b{font-family:var(--num);font-size:17px;color:var(--ink);font-weight:600;margin-right:2px}
 .route{display:grid;grid-template-columns:auto 1fr auto;align-items:end;gap:12px;margin-top:6px}
 .route .t{font-family:var(--num);font-size:36px;line-height:1;font-weight:600;font-variant-numeric:tabular-nums}
@@ -189,7 +190,7 @@ input.bad{border-color:var(--stop)}
   <div class="c1">
     <div class="alert amber" data-state="wl" style="order:1"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8v.3"/></svg><span>취소표 제안으로 잡아 둔 좌석이에요. 기한 안에 결제하면 확정돼요.</span></div>
     <article class="ticket" style="order:3">
-      <div class="row"><span class="tno grow"><b>101</b> 열차 · 2월 6일(토)</span><span class="st amber">결제 대기</span></div>
+      <div class="row"><span class="tno grow"><b>101</b> 열차<span class="dd">2월 6일(토)</span></span><span class="st amber">결제 대기</span></div>
       <div class="route sm"><div><div class="t">06:00</div><div class="s">서울</div></div><div class="mid"><i></i><span>2시간 40분</span></div><div class="end"><div class="t">08:40</div><div class="s">부산</div></div></div>
       <div class="perf"></div>
       <div class="kv"><span>좌석</span><span>2호차 2A, 2B</span></div>

@@ -49,7 +49,7 @@ body{font-size:14px;background:#F3F5F4}
 .head{display:flex;align-items:center;gap:12px;margin-bottom:20px}
 .head h1{font-size:22px;margin:0;font-weight:700}
 .head .crumb{font-size:13px;color:var(--mut)}
-.who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut)}
+.who{display:flex;align-items:center;gap:8px;white-space:nowrap;font-size:13px;color:var(--mut)}
 .who i{width:28px;height:28px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-style:normal;font-weight:700;font-size:12px}
 .ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
@@ -106,7 +106,7 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:18px 0}
 <div class="grp">운영</div><a href="A-04.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg>실시간 현황</a><a href="A-05.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6z"/><path d="M12 8.5v4M12 15.5v.3"/></svg>위험 사용자</a><a href="A-06.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>케이스 상세</a>
 <div class="grp">기준·설정</div><a href="A-02.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3.5" width="12" height="13" rx="3"/><path d="M6 11h12M9 20.5l1.5-4M15 20.5l-1.5-4M9 14v.3M15 14v.3"/></svg>기준 데이터</a><a href="A-03.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>운행·행사</a><a href="A-07.html" class="on" aria-current="page"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3L5.5 5.5"/></svg>운영 설정</a>
 <a class="out" href="A-01.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/></svg>로그아웃</a></nav><main class="main">
-<div class="head"><h1>운영 설정</h1><span style="flex:1"></span><div class="who"><i>A</i>admin01 · 운영자</div></div>
+<div class="head"><h1>운영 설정</h1><span style="flex:1"></span><div class="who"><i>A</i>admin01 <span style="color:var(--faint)">운영자</span></div></div>
 <div class="cols">
   <section class="panel">
     <h2><span class="grow">정책 값</span><input placeholder="키 찾기" style="width:200px;min-height:32px"></h2>
@@ -130,7 +130,7 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:18px 0}
     <div class="alert amber" style="margin-bottom:14px">300으로 올리면 결제 대기 선점이 함께 늘어나요. DB 쓰기 여유를 먼저 확인하세요.</div>
     <a class="btn wide" href="#">저장하고 v2로 올리기</a>
     <hr class="sep">
-    <div class="mut" style="font-size:13px">변경 이력 · 아직 바꾼 적 없어요</div>
+    <div class="mut" style="font-size:13px">변경 이력이 아직 없어요</div>
   </section>
 </div></main></div>
 <script>

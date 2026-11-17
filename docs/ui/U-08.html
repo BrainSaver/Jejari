@@ -52,6 +52,7 @@ button{font:inherit;color:inherit}
 .perf::before{left:-9px}.perf::after{right:-9px}
 
 .tno{font-size:13px;font-weight:600;color:var(--mut)}
+.tno .dd{margin-left:10px;color:var(--ink2);font-weight:500}
 .tno b{font-family:var(--num);font-size:17px;color:var(--ink);font-weight:600;margin-right:2px}
 .route{display:grid;grid-template-columns:auto 1fr auto;align-items:end;gap:12px;margin-top:6px}
 .route .t{font-family:var(--num);font-size:36px;line-height:1;font-weight:600;font-variant-numeric:tabular-nums}
@@ -175,7 +176,7 @@ input.bad{border-color:var(--stop)}
 
   <article class="ticket h" style="box-shadow:0 0 0 2px var(--amber) inset">
     <div>
-      <div class="row"><span class="tno grow"><b>201</b> 열차 · 2월 8일(월)</span><span class="st amber">결제 기한 07:12</span></div>
+      <div class="row"><span class="tno grow"><b>201</b> 열차<span class="dd">2월 8일(월)</span></span><span class="st amber">결제 기한 07:12</span></div>
       <div class="route sm"><div><div class="t">18:00</div><div class="s">부산</div></div><div class="mid"><i></i><span>2시간 41분</span></div><div class="end"><div class="t">20:41</div><div class="s">서울</div></div></div>
     </div>
     <div class="perf"></div>
@@ -188,7 +189,7 @@ input.bad{border-color:var(--stop)}
 
   <article class="ticket h">
     <div>
-      <div class="row"><span class="tno grow"><b>101</b> 열차 · 2월 6일(토)</span><span class="st go">확정</span></div>
+      <div class="row"><span class="tno grow"><b>101</b> 열차<span class="dd">2월 6일(토)</span></span><span class="st go">확정</span></div>
       <div class="route sm"><div><div class="t">06:00</div><div class="s">서울</div></div><div class="mid"><i></i><span>2시간 40분</span></div><div class="end"><div class="t">08:40</div><div class="s">부산</div></div></div>
     </div>
     <div class="perf"></div>
@@ -196,13 +197,13 @@ input.bad{border-color:var(--stop)}
       <div class="kv"><span>좌석</span><span>2호차 2A, 2B</span></div>
       <div class="kv"><span>금액</span><span>119,600원</span></div>
       <div class="kv"><span>승차권</span><span class="num" style="font-size:16px;font-weight:600">T-20270206-000123</span></div>
-      <div class="row" style="margin-top:8px"><span class="grow mut" style="font-size:12.5px">출발 3일 2시간 전<br>지금 취소하면 수수료 5%</span><button class="btn ghost sm" type="button" data-open="cancel">취소</button></div>
+      <div class="row" style="margin-top:8px"><span class="grow mut" style="font-size:12.5px">출발 3일 2시간 전이라<br>지금 취소하면 수수료 5%</span><button class="btn ghost sm" type="button" data-open="cancel">취소</button></div>
     </div>
   </article>
 
   <article class="ticket h" style="opacity:.7">
     <div>
-      <div class="row"><span class="tno grow"><b>305</b> 열차 · 1월 31일(일)</span><span class="st">만료</span></div>
+      <div class="row"><span class="tno grow"><b>305</b> 열차<span class="dd">1월 31일(일)</span></span><span class="st">만료</span></div>
       <div class="route sm"><div><div class="t">09:10</div><div class="s">용산</div></div><div class="mid"><i></i><span>2시간 52분</span></div><div class="end"><div class="t">12:02</div><div class="s">광주송정</div></div></div>
     </div>
     <div class="perf"></div>
@@ -218,7 +219,7 @@ input.bad{border-color:var(--stop)}
     <div class="kv total"><span>돌려받을 금액</span><span class="num" style="font-size:22px">113,620원</span></div>
     <p class="mut" style="font-size:13px;margin:10px 0 16px">취소한 좌석은 취소표를 기다리는 분께 먼저 제안돼요.</p>
     <div class="stack">
-      <button class="btn warn" type="button" data-confirm="한 번 더 누르면 취소돼요" data-done="취소했어요 · 환불 진행 중">예매 취소</button>
+      <button class="btn warn" type="button" data-confirm="한 번 더 누르면 취소돼요" data-done="취소했어요. 환불을 진행하고 있어요">예매 취소</button>
       <button class="btn ghost" type="button" data-close>그대로 둘게요</button>
     </div>
   </section>
