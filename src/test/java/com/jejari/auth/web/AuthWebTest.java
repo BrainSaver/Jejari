@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.jejari.auth.ActorType;
+import com.jejari.auth.AdminRole;
 import com.jejari.auth.AuthErrorCode;
 import com.jejari.auth.AuthPrincipal;
 import com.jejari.auth.jwt.AccessTokenIssuer;
@@ -66,7 +67,8 @@ class AuthWebTest {
 	}
 
 	String bearer(ActorType type, long id) {
-		return "Bearer " + issuer.issue(type, id, SID).value();
+		// 관리자 토큰은 세부 권한(adm)이 있어야 유효 (AUTH-05)
+		return "Bearer " + issuer.issue(type, id, SID, type == ActorType.ADMIN ? AdminRole.VIEWER : null).value();
 	}
 
 	@Test

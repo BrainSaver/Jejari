@@ -59,6 +59,14 @@
 - 감수한 단점: 앱 여러 대에서만 드러나는 문제는 공용 서버 전까지 못 봄 → [멀티 인스턴스 대비 코딩 규칙](features/멀티인스턴스-코딩-규칙.md)으로 미리 예방, 고칠 시간 1주를 남기려 2주차 초로
 - 관련 코드·커밋: `da02891`
 
+### 결정 6. 관리자 로그인은 회원 로그인 부품을 재사용하고, ERD는 늘리지 않음
+
+- 상황: AUTH-05. admin_user에는 회원(member_credential)과 달리 `pepper_key_id`·실패 횟수 컬럼이 없고, 시퀀스도 없음
+- 고려한 대안: ERD에 컬럼 추가 요청(v18 대기) / 관리자 전용 잠금·기록을 따로 구현 / 시드 SQL로 첫 계정
+- 선택과 이유: 잠금·시도 제한은 Redis라 컬럼이 필요 없음 → 강다인 님 `AuthLimiter`·`PasswordHasher`·`LoginAttemptLog`를 그대로 사용. pepper는 현재 값으로 고정(관리자는 몇 명뿐). 첫 계정은 해시가 각자 pepper에 묶여 있어 시드로 공유 불가 → `.env` 값으로 기동 때 1회 생성. 세부 권한은 토큰(`adm`)에만 먼저 담고 관리자 API가 생길 때 `@PreAuthorize`
+- 감수한 단점: pepper를 바꾸면 관리자 비밀번호 재설정 필요. 비활성화는 최대 15분(다음 재발급) 뒤 반영
+- 관련 코드·커밋: `auth/admin/*`, [관리자-로그인](features/관리자-로그인.md)
+
 ## 4. 만든 기능
 
 | 기능 | 문서 |
@@ -66,6 +74,7 @@
 | 공통 실패 응답 `{code, message, traceId}` · traceId 필터 | [공통-실패응답-traceId](features/공통-실패응답-traceId.md) |
 | JWT 인증·토큰 재발급·로그아웃 (AUTH-03 발급, AUTH-04) | [JWT-인증](features/JWT-인증.md) |
 | 로컬 인프라(Docker Compose) · 기동 점검 · CI | [로컬-인프라](features/로컬-인프라.md) |
+| 관리자 로그인·세부 권한 (AUTH-05) | [관리자-로그인](features/관리자-로그인.md) |
 | 멀티 인스턴스 대비 코딩 규칙 (초안, 팀 확인 전) | [멀티인스턴스-코딩-규칙](features/멀티인스턴스-코딩-규칙.md) |
 
 ## 5. 다른 파트와의 연결
@@ -73,8 +82,8 @@
 | 상대 | 주고받는 것 | 약속한 내용 |
 |---|---|---|
 | 전체 | `BusinessException`·`ErrorCode`, `AuthPrincipal`, `Clock` | 실패는 도메인별 ErrorCode enum으로 던지기, 로그인 사용자는 `@AuthenticationPrincipal AuthPrincipal`, 시각은 `now(clock)` |
-| D 강다인 | 로그인 검증 ↔ 토큰 발급 | 비밀번호(Argon2id)·잠금·`login_attempt`는 D, 검증 후 `authTokenService.issue(MEMBER, memberId, clientInfo)` + `tokenResponses.ok()`는 E. `PasswordHasher`는 AUTH-05 관리자 로그인에서 재사용 |
-| A 김성원 | 대기열 개발 모드 · Redis | 개발 모드(`X-Member-Id`)는 로컬·부하 테스트 전용, 공용 서버에선 꺼야 함. Redis 즉시 실패(`RedisFailFastConfig`)와 기동 점검은 함께 동작 |
+| D 강다인 | 로그인 검증 ↔ 토큰 발급 | 비밀번호(Argon2id)·잠금·`login_attempt`는 D, 검증 후 `authTokenService.issue(MEMBER, memberId, clientInfo)` + `tokenResponses.ok()`는 E. **✅ 연동 완료** (`LoginService` → `AuthTokenService`, `MemberAuthController` → `tokenResponses.ok()`), 2026-11-16 가입 → 로그인 → 대기열 진입까지 실제로 확인. **AUTH-05에서 `PasswordHasher`·`AuthLimiter`·`AuthPolicy`·`LoginAttemptLog` 재사용**, `LoginAttemptLog.recordAdmin()` 추가(기존 `record()` 동작 그대로, 문서에 `actor_type` 필드가 함께 남음) |
+| A 김성원 | 대기열 개발 모드 · Redis | 개발 모드(`X-Member-Id`)는 로컬·부하 테스트 전용, 공용 서버에선 꺼야 함. Redis 즉시 실패(`RedisFailFastConfig`)와 기동 점검은 함께 동작. AUTH-05에서 `Purpose.ADMIN_LOGIN`(enum 끝에 추가, 기존 해시 영향 없음)과 정규화 규칙 추가 |
 | B 강동균 | ERD DDL · 시드 | Oracle 첫 기동 때 DDL → 시드 자동 적재. 스키마가 바뀌면 볼륨 재생성 |
 | 팀장 길동현 | 결정 요청 | 공용 서버 후보·사양, GitHub 결제 잠금, 기능설계서 9장 에러 코드 3개 추가, 코딩 규칙 공용 문서화 |
 
@@ -84,6 +93,7 @@
 |---|---|---|
 | 2026-11-16 | [mongo-init 인덱스 생성 실패로 Mongo 종료](troubleshooting/20261116-mongo-init-인덱스-생성-실패.md) | 첫 기동 실패 → 정상 |
 | 2026-11-16 | 만료된 Bearer를 단 채 재발급하면 영원히 401 (인증 경로에서 Bearer 무시로 해결) | [JWT-인증](features/JWT-인증.md) "왜 이렇게 했나" |
+| 2026-11-17 | 메서드 보안을 켜면 권한 거부가 500으로 나옴 → 403 공통 형식 핸들러 추가 | [관리자-로그인 개발일지](devlog/20261117-관리자-로그인.md) |
 
 ## 7. 예상 질문
 

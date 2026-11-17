@@ -3,6 +3,7 @@ package com.jejari.common.security;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
@@ -23,9 +24,12 @@ import com.jejari.common.error.ErrorResponseWriter;
  *   <li>Authorization: Bearer {액세스 토큰}을 Spring Security 리소스 서버가 검증하고
  *       {@link JwtPrincipalConverter}가 AuthPrincipal로 바꿉니다.</li>
  *   <li>401·403도 { code, message, traceId } 형식.</li>
+ *   <li>메서드 보안: 관리자 세부 권한은 {@code @PreAuthorize("hasAuthority('ADMIN_REVIEWER')")}처럼 붙임
+ *       (SUPERVISOR는 하위 권한을 모두 가짐, {@link com.jejari.auth.AdminRole}). 거부되면 GlobalExceptionHandler가 403으로.</li>
  * </ul>
  */
 @Configuration
+@EnableMethodSecurity
 public class SecurityConfig {
 
 	@Bean
@@ -45,6 +49,8 @@ public class SecurityConfig {
 						.requestMatchers("/error").permitAll()
 						// 열차 조회(TRN-01~03)는 비회원도 (기능설계서 2장). 좌석 배치도 /runs/{runId}/seats는 여전히 로그인 + 입장 토큰
 						.requestMatchers(HttpMethod.GET, "/api/v1/stations", "/api/v1/runs", "/api/v1/runs/{runId}").permitAll()
+						// 관리자 로그인(AUTH-05)만 토큰 없이. 나머지 관리자 API는 ADMIN, 세부 권한은 @PreAuthorize("hasAuthority('ADMIN_REVIEWER')") 등
+						.requestMatchers(HttpMethod.POST, "/api/v1/admin/auth/login").permitAll()
 						.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
 						.anyRequest().authenticated())
 				.oauth2ResourceServer(rs -> rs
