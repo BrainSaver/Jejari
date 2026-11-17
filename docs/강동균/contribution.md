@@ -111,6 +111,7 @@
 | RSV-03 만료 스캐너 · RSV-05 결제 전 취소 · 결제 실패 해제(Saga용) | [좌석해제-만료-취소](features/좌석해제-만료-취소.md) |
 | TRN-01~03 역·운행 검색·운임, RSV-01 좌석 배치도 (seatmap 캐시, 행동 로그 4종) | [열차조회-좌석배치도](features/열차조회-좌석배치도.md) |
 | 결제·확정 취소가 부르는 좌석 단계 (PAY-01 마감 연장, PAY-02 좌석 확정, CNL-02 좌석 반환) | [좌석-결제취소-연결](features/좌석-결제취소-연결.md) |
+| ADM-02 판매 오픈 스케줄러 (train_run.status 시각 전이) | [판매오픈-스케줄러](features/판매오픈-스케줄러.md) |
 
 ## 5. 다른 파트와의 연결
 
@@ -128,6 +129,8 @@
 | D 강다인 | ERD v13 | `risk_score_history_seq` 시퀀스 추가 → 점수 저장 때 이력도 기록 |
 | D 강다인 | 행동 로그 | 내 API 4곳에 `BehaviorLog.mark`: VIEW_TRAIN·VIEW_SEAT·SEAT_HOLD·CANCEL. 실패 요청도 `errorCode`와 함께 남김 (MongoDB 적재 확인) |
 | D 강다인 | ERD v15 | 회원가입·로그인용 시퀀스 2개, Redis 키 3개, `app_policy` 한도 3개, `login_attempt.result` BANNED |
+| A 김성원 | 판매 오픈 자동화 | `JdbcOnSaleRunProvider`가 보는 운행이 시각에 맞춰 늘고 줄어든다. `9003`은 오픈 시각(내일 07:00)에 자동으로 열림 |
+| E 조영준 | 부하 시나리오 | 오픈 순간 트래픽을 실제로 재현할 수 있다 — `sale_open_at`을 몇 초 뒤로 넣으면 그 시각에 열림 |
 
 ## 6. 트러블슈팅
 
