@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.jejari.auth.AuthPrincipal;
 import com.jejari.common.error.BusinessException;
 import com.jejari.common.error.CommonErrorCode;
+import com.jejari.reservation.ReservationCancelService;
+import com.jejari.reservation.ReservationCancelService.Quote;
 import com.jejari.reservation.ReservationQueryService;
 import com.jejari.reservation.ReservationQueryService.Detail;
 import com.jejari.reservation.ReservationQueryService.Page;
@@ -27,6 +29,7 @@ import com.jejari.reservation.ReservationQueryService.Status;
  * <pre>
  * GET /api/v1/reservations?status=CONFIRMED,CANCELED&amp;before=1024&amp;size=20   내 예약 목록 (최근 것 먼저)
  * GET /api/v1/reservations/{id}                                         상세 (좌석·승차권·결제·취소 가능 여부·예상 수수료)
+ * GET /api/v1/reservations/{id}/cancel-quote                            CNL-01 수수료 미리보기 (확정 예약만)
  * </pre>
  *
  * 응답에 승차권 번호·결제 상태가 있어 브라우저·프록시에 캐시하지 않는다 ({@code Cache-Control: no-store}).
@@ -36,9 +39,11 @@ import com.jejari.reservation.ReservationQueryService.Status;
 public class ReservationQueryController {
 
 	private final ReservationQueryService service;
+	private final ReservationCancelService cancels;
 
-	public ReservationQueryController(ReservationQueryService service) {
+	public ReservationQueryController(ReservationQueryService service, ReservationCancelService cancels) {
 		this.service = service;
+		this.cancels = cancels;
 	}
 
 	@GetMapping
@@ -55,6 +60,12 @@ public class ReservationQueryController {
 	@GetMapping("/{reservationId}")
 	public ResponseEntity<Detail> detail(@AuthenticationPrincipal AuthPrincipal me, @PathVariable long reservationId) {
 		return noStore(service.detail(me.memberId(), reservationId));
+	}
+
+	/** CNL-01 취소 수수료 미리보기 (확정 예약만). 실제 취소 때 서버가 같은 계산을 다시 한다 */
+	@GetMapping("/{reservationId}/cancel-quote")
+	public ResponseEntity<Quote> cancelQuote(@AuthenticationPrincipal AuthPrincipal me, @PathVariable long reservationId) {
+		return noStore(cancels.quote(me.memberId(), reservationId));
 	}
 
 	/** "CONFIRMED,CANCELED" → 집합. 모르는 값이 하나라도 있으면 400 (조용히 무시하면 "전체"로 보일 수 있음) */

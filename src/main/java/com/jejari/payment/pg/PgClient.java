@@ -46,4 +46,23 @@ public interface PgClient {
 	 * @return 막힌 것이 확인되면 true. 이미 승인됐거나 확인할 수 없으면 false
 	 */
 	boolean blockOrder(long orderId);
+
+	/**
+	 * @param done       환불이 끝났으면 true
+	 * @param refundTxId PG 환불 거래 ID (cancellation.refund_pg_tx_id)
+	 * @param reason     실패 사유
+	 */
+	record RefundResult(boolean done, String refundTxId, String reason) {
+	}
+
+	/**
+	 * 승인된 결제를 환불합니다 (CNL-02 확정 취소, 강다인 추가). {@code refundKey}가 같은 요청은 한 번만 처리합니다
+	 * (실제 PG의 환불 요청 키와 같은 역할). 그래서 재시도해도 두 번 환불되지 않습니다.
+	 *
+	 * @param orderId   payment_id
+	 * @param pgTxId    승인 거래 ID (payment.pg_tx_id)
+	 * @param amount    환불액 (원). 0이면 PG를 부르지 않아도 됩니다
+	 * @param refundKey 멱등 키 (예: "cancel:" + cancel_id)
+	 */
+	RefundResult refund(long orderId, String pgTxId, long amount, String refundKey);
 }

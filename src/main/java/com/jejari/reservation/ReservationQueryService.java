@@ -13,6 +13,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -82,9 +83,10 @@ public class ReservationQueryService {
 	 * @param refund        예상 환불액
 	 * @param feeRate       적용 수수료율
 	 * @param minutesBeforeDeparture 출발까지 남은 분
+	 * @param policyId      적용한 cancel_fee_policy (취소 기록용, 응답에는 안 나감)
 	 */
 	public record CancelInfo(boolean cancelable, String reason, long fee, long refund, BigDecimal feeRate,
-			Long minutesBeforeDeparture) {
+			Long minutesBeforeDeparture, @JsonIgnore Long policyId) {
 	}
 
 	public record Detail(Summary summary, List<Seat> seats, Payment payment, Cancellation cancellation,
@@ -199,13 +201,13 @@ public class ReservationQueryService {
 	private CancelInfo cancelInfo(Summary s, Long saleEventId, List<Seat> seats, Payment payment) {
 		switch (s.status()) {
 			case "HOLD":
-				return new CancelInfo(true, null, 0, 0, null, null); // 결제 전 취소: 수수료 없음 (RSV-05)
+				return new CancelInfo(true, null, 0, 0, null, null, null); // 결제 전 취소: 수수료 없음 (RSV-05)
 			case "PAYMENT_PENDING":
-				return new CancelInfo(false, "PAYMENT_IN_PROGRESS", 0, 0, null, null);
+				return new CancelInfo(false, "PAYMENT_IN_PROGRESS", 0, 0, null, null, null);
 			case "CONFIRMED":
 				break;
 			default:
-				return new CancelInfo(false, "ALREADY_CLOSED", 0, 0, null, null);
+				return new CancelInfo(false, "ALREADY_CLOSED", 0, 0, null, null, null);
 		}
 		long paid = payment != null && "APPROVED".equals(payment.status()) ? payment.amount() : s.totalAmount();
 		Quote q = CancelFeeCalculator.quote(bands(saleEventId), s.from().time(), clock.instant(),
@@ -216,9 +218,9 @@ public class ReservationQueryService {
 			}
 			String code = q.reason() == CancelFeeCalculator.Reason.AFTER_DEPARTURE_LIMIT ? "CANCEL_NOT_ALLOWED"
 					: q.reason().name();
-			return new CancelInfo(false, code, 0, 0, null, q.minutesBeforeDeparture());
+			return new CancelInfo(false, code, 0, 0, null, q.minutesBeforeDeparture(), null);
 		}
-		return new CancelInfo(true, null, q.fee(), q.refund(), q.feeRate(), q.minutesBeforeDeparture());
+		return new CancelInfo(true, null, q.fee(), q.refund(), q.feeRate(), q.minutesBeforeDeparture(), q.policyId());
 	}
 
 	/** 운행의 행사 정책. 행사가 없거나 그 행사 정책이 비었으면 상시 정책(sale_event_id NULL) */
