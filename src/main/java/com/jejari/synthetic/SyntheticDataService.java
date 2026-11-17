@@ -231,14 +231,32 @@ public class SyntheticDataService {
 			jdbc.batchUpdate("""
 					INSERT INTO member (member_id, email, ci_hash, name, phone_enc, phone_hash, enc_key_id, status, created_at)
 					VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)""", members);
-			jdbc.batchUpdate("""
-					INSERT INTO payment_method (method_id, member_id, method_hash, method_type, card_last4)
-					VALUES (payment_method_seq.NEXTVAL, ?, ?, 'CARD', ?)""", cards);
+			for (Object[] c : cards) {
+				insertCard((Long) c[0], (String) c[1], (String) c[2]);
+			}
 			jdbc.batchUpdate("""
 					INSERT INTO member_device (device_hash, member_id, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?)""",
 					devices);
 		});
 		return ciOf;
+	}
+
+	/**
+	 * 결제 수단 한 행. v19 전 행이 있는 DB에서는 payment_method_seq 번호가 옛 행과 겹칠 수 있어 다음 번호로 넘어간다
+	 * (길동현 님 PaymentStartTx와 같은 방식, Oracle은 실패한 문장만 되돌림).
+	 */
+	private void insertCard(long memberId, String hash, String last4) {
+		for (int i = 0; i < 10_000; i++) {
+			long id = jdbc.queryForObject("SELECT payment_method_seq.NEXTVAL FROM dual", Long.class);
+			try {
+				jdbc.update("INSERT INTO payment_method (method_id, member_id, method_hash, method_type, card_last4) VALUES (?, ?, ?, 'CARD', ?)",
+						id, memberId, hash, last4);
+				return;
+			} catch (org.springframework.dao.DuplicateKeyException e) {
+				// 옛 행과 겹침 → 다음 번호
+			}
+		}
+		throw new IllegalStateException("결제 수단 번호를 받지 못함");
 	}
 
 	/** 태그 전용 출발한 운행 (열차 1, 과거 날짜). 과거 구매·취소는 여기에 */
