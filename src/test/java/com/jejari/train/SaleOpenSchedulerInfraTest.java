@@ -70,7 +70,8 @@ class SaleOpenSchedulerInfraTest {
 
 	@AfterEach
 	void cleanUp() {
-		jdbc.update("DELETE FROM train_run WHERE run_id >= ?", BASE);
+		// 관리자 화면 운행(1000000~)은 정차 시각이 붙어 있어 지우면 FK에 걸린다. 테스트 대역만 지운다
+		jdbc.update("DELETE FROM train_run WHERE run_id >= ? AND run_id < 1000000", BASE);
 	}
 
 	/**

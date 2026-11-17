@@ -55,6 +55,13 @@ tasks.named('test') {
 	}
 }
 
+// 테스트 중에는 알림 소비자·기한 임박 스캐너를 끕니다. 켜 두면 다른 테스트의 회원에게 알림 행이 생겨
+// 그 테스트가 끝날 때 회원을 지우다 FK 오류가 납니다. 알림 테스트는 처리 메서드를 직접 부릅니다.
+tasks.withType(Test).configureEach {
+	systemProperty 'jejari.notification.consumer-enabled', 'false'
+	systemProperty 'jejari.notification.reminder-enabled', 'false'
+}
+
 tasks.register('infraTest', Test) {
 	description = '인프라(Redis 등)가 떠 있어야 하는 통합 테스트 (@Tag("infra"))'
 	group = 'verification'
@@ -65,3 +72,20 @@ tasks.register('infraTest', Test) {
 	}
 	shouldRunAfter tasks.named('test')
 }
+
+// 프론트엔드 (frontend/, React + Vite). `npm run build`로 만든 dist/를 jar의 static/에 넣어 앱과 같은 출처로 내보낸다.
+// dist가 없으면(프론트를 빌드하지 않은 CI 등) 그냥 건너뛴다 → 백엔드 빌드는 Node 없이도 돈다.
+// 한 번에 하려면: ./gradlew buildFrontend bootJar
+tasks.named('processResources') {
+	from('frontend/dist') {
+		into 'static'
+	}
+}
+
+tasks.register('buildFrontend', Exec) {
+	description = 'frontend/ 를 npm ci + vite build 로 빌드 (Node 22 필요)'
+	group = 'build'
+	workingDir 'frontend'
+	commandLine 'sh', '-c', 'npm ci && npm run build'
+}
+tasks.named('processResources') { mustRunAfter 'buildFrontend' }

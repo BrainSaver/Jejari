@@ -65,6 +65,7 @@ class BehaviorLogInfraTest {
 	void cleanUp() {
 		for (long id : members) {
 			mongo.remove(Query.query(Criteria.where("member_id").is(id)), "behavior_log");
+			jdbc.update("DELETE FROM member_device WHERE member_id = ?", id); // 적재가 회원↔기기 연결을 남김
 			jdbc.update("DELETE FROM member WHERE member_id = ?", id);
 		}
 		if (!eventIds.isEmpty()) {

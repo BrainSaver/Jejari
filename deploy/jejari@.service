@@ -1,0 +1,28 @@
+# 제자리 앱 systemd 템플릿. 인스턴스 이름 = 포트 (jejari@8080, jejari@8081)
+# deploy/setup-server.sh가 __USER__·__HOME__을 채워 /etc/systemd/system/에 설치합니다.
+# (GCP의 Ubuntu에는 ubuntu 계정이 없고, gcloud compute ssh가 내 PC 사용자 이름으로 계정을 만듭니다)
+[Unit]
+Description=Jejari app (port %i)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=__HOME__/Jejari
+# docker compose와 같은 .env (비밀값). 앱도 spring.config.import로 같은 파일을 읽습니다
+EnvironmentFile=__HOME__/Jejari/.env
+# 없으면 기동 점검(TimeZoneVerifier, concurrency.md §0.7)이 앱을 거부합니다
+Environment=TZ=Asia/Seoul
+Environment=LANG=C.UTF-8
+# 앱 한 대 1GB. 16GB VM: 인프라 약 4.3GB + 앱 2대 + OS
+ExecStart=/usr/bin/java -Xms512m -Xmx1g -jar __HOME__/jejari-app/jejari.jar \
+  --server.port=%i \
+  --jejari.auth.trusted-proxies=127.0.0.1
+Restart=always
+RestartSec=10
+# 종료 신호 뒤 진행 중인 요청을 끝낼 시간
+TimeoutStopSec=40
+
+[Install]
+WantedBy=multi-user.target

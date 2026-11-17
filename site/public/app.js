@@ -1810,7 +1810,7 @@ function flowNode(n) {
   const msgs = items.reduce((s, it) => s + (it.notes || 0), 0);
   const mi = mineOn() && !ed ? items.filter((it) => mineOf(it)) : null;
   const mtodo = mi ? mi.filter((it) => mineOf(it) === 'todo').length : 0;
-  return `<div class="fl-node${pct === 100 && items.length ? ' all' : ''}${mi ? (mi.length ? ' mine' : ' dim') : ''}" data-k="${n.k}" ${mi && mi.length ? `style="left:${n.x}px;top:${n.y}px;--pc:${partColor(focusPart())}"` : pos} tabindex="0" role="button" title="${ed ? '끌어서 옮기기' : `눌러서 ${esc(n.label)} 열기`}">
+  return `<div class="fl-node${pct === 100 && items.length ? ' all' : ''}${RM.hl === n.k ? ' hl' : ''}${mi ? (mi.length ? ' mine' : ' dim') : ''}" data-k="${n.k}" ${mi && mi.length ? `style="left:${n.x}px;top:${n.y}px;--pc:${partColor(focusPart())}"` : pos} tabindex="0" role="button" title="${ed ? '끌어서 옮기기' : `눌러서 ${esc(n.label)} 열기`}">
     <div class="fl-head">${nodeIcon(n.icon)}<b>${esc(n.label)}</b>${mi && mi.length ? `<span class="fl-mine${mtodo ? '' : ' m-done'}" style="--pc:${partColor(focusPart())}" title="${esc(focusWho())} 칸 ${mi.length}개 중 ${mi.length - mtodo}개 했음">${mtodo ? `${mtodo}개 남음` : `${svgI('check', 13)} 다 함`}</span>` : `<span class="fl-pct">${done}/${items.length}</span>`}${tools}</div>
     <span class="rm-bar area"><i style="width:${pct}%"></i></span>
     <div class="fl-people">${parts.map(({ p, total, done: d }) => { const nw = nowOf(n.k, p); return `<button class="fl-who${mi && p === focusPart() ? ' me' : ''}" data-now="${n.k}" data-p="${p}" style="--pc:${partColor(p)}" title="${esc(partName(p))}: ${d}/${total}${nw ? ` · 지금: ${esc(nw.text)}` : ''} (누르면 지금 하는 일 적기)"${ed ? ' disabled' : ''}>
@@ -2056,11 +2056,13 @@ function simPanel(mode) {
     const intro = n.kind === 'start' ? '이용자가 사이트에 들어와 예매를 시작해요. 아래 칸들을 순서대로 지나가요.'
       : edge && edge.label ? `${esc(from.label)}에서 <b>${esc(edge.label)}</b>을(를) 받아 이 칸이 일해요.` : '이 칸에서 하는 일이에요.';
     const st = rmStages();
-    const list = items.slice(0, 7).map((x) => `<div class="sim-item${isDone(x) ? ' done' : ''}"><span class="sim-chk">${isDone(x) ? svgI('check', 12) : ''}</span><span class="sim-it">${esc(x.title)}</span><span class="muted sim-who">${rolesOf(x).map((p) => esc(S.members[partOwner(p)] || p)).join('·')}${isDone(x) ? '' : ` · ${st.get(x.id)}단계`}</span></div>`).join('');
-    const more = items.length > 7 ? `<div class="muted sim-more">외 ${items.length - 7}개</div>` : '';
+    // 안 끝난 일을 위에, 끝난 일은 아래로 모아 전부 보여 준다
+    const simRow = (x) => `<div class="sim-item${isDone(x) ? ' done' : ''}"><span class="sim-chk">${isDone(x) ? svgI('check', 12) : ''}</span><span class="sim-it">${esc(x.title)}</span><span class="muted sim-who">${rolesOf(x).map((p) => esc(S.members[partOwner(p)] || p)).join('·')}${isDone(x) ? '' : ` · ${st.get(x.id)}단계`}</span></div>`;
+    const doneItems = items.filter(isDone);
+    const list = open.map(simRow).join('') + (doneItems.length ? `<div class="sim-sep">끝난 일 ${doneItems.length}개</div>${doneItems.map(simRow).join('')}` : '');
     const nextOpen = open.filter((x) => !waitingOn(x, rmById()).length);
     body = `<div class="sim-head"><span class="sim-ic${ok ? ' ok' : ' todo'}">${nodeIcon(n.icon, 18)}</span><div><span class="muted">${intro}</span><b class="sim-title">${esc(n.label)} ${n.kind === 'start' ? '' : ok ? '<span class="rm-st st-done">완료</span>' : `<span class="rm-st st-todo">${items.length - open.length}/${items.length}</span>`}</b></div></div>
-      ${list ? `<div class="sim-list">${list}${more}</div>` : n.kind === 'start' ? '' : '<p class="muted">아직 이 칸에 할 일이 없어요.</p>'}
+      ${list ? `<div class="sim-list">${list}</div>` : n.kind === 'start' ? '' : '<p class="muted">아직 이 칸에 할 일이 없어요.</p>'}
       ${!ok ? `<div class="sim-todo-box"><b>여기서 할 일</b> ${nextOpen.length ? `지금 바로 시작할 수 있는 것: ${nextOpen.slice(0, 3).map((x) => `<button class="rm-link sm" data-open="${x.id}">${esc(x.code || x.title)}</button>`).join('')}` : `먼저 다른 칸 일이 끝나야 해요: ${[...new Set(open.flatMap((x) => waitingOn(x, rmById())).map((d) => d.code || d.title))].slice(0, 4).map(esc).join(', ')}`}</div>
         <div class="sim-acts"><span id="simCount" class="muted"></span><span style="flex:1"></span><button class="btn sm plain" data-simopen="${n.k}">칸 열기</button><button class="btn sm" data-sim="next">건너뛰고 계속 ${svgI('skip', 14)}</button></div>` : ''}`;
   }
@@ -2228,7 +2230,8 @@ function rmArea(k) {
   RM.modal = { kind: 'area', k };
   const by = rmById();
   const st = rmStages();
-  const items = RM.data.items.filter((x) => x.area === k).sort((x, y) => (st.get(x.id) || 99) - (st.get(y.id) || 99) || sortItems(x, y));
+  // 안 끝난 일을 먼저, 끝난 일은 아래로
+  const items = RM.data.items.filter((x) => x.area === k).sort((x, y) => isDone(x) - isDone(y) || (st.get(x.id) || 99) - (st.get(y.id) || 99) || sortItems(x, y));
   const parts = areaParts(k);
   const done = items.filter(isDone).length;
   const m = openModal(`<div class="rm-detail">
@@ -2239,7 +2242,7 @@ function rmArea(k) {
       <span class="fl-team-who"><span><b>${p}</b> ${esc(S.members[partOwner(p)])}</span><small class="muted">${d}/${total} 했음</small></span>
       <span class="fl-team-now">${n ? `${esc(n.text)} <small class="muted">${rmWho(n.who)} · ${ago(n.at)}</small>` : '<span class="muted">지금 하는 일 없음</span>'}</span>
       ${S.me ? `<button class="btn sm plain" data-nowp="${p}">${n ? '고치기' : '적기'}</button>` : ''}</div>`; }).join('') || '<p class="muted">아직 맡은 사람이 없어요. 할 일을 추가하면서 파트를 고르면 생겨요.</p>'}</div>
-    <div class="fl-cards-head"><span class="rm-rel-h" style="margin:0">할 일 ${items.length}개 <span class="muted" style="font-weight:500">· 할 순서대로</span></span><span class="fl-cards-acts">${askBtn(k)}${S.me ? `<button class="btn sm" data-add="${k}">${svgI('plus', 14)} 할 일 추가</button>` : ''}</span></div>
+    <div class="fl-cards-head"><span class="rm-rel-h" style="margin:0">할 일 ${items.length}개 <span class="muted" style="font-weight:500">· 안 끝난 일 먼저, 할 순서대로</span></span><span class="fl-cards-acts">${askBtn(k)}${S.me ? `<button class="btn sm" data-add="${k}">${svgI('plus', 14)} 할 일 추가</button>` : ''}</span></div>
     <div class="rm-cards">${items.map((x) => rmCard(x, by, { stage: st.get(x.id) })).join('') || '<p class="muted">할 일이 없어요.</p>'}</div>
     <div class="row"><button class="btn plain" data-x>닫기</button></div></div>`, { wide: true });
   $('[data-x]', m).addEventListener('click', () => { RM.modal = null; closeModal(); rmAfterClose(); });
@@ -2280,8 +2283,19 @@ async function pageRoadmap(view) {
 function rmPendingOpen() {
   const p = RM.pending; RM.pending = null;
   if (!p) return;
-  setTimeout(() => { if (p.card && rmById().get(p.card)) rmOpen(p.card); else if (p.area) rmArea(p.area); }, 30);
+  setTimeout(() => { if (p.hl) rmHl(p.hl); if (p.card && rmById().get(p.card)) rmOpen(p.card); else if (p.area) rmArea(p.area); }, 30);
 }
+// 검색으로 연 칸을 흐름도에서 부각한다. 창을 닫은 뒤 다른 곳을 누르면 꺼진다
+function rmHl(k) {
+  RM.hl = k;
+  $$('.fl-node.hl').forEach((n) => n.classList.remove('hl'));
+  const node = $(`.fl-node[data-k="${k}"]`);
+  if (node) { node.classList.add('hl'); node.scrollIntoView({ block: 'center', inline: 'center' }); }
+}
+document.addEventListener('pointerdown', () => {
+  if (!RM.hl || !$('#modalBack').hidden) return;
+  RM.hl = null; $$('.fl-node.hl').forEach((n) => n.classList.remove('hl'));
+}, true);
 
 // ---------- 사이트 전체 검색 (Ctrl+K, /) ----------
 // 문서는 섹션 단위, 화면설계는 화면, 로드맵은 카드·칸·남긴 말·지금 하는 일. 받아 둔 내용(CACHE)을 써서 빠르다
@@ -2319,11 +2333,11 @@ async function searchIndex() {
     const goRm = (pending, view) => { RM.pending = pending; const h = '#/roadmap/' + view; if (location.hash === h) { rmPendingOpen(); } else location.hash = h; };
     for (const it of RM.data.items) {
       const who = rolesOf(it).map((p) => `${p} ${S.members[partOwner(p)] || ''}`).join(' ');
-      out.push({ kind: 'card', group: '로드맵 카드', title: `${it.code || ''} ${it.title}`.trim(), text: `${areaLabel(it.area)} · ${who} · ${ST_LABEL[stateOf(it)]}${it.note ? ' · ' + it.note : ''}`, done: isDone(it), go: () => goRm({ card: it.id }, 'board') });
+      out.push({ kind: 'card', group: '로드맵 카드', title: `${it.code || ''} ${it.title}`.trim(), text: `${areaLabel(it.area)} · ${who} · ${ST_LABEL[stateOf(it)]}${it.note ? ' · ' + it.note : ''}`, done: isDone(it), go: () => goRm({ card: it.id, hl: it.area }, 'flow') });
     }
-    for (const a of RM.data.areas) out.push({ kind: 'area', group: '로드맵 칸', title: a.label, text: areaParts(a.k).map((x) => `${x.p} ${S.members[partOwner(x.p)] || ''}`).join(' '), go: () => goRm({ area: a.k }, 'flow') });
-    for (const m of RM.data.msgs || []) if (m.text) out.push({ kind: 'msg', group: '남긴 말', title: `${rmWho(m.who).replace(/<[^>]+>/g, '')} → ${partName(m.to)} · ${m.code || m.title || ''}`, text: m.text, go: () => goRm({ card: m.item }, 'board') });
-    for (const n of RM.data.now || []) if (n.text) out.push({ kind: 'now', group: '지금 하는 일', title: `${partName(n.part)} · ${areaLabel(n.area)}`, text: n.text, go: () => goRm({ area: n.area }, 'flow') });
+    for (const a of RM.data.areas) out.push({ kind: 'area', group: '로드맵 칸', title: a.label, text: areaParts(a.k).map((x) => `${x.p} ${S.members[partOwner(x.p)] || ''}`).join(' '), go: () => goRm({ area: a.k, hl: a.k }, 'flow') });
+    for (const m of RM.data.msgs || []) if (m.text) out.push({ kind: 'msg', group: '남긴 말', title: `${rmWho(m.who).replace(/<[^>]+>/g, '')} → ${partName(m.to)} · ${m.code || m.title || ''}`, text: m.text, go: () => goRm({ card: m.item, hl: (rmById().get(m.item) || {}).area }, 'flow') });
+    for (const n of RM.data.now || []) if (n.text) out.push({ kind: 'now', group: '지금 하는 일', title: `${partName(n.part)} · ${areaLabel(n.area)}`, text: n.text, go: () => goRm({ area: n.area, hl: n.area }, 'flow') });
   } catch {}
   SR.idx = out; SR.ref = S.ref; SR.rev = RM.rev; SR.me = S.me;
   return out;
@@ -2581,11 +2595,11 @@ function rmOpen(id) {
       <div class="rm-noteacts"><label class="btn sm plain">사진 고르기<input type="file" id="rmFile" accept="image/*" hidden></label><span id="rmImgInfo" class="muted"></span><span style="flex:1"></span><button class="btn sm" id="rmNoteGo">남기기</button></div>
       <img id="rmImgPrev" class="rm-img-prev" hidden alt="붙일 사진 미리보기"></div>` : '<p class="muted">로그인하면 말을 남길 수 있어요.</p>'}
     <div id="rmNotes" data-id="${it.id}">${(RM.notesHtml && RM.notesHtml.id === it.id) ? RM.notesHtml.html : '<p class="loading">불러오는 중…</p>'}</div>
-    <div class="row">${S.me ? '<button class="btn sm danger" id="rmDel">삭제</button><span style="flex:1"></span><button class="btn plain" id="rmEditBtn">고치기</button>' : ''}${back ? `<button class="btn plain" data-back>← ${esc(areaLabel(back))}</button>` : ''}<button class="btn plain" data-x>닫기</button></div>
+    <div class="row">${S.me ? '<button class="btn sm danger" id="rmDel">삭제</button><span style="flex:1"></span><button class="btn plain" id="rmEditBtn">고치기</button>' : ''}${`<button class="btn plain" data-back title="이 카드가 있는 칸 보기">← ${esc(areaLabel(back || it.area))}</button>`}<button class="btn plain" data-x>닫기</button></div>
   </div>`, { wide: true });
   if (keep) { const ta = $('#rmNote', m); if (ta) ta.value = keep.draft; const to = $('#rmTo', m); if (to && keep.to != null) to.value = keep.to; m.scrollTop = keep.top; }
   $('[data-x]', m).addEventListener('click', () => { RM.modal = null; closeModal(); rmAfterClose(); });
-  const bk = $('[data-back]', m); if (bk) bk.addEventListener('click', () => rmArea(back));
+  const bk = $('[data-back]', m); if (bk) bk.addEventListener('click', () => rmArea(back || it.area));
   $$('[data-go]', m).forEach((b) => b.addEventListener('click', () => rmOpen(b.dataset.go)));
   $$('[data-chk]', m).forEach((b) => b.addEventListener('click', () => rmCheck(b.dataset.chk, b.dataset.p)));
   if (S.me) {

@@ -6,6 +6,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -27,6 +30,8 @@ import com.jejari.seat.SeatPaymentService;
  */
 @Component
 class PaymentStartTx {
+
+	private static final Logger log = LoggerFactory.getLogger(PaymentStartTx.class);
 
 	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
 
@@ -131,9 +136,15 @@ class PaymentStartTx {
 		};
 	}
 
+	/** 시퀀스 번호가 기존 행과 겹칠 때 다음 번호로 넘어가는 최대 횟수 */
+	static final int METHOD_ID_RETRIES = 50;
+
 	/**
-	 * 같은 회원의 같은 카드는 한 행으로 씁니다. method_id는 ERD에 payment_method 시퀀스가 생기기 전까지
-	 * reservation_seq에서 받습니다 (값이 겹치지 않기만 하면 되므로, 예약 번호가 건너뛰는 것 말고는 영향 없음).
+	 * 같은 회원의 같은 카드는 한 행으로 씁니다. method_id는 {@code payment_method_seq}에서 받습니다 (ERD v19).
+	 *
+	 * <p>v19 전에는 reservation_seq에서 받았으므로, 이미 행이 있는 로컬 DB에서는 새 시퀀스 번호가 옛 행과 겹칠 수 있습니다.
+	 * 겹치면 다음 번호로 넘어갑니다. 이 PK 충돌이 밖으로 나가면 {@code PaymentService}가 "같은 멱등 키 동시 요청"으로
+	 * 잘못 읽기 때문입니다 (Oracle은 실패한 문장만 되돌리므로 트랜잭션은 그대로 이어 갑니다).
 	 */
 	private long methodId(long memberId, String methodHash, String last4) {
 		List<Long> found = methodHash != null
@@ -145,10 +156,17 @@ class PaymentStartTx {
 		if (!found.isEmpty()) {
 			return found.get(0);
 		}
-		long id = jdbc.queryForObject("SELECT reservation_seq.NEXTVAL FROM dual", Long.class);
-		jdbc.update("""
-				INSERT INTO payment_method (method_id, member_id, method_hash, method_type, card_last4)
-				VALUES (?, ?, ?, 'CARD', ?)""", id, memberId, methodHash, last4);
-		return id;
+		for (int i = 0; i < METHOD_ID_RETRIES; i++) {
+			long id = jdbc.queryForObject("SELECT payment_method_seq.NEXTVAL FROM dual", Long.class);
+			try {
+				jdbc.update("""
+						INSERT INTO payment_method (method_id, member_id, method_hash, method_type, card_last4)
+						VALUES (?, ?, ?, 'CARD', ?)""", id, memberId, methodHash, last4);
+				return id;
+			} catch (DuplicateKeyException e) {
+				log.info("결제 수단 번호 {}가 기존 행과 겹쳐 다음 번호로 넘어감", id);
+			}
+		}
+		throw new IllegalStateException("결제 수단 번호를 " + METHOD_ID_RETRIES + "번 연속 기존 행과 겹쳐 받지 못함");
 	}
 }

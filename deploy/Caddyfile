@@ -1,0 +1,29 @@
+# 공용 서버 입구. JEJARI_DOMAIN 예: 34-64-12-34.sslip.io (외부 IP를 하이픈으로, 도메인 없이 HTTPS)
+#
+# 왜 HTTPS인가: 리프레시 토큰 쿠키가 Secure라 http에서는 브라우저가 저장·전송하지 않습니다.
+# 왜 앞에 두나: 앱 포트(8080·8081)를 인터넷에 열지 않고, 지표(/actuator/prometheus)를 밖에 보이지 않게 합니다.
+{$JEJARI_DOMAIN} {
+	encode zstd gzip
+
+	# 서버 상태 확인만 밖으로. 나머지 actuator(지표 등)는 내부 전용
+	@actuatorPrivate {
+		path /actuator/*
+		not path /actuator/health /actuator/health/*
+	}
+	respond @actuatorPrivate 404
+
+	reverse_proxy 127.0.0.1:8080 127.0.0.1:8081 {
+		lb_policy round_robin
+		# 한 대가 재시작 중이면 다른 대로 (배포 때 한 대씩 재시작)
+		lb_try_duration 10s
+		health_uri /actuator/health
+		health_interval 5s
+		health_timeout 2s
+		# Caddy는 클라이언트가 보낸 X-Forwarded-For를 믿지 않고 실제 접속 IP로 다시 씁니다 (위조 방지)
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
