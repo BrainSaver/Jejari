@@ -4,60 +4,161 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>실시간 예매 현황</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#f4f5f7;--card:#fff;--fg:#1d1f24;--mut:#6b7079;--line:#e4e5e8;--pri:#2f5bd3;--pri2:#e8eefc;--ok:#1d6b33;--okb:#e3f4e6;--bad:#a12c2c;--badb:#fbe9e9;--warn:#7a5600;--warnb:#fff5db;--side:#1f2430}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+:root{
+  --ink:#14213D;--ink2:#36425C;--mut:#687187;--faint:#98A0B1;
+  --line:#DCE0E6;--line2:#EBEEF2;--paper:#EDF0EE;--card:#FFFFFF;
+  --go:#0B7A5E;--go-d:#07614A;--go-t:#DFF1EA;
+  --amber:#E39608;--amber-d:#8A5900;--amber-t:#FFF2D4;
+  --stop:#C2362B;--stop-t:#FBE7E4;
+  --sky:#2C5BB8;--sky-t:#E5ECF9;
+  --num:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --sans:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+}
+*{box-sizing:border-box}[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased;word-break:keep-all}
+a{color:inherit}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--sky);outline-offset:2px}
+.num{font-family:var(--num);font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.mut{color:var(--mut)}.faint{color:var(--faint)}.grow{flex:1;min-width:0}
+.row{display:flex;align-items:center;gap:8px}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:3px 10px 3px 8px;border-radius:999px;background:var(--line2);color:var(--ink2);white-space:nowrap}
+.st::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.st.go{background:var(--go-t);color:var(--go-d)}.st.amber{background:var(--amber-t);color:var(--amber-d)}
+.st.stop{background:var(--stop-t);color:var(--stop)}.st.sky{background:var(--sky-t);color:var(--sky)}
+.st.plain::before{display:none}.st.plain{padding:3px 10px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+body{font-size:14px;background:#F3F5F4}
 .wrap{display:flex;min-height:100vh}
-.side{width:200px;background:var(--side);color:#cfd3dc;padding:16px 10px;flex:none}
-.side b{display:block;color:#fff;padding:0 10px 14px;font-size:15px}
-.side a{display:block;color:#cfd3dc;text-decoration:none;padding:7px 10px;border-radius:7px;font-size:13.5px}.side a.on{background:#323a4b;color:#fff;font-weight:700}
-.main{flex:1;min-width:0;padding:20px 24px}
-.head{display:flex;align-items:center;gap:10px;margin-bottom:16px}.head h1{font-size:20px;margin:0;flex:1}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:14px}
-.kpi .n{font-size:24px;font-weight:800}.kpi .l{color:var(--mut);font-size:12.5px}
-table{border-collapse:collapse;width:100%;font-size:13.5px}th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left}th{color:var(--mut);font-weight:600;background:#fafafb}
-.btn{display:inline-block;border:0;border-radius:8px;padding:7px 12px;font:inherit;font-weight:700;background:var(--pri);color:#fff;text-decoration:none;cursor:pointer}
-.btn.line{background:#fff;border:1px solid var(--line);color:var(--fg)}.btn.bad{background:var(--bad)}
-input,select,textarea{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}
-.tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--pri2);color:var(--pri)}
-.tag.ok{background:var(--okb);color:var(--ok)}.tag.bad{background:var(--badb);color:var(--bad)}.tag.warn{background:var(--warnb);color:var(--warn)}
-.mut{color:var(--mut)}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grow{flex:1}
-.two{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px}
-.field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}.field label{font-size:12.5px;color:var(--mut);font-weight:600}
-.tl{position:relative;padding-left:18px}.tl div{position:relative;padding:5px 0;font-size:13px}.tl div::before{content:"";position:absolute;left:-14px;top:11px;width:8px;height:8px;border-radius:50%;background:var(--mut)}
-.tl .hl{background:var(--warnb);border-radius:6px;padding-left:6px}.tl .hl::before{background:var(--bad)}
-.bars{display:flex;align-items:flex-end;gap:4px;height:90px}.bars i{flex:1;background:var(--pri2);border-top:3px solid var(--pri);display:block}
-@media(max-width:700px){.side{display:none}.two{grid-template-columns:1fr}.main{padding:14px}}
+.side{width:224px;flex:none;background:var(--ink);color:#B9C1D3;padding:20px 12px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:700;font-size:15px;padding:0 10px 22px}
+.brand small{display:block;font-weight:500;font-size:12px;color:#8F99B0}
+.side .grp{font-size:12px;color:#7581A0;padding:16px 10px 6px}
+.side a{display:flex;align-items:center;gap:10px;color:#B9C1D3;text-decoration:none;padding:8px 10px;border-radius:8px;font-size:14px}
+.side a:hover{background:rgba(255,255,255,.06);color:#fff}
+.side a.on{background:rgba(255,255,255,.1);color:#fff;font-weight:600;box-shadow:inset 3px 0 0 var(--go)}
+.side .ic{width:18px;height:18px}
+.side .out{margin-top:auto}
+.main{flex:1;min-width:0;padding:24px 32px 40px;max-width:1240px}
+.head{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.head h1{font-size:22px;margin:0;font-weight:700}
+.head .crumb{font-size:13px;color:var(--mut)}
+.who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut)}
+.who i{width:28px;height:28px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-style:normal;font-weight:700;font-size:12px}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+.panel h2{font-size:15px;margin:0 0 12px;font-weight:700;display:flex;align-items:center;gap:8px}
+.panel h2 .grow{flex:1}
+.panel .sub{font-size:13px;color:var(--mut);margin:-8px 0 12px}
+.cols{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr);gap:16px;align-items:start}
+.cols>.panel{margin-bottom:0}
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.kpi .l{font-size:12.5px;color:var(--mut)}
+.kpi .n{font-family:var(--num);font-size:34px;line-height:1.1;font-weight:600;font-variant-numeric:tabular-nums;margin-top:4px}
+.kpi .d{font-size:12px;color:var(--mut)}
+.kpi.alarm{border-color:var(--stop);background:var(--stop-t)}.kpi.alarm .n{color:var(--stop)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th{font-weight:600;color:var(--mut);font-size:12.5px;text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 12px;border-bottom:1px solid var(--line2);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:#F7F9F8}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+td.mono{font-family:var(--num);font-size:15px;font-weight:500}
+tr.sel td{background:var(--go-t)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:7px 14px;border:0;border-radius:9px;background:var(--go);color:#fff;font-weight:600;font-size:13.5px;text-decoration:none;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--go-d)}
+.btn.ghost{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}.btn.ghost:hover{background:#F7F9F8}
+.btn.danger{background:var(--stop)}.btn.armed{background:#8E1F17}
+.btn.sm{min-height:30px;padding:4px 10px;font-size:12.5px}
+.btn.wide{width:100%}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.field label{font-size:12.5px;color:var(--ink2);font-weight:600}
+.field .hint{font-size:12px;color:var(--mut)}
+input,select,textarea{font:inherit;color:var(--ink);min-height:38px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:var(--card);width:100%}
+select{appearance:none;-webkit-appearance:none;background:var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%2336425C' stroke-width='1.8'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E") no-repeat right 12px center;padding-right:32px}
+textarea{min-height:80px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px var(--line2)}
+.filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
+.filters .field{margin:0;min-width:150px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:16px}
+.tabs button{border:0;background:none;padding:10px 14px;font-weight:600;color:var(--mut);cursor:pointer;box-shadow:inset 0 -2px 0 transparent}
+.tabs button.on{color:var(--ink);box-shadow:inset 0 -2px 0 var(--ink)}
+.score{font-family:var(--num);font-size:20px;font-weight:600}
+.score.hi{color:var(--stop)}.score.mid{color:var(--amber-d)}
+.meter{height:6px;border-radius:3px;background:var(--line2);overflow:hidden;width:64px;display:inline-block;vertical-align:middle;margin-left:8px}
+.meter i{display:block;height:100%;background:var(--stop)}
+.alert{border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.5}
+.alert.amber{background:var(--amber-t);color:var(--amber-d)}.alert.sky{background:var(--sky-t);color:var(--sky)}
+hr.sep{border:0;border-top:1px solid var(--line);margin:18px 0}
+@media (max-width:1100px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.cols{grid-template-columns:1fr}}
+@media (max-width:720px){.side{display:none}.main{padding:16px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.panel{overflow-x:auto}}
 </style>
 </head>
 <body>
-<div class="wrap">
-<nav class="side"><b>제자리 관리자</b><a href="A-04.html" class="on">실시간 현황</a><a href="A-05.html" class="">위험 사용자</a><a href="A-06.html" class="">케이스 상세</a><a href="A-02.html" class="">기준 데이터</a><a href="A-03.html" class="">운행·행사</a><a href="A-07.html" class="">운영 설정</a><a href="A-01.html">로그아웃</a></nav>
-<main class="main">
-<div class="head"><h1>실시간 예매 현황</h1></div>
-<div class="row" style="margin-bottom:12px"><select><option>101 · 02-06 서울→부산</option></select><span class="mut">10초마다 갱신 · 마지막 10:42:30</span><span class="grow"></span><a class="btn line" href="#">Grafana</a></div>
-<div class="grid">
-<div class="card kpi"><div class="n">318</div><div class="l">판매</div></div>
-<div class="card kpi"><div class="n">54</div><div class="l">선점 중 (결제 대기)</div></div>
-<div class="card kpi"><div class="n">40</div><div class="l">남은 좌석</div></div>
-<div class="card kpi"><div class="n">12,480</div><div class="l">대기열 길이</div></div>
-<div class="card kpi"><div class="n">200/s</div><div class="l">입장 속도</div></div>
-<div class="card kpi"><div class="n" style="color:var(--bad)">2</div><div class="l">결제 결과 모름</div></div>
+<div class="wrap"><nav class="side" aria-label="관리자 메뉴"><div class="brand"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#0B7A5E"/><path d="M11 8.5v10.2a2.3 2.3 0 0 0 2.3 2.3h7.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><path d="M10.5 24.5h12" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="11" r="2.4" fill="#FFD27A"/></svg><div>제자리<small>운영 콘솔</small></div></div>
+<div class="grp">운영</div><a href="A-04.html" class="on" aria-current="page"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg>실시간 현황</a><a href="A-05.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6z"/><path d="M12 8.5v4M12 15.5v.3"/></svg>위험 사용자</a><a href="A-06.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>케이스 상세</a>
+<div class="grp">기준·설정</div><a href="A-02.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3.5" width="12" height="13" rx="3"/><path d="M6 11h12M9 20.5l1.5-4M15 20.5l-1.5-4M9 14v.3M15 14v.3"/></svg>기준 데이터</a><a href="A-03.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>운행·행사</a><a href="A-07.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3L5.5 5.5"/></svg>운영 설정</a>
+<a class="out" href="A-01.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/></svg>로그아웃</a></nav><main class="main">
+<div class="head"><h1>실시간 예매 현황</h1><select style="width:auto;min-height:34px;margin-left:8px"><option>101 · 02-06 (토) 서울→부산</option><option>103 · 02-06 (토) 서울→부산</option></select><span style="flex:1"></span><div class="who"><i>A</i>admin01 · 운영자</div></div>
+<div class="row" style="margin:-8px 0 16px;font-size:13px;color:var(--mut)"><span class="st go">실시간</span><span>10초마다 갱신 · 마지막 10:42:30</span><span class="grow"></span><a class="btn ghost sm" href="#"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>Grafana</a></div>
+<div class="kpis">
+  <div class="kpi"><div class="l">판매</div><div class="n">318</div><div class="d">412석 중 77%</div></div>
+  <div class="kpi"><div class="l">선점 중 (결제 대기)</div><div class="n">54</div><div class="d">10분 기한</div></div>
+  <div class="kpi"><div class="l">남은 좌석</div><div class="n">40</div><div class="d">특실 3 · 일반실 37</div></div>
+  <div class="kpi"><div class="l">대기열</div><div class="n">12,480</div><div class="d">예상 소진 1분 2초</div></div>
+  <div class="kpi"><div class="l">입장 속도</div><div class="n">200<span style="font-size:18px">/초</span></div><div class="d">설정값 queue.admit_per_sec</div></div>
+  <div class="kpi alarm"><div class="l">결제 결과 모름</div><div class="n">2</div><div class="d">30분 넘음 · 직접 처리</div></div>
 </div>
-<div class="card"><b>분당 예약·결제·취소</b><div class="bars"><i style="height:30%"></i><i style="height:55%"></i><i style="height:80%"></i><i style="height:95%"></i><i style="height:70%"></i><i style="height:60%"></i><i style="height:45%"></i><i style="height:40%"></i><i style="height:35%"></i><i style="height:20%"></i></div></div>
-<div class="two">
-<div class="card"><b>결제 결과 모름 (30분 이상)</b><table>
-<tr><th>결제</th><th>예약</th><th>경과</th><th></th></tr>
-<tr><td>P-88121</td><td>R-501233</td><td>34분</td><td><a class="btn line" href="#">승인</a> <a class="btn line" href="#">실패</a></td></tr>
-<tr><td>P-88190</td><td>R-501410</td><td>31분</td><td><a class="btn line" href="#">승인</a> <a class="btn line" href="#">실패</a></td></tr>
-</table></div>
-<div class="card"><b>예약 강제 취소</b><br><br>
-<div class="field"><label>예약 번호</label><input value="R-501233"></div>
-<div class="field"><label>사유 (필수)</label><input value="부정 예매 확정 케이스 C-1021"></div>
-<a class="btn bad" href="#">한 번 더 누르면 강제 취소</a></div>
-</div>
-</main>
-</div>
+<section class="panel">
+  <h2><span class="grow">분당 예약·결제·취소</span><span class="row" style="font-size:12.5px;font-weight:500;color:var(--mut);gap:14px"><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--ink);margin-right:5px"></i>예약</span><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--go);margin-right:5px"></i>결제</span><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--stop);margin-right:5px"></i>취소</span></span></h2>
+  <svg viewBox="0 -8 1000 152" style="width:100%;height:auto;display:block" role="img" aria-label="분당 예약·결제·취소 건수. 10시 37분에 예약 100건으로 가장 많음"><line x1="32" x2="1000" y1="120" y2="120" stroke="var(--line2)"/><text x="24" y="124" text-anchor="end" font-size="11" fill="var(--faint)">0</text><line x1="32" x2="1000" y1="62.50000000000001" y2="62.50000000000001" stroke="var(--line2)"/><text x="24" y="66.5" text-anchor="end" font-size="11" fill="var(--faint)">50</text><line x1="32" x2="1000" y1="5.000000000000014" y2="5.000000000000014" stroke="var(--line2)"/><text x="24" y="9.000000000000014" text-anchor="end" font-size="11" fill="var(--faint)">100</text><rect x="47" y="99.3" width="22.266666666666666" height="20.7" rx="2" fill="var(--ink)"/><rect x="69.26666666666667" y="108.5" width="22.266666666666666" height="11.5" rx="2" fill="var(--go)"/><rect x="91.53333333333333" y="118.85" width="22.266666666666666" height="2" rx="2" fill="var(--stop)"/><text x="80.4" y="138" text-anchor="middle" font-size="12" fill="var(--mut)">10:33</text><rect x="143.8" y="80.9" width="22.266666666666666" height="39.099999999999994" rx="2" fill="var(--ink)"/><rect x="166.06666666666666" y="94.7" width="22.266666666666666" height="25.299999999999997" rx="2" fill="var(--go)"/><rect x="188.33333333333334" y="117.7" width="22.266666666666666" height="2.3" rx="2" fill="var(--stop)"/><text x="177.20000000000002" y="138" text-anchor="middle" font-size="12" fill="var(--mut)">10:34</text><rect x="240.6" y="48.7" width="22.266666666666666" height="71.3" rx="2" fill="var(--ink)"/><rect x="262.8666666666667" y="72.85" width="22.266666666666666" height="47.15" rx="2" fill="var(--go)"/><rect x="285.1333333333333" y="116.55" width="22.266666666666666" height="3.4499999999999997" rx="2" fill="var(--stop)"/><text x="274" y="138" text-anchor="middle" font-size="12" fill="var(--mut)">10:35</text><rect x="337.4" y="18.80000000000001" width="22.266666666666666" height="101.19999999999999" rx="2" fill="var(--ink)"/><rect x="359.66666666666663" y="44.10000000000001" width="22.266666666666666" height="75.89999999999999" rx="2" fill="var(--go)"/><rect x="381.9333333333333" y="114.25" width="22.266666666666666" height="5.75" rx="2" fill="var(--stop)"/><text x="370.79999999999995" y="138" text-anchor="middle" font-size="12" fill="var(--mut)">10:36</text><rect x="434.2" y="5.000000000000014" width="22.266666666666666" height="114.99999999999999" rx="2" fill="var(--ink)"/><rect x="456.46666666666664" y="28" width="22.266666666666666" height="92" rx="2" fill="var(--go)"/><rect x="478.73333333333335" y="113.1" width="22.266666666666666" height="6.8999999999999995" rx="2" fill="var(--stop)"/><text x="467.59999999999997" y="138" text-anchor="middle" font-size="12" fill="var(--mut)">10:37</text><rect x="531" y="32.60000000000001" width="22.266666666666666" height="87.39999999999999" rx="2" fill="var(--ink)"/><rect x="553.2666666666667" y="46.400000000000006" width="22.266666666666666" height="73.6" rx="2" fill="var(--go)"/><rect x="575.5333333333333" y="110.8" width="22.266666666666666" height="9.2" rx="2" fill="var(--stop)"/><text x="564.4" y="138" text-anchor="middle" font-size="12" fill="var(--mut)">10:38</text><rect x="627.8" y="53.30000000000001" width="22.266666666666666" height="66.69999999999999" rx="2" fill="var(--ink)"/><rect x="650.0666666666666" y="61.35" width="22.266666666666666" height="58.65" rx="2" fill="var(--go)"/><rect x="672.3333333333333" y="111.95" width="22.266666666666666" height="8.049999999999999" rx="2" fill="var(--stop)"/><text x="661.1999999999999" y="138" text-anchor="middle" font-size="12" fill="var(--mut)">10:39</text><rect x="724.6" y="69.4" width="22.266666666666666" height="50.599999999999994" rx="2" fill="var(--ink)"/><rect x="746.8666666666667" y="74" width="22.266666666666666" height="46" rx="2" fill="var(--go)"/><rect x="769.1333333333333" y="109.65" width="22.266666666666666" height="10.35" rx="2" fill="var(--stop)"/><text x="758" y="138" text-anchor="middle" font-size="12" fill="var(--mut)">10:40</text><rect x="821.4" y="75.15" width="22.266666666666666" height="44.849999999999994" rx="2" fill="var(--ink)"/><rect x="843.6666666666666" y="82.05000000000001" width="22.266666666666666" height="37.949999999999996" rx="2" fill="var(--go)"/><rect x="865.9333333333333" y="113.1" width="22.266666666666666" height="6.8999999999999995" rx="2" fill="var(--stop)"/><text x="854.8" y="138" text-anchor="middle" font-size="12" fill="var(--mut)">10:41</text><rect x="918.1999999999999" y="90.1" width="22.266666666666666" height="29.9" rx="2" fill="var(--ink)"/><rect x="940.4666666666666" y="94.7" width="22.266666666666666" height="25.299999999999997" rx="2" fill="var(--go)"/><rect x="962.7333333333332" y="114.25" width="22.266666666666666" height="5.75" rx="2" fill="var(--stop)"/><text x="951.5999999999999" y="138" text-anchor="middle" font-size="12" fill="var(--mut)">10:42</text></svg>
+</section>
+<div class="cols">
+  <section class="panel">
+    <h2>결제 결과 모름 <span class="st stop">30분 이상</span></h2>
+    <p class="sub">PG사 응답이 오지 않은 결제예요. PG 관리 화면에서 확인한 결과로 직접 확정하세요.</p>
+    <table><thead><tr><th>결제</th><th>예약</th><th class="n">금액</th><th class="n">경과</th><th></th></tr></thead><tbody>
+    <tr><td class="mono">P-88121</td><td class="mono">R-501233</td><td class="n">119,600원</td><td class="n" style="color:var(--stop);font-weight:600">34분</td><td class="n"><a class="btn ghost sm" href="#">승인 처리</a> <a class="btn ghost sm" href="#">실패 처리</a></td></tr>
+    <tr><td class="mono">P-88190</td><td class="mono">R-501410</td><td class="n">59,800원</td><td class="n" style="color:var(--stop);font-weight:600">31분</td><td class="n"><a class="btn ghost sm" href="#">승인 처리</a> <a class="btn ghost sm" href="#">실패 처리</a></td></tr>
+    </tbody></table>
+  </section>
+  <section class="panel">
+    <h2>예약 강제 취소</h2>
+    <div class="field"><label for="rv">예약 번호</label><input id="rv" value="R-501233"></div>
+    <div class="field"><label for="rs">사유</label><input id="rs" value="부정 예매 확정 케이스 C-1021"><span class="hint">필수예요. 감사 기록에 남아요.</span></div>
+    <button class="btn danger wide" type="button" data-confirm="한 번 더 누르면 강제 취소" data-done="취소했어요 · 좌석 반환 중">강제 취소</button>
+  </section>
+</div></main></div>
+<script>
+(function(){
+  var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));};
+  $$('.demo').forEach(function(bar){
+    bar.addEventListener('click',function(e){var b=e.target.closest('button[data-show]');if(!b)return;
+      $$('button',bar).forEach(function(x){x.classList.toggle('on',x===b);});
+      var g=bar.getAttribute('data-group')||'';
+      $$('[data-state]').forEach(function(el){if((el.getAttribute('data-group')||'')!==g)return;el.hidden=el.getAttribute('data-state').split(' ').indexOf(b.getAttribute('data-show'))<0;});
+    });
+  });
+  $$('.qty').forEach(function(q){var v=q.querySelector('b'),min=+(q.getAttribute('data-min')||1),max=+(q.getAttribute('data-max')||8);
+    q.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var n=Math.max(min,Math.min(max,+v.textContent+(+b.getAttribute('data-q'))));v.textContent=n;q.dispatchEvent(new CustomEvent('qty',{detail:n,bubbles:true}));});
+  });
+  $$('[data-confirm]').forEach(function(b){var orig=b.innerHTML,t;
+    b.addEventListener('click',function(){
+      if(b.classList.contains('armed')){b.classList.remove('armed');b.innerHTML=b.getAttribute('data-done')||orig;b.disabled=true;return;}
+      b.classList.add('armed');b.textContent=b.getAttribute('data-confirm');clearTimeout(t);
+      t=setTimeout(function(){if(!b.disabled){b.classList.remove('armed');b.innerHTML=orig;}},4000);
+    });
+  });
+  $$('[data-open]').forEach(function(b){b.addEventListener('click',function(){var s=document.getElementById(b.getAttribute('data-open'));if(s)s.hidden=false;});});
+  $$('.scrim').forEach(function(s){s.addEventListener('click',function(e){if(e.target===s||e.target.closest('[data-close]'))s.hidden=true;});});
+})();
+</script>
 </body>
 </html>

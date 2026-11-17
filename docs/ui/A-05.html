@@ -4,46 +4,148 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>위험 사용자</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#f4f5f7;--card:#fff;--fg:#1d1f24;--mut:#6b7079;--line:#e4e5e8;--pri:#2f5bd3;--pri2:#e8eefc;--ok:#1d6b33;--okb:#e3f4e6;--bad:#a12c2c;--badb:#fbe9e9;--warn:#7a5600;--warnb:#fff5db;--side:#1f2430}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+:root{
+  --ink:#14213D;--ink2:#36425C;--mut:#687187;--faint:#98A0B1;
+  --line:#DCE0E6;--line2:#EBEEF2;--paper:#EDF0EE;--card:#FFFFFF;
+  --go:#0B7A5E;--go-d:#07614A;--go-t:#DFF1EA;
+  --amber:#E39608;--amber-d:#8A5900;--amber-t:#FFF2D4;
+  --stop:#C2362B;--stop-t:#FBE7E4;
+  --sky:#2C5BB8;--sky-t:#E5ECF9;
+  --num:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --sans:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+}
+*{box-sizing:border-box}[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased;word-break:keep-all}
+a{color:inherit}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--sky);outline-offset:2px}
+.num{font-family:var(--num);font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.mut{color:var(--mut)}.faint{color:var(--faint)}.grow{flex:1;min-width:0}
+.row{display:flex;align-items:center;gap:8px}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:3px 10px 3px 8px;border-radius:999px;background:var(--line2);color:var(--ink2);white-space:nowrap}
+.st::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.st.go{background:var(--go-t);color:var(--go-d)}.st.amber{background:var(--amber-t);color:var(--amber-d)}
+.st.stop{background:var(--stop-t);color:var(--stop)}.st.sky{background:var(--sky-t);color:var(--sky)}
+.st.plain::before{display:none}.st.plain{padding:3px 10px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+body{font-size:14px;background:#F3F5F4}
 .wrap{display:flex;min-height:100vh}
-.side{width:200px;background:var(--side);color:#cfd3dc;padding:16px 10px;flex:none}
-.side b{display:block;color:#fff;padding:0 10px 14px;font-size:15px}
-.side a{display:block;color:#cfd3dc;text-decoration:none;padding:7px 10px;border-radius:7px;font-size:13.5px}.side a.on{background:#323a4b;color:#fff;font-weight:700}
-.main{flex:1;min-width:0;padding:20px 24px}
-.head{display:flex;align-items:center;gap:10px;margin-bottom:16px}.head h1{font-size:20px;margin:0;flex:1}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:14px}
-.kpi .n{font-size:24px;font-weight:800}.kpi .l{color:var(--mut);font-size:12.5px}
-table{border-collapse:collapse;width:100%;font-size:13.5px}th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left}th{color:var(--mut);font-weight:600;background:#fafafb}
-.btn{display:inline-block;border:0;border-radius:8px;padding:7px 12px;font:inherit;font-weight:700;background:var(--pri);color:#fff;text-decoration:none;cursor:pointer}
-.btn.line{background:#fff;border:1px solid var(--line);color:var(--fg)}.btn.bad{background:var(--bad)}
-input,select,textarea{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}
-.tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--pri2);color:var(--pri)}
-.tag.ok{background:var(--okb);color:var(--ok)}.tag.bad{background:var(--badb);color:var(--bad)}.tag.warn{background:var(--warnb);color:var(--warn)}
-.mut{color:var(--mut)}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grow{flex:1}
-.two{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px}
-.field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}.field label{font-size:12.5px;color:var(--mut);font-weight:600}
-.tl{position:relative;padding-left:18px}.tl div{position:relative;padding:5px 0;font-size:13px}.tl div::before{content:"";position:absolute;left:-14px;top:11px;width:8px;height:8px;border-radius:50%;background:var(--mut)}
-.tl .hl{background:var(--warnb);border-radius:6px;padding-left:6px}.tl .hl::before{background:var(--bad)}
-.bars{display:flex;align-items:flex-end;gap:4px;height:90px}.bars i{flex:1;background:var(--pri2);border-top:3px solid var(--pri);display:block}
-@media(max-width:700px){.side{display:none}.two{grid-template-columns:1fr}.main{padding:14px}}
+.side{width:224px;flex:none;background:var(--ink);color:#B9C1D3;padding:20px 12px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:700;font-size:15px;padding:0 10px 22px}
+.brand small{display:block;font-weight:500;font-size:12px;color:#8F99B0}
+.side .grp{font-size:12px;color:#7581A0;padding:16px 10px 6px}
+.side a{display:flex;align-items:center;gap:10px;color:#B9C1D3;text-decoration:none;padding:8px 10px;border-radius:8px;font-size:14px}
+.side a:hover{background:rgba(255,255,255,.06);color:#fff}
+.side a.on{background:rgba(255,255,255,.1);color:#fff;font-weight:600;box-shadow:inset 3px 0 0 var(--go)}
+.side .ic{width:18px;height:18px}
+.side .out{margin-top:auto}
+.main{flex:1;min-width:0;padding:24px 32px 40px;max-width:1240px}
+.head{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.head h1{font-size:22px;margin:0;font-weight:700}
+.head .crumb{font-size:13px;color:var(--mut)}
+.who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut)}
+.who i{width:28px;height:28px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-style:normal;font-weight:700;font-size:12px}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+.panel h2{font-size:15px;margin:0 0 12px;font-weight:700;display:flex;align-items:center;gap:8px}
+.panel h2 .grow{flex:1}
+.panel .sub{font-size:13px;color:var(--mut);margin:-8px 0 12px}
+.cols{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr);gap:16px;align-items:start}
+.cols>.panel{margin-bottom:0}
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.kpi .l{font-size:12.5px;color:var(--mut)}
+.kpi .n{font-family:var(--num);font-size:34px;line-height:1.1;font-weight:600;font-variant-numeric:tabular-nums;margin-top:4px}
+.kpi .d{font-size:12px;color:var(--mut)}
+.kpi.alarm{border-color:var(--stop);background:var(--stop-t)}.kpi.alarm .n{color:var(--stop)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th{font-weight:600;color:var(--mut);font-size:12.5px;text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 12px;border-bottom:1px solid var(--line2);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:#F7F9F8}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+td.mono{font-family:var(--num);font-size:15px;font-weight:500}
+tr.sel td{background:var(--go-t)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:7px 14px;border:0;border-radius:9px;background:var(--go);color:#fff;font-weight:600;font-size:13.5px;text-decoration:none;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--go-d)}
+.btn.ghost{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}.btn.ghost:hover{background:#F7F9F8}
+.btn.danger{background:var(--stop)}.btn.armed{background:#8E1F17}
+.btn.sm{min-height:30px;padding:4px 10px;font-size:12.5px}
+.btn.wide{width:100%}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.field label{font-size:12.5px;color:var(--ink2);font-weight:600}
+.field .hint{font-size:12px;color:var(--mut)}
+input,select,textarea{font:inherit;color:var(--ink);min-height:38px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:var(--card);width:100%}
+select{appearance:none;-webkit-appearance:none;background:var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%2336425C' stroke-width='1.8'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E") no-repeat right 12px center;padding-right:32px}
+textarea{min-height:80px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px var(--line2)}
+.filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
+.filters .field{margin:0;min-width:150px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:16px}
+.tabs button{border:0;background:none;padding:10px 14px;font-weight:600;color:var(--mut);cursor:pointer;box-shadow:inset 0 -2px 0 transparent}
+.tabs button.on{color:var(--ink);box-shadow:inset 0 -2px 0 var(--ink)}
+.score{font-family:var(--num);font-size:20px;font-weight:600}
+.score.hi{color:var(--stop)}.score.mid{color:var(--amber-d)}
+.meter{height:6px;border-radius:3px;background:var(--line2);overflow:hidden;width:64px;display:inline-block;vertical-align:middle;margin-left:8px}
+.meter i{display:block;height:100%;background:var(--stop)}
+.alert{border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.5}
+.alert.amber{background:var(--amber-t);color:var(--amber-d)}.alert.sky{background:var(--sky-t);color:var(--sky)}
+hr.sep{border:0;border-top:1px solid var(--line);margin:18px 0}
+@media (max-width:1100px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.cols{grid-template-columns:1fr}}
+@media (max-width:720px){.side{display:none}.main{padding:16px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.panel{overflow-x:auto}}
 </style>
 </head>
 <body>
-<div class="wrap">
-<nav class="side"><b>제자리 관리자</b><a href="A-04.html" class="">실시간 현황</a><a href="A-05.html" class="on">위험 사용자</a><a href="A-06.html" class="">케이스 상세</a><a href="A-02.html" class="">기준 데이터</a><a href="A-03.html" class="">운행·행사</a><a href="A-07.html" class="">운영 설정</a><a href="A-01.html">로그아웃</a></nav>
-<main class="main">
-<div class="head"><h1>위험 사용자</h1></div>
-<div class="card row"><span>점수</span><select><option>80 이상</option></select><span>상태</span><select><option>OPEN</option></select><span>대상</span><select><option>전체</option></select></div>
-<div class="card"><table>
-<tr><th>대상</th><th>점수</th><th>근거</th><th>연결 계정</th><th>케이스</th><th>최근</th></tr>
-<tr><td><a href="A-06.html">CI · 홍*동 (a91f…)</a></td><td><b style="color:var(--bad)">92</b></td><td><span class="tag bad">MULTI_ACCOUNT_SYNC</span> <span class="tag warn">CANCEL_AFTER_PAY</span></td><td>4</td><td><span class="tag warn">OPEN</span></td><td>3분 전</td></tr>
-<tr><td><a href="A-06.html">결제수단 · ****5521</a></td><td><b style="color:var(--bad)">85</b></td><td><span class="tag warn">FAST_CLICK</span></td><td>3</td><td><span class="tag">REVIEWING</span></td><td>12분 전</td></tr>
-<tr><td><a href="A-06.html">기기 · 7c2e…</a></td><td><b>81</b></td><td><span class="tag warn">SAME_SEAT_RETRY</span></td><td>2</td><td><span class="tag warn">OPEN</span></td><td>40분 전</td></tr>
-</table></div>
-</main>
-</div>
+<div class="wrap"><nav class="side" aria-label="관리자 메뉴"><div class="brand"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#0B7A5E"/><path d="M11 8.5v10.2a2.3 2.3 0 0 0 2.3 2.3h7.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><path d="M10.5 24.5h12" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="11" r="2.4" fill="#FFD27A"/></svg><div>제자리<small>운영 콘솔</small></div></div>
+<div class="grp">운영</div><a href="A-04.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg>실시간 현황</a><a href="A-05.html" class="on" aria-current="page"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6z"/><path d="M12 8.5v4M12 15.5v.3"/></svg>위험 사용자</a><a href="A-06.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>케이스 상세</a>
+<div class="grp">기준·설정</div><a href="A-02.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3.5" width="12" height="13" rx="3"/><path d="M6 11h12M9 20.5l1.5-4M15 20.5l-1.5-4M9 14v.3M15 14v.3"/></svg>기준 데이터</a><a href="A-03.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>운행·행사</a><a href="A-07.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3L5.5 5.5"/></svg>운영 설정</a>
+<a class="out" href="A-01.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/></svg>로그아웃</a></nav><main class="main">
+<div class="head"><h1>위험 사용자</h1><span style="flex:1"></span><div class="who"><i>A</i>admin01 · 운영자</div></div>
+<section class="panel">
+  <div class="filters">
+    <div class="field"><label>점수</label><select><option>80 이상</option><option>60 이상</option><option>전체</option></select></div>
+    <div class="field"><label>케이스 상태</label><select><option>OPEN</option><option>REVIEWING</option><option>CLOSED</option></select></div>
+    <div class="field"><label>대상</label><select><option>전체</option><option>CI</option><option>결제수단</option><option>기기</option></select></div>
+    <span style="flex:1"></span><span class="mut" style="font-size:13px;padding-bottom:9px">개인정보는 가려서 보여요. 해제는 케이스 화면에서 사유를 남기고 해요.</span>
+  </div>
+</section>
+<section class="panel">
+  <h2>3명 <span class="mut" style="font-weight:500">점수 높은 순</span></h2>
+  <table><thead><tr><th>대상</th><th>점수</th><th>근거</th><th class="n">연결 계정</th><th>케이스</th><th>최근 활동</th></tr></thead><tbody>
+  <tr><td><a href="A-06.html" style="font-weight:600;text-decoration:none">CI · 홍*동</a> <span class="faint">a91f…</span></td><td><span class="score hi">92</span><span class="meter"><i style="width:92%;"></i></span></td><td><span class="st stop plain">MULTI_ACCOUNT_SYNC</span> <span class="st amber plain">CANCEL_AFTER_PAY</span></td><td class="n">4</td><td><span class="st amber">OPEN</span></td><td>3분 전</td></tr>
+  <tr><td><a href="A-06.html" style="font-weight:600;text-decoration:none">결제수단 · ****5521</a></td><td><span class="score hi">85</span><span class="meter"><i style="width:85%;"></i></span></td><td><span class="st amber plain">FAST_CLICK</span></td><td class="n">3</td><td><span class="st sky">REVIEWING</span></td><td>12분 전</td></tr>
+  <tr><td><a href="A-06.html" style="font-weight:600;text-decoration:none">기기 · 7c2e…</a></td><td><span class="score mid">81</span><span class="meter"><i style="width:81%;background:var(--amber)"></i></span></td><td><span class="st amber plain">SAME_SEAT_RETRY</span></td><td class="n">2</td><td><span class="st amber">OPEN</span></td><td>40분 전</td></tr>
+  </tbody></table>
+</section></main></div>
+<script>
+(function(){
+  var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));};
+  $$('.demo').forEach(function(bar){
+    bar.addEventListener('click',function(e){var b=e.target.closest('button[data-show]');if(!b)return;
+      $$('button',bar).forEach(function(x){x.classList.toggle('on',x===b);});
+      var g=bar.getAttribute('data-group')||'';
+      $$('[data-state]').forEach(function(el){if((el.getAttribute('data-group')||'')!==g)return;el.hidden=el.getAttribute('data-state').split(' ').indexOf(b.getAttribute('data-show'))<0;});
+    });
+  });
+  $$('.qty').forEach(function(q){var v=q.querySelector('b'),min=+(q.getAttribute('data-min')||1),max=+(q.getAttribute('data-max')||8);
+    q.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var n=Math.max(min,Math.min(max,+v.textContent+(+b.getAttribute('data-q'))));v.textContent=n;q.dispatchEvent(new CustomEvent('qty',{detail:n,bubbles:true}));});
+  });
+  $$('[data-confirm]').forEach(function(b){var orig=b.innerHTML,t;
+    b.addEventListener('click',function(){
+      if(b.classList.contains('armed')){b.classList.remove('armed');b.innerHTML=b.getAttribute('data-done')||orig;b.disabled=true;return;}
+      b.classList.add('armed');b.textContent=b.getAttribute('data-confirm');clearTimeout(t);
+      t=setTimeout(function(){if(!b.disabled){b.classList.remove('armed');b.innerHTML=orig;}},4000);
+    });
+  });
+  $$('[data-open]').forEach(function(b){b.addEventListener('click',function(){var s=document.getElementById(b.getAttribute('data-open'));if(s)s.hidden=false;});});
+  $$('.scrim').forEach(function(s){s.addEventListener('click',function(e){if(e.target===s||e.target.closest('[data-close]'))s.hidden=true;});});
+})();
+</script>
 </body>
 </html>

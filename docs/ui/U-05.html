@@ -4,70 +4,203 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>좌석 선택</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#f4f5f7;--card:#fff;--fg:#1d1f24;--mut:#6b7079;--line:#e4e5e8;--pri:#2f5bd3;--pri2:#e8eefc;--ok:#1d6b33;--okb:#e3f4e6;--bad:#a12c2c;--badb:#fbe9e9;--warn:#7a5600;--warnb:#fff5db}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
-.app{max-width:420px;margin:0 auto;min-height:100vh;background:var(--bg);display:flex;flex-direction:column}
-.bar{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:10px;z-index:2}
-.bar h1{font-size:17px;margin:0;flex:1}.bar a{color:var(--fg);text-decoration:none;font-size:20px}
-.body{padding:16px;flex:1;display:flex;flex-direction:column;gap:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
-.btn{display:block;width:100%;text-align:center;border:0;border-radius:10px;padding:13px;font:inherit;font-weight:700;background:var(--pri);color:#fff;text-decoration:none;cursor:pointer}
-.btn.sub{background:var(--pri2);color:var(--pri)}.btn.line{background:none;border:1px solid var(--line);color:var(--fg)}.btn.off{background:#c9ccd3;cursor:default}
-.field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}.field label{font-size:13px;color:var(--mut);font-weight:600}
-input,select{font:inherit;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;width:100%}
-.row{display:flex;gap:8px;align-items:center}.grow{flex:1}.mut{color:var(--mut);font-size:13px}.big{font-size:28px;font-weight:800}
-.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--pri2);color:var(--pri)}
-.tag.ok{background:var(--okb);color:var(--ok)}.tag.bad{background:var(--badb);color:var(--bad)}.tag.warn{background:var(--warnb);color:var(--warn)}
-.err{background:var(--badb);color:var(--bad);border-radius:10px;padding:10px 12px;font-size:14px}
-.note{background:var(--warnb);color:var(--warn);border-radius:10px;padding:10px 12px;font-size:14px}
-.tabbar{position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex}
-.tabbar a{flex:1;text-align:center;padding:10px 0;font-size:12px;color:var(--mut);text-decoration:none}.tabbar a.on{color:var(--pri);font-weight:700}
-.list a.item{display:flex;gap:10px;align-items:center;color:inherit;text-decoration:none}
-hr{border:0;border-top:1px solid var(--line);margin:10px 0}
-.seats{display:grid;grid-template-columns:repeat(2,1fr) 18px repeat(2,1fr);gap:6px}
-.seat{aspect-ratio:1;border-radius:7px;border:1px solid var(--line);background:#fff;font-size:11px;display:flex;align-items:center;justify-content:center}
-.seat.taken{background:#d9dce2;color:#999}.seat.hold{background:var(--warnb);color:var(--warn)}.seat.mine{background:var(--pri);color:#fff;border-color:var(--pri)}
-.aisle{}
-/* PC 화면 (1000px 이상) */
-@media(min-width:1000px){
-body{background:var(--bg)}
-.app{max-width:none}
-.bar{order:0;padding:14px 40px}
-.bar::before{content:"제자리";font-weight:800;color:var(--pri);font-size:19px;margin-right:24px}
-.bar h1{font-size:16px;color:var(--mut);font-weight:600}
-.tabbar{order:1;position:sticky;top:53px;z-index:1;border-top:0;border-bottom:1px solid var(--line);justify-content:center;gap:4px}
-.tabbar a{flex:0 0 auto;padding:13px 26px;font-size:14.5px}
-.body{order:2;width:100%;max-width:1180px;margin:0 auto;padding:32px 40px 56px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-content:start;align-items:start;grid-auto-flow:row dense}
-.body > .btn{align-self:start}
-.body{grid-template-columns:minmax(0,1fr) 360px;grid-template-rows:auto auto auto auto 1fr;column-gap:28px}.body>:nth-child(1){grid-column:1/-1}.body>:nth-child(3),.body>:nth-child(4){grid-column:1}.body>:nth-child(4){grid-row:span 3}.body>:nth-child(4) .seats{max-width:400px;margin:8px auto}.body>:nth-child(2),.body>:nth-child(5),.body>:nth-child(6),.body>:nth-child(7){grid-column:2}
+:root{
+  --ink:#14213D;--ink2:#36425C;--mut:#687187;--faint:#98A0B1;
+  --line:#DCE0E6;--line2:#EBEEF2;--paper:#EDF0EE;--card:#FFFFFF;
+  --go:#0B7A5E;--go-d:#07614A;--go-t:#DFF1EA;
+  --amber:#E39608;--amber-d:#8A5900;--amber-t:#FFF2D4;
+  --stop:#C2362B;--stop-t:#FBE7E4;
+  --sky:#2C5BB8;--sky-t:#E5ECF9;
+  --num:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --sans:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
 }
+*{box-sizing:border-box}[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased;word-break:keep-all}
+a{color:inherit}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--sky);outline-offset:2px}
+.num{font-family:var(--num);font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.mut{color:var(--mut)}.faint{color:var(--faint)}.grow{flex:1;min-width:0}
+.row{display:flex;align-items:center;gap:8px}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:3px 10px 3px 8px;border-radius:999px;background:var(--line2);color:var(--ink2);white-space:nowrap}
+.st::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.st.go{background:var(--go-t);color:var(--go-d)}.st.amber{background:var(--amber-t);color:var(--amber-d)}
+.st.stop{background:var(--stop-t);color:var(--stop)}.st.sky{background:var(--sky-t);color:var(--sky)}
+.st.plain::before{display:none}.st.plain{padding:3px 10px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+.app{max-width:440px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative}
+@media (min-width:720px){.app{background:var(--paper);box-shadow:0 0 0 1px var(--line)}}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:6px;padding:12px 12px 10px 16px;background:var(--paper)}
+.top h1{font-size:18px;line-height:1.3;margin:0;font-weight:700;flex:1}
+.top .back{width:36px;height:36px;margin-left:-8px;display:grid;place-items:center;border-radius:50%;text-decoration:none}
+.top .back:hover{background:var(--line2)}
+.top .act{font-size:14px;color:var(--mut);text-decoration:none;padding:6px 4px}
+.ic{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.body{flex:1;padding:4px 16px 24px;display:flex;flex-direction:column;gap:12px}
+.sec{font-size:14px;font-weight:700;color:var(--ink2);margin:10px 2px -2px}
+
+.card{background:var(--card);border-radius:16px;padding:16px;box-shadow:0 1px 0 var(--line)}
+.ticket{background:var(--card);border-radius:16px;padding:16px;position:relative;box-shadow:0 1px 0 var(--line)}
+.perf{position:relative;height:0;border-top:2px dashed var(--line);margin:14px -16px}
+.perf::before,.perf::after{content:"";position:absolute;top:-10px;width:18px;height:18px;border-radius:50%;background:var(--paper)}
+.perf::before{left:-9px}.perf::after{right:-9px}
+
+.tno{font-size:13px;font-weight:600;color:var(--mut)}
+.tno b{font-family:var(--num);font-size:17px;color:var(--ink);font-weight:600;margin-right:2px}
+.route{display:grid;grid-template-columns:auto 1fr auto;align-items:end;gap:12px;margin-top:6px}
+.route .t{font-family:var(--num);font-size:36px;line-height:1;font-weight:600;font-variant-numeric:tabular-nums}
+.route .s{font-size:13.5px;color:var(--ink2);margin-top:4px}
+.route .end{text-align:right}
+.route .mid{align-self:center;display:flex;flex-direction:column;align-items:center;gap:4px;padding-bottom:14px}
+.route .mid i{display:block;width:100%;height:2px;background:linear-gradient(90deg,var(--ink) 0 6px,transparent 6px) left/12px 2px repeat-x;position:relative}
+.route .mid i::before,.route .mid i::after{content:"";position:absolute;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--card);border:2px solid var(--ink)}
+.route .mid i::before{left:-4px}.route .mid i::after{right:-4px;background:var(--ink)}
+.route .mid span{font-size:12px;color:var(--mut)}
+.route.sm .t{font-size:26px}
+
+.fare{display:flex;align-items:baseline;gap:10px;padding:7px 0}
+.fare+.fare{border-top:1px solid var(--line2)}
+.fare .k{font-weight:600;width:52px}.fare .p{flex:1;font-family:var(--num);font-size:19px;font-weight:600}
+.fare .left{font-size:13px;color:var(--mut)}.fare .left.low{color:var(--amber-d);font-weight:600}.fare .left.none{color:var(--stop);font-weight:600}
+
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:50px;padding:12px 16px;border:0;border-radius:12px;background:var(--go);color:#fff;font-weight:700;font-size:15.5px;text-decoration:none;cursor:pointer;transition:background .15s}
+.btn:hover{background:var(--go-d)}
+.btn.ink{background:var(--ink)}.btn.ink:hover{background:#0C1730}
+.btn.ghost{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--line)}.btn.ghost:hover{background:var(--card)}
+.btn.soft{background:var(--go-t);color:var(--go-d)}.btn.soft:hover{background:#cfe9df}
+.btn.warn{background:transparent;color:var(--stop);box-shadow:inset 0 0 0 1.5px var(--stop-t)}
+.btn.armed{background:var(--stop);color:#fff;box-shadow:none}
+.btn.off{background:var(--line2);color:var(--faint);cursor:default}
+.btn.sm{min-height:40px;padding:8px 14px;font-size:14px;border-radius:10px;width:auto}
+.link{color:var(--sky);font-weight:600;text-decoration:none}.link:hover{text-decoration:underline}
+.stack{display:flex;flex-direction:column;gap:8px}
+
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.field label{font-size:13px;color:var(--ink2);font-weight:600}
+.field .hint{font-size:12.5px;color:var(--mut)}
+input,select,textarea{font:inherit;color:var(--ink);width:100%;min-height:48px;padding:11px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--card);appearance:none;-webkit-appearance:none}
+select{background:var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%2336425C' stroke-width='1.8'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E") no-repeat right 14px center;padding-right:36px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink)}
+input.bad{border-color:var(--stop)}
+
+.alert{display:flex;gap:10px;align-items:flex-start;border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.5}
+.alert .ic{width:18px;height:18px;margin-top:2px}
+.alert.stop{background:var(--stop-t);color:var(--stop)}.alert.amber{background:var(--amber-t);color:var(--amber-d)}
+.alert.go{background:var(--go-t);color:var(--go-d)}.alert.sky{background:var(--sky-t);color:var(--sky)}
+
+.qty{display:inline-flex;align-items:center;border:1.5px solid var(--line);border-radius:12px;overflow:hidden}
+.qty button{width:40px;height:40px;border:0;background:var(--card);font-size:20px;cursor:pointer}
+.qty button:hover{background:var(--line2)}
+.qty b{min-width:34px;text-align:center;font-family:var(--num);font-size:20px}
+
+.kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;font-size:14.5px}
+.kv span:first-child{color:var(--mut)}
+.kv.total{border-top:1px solid var(--line);margin-top:6px;padding-top:12px;font-weight:700;font-size:16px}
+.kv.total span:first-child{color:var(--ink)}
+
+.chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0;scrollbar-width:none}
+.chip{flex:none;border:1.5px solid var(--line);background:var(--card);border-radius:999px;padding:6px 14px;font-size:14px;font-weight:600;color:var(--ink2);cursor:pointer}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+
+.tabbar{position:sticky;bottom:0;z-index:5;display:flex;background:var(--card);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+.tabbar a{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 0;font-size:11.5px;color:var(--faint);text-decoration:none;font-weight:500}
+.tabbar a.on{color:var(--ink);font-weight:700}
+.tabbar a.on .ic{stroke-width:2.2}
+.tabbar .dot{position:relative}.tabbar .dot::after{content:"";position:absolute;top:-1px;right:-3px;width:7px;height:7px;border-radius:50%;background:var(--stop);box-shadow:0 0 0 2px var(--card)}
+
+.scrim{position:fixed;inset:0;background:rgba(20,33,61,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{width:100%;max-width:440px;background:var(--card);border-radius:22px 22px 0 0;padding:10px 20px 24px;animation:up .22s ease-out}
+.sheet::before{content:"";display:block;width:40px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 14px}
+.sheet h2{font-size:18px;margin:0 0 12px}
+@keyframes up{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
+
+.demo{margin:auto 16px 16px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:12px;color:var(--mut);border:1px dashed var(--faint);border-radius:10px;padding:6px 8px}
+.demo span{margin-right:4px}
+.demo button{border:0;background:transparent;border-radius:7px;padding:4px 9px;font-size:12px;font-weight:600;color:var(--mut);cursor:pointer}
+.demo button.on{background:var(--ink);color:#fff}
 </style>
 </head>
 <body>
 <div class="app">
-<header class="bar"><a href="U-04.html" aria-label="뒤로">‹</a><h1>좌석 선택</h1></header>
+<style>
+.timer{display:flex;align-items:center;gap:10px;background:var(--amber-t);color:var(--amber-d);border-radius:12px;padding:10px 14px;font-size:14px}
+.timer b{font-family:var(--num);font-size:22px;font-weight:600;color:var(--ink)}
+.car{background:var(--card);border-radius:44px 44px 16px 16px;padding:26px 14px 16px;box-shadow:0 1px 0 var(--line);position:relative}
+.car::before{content:"진행 방향 ↑";position:absolute;top:8px;left:0;right:0;text-align:center;font-size:11.5px;color:var(--faint)}
+.srow{display:grid;grid-template-columns:20px 1fr 1fr 22px 1fr 1fr;gap:7px;align-items:center;margin-bottom:7px}
+.srow .rn{font-family:var(--num);font-size:13px;color:var(--faint);text-align:center}
+.seat{aspect-ratio:1/1.05;border-radius:9px 9px 6px 6px;border:1.5px solid var(--line);background:var(--card);font-family:var(--num);font-size:14px;font-weight:600;color:var(--ink2);cursor:pointer;box-shadow:inset 0 -4px 0 var(--line2)}
+.seat.free:hover{border-color:var(--ink)}
+.seat.taken{background:var(--line2);border-color:var(--line2);color:var(--faint);cursor:not-allowed;box-shadow:none;background-image:linear-gradient(135deg,transparent 46%,var(--line) 46% 54%,transparent 54%)}
+.seat.hold{background:var(--amber-t);border-color:#F5D58C;color:var(--amber-d);cursor:not-allowed;box-shadow:none}
+.seat.mine{background:var(--go);border-color:var(--go);color:#fff;box-shadow:inset 0 -4px 0 var(--go-d)}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--mut);margin-top:12px;justify-content:center}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px;border:1.5px solid var(--line)}
+.dock{position:sticky;bottom:0;background:var(--paper);padding:10px 16px 16px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+</style>
+<header class="top"><a class="back" href="U-04.html" aria-label="뒤로"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a><h1>좌석 선택</h1></header>
 <main class="body">
-<div class="note">입장 시간 4:12 남음</div>
-<div class="card">
-  <div class="row"><b class="grow">101 · 서울 → 부산</b><span class="tag">일반실</span></div>
-  <div class="row" style="margin-top:8px"><span class="grow">어른</span><span>－ 2 ＋</span></div>
-</div>
-<div class="row"><span class="tag">1호차</span><span class="tag ok">2호차</span><span class="tag">3호차</span></div>
-<div class="card">
-  <div class="seats">
-    <div class="seat">1A</div><div class="seat taken">1B</div><div class="aisle"></div><div class="seat">1C</div><div class="seat hold">1D</div>
-    <div class="seat mine">2A</div><div class="seat mine">2B</div><div class="aisle"></div><div class="seat taken">2C</div><div class="seat taken">2D</div>
-    <div class="seat">3A</div><div class="seat">3B</div><div class="aisle"></div><div class="seat">3C</div><div class="seat">3D</div>
-    <div class="seat taken">4A</div><div class="seat">4B</div><div class="aisle"></div><div class="seat hold">4C</div><div class="seat">4D</div>
+  <div class="timer"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg><span class="grow">좌석을 고를 수 있는 시간</span><b id="tm">4:12</b></div>
+  <div class="card" style="padding:14px 16px">
+    <div class="row"><span class="tno grow"><b>101</b> 열차 · 서울 06:00 → 부산 08:40</span></div>
+    <div class="row" style="margin-top:10px"><span class="grow"><b>어른</b> <span class="mut" style="font-size:13px">1인 최대 8매</span></span><div class="qty" id="q" data-max="8"><button type="button" data-q="-1" aria-label="한 명 빼기">−</button><b>2</b><button type="button" data-q="1" aria-label="한 명 더하기">+</button></div></div>
   </div>
-  <p class="mut">흰색 빈 좌석 · 노랑 선점 중 · 회색 판매됨 · 파랑 내가 고른 좌석</p>
-</div>
-<div class="err">방금 다른 분이 잡았어요. 좌석을 다시 골라 주세요. (오류 예시)</div>
-<div class="card"><div class="row"><span class="grow">2호차 2A, 2B</span><b>119,600원</b></div></div>
-<a class="btn" href="U-06.html">선점하기</a>
+  <div class="chips" role="tablist" aria-label="호차">
+    <button class="chip" type="button">1호차 <span class="faint">특실</span></button><button class="chip on" type="button">2호차</button><button class="chip" type="button">3호차</button><button class="chip" type="button">4호차</button><button class="chip" type="button">5호차</button>
+  </div>
+  <div class="car" id="car"><div class="srow"><span class="rn">1</span><button type="button" class="seat free" data-id="1A" aria-label="1A 빈 좌석" aria-pressed="false">A</button><button type="button" class="seat taken" data-id="1B" disabled aria-label="1B 판매됨" aria-pressed="false">B</button><span class="aisle"></span><button type="button" class="seat free" data-id="1C" aria-label="1C 빈 좌석" aria-pressed="false">C</button><button type="button" class="seat hold" data-id="1D" disabled aria-label="1D 선점 중" aria-pressed="false">D</button></div><div class="srow"><span class="rn">2</span><button type="button" class="seat free mine" data-id="2A" aria-label="2A 빈 좌석" aria-pressed="true">A</button><button type="button" class="seat free mine" data-id="2B" aria-label="2B 빈 좌석" aria-pressed="true">B</button><span class="aisle"></span><button type="button" class="seat taken" data-id="2C" disabled aria-label="2C 판매됨" aria-pressed="false">C</button><button type="button" class="seat taken" data-id="2D" disabled aria-label="2D 판매됨" aria-pressed="false">D</button></div><div class="srow"><span class="rn">3</span><button type="button" class="seat free" data-id="3A" aria-label="3A 빈 좌석" aria-pressed="false">A</button><button type="button" class="seat free" data-id="3B" aria-label="3B 빈 좌석" aria-pressed="false">B</button><span class="aisle"></span><button type="button" class="seat free" data-id="3C" aria-label="3C 빈 좌석" aria-pressed="false">C</button><button type="button" class="seat free" data-id="3D" aria-label="3D 빈 좌석" aria-pressed="false">D</button></div><div class="srow"><span class="rn">4</span><button type="button" class="seat taken" data-id="4A" disabled aria-label="4A 판매됨" aria-pressed="false">A</button><button type="button" class="seat free" data-id="4B" aria-label="4B 빈 좌석" aria-pressed="false">B</button><span class="aisle"></span><button type="button" class="seat hold" data-id="4C" disabled aria-label="4C 선점 중" aria-pressed="false">C</button><button type="button" class="seat free" data-id="4D" aria-label="4D 빈 좌석" aria-pressed="false">D</button></div><div class="srow"><span class="rn">5</span><button type="button" class="seat free" data-id="5A" aria-label="5A 빈 좌석" aria-pressed="false">A</button><button type="button" class="seat taken" data-id="5B" disabled aria-label="5B 판매됨" aria-pressed="false">B</button><span class="aisle"></span><button type="button" class="seat taken" data-id="5C" disabled aria-label="5C 판매됨" aria-pressed="false">C</button><button type="button" class="seat free" data-id="5D" aria-label="5D 빈 좌석" aria-pressed="false">D</button></div><div class="srow"><span class="rn">6</span><button type="button" class="seat taken" data-id="6A" disabled aria-label="6A 판매됨" aria-pressed="false">A</button><button type="button" class="seat free" data-id="6B" aria-label="6B 빈 좌석" aria-pressed="false">B</button><span class="aisle"></span><button type="button" class="seat free" data-id="6C" aria-label="6C 빈 좌석" aria-pressed="false">C</button><button type="button" class="seat taken" data-id="6D" disabled aria-label="6D 판매됨" aria-pressed="false">D</button></div><div class="srow"><span class="rn">7</span><button type="button" class="seat free" data-id="7A" aria-label="7A 빈 좌석" aria-pressed="false">A</button><button type="button" class="seat taken" data-id="7B" disabled aria-label="7B 판매됨" aria-pressed="false">B</button><span class="aisle"></span><button type="button" class="seat hold" data-id="7C" disabled aria-label="7C 선점 중" aria-pressed="false">C</button><button type="button" class="seat free" data-id="7D" aria-label="7D 빈 좌석" aria-pressed="false">D</button></div><div class="srow"><span class="rn">8</span><button type="button" class="seat free" data-id="8A" aria-label="8A 빈 좌석" aria-pressed="false">A</button><button type="button" class="seat free" data-id="8B" aria-label="8B 빈 좌석" aria-pressed="false">B</button><span class="aisle"></span><button type="button" class="seat taken" data-id="8C" disabled aria-label="8C 판매됨" aria-pressed="false">C</button><button type="button" class="seat taken" data-id="8D" disabled aria-label="8D 판매됨" aria-pressed="false">D</button></div><div class="srow"><span class="rn">9</span><button type="button" class="seat taken" data-id="9A" disabled aria-label="9A 판매됨" aria-pressed="false">A</button><button type="button" class="seat free" data-id="9B" aria-label="9B 빈 좌석" aria-pressed="false">B</button><span class="aisle"></span><button type="button" class="seat free" data-id="9C" aria-label="9C 빈 좌석" aria-pressed="false">C</button><button type="button" class="seat hold" data-id="9D" disabled aria-label="9D 선점 중" aria-pressed="false">D</button></div><div class="srow"><span class="rn">10</span><button type="button" class="seat free" data-id="10A" aria-label="10A 빈 좌석" aria-pressed="false">A</button><button type="button" class="seat taken" data-id="10B" disabled aria-label="10B 판매됨" aria-pressed="false">B</button><span class="aisle"></span><button type="button" class="seat taken" data-id="10C" disabled aria-label="10C 판매됨" aria-pressed="false">C</button><button type="button" class="seat free" data-id="10D" aria-label="10D 빈 좌석" aria-pressed="false">D</button></div>
+    <div class="legend"><span><i></i>빈 좌석</span><span><i style="background:var(--go);border-color:var(--go)"></i>내 선택</span><span><i style="background:var(--amber-t);border-color:#F5D58C"></i>다른 분이 고르는 중</span><span><i style="background:var(--line2);border-color:var(--line2)"></i>판매됨</span></div>
+  </div>
+  <div class="alert stop" data-state="err" hidden><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.2v.3"/></svg><span>방금 다른 분이 2A를 먼저 잡았어요. 다른 좌석을 골라 주세요.</span></div>
 </main>
-
+<div class="dock">
+  <div class="row"><span class="grow"><span class="mut" style="font-size:13px">2호차</span> <b id="sel">2A, 2B</b></span><b class="num" style="font-size:22px" id="sum">119,600원</b></div>
+  <a class="btn" href="U-06.html" id="go">이 좌석 잡기</a>
 </div>
+<div class="demo" style="margin-top:0"><span>시안 상태</span><button data-show="ok" class="on">기본</button><button data-show="err">선점 실패</button></div>
+</div>
+<script>
+(function(){var car=document.getElementById('car'),q=document.querySelector('#q b'),P=59800;
+function upd(){var m=[].slice.call(car.querySelectorAll('.seat.mine')).map(function(b){return b.dataset.id;});
+document.getElementById('sel').textContent=m.length?m.join(', '):'좌석을 골라 주세요';
+document.getElementById('sum').textContent=(m.length*P).toLocaleString('ko-KR')+'원';
+var g=document.getElementById('go');g.classList.toggle('off',m.length!==+q.textContent);
+g.textContent=m.length===+q.textContent?'이 좌석 잡기':(+q.textContent-m.length>0?(+q.textContent-m.length)+'석 더 골라 주세요':'선택한 좌석이 인원보다 많아요');}
+car.addEventListener('click',function(e){var b=e.target.closest('.seat.free');if(!b)return;
+if(!b.classList.contains('mine')&&car.querySelectorAll('.seat.mine').length>=+q.textContent)return;
+b.classList.toggle('mine');b.setAttribute('aria-pressed',b.classList.contains('mine'));upd();});
+document.addEventListener('qty',upd);
+var s=252;setInterval(function(){if(s>0)s--;document.getElementById('tm').textContent=Math.floor(s/60)+':'+('0'+s%60).slice(-2);},1000);})();
+</script>
+<script>
+(function(){
+  var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));};
+  $$('.demo').forEach(function(bar){
+    bar.addEventListener('click',function(e){var b=e.target.closest('button[data-show]');if(!b)return;
+      $$('button',bar).forEach(function(x){x.classList.toggle('on',x===b);});
+      var g=bar.getAttribute('data-group')||'';
+      $$('[data-state]').forEach(function(el){if((el.getAttribute('data-group')||'')!==g)return;el.hidden=el.getAttribute('data-state').split(' ').indexOf(b.getAttribute('data-show'))<0;});
+    });
+  });
+  $$('.qty').forEach(function(q){var v=q.querySelector('b'),min=+(q.getAttribute('data-min')||1),max=+(q.getAttribute('data-max')||8);
+    q.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var n=Math.max(min,Math.min(max,+v.textContent+(+b.getAttribute('data-q'))));v.textContent=n;q.dispatchEvent(new CustomEvent('qty',{detail:n,bubbles:true}));});
+  });
+  $$('[data-confirm]').forEach(function(b){var orig=b.innerHTML,t;
+    b.addEventListener('click',function(){
+      if(b.classList.contains('armed')){b.classList.remove('armed');b.innerHTML=b.getAttribute('data-done')||orig;b.disabled=true;return;}
+      b.classList.add('armed');b.textContent=b.getAttribute('data-confirm');clearTimeout(t);
+      t=setTimeout(function(){if(!b.disabled){b.classList.remove('armed');b.innerHTML=orig;}},4000);
+    });
+  });
+  $$('[data-open]').forEach(function(b){b.addEventListener('click',function(){var s=document.getElementById(b.getAttribute('data-open'));if(s)s.hidden=false;});});
+  $$('.scrim').forEach(function(s){s.addEventListener('click',function(e){if(e.target===s||e.target.closest('[data-close]'))s.hidden=true;});});
+})();
+</script>
 </body>
 </html>
