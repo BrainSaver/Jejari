@@ -24,7 +24,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.mockito.Mockito;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import com.jejari.event.outbox.OutboxRecorder;
 
 import com.jejari.common.error.BusinessException;
 import com.jejari.payment.PaymentSaga.Approval;
@@ -81,6 +85,12 @@ class PaymentInfraTest {
 	StringRedisTemplate redis;
 	@Autowired
 	Clock clock;
+	@Autowired
+	LateApprovalRefund refunds;
+	@Autowired
+	TransactionTemplate tx;
+	@Autowired
+	OutboxRecorder outbox;
 
 	MockPgClient pg;
 	PaymentRecheckScanner scanner;
@@ -104,6 +114,32 @@ class PaymentInfraTest {
 	@AfterEach
 	void tearDown() {
 		cleanDb();
+	}
+
+	// ------------------------------------------------------------ 결제 수단 번호
+
+	@Test
+	void 결제_수단_번호는_payment_method_seq에서_받고_옛_행과_겹치면_다음_번호로_넘어간다() {
+		// v19 전 reservation_seq로 만든 행이 마침 다음 시퀀스 번호들을 차지하고 있는 상황
+		long owner = newMember();
+		long next = jdbc.queryForObject("SELECT payment_method_seq.NEXTVAL FROM dual", Long.class);
+		for (long id = next + 1; id <= next + 3; id++) {
+			jdbc.update("""
+					INSERT INTO payment_method (method_id, member_id, method_hash, method_type, card_last4)
+					VALUES (?, ?, NULL, 'CARD', '0000')""", id, owner);
+		}
+		long m = newMember();
+		long r = holdSeat(m, nextSeat());
+
+		PaymentResult res = payments.start(m, r, key(), OK);
+
+		// 겹친 PK가 "같은 키 동시 요청"으로 잘못 읽히지 않고 새 결제로 끝난다
+		assertThat(res.replay()).isFalse();
+		assertThat(res.reservationStatus()).isEqualTo("CONFIRMED");
+		long methodId = jdbc.queryForObject("SELECT method_id FROM payment WHERE reservation_id = ?", Long.class, r);
+		assertThat(methodId).isGreaterThan(next + 3);
+		assertThat(jdbc.queryForObject("SELECT member_id FROM payment_method WHERE method_id = ?", Long.class, methodId))
+				.isEqualTo(m);
 	}
 
 	// ------------------------------------------------------------ 정상 흐름
@@ -359,7 +395,7 @@ class PaymentInfraTest {
 	}
 
 	@Test
-	void 승인됐는데_좌석을_잃었으면_결제는_APPROVED로_남기고_예약은_만료() {
+	void 승인됐는데_좌석을_잃었으면_예약은_만료하고_전액_환불() {
 		long m = newMember();
 		long r = holdSeat(m, nextSeat());
 		payments.start(m, r, key(), NO_RESPONSE);
@@ -367,10 +403,70 @@ class PaymentInfraTest {
 
 		assertThat(saga.approve(r, r, "mock-tx")).isEqualTo(Approval.CONFIRM_FAILED);
 
-		assertThat(str("SELECT status FROM payment WHERE payment_id = ?", r)).isEqualTo("APPROVED"); // 돈의 사실
 		assertThat(str("SELECT status FROM reservation WHERE reservation_id = ?", r)).isEqualTo("EXPIRED");
 		assertThat(str("SELECT status FROM saga_instance WHERE reservation_id = ?", r)).isEqualTo("COMPENSATED");
 		assertThat(perRun(m)).isZero();
+		// PAY-05: 승인된 돈은 전액 환불
+		assertLateRefundDone(r);
+	}
+
+	@Test
+	void 늦은_승인은_전액_환불_수수료_0_환불_완료_이벤트는_한_번() {
+		long m = newMember();
+		long r = holdSeat(m, nextSeat());
+		payments.start(m, r, key(), DECLINE);
+		int refundsBefore = pg.refundCount();
+
+		assertThat(saga.approve(r, r, "late-tx")).isEqualTo(Approval.LATE_APPROVAL);
+		// 같은 승인이 또 와도 환불은 한 번
+		assertThat(saga.approve(r, r, "late-tx")).isEqualTo(Approval.REFUNDED);
+
+		assertLateRefundDone(r);
+		assertThat(pg.refundCount()).isEqualTo(refundsBefore + 1);
+		assertThat(jdbc.queryForList("SELECT event_type FROM outbox_event WHERE aggregate_id = ? ORDER BY seq", String.class,
+				Long.toString(r))).endsWith("RESERVATION_EXPIRED", "REFUND_COMPLETED");
+	}
+
+	@Test
+	void 늦은_승인_환불이_실패하면_FAILED로_남고_다시_하면_완료된다() {
+		long m = newMember();
+		long r = holdSeat(m, nextSeat());
+		payments.start(m, r, key(), DECLINE);
+		// PG 환불이 장애인 상황: 늦은 승인을 기록하는 트랜잭션만 직접 실행하고 환불은 실패하는 PG로
+		long cancelId = tx.execute(st -> {
+			jdbc.update("UPDATE payment SET status = 'APPROVED', pg_tx_id = 'late-tx' WHERE payment_id = ?", r);
+			return refunds.request(r, r);
+		});
+		PgClient down = Mockito.mock(PgClient.class);
+		Mockito.when(down.refund(Mockito.anyLong(), Mockito.any(), Mockito.anyLong(), Mockito.any()))
+				.thenThrow(new IllegalStateException("PG 장애"));
+
+		assertThat(new LateApprovalRefund(jdbc, tx, down, outbox).refund(cancelId)).isEqualTo("FAILED");
+
+		assertThat(str("SELECT refund_status FROM cancellation WHERE cancel_id = ?", cancelId)).isEqualTo("FAILED");
+		assertThat(str("SELECT status FROM payment WHERE payment_id = ?", r)).isEqualTo("APPROVED");
+		assertThat(saga.approve(r, r, "late-tx")).isEqualTo(Approval.REFUND_IN_PROGRESS);
+		assertThat(count("SELECT COUNT(*) FROM outbox_event WHERE aggregate_id = ? AND event_type = 'REFUND_COMPLETED'",
+				Long.toString(r))).isZero();
+
+		// 재시도 (CNL-03 배치가 할 일): 같은 cancel_id로 다시 하면 완료
+		assertThat(refunds.refund(cancelId)).isEqualTo("DONE");
+		assertLateRefundDone(r);
+	}
+
+	/** 늦은 승인 환불이 끝난 모습 (§7.3) */
+	private void assertLateRefundDone(long r) {
+		assertThat(str("SELECT status FROM payment WHERE payment_id = ?", r)).isEqualTo("REFUNDED");
+		java.util.Map<String, Object> c = jdbc.queryForMap("SELECT * FROM cancellation WHERE reservation_id = ?", r);
+		assertThat(c.get("CANCEL_TYPE")).isEqualTo("PAY_FAILED");
+		assertThat(((Number) c.get("REFUND_AMOUNT")).longValue())
+				.isEqualTo(count("SELECT amount FROM payment WHERE payment_id = ?", r));
+		assertThat(((Number) c.get("CANCEL_FEE")).longValue()).isZero();
+		assertThat(c.get("REFUND_STATUS")).isEqualTo("DONE");
+		assertThat(c.get("REFUND_PG_TX_ID")).asString().startsWith("mock-refund-");
+		assertThat(c.get("FEE_POLICY_ID")).isNull();
+		assertThat(count("SELECT COUNT(*) FROM outbox_event WHERE aggregate_id = ? AND event_type = 'REFUND_COMPLETED'",
+				Long.toString(r))).isEqualTo(1);
 	}
 
 	@Test
@@ -381,7 +477,7 @@ class PaymentInfraTest {
 
 		assertThat(saga.approve(r, r, "late-tx")).isEqualTo(Approval.LATE_APPROVAL);
 
-		assertThat(str("SELECT status FROM payment WHERE payment_id = ?", r)).isEqualTo("APPROVED");
+		assertThat(str("SELECT status FROM payment WHERE payment_id = ?", r)).isEqualTo("REFUNDED");   // 승인 → 바로 환불
 		assertThat(str("SELECT status FROM reservation WHERE reservation_id = ?", r)).isEqualTo("EXPIRED");
 		assertThat(count("SELECT COUNT(*) FROM seat_inventory WHERE reservation_id = ?", r)).isZero();
 	}
@@ -506,6 +602,7 @@ class PaymentInfraTest {
 		String mine = "SELECT reservation_id FROM reservation WHERE member_id BETWEEN " + lo + " AND " + hi;
 		jdbc.update("DELETE FROM outbox_event WHERE aggregate_type = 'RESERVATION' AND aggregate_id IN (SELECT TO_CHAR(reservation_id) FROM reservation WHERE member_id BETWEEN ? AND ?)",
 				lo, hi);
+		jdbc.update("DELETE FROM cancellation WHERE reservation_id IN (" + mine + ")");
 		jdbc.update("DELETE FROM payment WHERE reservation_id IN (" + mine + ")");
 		jdbc.update("DELETE FROM payment_method WHERE member_id BETWEEN ? AND ?", lo, hi);
 		jdbc.update("DELETE FROM reservation_history WHERE reservation_id IN (" + mine + ")");
