@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>좌석 단계 연결 안내</title>
+<style>
+:root{
+  --bg:#f4f5f7;--card:#fff;--fg:#1d1f24;--mut:#6b7079;--line:#e4e5e8;
+  --pri:#2f5bd3;--pri2:#e8eefc;--ok:#1d6b33;--okb:#e3f4e6;--bad:#a12c2c;--badb:#fbe9e9;
+  --warn:#7a5600;--warnb:#fff5db;--code:#f0f1f4;--hl:#fff8e1;
+  --lc:#6d4fc7;--lcb:#efeafb;   /* 결제·취소 쪽 */
+  --ls:#2f5bd3;--lsb:#e8eefc;   /* 좌석 모듈 */
+  --ld:#1d6b33;--ldb:#e3f4e6;   /* DB 커밋 */
+  --lr:#b4432a;--lrb:#fcebe6;   /* Redis */
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#15171b;--card:#1d2026;--fg:#e7e9ee;--mut:#9aa0ab;--line:#2c3038;
+    --pri:#7ea2f5;--pri2:#20283c;--ok:#7bd194;--okb:#17301d;--bad:#f09a9a;--badb:#331a1a;
+    --warn:#e8c06a;--warnb:#32280f;--code:#24272e;--hl:#2a2512;
+    --lc:#b39ef5;--lcb:#272040;--ls:#7ea2f5;--lsb:#20283c;--ld:#7bd194;--ldb:#17301d;--lr:#f2a089;--lrb:#3a211b;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15171b;--card:#1d2026;--fg:#e7e9ee;--mut:#9aa0ab;--line:#2c3038;
+  --pri:#7ea2f5;--pri2:#20283c;--ok:#7bd194;--okb:#17301d;--bad:#f09a9a;--badb:#331a1a;
+  --warn:#e8c06a;--warnb:#32280f;--code:#24272e;--hl:#2a2512;
+  --lc:#b39ef5;--lcb:#272040;--ls:#7ea2f5;--lsb:#20283c;--ld:#7bd194;--ldb:#17301d;--lr:#f2a089;--lrb:#3a211b;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:15px/1.65 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+header{border-bottom:1px solid var(--line);background:var(--card)}
+header .wrap{padding-top:22px;padding-bottom:0}
+h1{font-size:21px;margin:0 0 4px;letter-spacing:-.2px}
+.sub{color:var(--mut);font-size:13.5px;margin:0 0 14px}
+nav{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav a{flex:0 0 auto;padding:9px 13px;border-radius:9px 9px 0 0;text-decoration:none;color:var(--mut);
+  font-size:14px;font-weight:600;border-bottom:2px solid transparent;white-space:nowrap}
+nav a:hover{color:var(--fg)}
+nav a.on{color:var(--pri);border-bottom-color:var(--pri);background:var(--pri2)}
+main{padding-top:22px}
+section{display:none}
+section.on{display:block}
+h2{font-size:18px;margin:26px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+h2:first-child{margin-top:4px}
+h3{font-size:15px;margin:22px 0 8px}
+p{margin:0 0 10px}
+.muted{color:var(--mut)}
+.small{font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 16px;margin:0 0 14px}
+.lead{font-size:15.5px}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em}
+code{background:var(--code);padding:1px 5px;border-radius:5px}
+pre{background:var(--code);border-radius:10px;padding:12px 14px;overflow-x:auto;margin:0 0 12px;font-size:13px;line-height:1.55}
+pre code{background:none;padding:0}
+.tw{overflow-x:auto;margin:0 0 14px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12.5px;color:var(--mut);font-weight:700;background:var(--bg);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.nw{white-space:nowrap}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.t-c{color:var(--lc);background:var(--lcb)}
+.t-s{color:var(--ls);background:var(--lsb)}
+.t-d{color:var(--ld);background:var(--ldb)}
+.t-r{color:var(--lr);background:var(--lrb)}
+.t-ok{color:var(--ok);background:var(--okb)}
+.t-bad{color:var(--bad);background:var(--badb)}
+.t-warn{color:var(--warn);background:var(--warnb)}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 14px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px}
+.kpi b{display:block;font-size:13px;color:var(--mut);font-weight:600;margin-bottom:4px}
+.kpi .v{font-size:15px;font-weight:700}
+.kpi .who{font-size:12.5px;color:var(--mut);margin-top:6px}
+.note{border-left:3px solid var(--warn);background:var(--warnb);padding:10px 13px;border-radius:0 10px 10px 0;margin:0 0 14px;font-size:14px}
+.note.ok{border-left-color:var(--ok);background:var(--okb)}
+
+/* ---------- 흐름 재생 ---------- */
+.player{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 16px}
+.ptop{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.seg{display:inline-flex;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:none;color:var(--mut);font:inherit;font-size:13.5px;font-weight:600;padding:6px 11px;border-radius:8px;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.ctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--fg);font:inherit;font-size:13.5px;font-weight:600;
+  padding:6px 11px;border-radius:9px;cursor:pointer;min-width:38px}
+.btn:hover{border-color:var(--pri)}
+.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+.sw{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--mut);cursor:pointer;user-select:none}
+.sw input{accent-color:var(--bad)}
+.lanes{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}
+.lane{border:1px solid var(--line);border-radius:10px;padding:7px 9px;font-size:12.5px;font-weight:700;color:var(--mut);
+  text-align:center;transition:background .35s,color .35s,border-color .35s,transform .35s}
+.lane small{display:block;font-weight:500;font-size:11.5px}
+.lane.on.c{background:var(--lcb);color:var(--lc);border-color:var(--lc);transform:translateY(-2px)}
+.lane.on.s{background:var(--lsb);color:var(--ls);border-color:var(--ls);transform:translateY(-2px)}
+.lane.on.d{background:var(--ldb);color:var(--ld);border-color:var(--ld);transform:translateY(-2px)}
+.lane.on.r{background:var(--lrb);color:var(--lr);border-color:var(--lr);transform:translateY(-2px)}
+.lane.on.x{background:var(--badb);color:var(--bad);border-color:var(--bad);transform:translateY(-2px)}
+.stage{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:12px}
+.steps{list-style:none;margin:0;padding:0;position:relative}
+.steps,.state,.steps li{min-width:0}
+.steps li{position:relative;padding:9px 10px 9px 38px;border-radius:10px;margin-bottom:4px;cursor:pointer;
+  transition:background .3s,opacity .3s;opacity:.55}
+.steps li.done{opacity:.8}
+.steps li.cur{opacity:1;background:var(--bg)}
+.steps li::before{content:attr(data-n);position:absolute;left:9px;top:10px;width:20px;height:20px;border-radius:50%;
+  font-size:11.5px;font-weight:700;display:grid;place-items:center;background:var(--line);color:var(--mut);transition:background .3s,color .3s}
+.steps li.cur::before{background:var(--pri);color:#fff}
+.steps li.done::before{background:var(--okb);color:var(--ok)}
+.steps li.fail::before{background:var(--bad);color:#fff}
+.steps .st{font-weight:700;font-size:14px}
+.steps .sd{font-size:13px;color:var(--mut)}
+.steps pre{margin:6px 0 0;font-size:12px;padding:8px 10px}
+.state{display:grid;gap:8px;align-content:start}
+.box{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--card)}
+.box h4{margin:0 0 6px;font-size:12.5px;color:var(--mut);display:flex;justify-content:space-between;gap:6px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:13px;align-items:center}
+.kv .k{color:var(--mut);white-space:nowrap}
+.val{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;padding:1px 7px;border-radius:6px;
+  background:var(--code);justify-self:start;transition:background .4s,color .4s}
+.val.flash{animation:flash 1.1s ease}
+.val.gone{color:var(--mut);text-decoration:line-through}
+@keyframes flash{0%{background:var(--hl);box-shadow:0 0 0 3px var(--hl)}100%{box-shadow:0 0 0 0 transparent}}
+.result{margin-top:10px;font-size:13.5px;padding:9px 11px;border-radius:10px;background:var(--bg);min-height:40px;transition:background .3s}
+.result.ok{background:var(--okb);color:var(--ok)}
+.result.bad{background:var(--badb);color:var(--bad)}
+.bar{height:3px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;width:0;background:var(--pri);transition:width .5s}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12.5px;color:var(--mut);margin-top:8px}
+
+@media (max-width:760px){
+  .stage{grid-template-columns:minmax(0,1fr)}
+  .lanes{grid-template-columns:repeat(2,1fr)}
+  .grid3{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>결제·확정 취소가 부르는 좌석 단계</h1>
+    <p class="sub">작성 강동균 (B 좌석) · 받는 사람 길동현 (C 결제) · 강다인 (D 취소) · 코드 <code>com.jejari.seat</code> · 절차 원천 <code>docs/concurrency.md</code> §4 · §5.1 · §8</p>
+    <nav id="tabs">
+      <a href="#s-summary" class="on">요약</a>
+      <a href="#s-flow">흐름 재생</a>
+      <a href="#s-usage">사용법</a>
+      <a href="#s-contract">반환값·Redis</a>
+      <a href="#s-caution">주의할 점</a>
+      <a href="#s-verify">검증</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ================================================================ 요약 -->
+<section id="s-summary" class="on">
+  <h2>한 줄 요약</h2>
+  <p class="lead">결제(PAY-01·02)와 확정 취소(CNL-02)는 <b>자기 트랜잭션 안에서 메서드 한 줄</b>만 부르면 됩니다. 그러면 좌석 재고와 매수 카운터가 같은 트랜잭션에서 바뀌고, 커밋된 뒤에 Redis 좌석 키가 맞춰집니다.</p>
+
+  <div class="grid3">
+    <div class="kpi"><b>결제 시작 · §4</b><div class="v mono">extendHoldInCurrentTx(R, d)</div><div class="who">길동현 · <code>SeatPaymentService</code></div></div>
+    <div class="kpi"><b>결제 승인 · §5.1</b><div class="v mono">confirmSeatsInCurrentTx(R)</div><div class="who">길동현 · <code>SeatPaymentService</code></div></div>
+    <div class="kpi"><b>확정 취소 · §8</b><div class="v mono">returnSoldSeatsInCurrentTx(R)</div><div class="who">강다인 · <code>SeatReleaseService</code></div></div>
+  </div>
+
+  <h3>메서드 한눈에</h3>
+  <div class="tw"><table>
+    <thead><tr><th>메서드</th><th>부르는 때</th><th>DB에서 하는 일 (같은 트랜잭션)</th><th>커밋 뒤 Redis</th><th>돌려주는 값</th></tr></thead>
+    <tbody>
+      <tr><td class="nw mono">extendHoldInCurrentTx</td><td>reservation을 PAYMENT_PENDING으로 바꾸고 새 마감 <code>d</code>를 읽은 뒤</td><td><code>seat_inventory.hold_expires_at = d</code> (HOLD 행 K개)</td><td><code>extend.lua</code> 값이 R인 키만 <code>d</code>까지 연장</td><td><span class="tag t-ok">true</span> / <span class="tag t-bad">false</span></td></tr>
+      <tr><td class="nw mono">confirmSeatsInCurrentTx</td><td>reservation 행을 <code>FOR UPDATE</code>로 잠근 뒤, payment·reservation 갱신 전</td><td>HOLD → <b>SOLD</b>, <code>hold_expires_at = NULL</code> (K개)</td><td><code>sold.lua</code> 키를 <code>SOLD:R</code>로 덮어씀, 만료 = 운행 출발</td><td><span class="tag t-ok">true</span> / <span class="tag t-bad">false</span></td></tr>
+      <tr><td class="nw mono">returnSoldSeatsInCurrentTx</td><td>reservation을 CONFIRMED → CANCELED로 바꾼 뒤(1행)</td><td>SOLD 행 삭제, <code>purchase_counter</code> 감소</td><td><code>reoffer.lua</code> → <code>REOFFER:R</code> 60초, <code>limit_decr.lua</code> 한도 감소</td><td><code>ReturnedSeats</code> / <code>null</code></td></tr>
+      <tr><td class="nw mono">releaseInCurrentTx <span class="muted small">(기존)</span></td><td>결제 실패 §5.2: payment FAILED 기록과 같은 트랜잭션</td><td>PAYMENT_PENDING → EXPIRED, HOLD 행 삭제, 카운터 감소, saga·이력·outbox</td><td><code>REOFFER:R</code>, 한도 감소</td><td><span class="tag t-ok">true</span> / <span class="tag t-bad">false</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">K = 예약의 좌석 구간 행 수 = <code>seat_count</code> × 구간 수. 지금은 구간 재고 OFF라 <b>K = 매수</b>입니다 (§2.4).</p>
+
+  <h3>누가 무엇을 바꾸나</h3>
+  <div class="tw"><table>
+    <thead><tr><th>구분</th><th>바꾸는 것</th><th>담당</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag t-c">결제·취소 쪽</span></td><td><code>reservation</code> 상태, <code>payment</code>, <code>cancellation</code>, <code>saga_instance</code>, <code>reservation_history</code>, <code>outbox_event</code></td><td>길동현 · 강다인</td></tr>
+      <tr><td><span class="tag t-s">좌석 모듈</span></td><td><code>seat_inventory</code>, <code>purchase_counter</code>, Redis <code>seat:hold:*</code> · <code>limit:*</code></td><td>강동균 (이 메서드들)</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note ok">원칙 하나: <b>예약 행 락을 먼저 잡은 뒤에 부른다</b> (§0.4-1). reservation <code>UPDATE</code>나 <code>SELECT … FOR UPDATE</code>가 앞에 있으면 같은 예약을 다루는 트랜잭션이 줄을 서서, 좌석·카운터가 엇갈리지 않습니다.</div>
+</section>
+
+<!-- ================================================================ 흐름 재생 -->
+<section id="s-flow">
+  <h2>흐름 재생</h2>
+  <p>예약 R=1201(좌석 5A·5B, 2매)의 값이 단계마다 어떻게 바뀌는지 보여 줍니다. 단계를 누르면 그 단계로 이동합니다. <b>좌석을 잃은 경우</b>를 켜면 롤백 흐름을 볼 수 있습니다.</p>
+
+  <div class="player" id="player">
+    <div class="ptop">
+      <div class="seg" id="scn">
+        <button data-s="start" class="on">결제 시작 §4</button>
+        <button data-s="confirm">승인 §5.1</button>
+        <button data-s="cancel">확정 취소 §8</button>
+      </div>
+      <div class="ctl">
+        <label class="sw"><input type="checkbox" id="fail"> 좌석을 잃은 경우</label>
+        <button class="btn" id="prev" aria-label="이전 단계">◀</button>
+        <button class="btn pri" id="play" aria-label="재생">▶ 재생</button>
+        <button class="btn" id="next" aria-label="다음 단계">▶▶</button>
+      </div>
+    </div>
+
+    <div class="lanes" id="lanes">
+      <div class="lane c" data-l="c">결제·취소 쪽<small>reservation·payment</small></div>
+      <div class="lane s" data-l="s">좌석 모듈<small>seat_inventory·카운터</small></div>
+      <div class="lane d" data-l="d">DB 트랜잭션<small>COMMIT / ROLLBACK</small></div>
+      <div class="lane r" data-l="r">Redis<small>커밋 뒤에만</small></div>
+    </div>
+
+    <div class="stage">
+      <ol class="steps" id="steps"></ol>
+      <div class="state">
+        <div class="box"><h4><span>reservation 1201</span><span class="mono">DB</span></h4>
+          <div class="kv"><span class="k">status</span><span class="val" id="v-rs"></span>
+            <span class="k">pay_deadline_at</span><span class="val" id="v-rd"></span></div></div>
+        <div class="box"><h4><span>seat_inventory</span><span class="mono">DB</span></h4>
+          <div class="kv"><span class="k">5A</span><span class="val" id="v-a"></span>
+            <span class="k">5B</span><span class="val" id="v-b"></span></div></div>
+        <div class="box"><h4><span>seat:hold:9001:{5A·5B}:0</span><span class="mono">Redis</span></h4>
+          <div class="kv"><span class="k">값</span><span class="val" id="v-kv"></span>
+            <span class="k">만료</span><span class="val" id="v-kt"></span></div></div>
+        <div class="box"><h4><span>매수 한도 (같은 CI)</span><span class="mono">DB · Redis</span></h4>
+          <div class="kv"><span class="k">purchase_counter</span><span class="val" id="v-pc"></span>
+            <span class="k">limit:9001:{ci}</span><span class="val" id="v-lm"></span></div></div>
+      </div>
+    </div>
+    <div class="result" id="result"></div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="legend"><span><span class="tag t-c">결제·취소 쪽</span> 길동현·강다인 코드</span><span><span class="tag t-s">좌석 모듈</span> 이번에 만든 메서드</span><span><span class="tag t-d">DB</span> 커밋·롤백</span><span><span class="tag t-r">Redis</span> afterCommit</span></div>
+  </div>
+  <p class="small muted">시각은 예시입니다. 10:00에 선점(마감 10:10), 10:08에 결제 시작 → 새 마감 = GREATEST(10:10, 10:08 + 180초 + 60초) = 10:12.</p>
+</section>
+
+<!-- ================================================================ 사용법 -->
+<section id="s-usage">
+  <h2>사용법</h2>
+
+  <h3>길동현 · §4 결제 시작 (PAY-01)</h3>
+<pre><code>@Transactional
+public void startPayment(long memberId, long r, String idemKey) {
+    LocalDateTime cand = LocalDateTime.now(clock).plusSeconds(pgTimeoutSec + graceSec);   // 앱 시계 (§0.7)
+    int n = jdbc.update("""
+        UPDATE reservation SET status = 'PAYMENT_PENDING',
+               pay_deadline_at = GREATEST(pay_deadline_at, ?), updated_at = SYSTIMESTAMP, version = version + 1
+         WHERE reservation_id = ? AND member_id = ? AND status = 'HOLD' AND pay_deadline_at &gt; SYSTIMESTAMP""",
+        cand, r, memberId);
+    if (n != 1) throw new BusinessException(...);                    // 이미 결제 중·만료·남의 예약
+    LocalDateTime d = jdbc.queryForObject(
+        "SELECT pay_deadline_at FROM reservation WHERE reservation_id = ?", LocalDateTime.class, r);
+
+    if (!seatPay.extendHoldInCurrentTx(r, d)) {                      // ← 좌석 단계
+        throw new BusinessException(...);                            // 좌석을 잃음 → 예외로 롤백
+    }
+    // saga PAYING · waitlist 제안 기한 · payment REQUESTED(next_check_at = d) · 이력 · outbox PAYMENT_STARTED
+}   // 커밋되면 Redis 좌석 키도 d까지 연장 (자동)</code></pre>
+
+  <h3>길동현 · §5.1 결제 승인 (PAY-02)</h3>
+<pre><code>@Transactional
+public Result approve(long r, long paymentId, String pgTxId) {
+    jdbc.queryForObject("SELECT status FROM reservation WHERE reservation_id = ? FOR UPDATE", String.class, r);
+    // payment 상태 갈래(REQUESTED / APPROVED / FAILED …)는 §5.1-3 표대로
+
+    if (!seatPay.confirmSeatsInCurrentTx(r)) {                       // ← 좌석 단계
+        throw new SeatLostException(r);                              // 롤백 → 바깥에서 "확정 실패" 경로 (§5.1)
+    }
+    // payment APPROVED · reservation CONFIRMED · saga CONFIRMED/DONE · 이력 · outbox RESERVATION_CONFIRMED
+}   // 커밋되면 Redis 좌석 키 = SOLD:R, 만료 = 운행 출발 (자동)
+
+// 확정 실패: 별도 트랜잭션에서 reservation 잠금 → payment REQUESTED → APPROVED → 늦은 승인 환불(§7.3).
+// 예약이 아직 PAYMENT_PENDING이면 같은 트랜잭션에서 release.releaseInCurrentTx(r, ReleaseReason.PAY_FAILED)</code></pre>
+
+  <h3>강다인 · §8 확정 예약 취소 (CNL-02)</h3>
+<pre><code>@Transactional
+public CancelResult cancelConfirmed(long memberId, long r) {
+    int n = jdbc.update("""
+        UPDATE reservation SET status = 'CANCELED', canceled_at = SYSTIMESTAMP, updated_at = SYSTIMESTAMP,
+               version = version + 1
+         WHERE reservation_id = ? AND member_id = ? AND status = 'CONFIRMED'""", r, memberId);
+    if (n != 1) { /* 이미 취소됨이면 같은 결과, 아니면 404·409 */ }
+
+    ReturnedSeats seats = release.returnSoldSeatsInCurrentTx(r);     // ← 좌석 단계 (SOLD 행 삭제 + 카운터 감소)
+
+    long fee = feePolicy.feeFor(...);                                 // cancel_fee_policy
+    // cancellation INSERT (refund_status = 'REQUESTED', resold_yn = 'N') · 이력
+    Map&lt;String, Object&gt; payload = new LinkedHashMap&lt;&gt;(seats.eventPayload());
+    payload.put("reason", ...);  payload.put("cancelFee", fee);  payload.put("refundAmount", paid - fee);
+    outbox.recordReservation(r, EventType.RESERVATION_CANCELED, payload);
+}   // 커밋되면 좌석 키 = REOFFER:R (60초 대기자 먼저), 한도 감소 (자동)</code></pre>
+
+  <h3><code>ReturnedSeats</code> 내용</h3>
+  <div class="tw"><table>
+    <thead><tr><th>필드</th><th>예</th><th>설명</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">reservationId · runId</td><td class="mono">1201 · 9001</td><td>취소한 예약과 운행</td></tr>
+      <tr><td class="mono">seatCount</td><td class="mono">2</td><td>돌려준 매수 (카운터를 이만큼 줄임)</td></tr>
+      <tr><td class="mono">seatIds</td><td class="mono">[1005, 1006]</td><td>돌려준 좌석 ID 오름차순</td></tr>
+      <tr><td class="mono">fromStationId · toStationId</td><td class="mono">3900023 · 3900114</td><td>취소표 제안(§9)이 빈 구간을 정할 때 씀</td></tr>
+      <tr><td class="mono">eventPayload()</td><td class="mono small">{reservationId, runId, seats:[{seatId, segNo}], from, to, seatCount}</td><td>만료·결제 전 취소 이벤트와 같은 모양. 여기에 <code>reason</code>·<code>cancelFee</code>·<code>refundAmount</code>를 더해 outbox에 넣습니다</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ================================================================ 반환값·Redis -->
+<section id="s-contract">
+  <h2>반환값과 예외</h2>
+  <div class="tw"><table>
+    <thead><tr><th>결과</th><th>뜻</th><th>부르는 쪽이 할 일</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag t-ok">true</span></td><td>K개 행을 모두 바꿨습니다. 커밋 뒤 Redis 작업이 예약됐습니다</td><td>나머지 단계를 이어서 하고 커밋</td></tr>
+      <tr><td><span class="tag t-bad">false</span></td><td>바뀐 행 수가 K와 다릅니다. 그 사이 좌석을 잃었거나 예약이 이미 풀렸습니다. Redis 작업은 걸지 않습니다</td><td><b>반드시 롤백</b>. §4는 결제 시작 거절, §5.1은 "확정 실패" 경로</td></tr>
+      <tr><td><code>ReturnedSeats</code></td><td>SOLD 행을 지우고 카운터를 줄였습니다</td><td>cancellation·이력·outbox를 이어서 하고 커밋</td></tr>
+      <tr><td><code>null</code></td><td>지울 SOLD 행이 없습니다 (이미 돌려줌). 카운터는 그대로입니다</td><td>이미 처리된 취소로 보고 같은 결과를 돌려줌</td></tr>
+      <tr><td><span class="tag t-warn">IllegalStateException</span></td><td>트랜잭션 밖에서 불렀거나, 확정 취소에서 예약이 아직 CANCELED가 아닙니다</td><td>호출 순서를 고칩니다 (코드 실수)</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Redis 좌석 키 값이 바뀌는 방식</h2>
+  <div class="tw"><table>
+    <thead><tr><th>단계</th><th>스크립트</th><th>바꾸는 조건</th><th>값</th><th>만료</th></tr></thead>
+    <tbody>
+      <tr><td>선점 §2</td><td class="mono">hold.lua</td><td>키가 비어 있을 때</td><td class="mono">R</td><td>pay_deadline_at</td></tr>
+      <tr><td>결제 시작 §4</td><td class="mono">extend.lua</td><td>값이 R일 때만. <b>사라진 키는 되살리지 않음</b></td><td class="mono">R</td><td>새 마감 d</td></tr>
+      <tr><td>승인 §5.1</td><td class="mono">sold.lua</td><td><b>무조건 덮어씀</b> (DB가 확정)</td><td class="mono">SOLD:R</td><td>운행 출발 시각</td></tr>
+      <tr><td>확정 취소 §8</td><td class="mono">reoffer.lua</td><td>값이 R 또는 SOLD:R일 때만. 이미 REOFFER면 TTL을 늘리지 않음</td><td class="mono">REOFFER:R</td><td>60초 (<code>waitlist.reoffer_hold_sec</code>)</td></tr>
+      <tr><td>확정 취소 §8</td><td class="mono">limit_decr.lua</td><td><code>limit:dec:R</code> 표시가 처음 생길 때만 (예약당 한 번)</td><td>한도 − 매수</td><td>그대로</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>왜 이렇게 했나</h2>
+  <div class="tw"><table>
+    <thead><tr><th>결정</th><th>이유</th><th>다른 선택지</th></tr></thead>
+    <tbody>
+      <tr><td>호출하는 쪽 트랜잭션 안에서 실행</td><td>결제 기록과 좌석 확정이 같이 커밋되거나 같이 롤백돼야 "돈은 냈는데 좌석은 HOLD" 같은 반쪽 상태가 없습니다</td><td>좌석 쪽이 따로 커밋 → 둘 중 하나만 성공하는 틈이 생김</td></tr>
+      <tr><td>Redis는 <code>afterCommit</code>에서만</td><td>롤백됐는데 Redis만 <code>SOLD</code>가 되면 그 좌석은 출발까지 아무도 못 삽니다</td><td>트랜잭션 안에서 Redis 갱신 → 롤백 때 되돌릴 방법이 없음</td></tr>
+      <tr><td>예외 대신 boolean</td><td>좌석을 잃었을 때 결제 쪽 대응이 경우마다 다릅니다 (§4 거절 / §5.1 늦은 승인 환불)</td><td>좌석 쪽 예외 → 결제 쪽이 잡아서 다시 분기해야 함</td></tr>
+      <tr><td>확정 취소는 좌석 부분만</td><td>수수료·환불·cancellation은 CNL 규칙입니다. 좌석·카운터·Redis는 해제(§7)와 같은 코드라 한 번만 줄고, 이벤트 모양도 같습니다</td><td>취소 전체를 좌석 쪽이 맡음 → 수수료 규칙이 두 파트에 흩어짐</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ================================================================ 주의할 점 -->
+<section id="s-caution">
+  <h2>주의할 점</h2>
+  <div class="tw"><table>
+    <thead><tr><th>상황</th><th>어떻게 되나</th><th>이렇게 하세요</th></tr></thead>
+    <tbody>
+      <tr><td><code>false</code>를 받고도 커밋</td><td>좌석 행 일부만 바뀐 채 남습니다 (메서드가 대신 롤백하지 않음)</td><td><code>false</code>면 예외를 던져 롤백</td></tr>
+      <tr><td>reservation 락 없이 호출</td><td>스캐너·재선점과 같은 예약을 동시에 바꿀 수 있습니다</td><td>reservation <code>UPDATE</code>나 <code>FOR UPDATE</code>를 먼저</td></tr>
+      <tr><td>확정 취소에서 예약 UPDATE 전에 호출</td><td><code>IllegalStateException</code></td><td>CONFIRMED → CANCELED (1행) 다음에 호출</td></tr>
+      <tr><td>결제 시작 때 Redis 키가 이미 TTL로 사라짐</td><td>DB는 연장되고 결제는 계속됩니다. 키는 되살리지 않습니다 (경고 로그)</td><td>할 일 없음. DB가 최종 판정이고, 승인 때 <code>SOLD:R</code>로 다시 써집니다</td></tr>
+      <tr><td>커밋 뒤 Redis 작업 실패</td><td>예외를 던지지 않고 로그만 남깁니다</td><td>해제·취소는 <code>seat-release</code> 소비자(보장 경로)가 같은 스크립트를 다시 돌립니다. <span class="tag t-warn">소비자 아직 없음</span></td></tr>
+      <tr><td>같은 트랜잭션에서 <code>confirmSeatsInCurrentTx</code>를 두 번</td><td>두 번째는 HOLD 행이 없어 <code>false</code></td><td>한 번만 부르기. 중복 승인은 §5.1-3 payment 상태 갈래로 걸러짐</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>아직 남은 것 (좌석 쪽 밖)</h3>
+  <div class="tw"><table>
+    <thead><tr><th>할 일</th><th>담당</th><th>관련</th></tr></thead>
+    <tbody>
+      <tr><td><code>seat-release</code> 소비자: 빈 좌석 이벤트로 Redis 보상 다시 하기 + 대기자 제안</td><td>길동현 · 강다인</td><td>§9.1, §14.3</td></tr>
+      <tr><td>PG 결과를 모를 때 좌석 키 다시 걸기 (<code>rehold.lua</code>)</td><td>길동현 (1차 범위 밖)</td><td>§6.2</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ================================================================ 검증 -->
+<section id="s-verify">
+  <h2>검증</h2>
+  <p><code>SeatPaymentInfraTest</code> 11개를 실제 Oracle·Redis로 돌렸습니다. 결제·취소 쪽 트랜잭션은 테스트가 SQL 몇 줄로 흉내 냅니다.</p>
+  <div class="tw"><table>
+    <thead><tr><th>구분</th><th>확인</th><th>결과</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="3" class="nw">결제 시작</td><td>좌석 마감과 Redis TTL이 새 마감(10분 → 20분)으로 바뀜</td><td><span class="tag t-ok">통과</span></td></tr>
+      <tr><td>좌석 하나를 잃으면 false, 롤백하면 예약 HOLD·TTL 그대로</td><td><span class="tag t-ok">통과</span></td></tr>
+      <tr><td>TTL로 사라진 Redis 키는 되살리지 않음</td><td><span class="tag t-ok">통과</span></td></tr>
+      <tr><td rowspan="3" class="nw">승인</td><td>K행 SOLD, <code>hold_expires_at</code> NULL, Redis <code>SOLD:R</code> 출발까지, 다른 사람 선점은 <code>SEAT_ALREADY_TAKEN</code></td><td><span class="tag t-ok">통과</span></td></tr>
+      <tr><td>Redis 키가 사라졌어도 <code>SOLD:R</code>로 다시 씀</td><td><span class="tag t-ok">통과</span></td></tr>
+      <tr><td>좌석을 잃으면 false, 롤백하면 좌석·Redis 그대로</td><td><span class="tag t-ok">통과</span></td></tr>
+      <tr><td rowspan="4" class="nw">확정 취소</td><td>SOLD 행 0, 카운터·Redis 한도 0, 좌석 키 <code>REOFFER:R</code>(60초), 일반 사용자 선점 거절 (T30 앞부분)</td><td><span class="tag t-ok">통과</span></td></tr>
+      <tr><td>두 번 불러도 카운터는 한 번만 감소</td><td><span class="tag t-ok">통과</span></td></tr>
+      <tr><td>예약이 CANCELED가 아니면 거부</td><td><span class="tag t-ok">통과</span></td></tr>
+      <tr><td>롤백하면 좌석·카운터·Redis 그대로</td><td><span class="tag t-ok">통과</span></td></tr>
+      <tr><td class="nw">공통</td><td>트랜잭션 밖 호출은 세 메서드 모두 거부</td><td><span class="tag t-ok">통과</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="tw"><table>
+    <thead><tr><th>회귀</th><th>개수</th><th>결과</th></tr></thead>
+    <tbody>
+      <tr><td>단위 테스트 (<code>./gradlew test</code>, 인프라 없음)</td><td class="mono">388</td><td><span class="tag t-ok">전부 통과</span></td></tr>
+      <tr><td>통합 테스트 (<code>./gradlew infraTest</code>, Oracle·Redis·Mongo·Kafka)</td><td class="mono">292</td><td><span class="tag t-ok">전부 통과</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">통합 테스트는 JVM 시간대가 Asia/Seoul이어야 기동합니다 (시간대 점검, §0.7). 셸이 UTC면 <code>TZ=Asia/Seoul ./gradlew infraTest</code>.</p>
+</section>
+
+</main>
+
+<script>
+(function(){
+  // ---------- 탭 ----------
+  var tabs=document.querySelectorAll('#tabs a');
+  function show(id){
+    tabs.forEach(function(a){a.classList.toggle('on',a.getAttribute('href')==='#'+id);});
+    document.querySelectorAll('main section').forEach(function(s){s.classList.toggle('on',s.id===id);});
+    try{localStorage.setItem('seat-link-tab',id);}catch(e){}
+  }
+  tabs.forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();show(a.getAttribute('href').slice(1));});});
+  try{var t=localStorage.getItem('seat-link-tab');if(t&&document.getElementById(t))show(t);}catch(e){}
+
+  // ---------- 흐름 재생 ----------
+  // 상태: rs 예약 상태, rd 마감, a·b 좌석 행, kv·kt Redis 값·만료, pc 카운터, lm Redis 한도
+  var S={
+    start:{init:{rs:'HOLD',rd:'10:10',a:'HOLD · 10:10',b:'HOLD · 10:10',kv:'1201',kt:'10:10',pc:'2',lm:'2'},
+      ok:[
+        {l:'c',t:'예약 전이 + 마감 연장',d:'HOLD → PAYMENT_PENDING, 마감은 늘리기만 (GREATEST)',c:"UPDATE reservation SET status = 'PAYMENT_PENDING',\n  pay_deadline_at = GREATEST(pay_deadline_at, :cand) …",s:{rs:'PAYMENT_PENDING',rd:'10:12'}},
+        {l:'s',t:'extendHoldInCurrentTx(1201, 10:12)',d:'좌석 마감 = 예약 마감 (§0.2). 2행 = K → true',c:"UPDATE seat_inventory SET hold_expires_at = :d\n WHERE reservation_id = :R AND status = 'HOLD'",s:{a:'HOLD · 10:12',b:'HOLD · 10:12'}},
+        {l:'c',t:'saga · payment · 이력 · outbox',d:'saga PAYING, payment REQUESTED(next_check_at = 10:12), outbox PAYMENT_STARTED',s:{}},
+        {l:'d',t:'COMMIT',d:'여기까지가 한 트랜잭션입니다',s:{}},
+        {l:'r',t:'afterCommit → extend.lua',d:'값이 1201인 키만 10:12까지 연장. 사라진 키는 되살리지 않음',s:{kt:'10:12'}}
+      ],
+      ng:[
+        {l:'c',t:'예약 전이 + 마감 연장',d:'HOLD → PAYMENT_PENDING (아직 커밋 전)',s:{rs:'PAYMENT_PENDING',rd:'10:12'}},
+        {l:'s',t:'extendHoldInCurrentTx → false',d:'5B 행이 이미 없음 (좌석을 잃음): 1행 ≠ K(2). Redis 작업은 걸지 않음',s:{a:'HOLD · 10:12',b:'(없음)'},fail:1},
+        {l:'c',t:'예외를 던짐',d:'결제 시작 거절',s:{},fail:1},
+        {l:'x',t:'ROLLBACK',d:'예약·좌석 행이 결제 시작 전으로 돌아감. Redis는 처음부터 그대로',s:{rs:'HOLD',rd:'10:10',a:'HOLD · 10:10'},fail:1}
+      ],
+      okMsg:'결과: 예약·좌석·Redis 마감이 모두 10:12로 맞춰졌습니다.',
+      ngMsg:'결과: 아무것도 바뀌지 않았습니다. 사용자에게 결제 시작 거절을 알립니다.',
+      ngInit:{b:'(없음)'}},
+    confirm:{init:{rs:'PAYMENT_PENDING',rd:'10:12',a:'HOLD · 10:12',b:'HOLD · 10:12',kv:'1201',kt:'10:12',pc:'2',lm:'2'},
+      ok:[
+        {l:'c',t:'예약 행 잠금',d:'승인·실패·스캐너가 같은 결제를 동시에 바꾸지 않게 (§5)',c:'SELECT status FROM reservation WHERE reservation_id = :R FOR UPDATE',s:{}},
+        {l:'s',t:'confirmSeatsInCurrentTx(1201)',d:'HOLD → SOLD, 마감 NULL. 2행 = K → true',c:"UPDATE seat_inventory SET status = 'SOLD', hold_expires_at = NULL\n WHERE reservation_id = :R AND status = 'HOLD'",s:{a:'SOLD',b:'SOLD'}},
+        {l:'c',t:'payment · reservation · saga · 이력 · outbox',d:'payment APPROVED, 예약 CONFIRMED, saga CONFIRMED/DONE, outbox RESERVATION_CONFIRMED',s:{rs:'CONFIRMED',rd:'10:12'}},
+        {l:'d',t:'COMMIT',d:'여기까지가 한 트랜잭션입니다',s:{}},
+        {l:'r',t:'afterCommit → sold.lua',d:'값과 상관없이 SOLD:1201로 덮어씀. 출발 전까지 아무도 못 잡음',s:{kv:'SOLD:1201',kt:'출발 11-19 08:00'}}
+      ],
+      ng:[
+        {l:'c',t:'예약 행 잠금',d:'SELECT … FOR UPDATE',s:{}},
+        {l:'s',t:'confirmSeatsInCurrentTx → false',d:'5B 행이 없음 (좌석을 잃음): 1행 ≠ K(2)',s:{a:'SOLD',b:'(없음)'},fail:1},
+        {l:'x',t:'ROLLBACK',d:'5A도 HOLD로 돌아감. Redis는 그대로',s:{a:'HOLD · 10:12'},fail:1},
+        {l:'c',t:'확정 실패 경로 (별도 트랜잭션)',d:'payment APPROVED 기록 → 늦은 승인 환불 §7.3. 예약이 PAYMENT_PENDING이면 releaseInCurrentTx(PAY_FAILED)',s:{rs:'EXPIRED',a:'(없음)',pc:'0',kv:'REOFFER:1201',kt:'60초',lm:'0'},fail:1}
+      ],
+      okMsg:'결과: 좌석 2개 SOLD, Redis는 출발까지 SOLD:1201. 팔린 좌석은 Redis 단계에서 바로 막힙니다.',
+      ngMsg:'결과: 좌석은 확정되지 않고, 돈은 환불 절차로 넘어갑니다.',
+      ngInit:{b:'(없음)'}},
+    cancel:{init:{rs:'CONFIRMED',rd:'10:12',a:'SOLD',b:'SOLD',kv:'SOLD:1201',kt:'출발 11-19 08:00',pc:'2',lm:'2'},
+      ok:[
+        {l:'c',t:'CONFIRMED → CANCELED',d:'1행일 때만 계속 (이미 취소됐으면 같은 결과)',c:"UPDATE reservation SET status = 'CANCELED', canceled_at = SYSTIMESTAMP …\n WHERE reservation_id = :R AND member_id = :me AND status = 'CONFIRMED'",s:{rs:'CANCELED'}},
+        {l:'s',t:'returnSoldSeatsInCurrentTx(1201)',d:'SOLD 행 삭제 → 카운터 −2 → ReturnedSeats 반환',c:"DELETE FROM seat_inventory WHERE reservation_id = :R AND status = 'SOLD'\nUPDATE purchase_counter SET seat_count = seat_count - :n …",s:{a:'(없음)',b:'(없음)',pc:'0'}},
+        {l:'c',t:'cancellation · 이력 · outbox',d:'수수료 계산, cancellation REQUESTED, outbox RESERVATION_CANCELED (eventPayload() + reason·cancelFee·refundAmount)',s:{}},
+        {l:'d',t:'COMMIT',d:'여기까지가 한 트랜잭션입니다',s:{}},
+        {l:'r',t:'afterCommit → reoffer.lua · limit_decr.lua',d:'좌석 키를 60초 동안 대기자 몫으로 묶고, 한도는 예약당 한 번만 감소',s:{kv:'REOFFER:1201',kt:'60초',lm:'0'}}
+      ],
+      ng:[
+        {l:'c',t:'CONFIRMED → CANCELED',d:'아직 커밋 전',s:{rs:'CANCELED'}},
+        {l:'s',t:'returnSoldSeatsInCurrentTx(1201)',d:'SOLD 행 삭제, 카운터 −2',s:{a:'(없음)',b:'(없음)',pc:'0'}},
+        {l:'c',t:'cancellation INSERT 실패',d:'예: 수수료 정책을 못 찾음 → 예외',s:{},fail:1},
+        {l:'x',t:'ROLLBACK',d:'예약·좌석·카운터 모두 원래대로. Redis는 SOLD:1201 그대로 (afterCommit이 돌지 않음)',s:{rs:'CONFIRMED',a:'SOLD',b:'SOLD',pc:'2'},fail:1}
+      ],
+      okMsg:'결과: 좌석은 60초 동안 대기자에게 먼저 제안할 수 있게 묶이고, 매수 한도가 돌아왔습니다.',
+      ngMsg:'결과: 취소 전과 똑같습니다. 사용자는 다시 시도하면 됩니다.',
+      ngInit:{}}
+  };
+  var ids={rs:'v-rs',rd:'v-rd',a:'v-a',b:'v-b',kv:'v-kv',kt:'v-kt',pc:'v-pc',lm:'v-lm'};
+  var cur='start', fail=false, i=-1, timer=null;
+  var stepsEl=document.getElementById('steps'), res=document.getElementById('result'), bar=document.getElementById('bar');
+  var playBtn=document.getElementById('play');
+  var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function list(){return S[cur][fail?'ng':'ok'];}
+  function stateAt(n){
+    var sc=S[cur], st=Object.assign({},sc.init, fail?sc.ngInit:{});
+    for(var k=0;k<=n;k++)Object.assign(st,list()[k].s);
+    return st;
+  }
+  function render(prev){
+    var L=list();
+    stepsEl.innerHTML=L.map(function(s,k){
+      var cls=k<i?'done':k===i?'cur':'';
+      if(s.fail&&k<=i)cls+=' fail';
+      var tag={c:'t-c',s:'t-s',d:'t-d',r:'t-r',x:'t-bad'}[s.l];
+      var name={c:'결제·취소 쪽',s:'좌석 모듈',d:'DB',r:'Redis',x:'DB'}[s.l];
+      return '<li class="'+cls+'" data-k="'+k+'" data-n="'+(k+1)+'"><div class="st">'+s.t+' <span class="tag '+tag+'">'+name+'</span></div>'
+        +'<div class="sd">'+s.d+'</div>'+(s.c&&k===i?'<pre><code>'+s.c.replace(/</g,'&lt;')+'</code></pre>':'')+'</li>';
+    }).join('');
+    var st=stateAt(i), old=prev||{};
+    Object.keys(ids).forEach(function(k){
+      var el=document.getElementById(ids[k]); var v=st[k];
+      el.textContent=v; el.classList.toggle('gone',v==='(없음)');
+      if(old[k]!==undefined&&old[k]!==v&&!reduce){el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
+    });
+    document.querySelectorAll('#lanes .lane').forEach(function(x){
+      var l=i>=0?L[i].l:''; x.classList.remove('on','x');
+      if(x.dataset.l===l)x.classList.add('on');
+      if(l==='x'&&x.dataset.l==='d')x.classList.add('on','x');
+    });
+    bar.style.width=(L.length?((i+1)/L.length*100):0)+'%';
+    if(i===L.length-1){res.className='result '+(fail?'bad':'ok');res.textContent=fail?S[cur].ngMsg:S[cur].okMsg;}
+    else{res.className='result';res.textContent=i<0?'▶ 재생을 누르거나 단계를 눌러 보세요.':'진행 중… ('+(i+1)+' / '+L.length+')';}
+  }
+  function go(n){var prev=stateAt(i);i=Math.max(-1,Math.min(list().length-1,n));render(prev);}
+  function stop(){clearInterval(timer);timer=null;playBtn.textContent='▶ 재생';}
+  function play(){
+    if(timer){stop();return;}
+    if(i>=list().length-1)go(-1);
+    playBtn.textContent='⏸ 멈춤';
+    go(i+1);
+    timer=setInterval(function(){if(i>=list().length-1){stop();return;}go(i+1);},reduce?2600:1900);
+  }
+  playBtn.addEventListener('click',play);
+  document.getElementById('next').addEventListener('click',function(){stop();go(i+1);});
+  document.getElementById('prev').addEventListener('click',function(){stop();go(i-1);});
+  stepsEl.addEventListener('click',function(e){var li=e.target.closest('li');if(li){stop();go(+li.dataset.k);}});
+  document.getElementById('fail').addEventListener('change',function(e){stop();fail=e.target.checked;i=-1;render();});
+  document.querySelectorAll('#scn button').forEach(function(b){b.addEventListener('click',function(){
+    stop();document.querySelectorAll('#scn button').forEach(function(x){x.classList.toggle('on',x===b);});
+    cur=b.dataset.s;i=-1;render();});});
+  document.addEventListener('keydown',function(e){
+    if(!document.getElementById('s-flow').classList.contains('on'))return;
+    if(e.key==='ArrowRight'){stop();go(i+1);}else if(e.key==='ArrowLeft'){stop();go(i-1);}
+    else if(e.key===' '&&e.target===document.body){e.preventDefault();play();}
+  });
+  render();
+})();
+</script>
+</body>
+</html>

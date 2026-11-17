@@ -110,6 +110,7 @@
 | RSV-02 좌석 선점 API (멱등·재선점·매수 카운터) + 판매 중 운행 제공 | [좌석선점-api](features/좌석선점-api.md) |
 | RSV-03 만료 스캐너 · RSV-05 결제 전 취소 · 결제 실패 해제(Saga용) | [좌석해제-만료-취소](features/좌석해제-만료-취소.md) |
 | TRN-01~03 역·운행 검색·운임, RSV-01 좌석 배치도 (seatmap 캐시, 행동 로그 4종) | [열차조회-좌석배치도](features/열차조회-좌석배치도.md) |
+| 결제·확정 취소가 부르는 좌석 단계 (PAY-01 마감 연장, PAY-02 좌석 확정, CNL-02 좌석 반환) | [좌석-결제취소-연결](features/좌석-결제취소-연결.md) |
 
 ## 5. 다른 파트와의 연결
 
@@ -120,6 +121,8 @@
 | E 조영준 | Oracle 컨테이너 | `TZ=Asia/Seoul` 필수 (동시성 §0.7, 시드 검증 20번) |
 | A 김성원 | 테스트용 운행 | 지금 `ON_SALE`인 운행은 `run_id = 9001` 하나 |
 | C 길동현 | 좌석 해제 | 결제 실패(§5.2)는 `SeatReleaseService.releaseInCurrentTx(R, ReleaseReason.PAY_FAILED)`를 payment FAILED 기록과 같은 트랜잭션에서 호출. 두 번 불러도 결과가 같고, Redis 보상은 커밋 뒤 자동 |
+| C 길동현 | 결제 시작·승인의 좌석 단계 | §4는 reservation 전이 뒤 `SeatPaymentService.extendHoldInCurrentTx(R, 새 마감)`, §5.1은 reservation 락 뒤 `confirmSeatsInCurrentTx(R)`. false면 좌석을 잃은 것이라 롤백 (§4 거절 / §5.1 확정 실패 경로). Redis는 커밋 뒤 자동 ([문서](features/좌석-결제취소-연결.md)) |
+| D 강다인 | 확정 취소의 좌석 반환 | CONFIRMED → CANCELED 1행 뒤 `SeatReleaseService.returnSoldSeatsInCurrentTx(R)` → SOLD 행 삭제·카운터 감소. 돌려받은 `eventPayload()`에 reason·cancelFee·refundAmount를 더해 `RESERVATION_CANCELED`로. 커밋 뒤 좌석 키 `REOFFER:R`·한도 감소 자동 |
 | A 김성원 | 판매 중 운행·입장 토큰 | `JdbcOnSaleRunProvider`가 `train_run`을 읽음 (개발 모드는 대용품 유지), 선점 API가 `QueuePassService.verify` 호출 (팀-확인-요청 3·4번) |
 | A 김성원 | ERD v13 | `queue:member` 값에 ciHash, `queue.entry_ttl_sec`, 취소표 대기 `priority_at`·`penalty_ms` 반영 (팀-확인-요청 1·2·12번) |
 | D 강다인 | ERD v13 | `risk_score_history_seq` 시퀀스 추가 → 점수 저장 때 이력도 기록 |
