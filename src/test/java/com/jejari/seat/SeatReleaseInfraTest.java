@@ -24,6 +24,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.jejari.common.config.AppPolicy;
 import com.jejari.common.error.BusinessException;
 import com.jejari.seat.SeatHoldService.HoldCommand;
 import com.jejari.seat.SeatHoldService.SeatRequest;
@@ -37,7 +38,9 @@ import com.jejari.seat.SeatHoldService.SeatRequest;
 		"spring.data.redis.database=15",
 		"jejari.queue.scheduler-enabled=false",
 		"jejari.risk.cache-resync-enabled=false",
-		"jejari.seat.expiry-scanner-enabled=false"})
+		"jejari.risk.batch-enabled=false",
+		"jejari.seat.expiry-scanner-enabled=false",
+		"jejari.train.sale-open-scheduler-enabled=false"})
 class SeatReleaseInfraTest {
 
 	static final long RUN = 9001;
@@ -51,7 +54,7 @@ class SeatReleaseInfraTest {
 	@Autowired
 	SeatReleaseService release;
 	@Autowired
-	SeatPolicy policy;
+	AppPolicy policy;
 	@Autowired
 	JdbcTemplate jdbc;
 	@Autowired
