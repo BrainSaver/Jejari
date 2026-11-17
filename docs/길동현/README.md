@@ -44,15 +44,23 @@
 - 결과: 알림이 **빠지지 않고, 순서대로, 한 번만** 간다.
 - 자세히: [features/outbox-릴레이-inbox.md](features/outbox-릴레이-inbox.md)
 
+## 5. 알림 (EVT-06 · WL-04)
+
+**예매에서 어디?** 앱의 알림함. "결제 기한 2분 남음", "예매 만료", "취소표가 생겼어요".
+
+- 알림 행을 남기면 발송기가 1초 안에 "보내고"(로그) 알림함에 보인다. 실제 푸시·메일은 없음
+- 취소표 제안 알림은 강동균이 남기고, 보내는 것은 내 발송기가 한다
+- 환불 완료 알림을 위해 강다인의 환불 코드에 `REFUND_COMPLETED` 이벤트 한 줄을 추가했다
+- 자세히: [features/알림.md](features/알림.md)
+
 ## 아직 안 한 것
 
 | 기능 | 예매에서 어디? |
 |---|---|
-| 알림 (EVT-06) | "결제 기한 2분 남음", "취소표가 생겼어요" 같은 알림함 |
 | 늦은 승인 환불 (PAY-05, P2) | 실패로 처리했는데 나중에 돈이 빠진 게 확인되면 돌려주기 |
 
 ## 확인하는 법
 
 ```powershell
-.\gradlew infraTest --tests "com.jejari.payment.*" --tests "com.jejari.event.*"   # Docker 필요, 앱은 끄고
+.\gradlew infraTest --tests "com.jejari.payment.*" --tests "com.jejari.event.*" --tests "com.jejari.notification.*"   # Docker 필요, 앱은 끄고
 ```

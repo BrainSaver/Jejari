@@ -228,12 +228,22 @@ public class ReservationCancelService {
 		RefundResult result = r;
 		tx.executeWithoutResult(st -> {
 			if (result.done()) {
-				jdbc.update("""
+				int changed = jdbc.update("""
 						UPDATE cancellation SET refund_status = 'DONE', refund_pg_tx_id = ?, updated_at = SYSTIMESTAMP
 						 WHERE cancel_id = ? AND refund_status <> 'DONE'""", result.refundTxId(), d.cancelId());
 				jdbc.update("""
 						UPDATE payment SET status = 'REFUNDED', updated_at = SYSTIMESTAMP
 						 WHERE reservation_id = ? AND status = 'APPROVED'""", reservationId);
+				// 환불 완료 이벤트 (CNL-03, 기능설계서 8장) → 알림(REFUNDED). DONE으로 바꾼 쪽만 남겨 한 번만 나간다.
+				// 돌려준 돈이 없으면(수수료 100%) 환불이 아니므로 남기지 않는다 (길동현 추가)
+				if (changed == 1 && d.refund() > 0) {
+					Map<String, Object> payload = new LinkedHashMap<>();
+					payload.put("reservationId", reservationId);
+					payload.put("cancelId", d.cancelId());
+					payload.put("refundAmount", d.refund());
+					payload.put("refundPgTxId", result.refundTxId());
+					outbox.recordReservation(reservationId, EventType.REFUND_COMPLETED, payload);
+				}
 			} else {
 				jdbc.update("""
 						UPDATE cancellation SET refund_status = 'FAILED', updated_at = SYSTIMESTAMP
