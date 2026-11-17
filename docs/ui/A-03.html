@@ -9,23 +9,26 @@
 <link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;700;800;900&family=Nanum+Myeongjo:wght@700;800&family=Overpass:wght@600;700;800;900&display=swap" rel="stylesheet">
 <style>
 :root{
-  --ink:#0F2A4F;--ink2:#2E4366;--mut:#5E6B80;--faint:#949DAC;
-  --line:#D5DAE1;--line2:#ECEFF3;--paper:#F4F5F7;--card:#FFFFFF;
-  --sign:#FFC600;--sign-d:#7A5A00;--sign-t:#FFF4CC;
-  --go:#00873E;--go-d:#006A30;--go-t:#E1F3E8;
-  --amber:#FFC600;--amber-d:#7A5A00;--amber-t:#FFF4CC;
-  --stop:#D7261E;--stop-t:#FCE6E4;
-  --sky:#0F2A4F;--sky-t:#E4E9F1;
+  /* 글자·바탕: 한가위 밤하늘 남색 + 옥빛 흰 바탕 */
+  --ink:#13294B;--ink2:#34466A;--mut:#5C6B7E;--faint:#5E6A7B;
+  --line:#D2DDD9;--line2:#E5EDEA;--paper:#EEF3F1;--card:#FFFFFF;--night:#13294B;--cream:#F2E6C8;
+  /* 강조: 달빛 금 (남색 위 주요 버튼·현재 위치 표시) */
+  --sign:#E3BC6A;--sign-d:#7A5719;--sign-t:#FAF0DA;
+  /* 상태: 단청 색 */
+  --go:#11584B;--go-d:#0B4238;--go-t:#DFEDE8;
+  --amber:#DE8F65;--amber-d:#8A4520;--amber-t:#FBEADF;
+  --stop:#B41A23;--stop-t:#F8E2E3;
+  --sky:#13294B;--sky-t:#E2E8F0;
   --num:"Overpass","Arial Narrow",system-ui,sans-serif;
   --serif:"Nanum Myeongjo",serif;
-  --seal:#C8281E;
-  --saek:linear-gradient(90deg,#D7261E 0 20%,#FFC600 20% 40%,#00873E 40% 60%,#2E6DB4 60% 80%,#F08FB0 80% 100%);
+  --seal:#B41A23;
+  --saek:linear-gradient(90deg,#B41A23 0 20%,#DE8F65 20% 40%,#E3BC6A 40% 60%,#11584B 60% 80%,#4F86B8 80% 100%);
   --salt:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='none' stroke='%23ffffff' stroke-opacity='.045' stroke-width='2'%3E%3Cpath d='M0 1h48M0 25h48M1 0v48M25 0v48'/%3E%3Crect x='9' y='9' width='8' height='8'/%3E%3Crect x='33' y='33' width='8' height='8'/%3E%3C/svg%3E");
   --sans:"Gothic A1",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
 }
 *{box-sizing:border-box}[hidden]{display:none!important}
 html,body{margin:0}
-body{background:var(--paper);color:var(--ink);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased;word-break:keep-all}
+body{background:var(--paper);color:var(--ink);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;word-break:keep-all}
 a{color:inherit}
 button{font:inherit;color:inherit}
 :focus-visible{outline:3px solid var(--sign);outline-offset:2px}
@@ -36,15 +39,15 @@ button{font:inherit;color:inherit}
 .serif{font-family:var(--serif)}
 .stamp{display:inline-grid;place-items:center;font-family:var(--serif);font-weight:800;color:var(--seal);border:3px solid var(--seal);border-radius:4px;padding:4px 10px;transform:rotate(-10deg);letter-spacing:.1em;background:rgba(255,255,255,.6);box-shadow:inset 0 0 0 2px #fff,inset 0 0 0 3px var(--seal)}
 .st{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;padding:3px 9px;border-radius:2px;background:var(--line2);color:var(--ink2);white-space:nowrap;line-height:1.4}
-.st.go{background:var(--go);color:#fff}.st.amber{background:var(--sign);color:var(--ink)}
+.st.go{background:var(--go);color:#fff}.st.amber{background:var(--amber);color:#2A1408}
 .st.stop{background:var(--stop);color:#fff}.st.sky{background:var(--ink);color:#fff}
 .st.plain{background:transparent;padding:2px 7px;box-shadow:inset 0 0 0 2px currentColor}
-.st.plain.go{color:var(--go)}.st.plain.amber{color:var(--sign-d)}.st.plain.stop{color:var(--stop)}.st.plain.sky{color:var(--ink)}
+.st.plain.go{color:var(--go)}.st.plain.amber{color:var(--amber-d)}.st.plain.stop{color:var(--stop)}.st.plain.sky{color:var(--ink)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
 body{font-size:14px;background:var(--paper)}
 .wrap{display:flex;min-height:100vh}
-.side{width:228px;flex:none;background:var(--salt),var(--ink);border-right:5px solid;border-image:linear-gradient(180deg,#D7261E 0 20%,#FFC600 20% 40%,#00873E 40% 60%,#2E6DB4 60% 80%,#F08FB0 80% 100%) 1;color:#B4C2D8;padding:20px 0;display:flex;flex-direction:column;gap:0;position:sticky;top:0;height:100vh}
+.side{width:228px;flex:none;background:var(--salt),var(--ink);border-right:5px solid;border-image:linear-gradient(180deg,#B41A23 0 20%,#E3BC6A 20% 40%,#11584B 40% 60%,#4F86B8 60% 80%,#DE8F65 80% 100%) 1;color:#B4C2D8;padding:20px 0;display:flex;flex-direction:column;gap:0;position:sticky;top:0;height:100vh}
 .brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:900;font-size:16px;padding:0 20px 20px}
 .brand small{display:block;font-weight:700;font-size:12px;color:#8FA1BE}
 .side .grp{font-size:12px;color:#8FA1BE;padding:18px 20px 6px;font-weight:800}
@@ -54,13 +57,13 @@ body{font-size:14px;background:var(--paper)}
 .side .ic{width:18px;height:18px}
 .side .out{margin-top:auto}
 .main{flex:1;min-width:0;padding:26px 32px 40px;max-width:1240px}
-.head{display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:4px solid var(--ink)}
+.head{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:4px solid var(--ink)}
 .head h1{font-size:26px;margin:0;font-weight:800;font-family:var(--serif)}
 .head .crumb{font-size:13px;color:var(--mut);font-weight:700}
 .who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut);white-space:nowrap;font-weight:700}
 .who i{width:28px;height:28px;border-radius:2px;background:var(--sign);color:var(--ink);display:grid;place-items:center;font-style:normal;font-weight:900;font-size:12px}
 .ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:square;stroke-linejoin:miter;flex:none}
-.panel{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:18px;margin-bottom:16px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:18px;margin-bottom:16px;overflow-x:auto}
 .panel h2{font-size:15.5px;margin:0 0 12px;font-weight:900;display:flex;align-items:center;gap:8px}
 .panel h2 .grow{flex:1}
 .panel .sub{font-size:13px;color:var(--mut);margin:-8px 0 12px}
@@ -72,19 +75,19 @@ body{font-size:14px;background:var(--paper)}
 .kpi .l{font-size:12.5px;color:var(--mut);font-weight:800}
 .kpi .n{font-family:var(--num);font-size:34px;line-height:1.1;font-weight:800;font-variant-numeric:tabular-nums;margin-top:6px}
 .kpi .d{font-size:12px;color:var(--mut);font-weight:600}
-.kpi.alarm{background:var(--stop);color:#fff;border-color:var(--stop)}.kpi.alarm .l,.kpi.alarm .d{color:#FFD9D6}
+.kpi.alarm{background:var(--stop);color:#fff;border-color:var(--stop)}.kpi.alarm .l,.kpi.alarm .d{color:#F6D3D5}
 table{border-collapse:collapse;width:100%;font-size:13.5px}
 th{font-weight:800;color:var(--ink);font-size:12.5px;text-align:left;padding:8px 12px;border-bottom:3px solid var(--ink);white-space:nowrap}
 td{padding:11px 12px;border-bottom:1px solid var(--line2);vertical-align:middle;font-weight:500}
 tr:last-child td{border-bottom:0}
-tbody tr:hover td{background:#F8F9FB}
+tbody tr:hover td{background:#F5F9F7}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 td.mono{font-family:var(--num);font-size:15px;font-weight:800}
 tr.sel td{background:var(--sign-t)}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:38px;padding:7px 14px;border:0;border-radius:3px;background:var(--ink);color:#fff;font-weight:800;font-size:13.5px;text-decoration:none;cursor:pointer;white-space:nowrap}
-.btn:hover{background:#06193A}
+.btn:hover{background:#0A1B36}
 .btn.ghost{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 2px var(--ink)}.btn.ghost:hover{background:var(--line2)}
-.btn.danger{background:var(--stop)}.btn.armed{background:#8E1A14}
+.btn.danger{background:var(--stop)}.btn.armed{background:#7E1018}
 .btn.sm{min-height:30px;padding:4px 10px;font-size:12.5px}
 .btn.wide{width:100%}
 .field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
@@ -93,25 +96,25 @@ tr.sel td{background:var(--sign-t)}
 input,select,textarea{font:inherit;color:var(--ink);min-height:40px;padding:8px 12px;border:2px solid var(--line);border-radius:3px;background:var(--card);width:100%;font-weight:500}
 select{appearance:none;-webkit-appearance:none;background:var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%230F2A4F' stroke-width='2.4'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E") no-repeat right 12px center;padding-right:32px}
 textarea{min-height:80px;resize:vertical}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px var(--sign)}
 .filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
 .filters .field{margin:0;min-width:150px}
 .tabs{display:flex;gap:0;border-bottom:3px solid var(--ink);margin-bottom:16px}
 .tabs button{border:0;background:none;padding:10px 16px;font-weight:800;color:var(--mut);cursor:pointer}
 .tabs button.on{color:#fff;background:var(--ink)}
 .score{font-family:var(--num);font-size:20px;font-weight:900}
-.score.hi{color:var(--stop)}.score.mid{color:var(--sign-d)}
+.score.hi{color:var(--stop)}.score.mid{color:var(--amber-d)}
 .meter{height:8px;background:var(--line2);overflow:hidden;width:64px;display:inline-block;vertical-align:middle;margin-left:8px}
 .meter i{display:block;height:100%;background:var(--stop)}
 .alert{border-radius:3px;padding:10px 12px;font-size:13px;line-height:1.5;font-weight:600;border-left:5px solid currentColor}
-.alert.amber{background:var(--sign-t);color:var(--sign-d);border-left-color:var(--sign)}.alert.sky{background:var(--sky-t);color:var(--ink)}
+.alert.amber{background:var(--amber-t);color:var(--amber-d);border-left-color:var(--amber)}.alert.sky{background:var(--sky-t);color:var(--ink)}
 hr.sep{border:0;border-top:2px solid var(--line2);margin:18px 0}
 @media (max-width:1100px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.kpi:nth-child(3n+1){border-left:0}.cols{grid-template-columns:1fr}}
 @media (max-width:720px){.side{display:none}.main{padding:16px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.panel{overflow-x:auto}}
 </style>
 </head>
 <body>
-<div class="wrap"><nav class="side" aria-label="관리자 메뉴"><div class="brand"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><path d="M2.5 3.5 Q2 2 3.5 2 H28 Q30.5 2.2 30 4 L29.6 28 Q30 30.4 27.5 30 H4 Q1.8 30.2 2.2 27.6 Z" fill="#C8281E"/><rect x="5" y="5" width="22" height="22" fill="none" stroke="#fff" stroke-width="1.4"/><text x="16" y="22.2" text-anchor="middle" font-family="Nanum Myeongjo,serif" font-weight="800" font-size="16" fill="#fff">제</text></svg><div>제자리<small>운영 콘솔</small></div></div>
+<div class="wrap"><nav class="side" aria-label="관리자 메뉴"><div class="brand"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><path d="M2.5 3.5 Q2 2 3.5 2 H28 Q30.5 2.2 30 4 L29.6 28 Q30 30.4 27.5 30 H4 Q1.8 30.2 2.2 27.6 Z" fill="#B41A23"/><rect x="5" y="5" width="22" height="22" fill="none" stroke="#fff" stroke-width="1.4"/><text x="16" y="22.2" text-anchor="middle" font-family="Nanum Myeongjo,serif" font-weight="800" font-size="16" fill="#fff">제</text></svg><div>제자리<small>운영 콘솔</small></div></div>
 <div class="grp">운영</div><a href="A-04.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg>실시간 현황</a><a href="A-05.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6z"/><path d="M12 8.5v4M12 15.5v.3"/></svg>위험 사용자</a><a href="A-06.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>케이스 상세</a>
 <div class="grp">기준·설정</div><a href="A-02.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3.5" width="12" height="13" rx="3"/><path d="M6 11h12M9 20.5l1.5-4M15 20.5l-1.5-4M9 14v.3M15 14v.3"/></svg>기준 데이터</a><a href="A-03.html" class="on" aria-current="page"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>운행·행사</a><a href="A-07.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3L5.5 5.5"/></svg>운영 설정</a>
 <a class="out" href="A-01.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/></svg>로그아웃</a></nav><main class="main">
@@ -125,7 +128,7 @@ hr.sep{border:0;border-top:2px solid var(--line2);margin:18px 0}
 </section>
 <section class="panel">
   <h2><span class="grow">2027 설 운행 <span class="mut" style="font-weight:500">120건</span></span>
-    <select style="width:140px;min-height:32px"><option>모든 상태</option><option>ON_SALE</option><option>SCHEDULED</option><option>CLOSED</option></select>
+    <select aria-label="운행 상태" style="width:140px;min-height:32px"><option>모든 상태</option><option>ON_SALE</option><option>SCHEDULED</option><option>CLOSED</option></select>
     <a class="btn sm" href="#">운행 일괄 생성</a></h2>
   <table><thead><tr><th>열차</th><th>운행일</th><th>구간</th><th>상태</th><th>판매 오픈</th><th class="n">판매 / 좌석</th><th></th></tr></thead><tbody>
   <tr><td class="mono">101</td><td>02-06 (토)</td><td>서울 → 부산</td><td><span class="st go">ON_SALE</span></td><td class="mono">01-20 10:00</td><td class="n">372 / 412</td><td class="n"><a class="btn ghost sm" href="A-04.html">현황</a></td></tr>
