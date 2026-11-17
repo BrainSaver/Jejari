@@ -124,48 +124,120 @@ input.bad{border-color:var(--stop)}
 .demo span{margin-right:4px}
 .demo button{border:0;background:transparent;border-radius:7px;padding:4px 9px;font-size:12px;font-weight:600;color:var(--mut);cursor:pointer}
 .demo button.on{background:var(--ink);color:#fff}
+
+/* 반응형: 좁은 폭에서는 아래 탭, 넓은 폭(PC)에서는 위쪽 메뉴와 2단 */
+.gnb,.d-only{display:none}
+.lay{display:flex;flex-direction:column;gap:12px}
+.lay>.c1,.lay>.c2{display:contents}
+.auth-hero{display:none}
+@media (min-width:960px){
+  .m-only{display:none!important}
+  .d-only{display:block}
+  .app{max-width:none;box-shadow:none}
+  .gnb{display:flex;align-items:center;gap:24px;position:sticky;top:0;z-index:10;height:64px;padding:0 max(32px,calc((100% - 1120px) / 2));background:var(--card);border-bottom:1px solid var(--line);color:var(--ink)}
+  .gnb .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;text-decoration:none;margin-right:16px}
+  .gnb nav{display:flex;gap:2px;flex:1}
+  .gnb nav a{display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;text-decoration:none;color:var(--ink2);font-size:15px;font-weight:500}
+  .gnb nav a:hover{background:var(--line2)}
+  .gnb nav a.on{color:var(--ink);font-weight:700;background:var(--paper)}
+  .gnb nav .cnt{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--stop);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center}
+  .gnb .me{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--mut);text-decoration:none}
+  .gnb .me i{width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-style:normal;font-weight:700;font-size:13px}
+  .tabbar{display:none}
+  .top{position:static;background:none;width:100%;max-width:1120px;margin:0 auto;padding:36px 32px 4px}
+  .top h1{font-size:28px}
+  .body{width:100%;max-width:1120px;margin:0 auto;padding:16px 32px 56px;gap:16px}
+  .body.narrow,.top.narrow{max-width:760px}
+  .demo{margin:auto auto 24px;min-width:420px}
+  .scrim{align-items:center}.sheet{border-radius:20px;max-width:480px;padding:26px 28px}.sheet::before{display:none}
+  .lay{display:grid;gap:20px 28px;align-items:start}
+  .lay>.c1,.lay>.c2{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .lay>.c2.stick{position:sticky;top:88px}
+  .lay>.c1>*,.lay>.c2>*{order:0!important}
+  .ticket.h{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(250px,300px);column-gap:28px;padding:22px 28px;align-items:center}
+  .ticket.h>.perf{width:0;height:auto;align-self:stretch;border-top:0;border-left:2px dashed var(--line);margin:-22px 0}
+  .ticket.h>.perf::before{left:-10px;top:-9px}.ticket.h>.perf::after{left:-10px;right:auto;top:auto;bottom:-9px}
+  .ticket.h .route{margin-top:10px}.ticket.h .route .t{font-size:44px}.ticket.h .route.sm .t{font-size:34px}
+  .auth{display:grid;grid-template-columns:minmax(0,1fr) minmax(440px,560px);min-height:100vh}
+  .auth-hero{display:flex;flex-direction:column;justify-content:space-between;background:var(--ink);color:#fff;padding:48px 56px}
+  .auth .body{max-width:440px;justify-content:center;padding:48px 40px}
+  .auth>.app-side{display:flex;flex-direction:column;background:var(--paper)}
+}
 </style>
 </head>
 <body>
 <div class="app">
-<header class="top"><span style="display:flex;align-items:center;gap:8px;flex:1"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#0B7A5E"/><path d="M11 8.5v10.2a2.3 2.3 0 0 0 2.3 2.3h7.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><path d="M10.5 24.5h12" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="11" r="2.4" fill="#FFD27A"/></svg><b style="font-size:17px">제자리</b></span></header>
+<style>
+.search{padding:6px 16px 16px}
+.od{display:grid;grid-template-columns:1fr 40px 1fr;align-items:center;gap:4px;padding:10px 0 12px;border-bottom:1px solid var(--line2)}
+.od select{border:0;padding:0 18px 0 0;min-height:40px;font-size:24px;font-weight:700;background-position:right 0 center}
+.swap{width:40px;height:40px;border-radius:50%;border:1.5px solid var(--line);background:var(--card);display:grid;place-items:center;cursor:pointer}
+.dt{padding:12px 0}
+.sort{display:flex;gap:4px}
+.sort button{border:0;background:none;font-size:13px;color:var(--mut);padding:4px 8px;border-radius:8px;cursor:pointer}.sort button.on{color:var(--ink);font-weight:700;background:var(--card)}
+@media (min-width:960px){
+  .search{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,1.3fr) 180px;align-items:center;gap:0 24px;padding:14px 14px 14px 28px;border-radius:18px}
+  .od{border-bottom:0;border-right:1px solid var(--line2);padding:6px 24px 6px 0;grid-template-columns:1fr 44px 1fr}
+  .od select{font-size:30px;width:auto}
+  .od label{display:flex!important;flex-direction:column;align-items:flex-start}.od label:last-child{align-items:flex-end}
+  .dt{padding:0}
+  .search .btn{min-height:60px;border-radius:14px}
+  .hello{font-size:32px;line-height:1.3;margin:28px 0 18px;font-weight:700}
+  .fares{display:flex;flex-direction:column}
+}
+</style>
+<header class="gnb"><a class="logo" href="U-03.html"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#0B7A5E"/><path d="M11 8.5v10.2a2.3 2.3 0 0 0 2.3 2.3h7.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><path d="M10.5 24.5h12" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="11" r="2.4" fill="#FFD27A"/></svg>제자리</a><nav aria-label="주요 메뉴"><a href="U-03.html" class="on" aria-current="page">검색</a><a href="U-08.html">예매 내역</a><a href="U-10.html">취소표</a><a href="U-11.html">알림<span class="cnt">2</span></a><a href="U-09.html">내 정보</a></nav><a class="me" href="U-09.html"><i>홍</i>홍*동님</a></header>
+<header class="top m-only"><span style="display:flex;align-items:center;gap:8px;flex:1"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#0B7A5E"/><path d="M11 8.5v10.2a2.3 2.3 0 0 0 2.3 2.3h7.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><path d="M10.5 24.5h12" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="11" r="2.4" fill="#FFD27A"/></svg><b style="font-size:17px">제자리</b></span></header>
 <main class="body">
-  <section class="card" style="padding:6px 16px 16px">
-    <div style="display:grid;grid-template-columns:1fr 40px 1fr;align-items:center;gap:4px;padding:10px 0 12px;border-bottom:1px solid var(--line2)">
-      <label style="display:block"><span class="mut" style="font-size:12.5px">출발</span><select aria-label="출발역" style="border:0;padding:0 18px 0 0;min-height:40px;font-size:24px;font-weight:700;background-position:right 0 center"><option>서울</option><option>용산</option><option>대전</option></select></label>
-      <button type="button" aria-label="출발·도착 바꾸기" style="width:40px;height:40px;border-radius:50%;border:1.5px solid var(--line);background:var(--card);display:grid;place-items:center;cursor:pointer"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4v16M8 4L5 7M8 4l3 3M16 20V4M16 20l-3-3M16 20l3-3"/></svg></button>
-      <label style="display:block;text-align:right"><span class="mut" style="font-size:12.5px">도착</span><select aria-label="도착역" style="border:0;padding:0 18px 0 0;min-height:40px;font-size:24px;font-weight:700;text-align:right;text-align-last:right;background-position:right 0 center"><option>부산</option><option>동대구</option><option>광주송정</option></select></label>
+  <h1 class="d-only hello">어디로 가세요?</h1>
+  <section class="card search">
+    <div class="od">
+      <label style="display:block"><span class="mut" style="font-size:12.5px">출발</span><select aria-label="출발역"><option>서울</option><option>용산</option><option>대전</option></select></label>
+      <button type="button" class="swap" aria-label="출발·도착 바꾸기"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4v16M8 4L5 7M8 4l3 3M16 20V4M16 20l-3-3M16 20l3-3"/></svg></button>
+      <label style="display:block;text-align:right"><span class="mut" style="font-size:12.5px">도착</span><select aria-label="도착역" style="text-align:right;text-align-last:right"><option>부산</option><option>동대구</option><option>광주송정</option></select></label>
     </div>
-    <label class="row" style="padding:12px 0"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span class="grow"><span class="mut" style="font-size:12.5px;display:block">운행일</span><b>2027년 2월 6일 토요일</b></span><span class="st amber plain">설 연휴</span></label>
+    <label class="row dt"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span class="grow"><span class="mut" style="font-size:12.5px;display:block">운행일</span><b>2027년 2월 6일 토요일</b></span><span class="st amber plain">설 연휴</span></label>
     <button class="btn ink" type="button">열차 찾기</button>
   </section>
 
-  <div class="row" style="margin:6px 2px -2px"><b class="grow" style="font-size:15px">서울에서 부산 · 3개 열차</b><span class="mut" style="font-size:13px">출발 시각순</span></div>
+  <div class="row" style="margin:10px 2px 0"><b class="grow" style="font-size:16px">서울에서 부산 · 2월 6일(토) · 3개 열차</b><div class="sort"><button class="on" type="button">출발 빠른 순</button><button type="button">소요 짧은 순</button></div></div>
 
-  <article class="ticket">
-    <div class="row"><span class="tno grow"><b>101</b> 열차</span><span class="st go">판매 중</span></div>
-    <div class="route"><div><div class="t">06:00</div><div class="s">서울</div></div><div class="mid"><i></i><span>2시간 40분</span></div><div class="end"><div class="t">08:40</div><div class="s">부산</div></div></div>
+  <article class="ticket h">
+    <div>
+      <div class="row"><span class="tno grow"><b>101</b> 열차</span><span class="st go">판매 중</span></div>
+      <div class="route"><div><div class="t">06:00</div><div class="s">서울</div></div><div class="mid"><i></i><span>2시간 40분</span></div><div class="end"><div class="t">08:40</div><div class="s">부산</div></div></div>
+    </div>
     <div class="perf"></div>
-    <div class="fare"><span class="k">일반실</span><span class="p">59,800원</span><span class="left">12석 남음</span></div>
-    <div class="fare"><span class="k">특실</span><span class="p">83,700원</span><span class="left low">3석 남음</span></div>
-    <a class="btn" href="U-04.html" style="margin-top:10px">예매하기</a>
+    <div class="fares">
+      <div class="fare"><span class="k">일반실</span><span class="p">59,800원</span><span class="left">12석 남음</span></div>
+      <div class="fare"><span class="k">특실</span><span class="p">83,700원</span><span class="left low">3석 남음</span></div>
+      <a class="btn" href="U-04.html" style="margin-top:10px">예매하기</a>
+    </div>
   </article>
 
-  <article class="ticket">
-    <div class="row"><span class="tno grow"><b>103</b> 열차</span><span class="st stop">매진</span></div>
-    <div class="route"><div><div class="t">07:00</div><div class="s">서울</div></div><div class="mid"><i></i><span>2시간 38분</span></div><div class="end"><div class="t">09:38</div><div class="s">부산</div></div></div>
+  <article class="ticket h">
+    <div>
+      <div class="row"><span class="tno grow"><b>103</b> 열차</span><span class="st stop">매진</span></div>
+      <div class="route"><div><div class="t">07:00</div><div class="s">서울</div></div><div class="mid"><i></i><span>2시간 38분</span></div><div class="end"><div class="t">09:38</div><div class="s">부산</div></div></div>
+    </div>
     <div class="perf"></div>
-    <div class="fare"><span class="k">일반실</span><span class="p">59,800원</span><span class="left none">매진</span></div>
-    <div class="fare"><span class="k">특실</span><span class="p">83,700원</span><span class="left none">매진</span></div>
-    <a class="btn soft" href="U-10.html" style="margin-top:10px">취소표 대기 신청</a>
+    <div class="fares">
+      <div class="fare"><span class="k">일반실</span><span class="p">59,800원</span><span class="left none">매진</span></div>
+      <div class="fare"><span class="k">특실</span><span class="p">83,700원</span><span class="left none">매진</span></div>
+      <a class="btn soft" href="U-10.html" style="margin-top:10px">취소표 대기 신청</a>
+    </div>
   </article>
 
-  <article class="ticket">
-    <div class="row"><span class="tno grow"><b>105</b> 열차</span><span class="st amber">오픈 전</span></div>
-    <div class="route"><div><div class="t">08:00</div><div class="s">서울</div></div><div class="mid"><i></i><span>2시간 41분</span></div><div class="end"><div class="t">10:41</div><div class="s">부산</div></div></div>
+  <article class="ticket h">
+    <div>
+      <div class="row"><span class="tno grow"><b>105</b> 열차</span><span class="st amber">오픈 전</span></div>
+      <div class="route"><div><div class="t">08:00</div><div class="s">서울</div></div><div class="mid"><i></i><span>2시간 41분</span></div><div class="end"><div class="t">10:41</div><div class="s">부산</div></div></div>
+    </div>
     <div class="perf"></div>
-    <div class="fare"><span class="k">일반실</span><span class="p">59,800원</span><span class="left">412석</span></div>
-    <span class="btn off" style="margin-top:10px" aria-disabled="true">2월 1일 오전 10시에 예매가 열려요</span>
+    <div class="fares">
+      <div class="fare"><span class="k">일반실</span><span class="p">59,800원</span><span class="left">412석</span></div>
+      <span class="btn off" style="margin-top:10px" aria-disabled="true">2월 1일 오전 10시 오픈</span>
+    </div>
   </article>
   <p class="faint" style="font-size:12.5px;text-align:center;margin:0">남은 좌석은 몇 초 늦게 바뀔 수 있어요.</p>
 </main>

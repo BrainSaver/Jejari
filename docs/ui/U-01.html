@@ -124,16 +124,60 @@ input.bad{border-color:var(--stop)}
 .demo span{margin-right:4px}
 .demo button{border:0;background:transparent;border-radius:7px;padding:4px 9px;font-size:12px;font-weight:600;color:var(--mut);cursor:pointer}
 .demo button.on{background:var(--ink);color:#fff}
+
+/* 반응형: 좁은 폭에서는 아래 탭, 넓은 폭(PC)에서는 위쪽 메뉴와 2단 */
+.gnb,.d-only{display:none}
+.lay{display:flex;flex-direction:column;gap:12px}
+.lay>.c1,.lay>.c2{display:contents}
+.auth-hero{display:none}
+@media (min-width:960px){
+  .m-only{display:none!important}
+  .d-only{display:block}
+  .app{max-width:none;box-shadow:none}
+  .gnb{display:flex;align-items:center;gap:24px;position:sticky;top:0;z-index:10;height:64px;padding:0 max(32px,calc((100% - 1120px) / 2));background:var(--card);border-bottom:1px solid var(--line);color:var(--ink)}
+  .gnb .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;text-decoration:none;margin-right:16px}
+  .gnb nav{display:flex;gap:2px;flex:1}
+  .gnb nav a{display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;text-decoration:none;color:var(--ink2);font-size:15px;font-weight:500}
+  .gnb nav a:hover{background:var(--line2)}
+  .gnb nav a.on{color:var(--ink);font-weight:700;background:var(--paper)}
+  .gnb nav .cnt{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--stop);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center}
+  .gnb .me{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--mut);text-decoration:none}
+  .gnb .me i{width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-style:normal;font-weight:700;font-size:13px}
+  .tabbar{display:none}
+  .top{position:static;background:none;width:100%;max-width:1120px;margin:0 auto;padding:36px 32px 4px}
+  .top h1{font-size:28px}
+  .body{width:100%;max-width:1120px;margin:0 auto;padding:16px 32px 56px;gap:16px}
+  .body.narrow,.top.narrow{max-width:760px}
+  .demo{margin:auto auto 24px;min-width:420px}
+  .scrim{align-items:center}.sheet{border-radius:20px;max-width:480px;padding:26px 28px}.sheet::before{display:none}
+  .lay{display:grid;gap:20px 28px;align-items:start}
+  .lay>.c1,.lay>.c2{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .lay>.c2.stick{position:sticky;top:88px}
+  .lay>.c1>*,.lay>.c2>*{order:0!important}
+  .ticket.h{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(250px,300px);column-gap:28px;padding:22px 28px;align-items:center}
+  .ticket.h>.perf{width:0;height:auto;align-self:stretch;border-top:0;border-left:2px dashed var(--line);margin:-22px 0}
+  .ticket.h>.perf::before{left:-10px;top:-9px}.ticket.h>.perf::after{left:-10px;right:auto;top:auto;bottom:-9px}
+  .ticket.h .route{margin-top:10px}.ticket.h .route .t{font-size:44px}.ticket.h .route.sm .t{font-size:34px}
+  .auth{display:grid;grid-template-columns:minmax(0,1fr) minmax(440px,560px);min-height:100vh}
+  .auth-hero{display:flex;flex-direction:column;justify-content:space-between;background:var(--ink);color:#fff;padding:48px 56px}
+  .auth .body{max-width:440px;justify-content:center;padding:48px 40px}
+  .auth>.app-side{display:flex;flex-direction:column;background:var(--paper)}
+}
 </style>
 </head>
 <body>
-<div class="app">
+<div class="app auth">
+<aside class="auth-hero"><div class="row" style="gap:12px"><svg width="36" height="36" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#0B7A5E"/><path d="M11 8.5v10.2a2.3 2.3 0 0 0 2.3 2.3h7.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><path d="M10.5 24.5h12" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="11" r="2.4" fill="#FFD27A"/></svg><b style="font-size:18px">제자리</b></div>
+<div><div class="num" style="font-size:22px;color:#FFD27A;font-weight:600">2027 설 승차권 · 1월 20일 오전 10시 오픈</div><h2 style="font-size:44px;line-height:1.2;margin:14px 0 16px;font-weight:700">명절 열차,<br>줄 선 순서대로.</h2><p style="font-size:17px;color:#D3D9E6;max-width:440px;line-height:1.7;margin:0">먼저 줄 선 사람이 먼저 앉습니다. 대기열 순번, 좌석 선점, 결제 기한을 모두가 같은 규칙으로 지켜요.</p></div>
+<p style="font-size:13px;color:#7581A0;margin:0">매크로·다중 계정 예매는 자동으로 걸러져요.</p></aside>
+<div class="app-side">
 <main class="body" style="padding-top:56px">
-  <div style="padding:0 4px 18px">
+  <div class="m-only" style="padding:0 4px 18px">
     <svg width="44" height="44" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#0B7A5E"/><path d="M11 8.5v10.2a2.3 2.3 0 0 0 2.3 2.3h7.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><path d="M10.5 24.5h12" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="11" r="2.4" fill="#FFD27A"/></svg>
     <h1 style="font-size:28px;line-height:1.25;margin:18px 0 6px;font-weight:700">명절 열차,<br>줄 선 순서대로.</h1>
     <p class="mut" style="margin:0">제자리에 로그인하고 예매를 이어가세요.</p>
   </div>
+  <h1 class="d-only" style="font-size:26px;margin:0 0 4px">로그인</h1><p class="d-only mut" style="margin:0 0 8px">이메일과 비밀번호를 입력하세요.</p>
   <div class="alert stop" data-state="err"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.2v.3"/></svg><span>이메일 또는 비밀번호가 맞지 않아요. 다시 입력해 주세요.</span></div>
   <div>
     <div class="field"><label for="em">이메일</label><input id="em" type="email" value="user01@example.com" autocomplete="username"></div>
@@ -143,7 +187,7 @@ input.bad{border-color:var(--stop)}
   <p class="mut" style="text-align:center;margin:6px 0 0;font-size:14px">처음이신가요? <a class="link" href="U-02.html">회원가입</a></p>
 </main>
 <div class="demo"><span>시안 상태</span><button data-show="ok">기본</button><button data-show="err" class="on">로그인 실패</button></div>
-</div>
+</div></div>
 <script>
 (function(){
   var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));};

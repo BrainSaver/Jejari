@@ -124,12 +124,51 @@ input.bad{border-color:var(--stop)}
 .demo span{margin-right:4px}
 .demo button{border:0;background:transparent;border-radius:7px;padding:4px 9px;font-size:12px;font-weight:600;color:var(--mut);cursor:pointer}
 .demo button.on{background:var(--ink);color:#fff}
+
+/* 반응형: 좁은 폭에서는 아래 탭, 넓은 폭(PC)에서는 위쪽 메뉴와 2단 */
+.gnb,.d-only{display:none}
+.lay{display:flex;flex-direction:column;gap:12px}
+.lay>.c1,.lay>.c2{display:contents}
+.auth-hero{display:none}
+@media (min-width:960px){
+  .m-only{display:none!important}
+  .d-only{display:block}
+  .app{max-width:none;box-shadow:none}
+  .gnb{display:flex;align-items:center;gap:24px;position:sticky;top:0;z-index:10;height:64px;padding:0 max(32px,calc((100% - 1120px) / 2));background:var(--card);border-bottom:1px solid var(--line);color:var(--ink)}
+  .gnb .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;text-decoration:none;margin-right:16px}
+  .gnb nav{display:flex;gap:2px;flex:1}
+  .gnb nav a{display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;text-decoration:none;color:var(--ink2);font-size:15px;font-weight:500}
+  .gnb nav a:hover{background:var(--line2)}
+  .gnb nav a.on{color:var(--ink);font-weight:700;background:var(--paper)}
+  .gnb nav .cnt{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--stop);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center}
+  .gnb .me{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--mut);text-decoration:none}
+  .gnb .me i{width:32px;height:32px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-style:normal;font-weight:700;font-size:13px}
+  .tabbar{display:none}
+  .top{position:static;background:none;width:100%;max-width:1120px;margin:0 auto;padding:36px 32px 4px}
+  .top h1{font-size:28px}
+  .body{width:100%;max-width:1120px;margin:0 auto;padding:16px 32px 56px;gap:16px}
+  .body.narrow,.top.narrow{max-width:760px}
+  .demo{margin:auto auto 24px;min-width:420px}
+  .scrim{align-items:center}.sheet{border-radius:20px;max-width:480px;padding:26px 28px}.sheet::before{display:none}
+  .lay{display:grid;gap:20px 28px;align-items:start}
+  .lay>.c1,.lay>.c2{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .lay>.c2.stick{position:sticky;top:88px}
+  .lay>.c1>*,.lay>.c2>*{order:0!important}
+  .ticket.h{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(250px,300px);column-gap:28px;padding:22px 28px;align-items:center}
+  .ticket.h>.perf{width:0;height:auto;align-self:stretch;border-top:0;border-left:2px dashed var(--line);margin:-22px 0}
+  .ticket.h>.perf::before{left:-10px;top:-9px}.ticket.h>.perf::after{left:-10px;right:auto;top:auto;bottom:-9px}
+  .ticket.h .route{margin-top:10px}.ticket.h .route .t{font-size:44px}.ticket.h .route.sm .t{font-size:34px}
+  .auth{display:grid;grid-template-columns:minmax(0,1fr) minmax(440px,560px);min-height:100vh}
+  .auth-hero{display:flex;flex-direction:column;justify-content:space-between;background:var(--ink);color:#fff;padding:48px 56px}
+  .auth .body{max-width:440px;justify-content:center;padding:48px 40px}
+  .auth>.app-side{display:flex;flex-direction:column;background:var(--paper)}
+}
 </style>
 </head>
 <body>
 <div class="app" style="background:var(--ink);color:#fff">
 <style>
-.app .top{background:var(--ink)}.app .top .back:hover{background:rgba(255,255,255,.08)}
+.app>.top{background:var(--ink)}.app>.top .back:hover{background:rgba(255,255,255,.08)}
 .q-num{font-family:var(--num);font-size:96px;line-height:.9;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
 .track{position:relative;height:56px;margin:8px 0 4px}
 .track .rail{position:absolute;left:0;right:0;top:26px;height:4px;border-radius:2px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.22) 0 10px,transparent 10px 16px)}
@@ -140,14 +179,20 @@ input.bad{border-color:var(--stop)}
 .qcard{background:rgba(255,255,255,.07);border-radius:16px;padding:16px}
 .qlbl{display:flex;justify-content:space-between;font-size:12.5px;color:#9AA4BC}
 .app .btn.ghost{color:#fff;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.25)}.app .btn.ghost:hover{background:rgba(255,255,255,.06)}
+@media (min-width:960px){
+  .q-num{font-size:168px}
+  .qbody{padding-top:48px!important}
+  .qbtns{flex-direction:row!important;margin-top:24px!important}.qbtns .btn{flex:1}
+}
 </style>
-<header class="top"><a class="back" href="U-03.html" aria-label="뒤로"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a><h1>대기열</h1></header>
-<main class="body" style="gap:16px">
+<header class="gnb"><a class="logo" href="U-03.html"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#0B7A5E"/><path d="M11 8.5v10.2a2.3 2.3 0 0 0 2.3 2.3h7.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><path d="M10.5 24.5h12" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.5" cy="11" r="2.4" fill="#FFD27A"/></svg>제자리</a><nav aria-label="주요 메뉴"><a href="U-03.html" class="on" aria-current="page">검색</a><a href="U-08.html">예매 내역</a><a href="U-10.html">취소표</a><a href="U-11.html">알림<span class="cnt">2</span></a><a href="U-09.html">내 정보</a></nav><a class="me" href="U-09.html"><i>홍</i>홍*동님</a></header>
+<header class="top m-only"><a class="back" href="U-03.html" aria-label="뒤로"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a><h1>대기열</h1></header>
+<main class="body narrow qbody" style="gap:16px">
   <div style="font-size:14px;color:#B9C1D3"><b style="color:#fff">101 열차</b> &nbsp;서울 06:00 → 부산 08:40 &nbsp;2월 6일(토)</div>
   <section style="padding:22px 0 6px">
-    <div style="font-size:14px;color:#B9C1D3">내 순번</div>
+    <div style="font-size:15px;color:#B9C1D3">내 순번</div>
     <div class="q-num" id="qn">1,284</div>
-    <div style="margin-top:12px;font-size:15px">앞에 <b id="qa">1,283</b>명 · 예상 <b id="qt">2분 10초</b></div>
+    <div style="margin-top:12px;font-size:16px">앞에 <b id="qa">1,283</b>명 · 예상 <b id="qt">2분 10초</b></div>
   </section>
   <div class="track" aria-hidden="true">
     <div class="rail"></div><div class="done" id="qd" style="width:62%"></div>
@@ -158,7 +203,7 @@ input.bad{border-color:var(--stop)}
   <div class="qcard" style="font-size:14px;line-height:1.6;color:#D3D9E6">
     새로고침하거나 창을 닫았다 열어도 순번은 그대로예요.<br>차례가 오면 자동으로 좌석 선택으로 넘어가고, 그때부터 5분 안에 좌석을 골라야 해요.
   </div>
-  <div class="stack" style="margin-top:auto">
+  <div class="stack qbtns" style="margin-top:auto">
     <a class="btn" href="U-05.html" style="background:#FFD27A;color:var(--ink)">차례가 됐어요 (시안) · 좌석 선택</a>
     <a class="btn ghost" href="U-03.html">대기 그만두기</a>
   </div>
