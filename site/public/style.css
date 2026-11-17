@@ -475,6 +475,8 @@ body.no-scroll{overflow:hidden}
 .rm-card-top{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px}
 .rm-frac{margin-left:auto;font-size:12px;font-weight:700;color:var(--muted)}
 .rm-card.st-done .rm-frac{color:var(--add-fg)}
+.rm-detail .rm-card.st-done{opacity:.55;background:var(--bg)}
+.rm-detail .rm-card.st-done:hover,.rm-detail .rm-card.st-done:focus-visible{opacity:1}
 .rm-code{font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:600;color:var(--strong)}
 .rm-title{font-weight:600;color:var(--fg)}
 .rm-chips{display:flex;gap:5px;flex-wrap:wrap}
@@ -711,9 +713,12 @@ input[type=date]{font:inherit;color:var(--fg);background:var(--bg);border:1px so
 .sim-item.show{opacity:1;transform:none}
 .sim-chk{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--line2);display:flex;align-items:center;justify-content:center}
 .sim-item.done .sim-chk{background:var(--add-fg);border-color:var(--add-fg);color:var(--bg2)}
-.sim-item.done .sim-it{color:var(--muted)}
+.sim-item:not(.done) .sim-chk{border-color:var(--warn-fg);background:var(--warn)}
+.sim-item:not(.done) .sim-it{font-weight:600;color:var(--fg)}
+.sim-item.done.show{opacity:.55}
+.sim-item.done .sim-it{color:var(--muted);text-decoration:line-through}
+.sim-sep{font-size:12px;color:var(--muted);border-top:1px dashed var(--line2);margin-top:4px;padding:4px 0 0 26px}
 .sim-who{font-size:12px;white-space:nowrap}
-.sim-more{font-size:12px;padding-left:26px}
 .sim-todo-box{border:1.5px solid var(--warn-fg);background:var(--warn);color:var(--warn-fg);border-radius:10px;padding:7px 10px;font-size:13.5px;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center}
 .sim-acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .sim-left{display:flex;flex-wrap:wrap;gap:4px}

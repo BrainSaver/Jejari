@@ -2056,11 +2056,13 @@ function simPanel(mode) {
     const intro = n.kind === 'start' ? '이용자가 사이트에 들어와 예매를 시작해요. 아래 칸들을 순서대로 지나가요.'
       : edge && edge.label ? `${esc(from.label)}에서 <b>${esc(edge.label)}</b>을(를) 받아 이 칸이 일해요.` : '이 칸에서 하는 일이에요.';
     const st = rmStages();
-    const list = items.slice(0, 7).map((x) => `<div class="sim-item${isDone(x) ? ' done' : ''}"><span class="sim-chk">${isDone(x) ? svgI('check', 12) : ''}</span><span class="sim-it">${esc(x.title)}</span><span class="muted sim-who">${rolesOf(x).map((p) => esc(S.members[partOwner(p)] || p)).join('·')}${isDone(x) ? '' : ` · ${st.get(x.id)}단계`}</span></div>`).join('');
-    const more = items.length > 7 ? `<div class="muted sim-more">외 ${items.length - 7}개</div>` : '';
+    // 안 끝난 일을 위에, 끝난 일은 아래로 모아 전부 보여 준다
+    const simRow = (x) => `<div class="sim-item${isDone(x) ? ' done' : ''}"><span class="sim-chk">${isDone(x) ? svgI('check', 12) : ''}</span><span class="sim-it">${esc(x.title)}</span><span class="muted sim-who">${rolesOf(x).map((p) => esc(S.members[partOwner(p)] || p)).join('·')}${isDone(x) ? '' : ` · ${st.get(x.id)}단계`}</span></div>`;
+    const doneItems = items.filter(isDone);
+    const list = open.map(simRow).join('') + (doneItems.length ? `<div class="sim-sep">끝난 일 ${doneItems.length}개</div>${doneItems.map(simRow).join('')}` : '');
     const nextOpen = open.filter((x) => !waitingOn(x, rmById()).length);
     body = `<div class="sim-head"><span class="sim-ic${ok ? ' ok' : ' todo'}">${nodeIcon(n.icon, 18)}</span><div><span class="muted">${intro}</span><b class="sim-title">${esc(n.label)} ${n.kind === 'start' ? '' : ok ? '<span class="rm-st st-done">완료</span>' : `<span class="rm-st st-todo">${items.length - open.length}/${items.length}</span>`}</b></div></div>
-      ${list ? `<div class="sim-list">${list}${more}</div>` : n.kind === 'start' ? '' : '<p class="muted">아직 이 칸에 할 일이 없어요.</p>'}
+      ${list ? `<div class="sim-list">${list}</div>` : n.kind === 'start' ? '' : '<p class="muted">아직 이 칸에 할 일이 없어요.</p>'}
       ${!ok ? `<div class="sim-todo-box"><b>여기서 할 일</b> ${nextOpen.length ? `지금 바로 시작할 수 있는 것: ${nextOpen.slice(0, 3).map((x) => `<button class="rm-link sm" data-open="${x.id}">${esc(x.code || x.title)}</button>`).join('')}` : `먼저 다른 칸 일이 끝나야 해요: ${[...new Set(open.flatMap((x) => waitingOn(x, rmById())).map((d) => d.code || d.title))].slice(0, 4).map(esc).join(', ')}`}</div>
         <div class="sim-acts"><span id="simCount" class="muted"></span><span style="flex:1"></span><button class="btn sm plain" data-simopen="${n.k}">칸 열기</button><button class="btn sm" data-sim="next">건너뛰고 계속 ${svgI('skip', 14)}</button></div>` : ''}`;
   }
@@ -2228,7 +2230,8 @@ function rmArea(k) {
   RM.modal = { kind: 'area', k };
   const by = rmById();
   const st = rmStages();
-  const items = RM.data.items.filter((x) => x.area === k).sort((x, y) => (st.get(x.id) || 99) - (st.get(y.id) || 99) || sortItems(x, y));
+  // 안 끝난 일을 먼저, 끝난 일은 아래로
+  const items = RM.data.items.filter((x) => x.area === k).sort((x, y) => isDone(x) - isDone(y) || (st.get(x.id) || 99) - (st.get(y.id) || 99) || sortItems(x, y));
   const parts = areaParts(k);
   const done = items.filter(isDone).length;
   const m = openModal(`<div class="rm-detail">
@@ -2239,7 +2242,7 @@ function rmArea(k) {
       <span class="fl-team-who"><span><b>${p}</b> ${esc(S.members[partOwner(p)])}</span><small class="muted">${d}/${total} 했음</small></span>
       <span class="fl-team-now">${n ? `${esc(n.text)} <small class="muted">${rmWho(n.who)} · ${ago(n.at)}</small>` : '<span class="muted">지금 하는 일 없음</span>'}</span>
       ${S.me ? `<button class="btn sm plain" data-nowp="${p}">${n ? '고치기' : '적기'}</button>` : ''}</div>`; }).join('') || '<p class="muted">아직 맡은 사람이 없어요. 할 일을 추가하면서 파트를 고르면 생겨요.</p>'}</div>
-    <div class="fl-cards-head"><span class="rm-rel-h" style="margin:0">할 일 ${items.length}개 <span class="muted" style="font-weight:500">· 할 순서대로</span></span><span class="fl-cards-acts">${askBtn(k)}${S.me ? `<button class="btn sm" data-add="${k}">${svgI('plus', 14)} 할 일 추가</button>` : ''}</span></div>
+    <div class="fl-cards-head"><span class="rm-rel-h" style="margin:0">할 일 ${items.length}개 <span class="muted" style="font-weight:500">· 안 끝난 일 먼저, 할 순서대로</span></span><span class="fl-cards-acts">${askBtn(k)}${S.me ? `<button class="btn sm" data-add="${k}">${svgI('plus', 14)} 할 일 추가</button>` : ''}</span></div>
     <div class="rm-cards">${items.map((x) => rmCard(x, by, { stage: st.get(x.id) })).join('') || '<p class="muted">할 일이 없어요.</p>'}</div>
     <div class="row"><button class="btn plain" data-x>닫기</button></div></div>`, { wide: true });
   $('[data-x]', m).addEventListener('click', () => { RM.modal = null; closeModal(); rmAfterClose(); });
