@@ -1,0 +1,76 @@
+/* 관리자 화면 (시안 docs/ui/A-0x.html의 관리자 스타일). 사용자 화면에 새지 않게 .admin 아래로 묶었다 */
+.admin{font-size:14px;background:var(--paper);min-height:100vh}
+.admin .wrap{display:flex;min-height:100vh}
+.admin .side{width:228px;flex:none;background:var(--salt),var(--ink);border-right:5px solid;border-image:linear-gradient(180deg,#B91C1C 0 20%,#F2B705 20% 40%,#15803D 40% 60%,#1D4ED8 60% 80%,#D97757 80% 100%) 1;color:#B4C2D8;padding:20px 0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.admin .brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:900;font-size:16px;padding:0 20px 20px}
+.admin .brand small{display:block;font-weight:700;font-size:12px;color:#8FA1BE}
+.admin .side .grp{font-size:12px;color:#8FA1BE;padding:18px 20px 6px;font-weight:800}
+.admin .side a,.admin .side button.link{display:flex;align-items:center;gap:10px;color:#C8D3E4;text-decoration:none;padding:10px 20px;font-size:14px;font-weight:700;border:0;border-left:5px solid transparent;background:none;cursor:pointer;width:100%;text-align:left}
+.admin .side a:hover,.admin .side button.link:hover{background:rgba(255,255,255,.06);color:#fff}
+.admin .side a.active{background:rgba(255,255,255,.1);color:#fff;border-left-color:var(--sign)}
+.admin .side a.soon{opacity:.55}
+.admin .side .out{margin-top:auto}
+.admin .main{flex:1;min-width:0;padding:26px 32px 40px;max-width:1240px}
+.admin .head{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:4px solid var(--ink)}
+.admin .head h1{font-size:26px;margin:0;font-weight:900;font-family:var(--serif)}
+.admin .who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut);white-space:nowrap;font-weight:700}
+.admin .who i{width:28px;height:28px;border-radius:8px;background:var(--sign);color:var(--ink);display:grid;place-items:center;font-style:normal;font-weight:900;font-size:12px}
+.admin .ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:square;stroke-linejoin:miter;flex:none}
+.admin .side .ic{width:18px;height:18px}
+.admin .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px;overflow-x:auto}
+.admin .panel h2{font-size:15.5px;margin:0 0 12px;font-weight:900;display:flex;align-items:center;gap:8px}
+.admin .panel .sub{font-size:13px;color:var(--mut);margin:-8px 0 12px}
+.admin .cols{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr);gap:16px;align-items:start}
+.admin .cols>.panel{margin-bottom:0}
+.admin .kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:16px;background:var(--card);border:1px solid var(--line);border-radius:12px}
+.admin .kpi{padding:14px 18px;border-left:1px solid var(--line2)}
+.admin .kpi:first-child{border-left:0}
+.admin .kpi .l{font-size:12.5px;color:var(--mut);font-weight:800}
+.admin .kpi .n{font-family:var(--num);font-size:34px;line-height:1.1;font-weight:800;font-variant-numeric:tabular-nums;margin-top:6px}
+.admin .kpi .d{font-size:12px;color:var(--mut);font-weight:600}
+.admin .kpi.alarm{background:var(--stop);color:#fff}
+.admin .kpi.alarm .l,.admin .kpi.alarm .d,.admin .kpi.alarm .src{color:#F6D3D5}
+.admin table{border-collapse:collapse;width:100%;font-size:13.5px}
+.admin th{font-weight:800;color:var(--ink);font-size:12.5px;text-align:left;padding:8px 12px;border-bottom:3px solid var(--ink);white-space:nowrap}
+.admin td{padding:9px 12px;border-bottom:1px solid var(--line2);vertical-align:middle;font-weight:500}
+.admin tr:last-child td{border-bottom:0}
+.admin td.n,.admin th.n{text-align:right;font-variant-numeric:tabular-nums}
+.admin td.mono{font-family:var(--num);font-weight:800}
+.admin .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:38px;padding:7px 14px;border:0;border-radius:12px;background:var(--ink);color:#fff;font-weight:800;font-size:13.5px;text-decoration:none;cursor:pointer;white-space:nowrap}
+.admin .btn:hover{background:#0A1B36}
+.admin .btn:disabled{opacity:.5;cursor:not-allowed}
+.admin .btn.ghost{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 2px var(--ink)}
+.admin .btn.ghost:hover{background:var(--line2)}
+.admin .btn.sm{min-height:30px;padding:4px 10px;font-size:12.5px}
+.admin .btn.wide{width:100%}
+.admin .field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.admin .field label{font-size:12.5px;color:var(--ink);font-weight:800}
+.admin .field .hint{font-size:12px;color:var(--mut)}
+.admin input,.admin select{font:inherit;color:var(--ink);min-height:40px;padding:8px 12px;border:2px solid var(--line);border-radius:12px;background:var(--card);width:100%;font-weight:500}
+.admin select{appearance:none;-webkit-appearance:none;background:var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%230F2A4F' stroke-width='2.4'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E") no-repeat right 12px center;padding-right:32px}
+.admin input:focus,.admin select:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px var(--sign)}
+.admin .alert{border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.5;font-weight:600;border-left:5px solid currentColor;margin-bottom:16px}
+.admin .alert.amber{background:var(--amber-t);color:var(--amber-d);border-left-color:var(--amber)}
+.admin .alert.stop{background:var(--stop-t);color:var(--stop)}
+.admin .alert.sky{background:var(--sky-t);color:var(--ink)}
+
+/* ---- 백엔드가 보이게: 관리자 화면에만 있는 요소 ---- */
+/* 값마다 어디서 읽었는지 (Redis 캐시인지 Oracle인지, 얼마나 늦을 수 있는지) */
+.admin .src{display:block;margin-top:6px;font-size:11px;font-weight:700;color:var(--faint);font-family:var(--num);letter-spacing:.01em}
+/* 마지막 응답 상태줄 */
+.admin .live{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin:-8px 0 16px;font-size:13px;color:var(--mut)}
+.admin .live code,.admin .reqlog code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--line2);padding:1px 6px;border-radius:6px;color:var(--ink2)}
+.admin .reqlog td{padding:6px 10px;font-size:12.5px}
+.admin .reqlog .ok{color:var(--go-d);font-weight:800}
+.admin .reqlog .bad{color:var(--stop);font-weight:800}
+.admin .dot{display:inline-block;width:10px;height:10px;border-radius:8px;margin-right:5px;vertical-align:-1px}
+.admin .soon-box{border:2px dashed var(--line);border-radius:12px;padding:16px;color:var(--mut);font-size:13px;line-height:1.6}
+
+/* 로그인 (A-01) */
+.admin .login{min-height:100vh;display:grid;place-items:center;padding:16px;background:var(--salt),var(--ink)}
+.admin .login form{width:100%;max-width:380px;background:var(--card);border-radius:16px;padding:28px;border-top:6px solid;border-image:var(--saek) 1}
+.admin .login h1{font-family:var(--serif);font-size:24px;margin:0 0 4px}
+
+@media (max-width:1100px){.admin .kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.admin .kpi:nth-child(3n+1){border-left:0}.admin .cols{grid-template-columns:1fr}}
+/* 좁은 화면: 왼쪽 메뉴를 위쪽 가로 줄로 (시안은 숨겼지만 그러면 로그아웃·이동이 안 된다) */
+@media (max-width:720px){.admin .wrap{flex-direction:column}.admin .side{position:static;width:100%;height:auto;flex-direction:row;align-items:center;overflow-x:auto;padding:0;border-right:0;border-bottom:5px solid;border-image:var(--saek) 1}.admin .side>div{display:flex}.admin .brand{padding:10px 12px}.admin .brand small,.admin .side .grp{display:none}.admin .side a,.admin .side button.link{padding:12px 10px;white-space:nowrap;border-left:0;border-bottom:4px solid transparent;width:auto}.admin .side a.active{border-bottom-color:var(--sign)}.admin .side .out{margin:0 0 0 auto}.admin .main{padding:16px}.admin .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.admin .kpi:nth-child(odd){border-left:0}}
