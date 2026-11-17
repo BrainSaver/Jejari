@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.redis.test.autoconfigure.DataRedisTest;
 import org.springframework.context.annotation.Import;
@@ -17,6 +18,7 @@ import com.jejari.queue.config.QueueConfig;
 import com.jejari.queue.dev.DevStubsConfig;
 import com.jejari.queue.domain.QueueService;
 import com.jejari.queue.domain.QueueStatus;
+import com.jejari.support.NoRunningApp;
 import com.jejari.support.WebSecurityTestConfig;
 
 /**
@@ -24,6 +26,7 @@ import com.jejari.support.WebSecurityTestConfig;
  * 입장 스케줄러가 1초마다 자동으로 입장시키는지. 슬라이스 테스트는 이 부분을 거치지 않습니다.
  */
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 @DataRedisTest
 @Import({QueueConfig.class, DevStubsConfig.class, WebSecurityTestConfig.ClockBean.class})
 @TestPropertySource(properties = {

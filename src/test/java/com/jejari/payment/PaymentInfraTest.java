@@ -19,6 +19,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.RedisCallback;
@@ -30,10 +31,11 @@ import com.jejari.payment.PaymentSaga.Approval;
 import com.jejari.payment.PaymentService.PaymentResult;
 import com.jejari.payment.pg.MockPgClient;
 import com.jejari.payment.pg.PgClient;
-import com.jejari.seat.SeatHoldService;
 import com.jejari.seat.SeatHoldService.HoldCommand;
 import com.jejari.seat.SeatHoldService.SeatRequest;
+import com.jejari.seat.SeatHoldService;
 import com.jejari.seat.SeatKeys;
+import com.jejari.support.NoRunningApp;
 
 /**
  * PAY-01~04 + EVT-04 결제 멱등 + EVT-05 Saga를 실제 Oracle·Redis로 확인한다 (concurrency.md §1, §4~§6.2).
@@ -42,6 +44,7 @@ import com.jejari.seat.SeatKeys;
  * <p>준비: {@code docker compose up -d}, Oracle이 최신 DDL·시드여야 한다 (운행 9001, 열차 1의 좌석).
  */
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 @SpringBootTest(properties = {
 		"spring.data.redis.database=15",
 		"jejari.queue.scheduler-enabled=false",

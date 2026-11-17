@@ -18,16 +18,19 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 
 import com.jejari.event.relay.KafkaEventPublisher;
+import com.jejari.support.NoRunningApp;
 
 /**
  * 실제 Kafka(docker compose)로 보내고 다시 읽어 봅니다: 키·헤더·값이 그대로 가는지,
  * 같은 키(reservation_id)는 같은 파티션에 보낸 순서대로 쌓이는지.
  */
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 class KafkaEventPublisherInfraTest {
 
 	static final String BOOTSTRAP = System.getenv().getOrDefault("KAFKA_BOOTSTRAP", "localhost:9092");

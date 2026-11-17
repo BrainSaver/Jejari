@@ -6,11 +6,13 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.data.redis.test.autoconfigure.DataRedisTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 
 import com.jejari.queue.config.QueueConfig;
+import com.jejari.support.NoRunningApp;
 import com.jejari.support.WebSecurityTestConfig;
 
 /**
@@ -22,6 +24,7 @@ import com.jejari.support.WebSecurityTestConfig;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 @DataRedisTest
 @Import({QueueConfig.class, QueueTestBeans.class, WebSecurityTestConfig.ClockBean.class})
 @TestPropertySource(properties = {
