@@ -6,7 +6,7 @@
 <title>운영 설정</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;700;800;900&family=Overpass:wght@600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;700;800;900&family=Nanum+Myeongjo:wght@700;800&family=Overpass:wght@600;700;800;900&display=swap" rel="stylesheet">
 <style>
 :root{
   --ink:#0F2A4F;--ink2:#2E4366;--mut:#5E6B80;--faint:#949DAC;
@@ -17,6 +17,10 @@
   --stop:#D7261E;--stop-t:#FCE6E4;
   --sky:#0F2A4F;--sky-t:#E4E9F1;
   --num:"Overpass","Arial Narrow",system-ui,sans-serif;
+  --serif:"Nanum Myeongjo",serif;
+  --seal:#C8281E;
+  --saek:linear-gradient(90deg,#D7261E 0 20%,#FFC600 20% 40%,#00873E 40% 60%,#2E6DB4 60% 80%,#F08FB0 80% 100%);
+  --salt:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='none' stroke='%23ffffff' stroke-opacity='.045' stroke-width='2'%3E%3Cpath d='M0 1h48M0 25h48M1 0v48M25 0v48'/%3E%3Crect x='9' y='9' width='8' height='8'/%3E%3Crect x='33' y='33' width='8' height='8'/%3E%3C/svg%3E");
   --sans:"Gothic A1",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
 }
 *{box-sizing:border-box}[hidden]{display:none!important}
@@ -28,6 +32,9 @@ button{font:inherit;color:inherit}
 .num{font-family:var(--num);font-variant-numeric:tabular-nums}
 .mut{color:var(--mut)}.faint{color:var(--faint)}.grow{flex:1;min-width:0}
 .row{display:flex;align-items:center;gap:8px}
+.saek{height:6px;background:var(--saek)}
+.serif{font-family:var(--serif)}
+.stamp{display:inline-grid;place-items:center;font-family:var(--serif);font-weight:800;color:var(--seal);border:3px solid var(--seal);border-radius:4px;padding:4px 10px;transform:rotate(-10deg);letter-spacing:.1em;background:rgba(255,255,255,.6);box-shadow:inset 0 0 0 2px #fff,inset 0 0 0 3px var(--seal)}
 .st{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;padding:3px 9px;border-radius:2px;background:var(--line2);color:var(--ink2);white-space:nowrap;line-height:1.4}
 .st.go{background:var(--go);color:#fff}.st.amber{background:var(--sign);color:var(--ink)}
 .st.stop{background:var(--stop);color:#fff}.st.sky{background:var(--ink);color:#fff}
@@ -37,7 +44,7 @@ button{font:inherit;color:inherit}
 
 body{font-size:14px;background:var(--paper)}
 .wrap{display:flex;min-height:100vh}
-.side{width:228px;flex:none;background:var(--ink);color:#B4C2D8;padding:20px 0;display:flex;flex-direction:column;gap:0;position:sticky;top:0;height:100vh}
+.side{width:228px;flex:none;background:var(--salt),var(--ink);border-right:5px solid;border-image:linear-gradient(180deg,#D7261E 0 20%,#FFC600 20% 40%,#00873E 40% 60%,#2E6DB4 60% 80%,#F08FB0 80% 100%) 1;color:#B4C2D8;padding:20px 0;display:flex;flex-direction:column;gap:0;position:sticky;top:0;height:100vh}
 .brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:900;font-size:16px;padding:0 20px 20px}
 .brand small{display:block;font-weight:700;font-size:12px;color:#8FA1BE}
 .side .grp{font-size:12px;color:#8FA1BE;padding:18px 20px 6px;font-weight:800}
@@ -48,7 +55,7 @@ body{font-size:14px;background:var(--paper)}
 .side .out{margin-top:auto}
 .main{flex:1;min-width:0;padding:26px 32px 40px;max-width:1240px}
 .head{display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:4px solid var(--ink)}
-.head h1{font-size:24px;margin:0;font-weight:900;letter-spacing:-.01em}
+.head h1{font-size:26px;margin:0;font-weight:800;font-family:var(--serif)}
 .head .crumb{font-size:13px;color:var(--mut);font-weight:700}
 .who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut);white-space:nowrap;font-weight:700}
 .who i{width:28px;height:28px;border-radius:2px;background:var(--sign);color:var(--ink);display:grid;place-items:center;font-style:normal;font-weight:900;font-size:12px}
@@ -104,7 +111,7 @@ hr.sep{border:0;border-top:2px solid var(--line2);margin:18px 0}
 </style>
 </head>
 <body>
-<div class="wrap"><nav class="side" aria-label="관리자 메뉴"><div class="brand"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="3" fill="#FFC600"/><path d="M11 7.5v11.5h10" fill="none" stroke="#0F2A4F" stroke-width="3.4"/><path d="M9 25h14" stroke="#0F2A4F" stroke-width="3.4"/><rect x="18.5" y="8" width="5" height="5" fill="#0F2A4F"/></svg><div>제자리<small>운영 콘솔</small></div></div>
+<div class="wrap"><nav class="side" aria-label="관리자 메뉴"><div class="brand"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><path d="M2.5 3.5 Q2 2 3.5 2 H28 Q30.5 2.2 30 4 L29.6 28 Q30 30.4 27.5 30 H4 Q1.8 30.2 2.2 27.6 Z" fill="#C8281E"/><rect x="5" y="5" width="22" height="22" fill="none" stroke="#fff" stroke-width="1.4"/><text x="16" y="22.2" text-anchor="middle" font-family="Nanum Myeongjo,serif" font-weight="800" font-size="16" fill="#fff">제</text></svg><div>제자리<small>운영 콘솔</small></div></div>
 <div class="grp">운영</div><a href="A-04.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg>실시간 현황</a><a href="A-05.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6z"/><path d="M12 8.5v4M12 15.5v.3"/></svg>위험 사용자</a><a href="A-06.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>케이스 상세</a>
 <div class="grp">기준·설정</div><a href="A-02.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3.5" width="12" height="13" rx="3"/><path d="M6 11h12M9 20.5l1.5-4M15 20.5l-1.5-4M9 14v.3M15 14v.3"/></svg>기준 데이터</a><a href="A-03.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>운행·행사</a><a href="A-07.html" class="on" aria-current="page"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3L5.5 5.5"/></svg>운영 설정</a>
 <a class="out" href="A-01.html"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/></svg>로그아웃</a></nav><main class="main">

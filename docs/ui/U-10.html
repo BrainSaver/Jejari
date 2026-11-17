@@ -6,7 +6,7 @@
 <title>취소표 대기</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;700;800;900&family=Overpass:wght@600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;700;800;900&family=Nanum+Myeongjo:wght@700;800&family=Overpass:wght@600;700;800;900&display=swap" rel="stylesheet">
 <style>
 :root{
   --ink:#0F2A4F;--ink2:#2E4366;--mut:#5E6B80;--faint:#949DAC;
@@ -17,6 +17,10 @@
   --stop:#D7261E;--stop-t:#FCE6E4;
   --sky:#0F2A4F;--sky-t:#E4E9F1;
   --num:"Overpass","Arial Narrow",system-ui,sans-serif;
+  --serif:"Nanum Myeongjo",serif;
+  --seal:#C8281E;
+  --saek:linear-gradient(90deg,#D7261E 0 20%,#FFC600 20% 40%,#00873E 40% 60%,#2E6DB4 60% 80%,#F08FB0 80% 100%);
+  --salt:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='none' stroke='%23ffffff' stroke-opacity='.045' stroke-width='2'%3E%3Cpath d='M0 1h48M0 25h48M1 0v48M25 0v48'/%3E%3Crect x='9' y='9' width='8' height='8'/%3E%3Crect x='33' y='33' width='8' height='8'/%3E%3C/svg%3E");
   --sans:"Gothic A1",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
 }
 *{box-sizing:border-box}[hidden]{display:none!important}
@@ -28,6 +32,9 @@ button{font:inherit;color:inherit}
 .num{font-family:var(--num);font-variant-numeric:tabular-nums}
 .mut{color:var(--mut)}.faint{color:var(--faint)}.grow{flex:1;min-width:0}
 .row{display:flex;align-items:center;gap:8px}
+.saek{height:6px;background:var(--saek)}
+.serif{font-family:var(--serif)}
+.stamp{display:inline-grid;place-items:center;font-family:var(--serif);font-weight:800;color:var(--seal);border:3px solid var(--seal);border-radius:4px;padding:4px 10px;transform:rotate(-10deg);letter-spacing:.1em;background:rgba(255,255,255,.6);box-shadow:inset 0 0 0 2px #fff,inset 0 0 0 3px var(--seal)}
 .st{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;padding:3px 9px;border-radius:2px;background:var(--line2);color:var(--ink2);white-space:nowrap;line-height:1.4}
 .st.go{background:var(--go);color:#fff}.st.amber{background:var(--sign);color:var(--ink)}
 .st.stop{background:var(--stop);color:#fff}.st.sky{background:var(--ink);color:#fff}
@@ -38,7 +45,7 @@ button{font:inherit;color:inherit}
 .app{max-width:440px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative}
 @media (min-width:720px) and (max-width:959px){.app{box-shadow:0 0 0 1px var(--line)}}
 .top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:6px;padding:12px 12px 10px 16px;background:var(--paper)}
-.top h1{font-size:19px;line-height:1.3;margin:0;font-weight:900;flex:1;letter-spacing:-.01em}
+.top h1{font-size:20px;line-height:1.3;margin:0;font-weight:700;flex:1;font-family:var(--serif)}
 .top .back{width:36px;height:36px;margin-left:-8px;display:grid;place-items:center;border-radius:2px;text-decoration:none}
 .top .back:hover{background:var(--line2)}
 .top .act{font-size:14px;color:var(--mut);text-decoration:none;padding:6px 4px;font-weight:700}
@@ -112,14 +119,14 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink)}
 .chip.on{background:var(--ink);color:#fff}
 .chip:hover:not(.on){color:var(--ink);background:var(--line2)}
 
-.tabbar{position:sticky;bottom:0;z-index:5;display:flex;background:var(--ink);padding:4px 4px calc(4px + env(safe-area-inset-bottom))}
+.tabbar{position:sticky;bottom:0;z-index:5;display:flex;background:var(--ink);border-top:4px solid;border-image:var(--saek) 1;padding:4px 4px calc(4px + env(safe-area-inset-bottom))}
 .tabbar a{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0 4px;font-size:11.5px;color:#9FB0CB;text-decoration:none;font-weight:700;border-top:3px solid transparent}
 .tabbar a.on{color:#fff;border-top-color:var(--sign)}
 .tabbar .dot{position:relative}.tabbar .dot::after{content:"";position:absolute;top:-1px;right:-3px;width:8px;height:8px;background:var(--sign)}
 
 .scrim{position:fixed;inset:0;background:rgba(15,42,79,.55);z-index:20;display:flex;align-items:flex-end;justify-content:center}
-.sheet{width:100%;max-width:440px;background:var(--card);border-radius:4px 4px 0 0;padding:20px 20px 24px;border-top:6px solid var(--stop);animation:up .2s ease-out}
-.sheet h2{font-size:19px;margin:0 0 12px;font-weight:900}
+.sheet{width:100%;max-width:440px;background:var(--card);border-radius:4px 4px 0 0;padding:20px 20px 24px;border-top:6px solid;border-image:var(--saek) 1;animation:up .2s ease-out}
+.sheet h2{font-size:20px;margin:0 0 12px;font-weight:800;font-family:var(--serif)}
 @keyframes up{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
 
 .demo{margin:auto 16px 16px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:12px;color:var(--mut);border:2px dashed var(--line);border-radius:3px;padding:6px 8px}
@@ -136,7 +143,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink)}
   .m-only{display:none!important}
   .d-only{display:block}
   .app{max-width:none}
-  .gnb{display:flex;align-items:stretch;gap:24px;position:sticky;top:0;z-index:10;height:64px;padding:0 max(32px,calc((100% - 1120px) / 2));background:var(--ink);color:#fff}
+  .gnb{display:flex;align-items:stretch;gap:24px;position:sticky;top:0;z-index:10;height:64px;padding:0 max(32px,calc((100% - 1120px) / 2));background:var(--ink);color:#fff;border-bottom:5px solid;border-image:var(--saek) 1;height:69px}
   .gnb .logo{display:flex;align-items:center;gap:10px;font-weight:900;font-size:19px;text-decoration:none;margin-right:16px}
   .gnb nav{display:flex;gap:0;flex:1}
   .gnb nav a{display:flex;align-items:center;gap:6px;padding:0 16px;text-decoration:none;color:#B4C2D8;font-size:15px;font-weight:700;border-bottom:4px solid transparent;border-top:4px solid transparent}
@@ -147,7 +154,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink)}
   .gnb .me i{width:32px;height:32px;background:var(--sign);color:var(--ink);display:grid;place-items:center;font-style:normal;font-weight:900;font-size:13px;border-radius:2px}
   .tabbar{display:none}
   .top{position:static;background:none;width:100%;max-width:1120px;margin:0 auto;padding:36px 32px 6px}
-  .top h1{font-size:30px}
+  .top h1{font-size:34px}
   .body{width:100%;max-width:1120px;margin:0 auto;padding:16px 32px 56px;gap:16px}
   .body.narrow,.top.narrow{max-width:800px}
   .demo{margin:auto auto 24px;min-width:420px}
@@ -160,7 +167,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink)}
   .ticket.h>.perf{width:0;height:auto;align-self:stretch;border-top:0;border-left:2px solid var(--line2);margin:0}
   .ticket.h .route{margin-top:12px}.ticket.h .route .t{font-size:44px}.ticket.h .route.sm .t{font-size:34px}
   .auth{display:grid;grid-template-columns:minmax(0,1fr) minmax(440px,560px);min-height:100vh}
-  .auth-hero{display:flex;flex-direction:column;justify-content:space-between;background:var(--ink);color:#fff;padding:48px 56px}
+  .auth-hero{display:flex;flex-direction:column;justify-content:space-between;background:var(--salt),var(--ink);border-right:6px solid;border-image:var(--saek) 1;color:#fff;padding:48px 56px}
   .auth .body{max-width:440px;justify-content:center;padding:48px 40px}
   .auth>.app-side{display:flex;flex-direction:column;background:var(--card)}
 }
@@ -169,7 +176,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink)}
 <body>
 <div class="app">
 <style>@media (min-width:960px){.lay{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.sec{margin-top:0}}</style>
-<header class="gnb"><a class="logo" href="U-03.html"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="3" fill="#FFC600"/><path d="M11 7.5v11.5h10" fill="none" stroke="#0F2A4F" stroke-width="3.4"/><path d="M9 25h14" stroke="#0F2A4F" stroke-width="3.4"/><rect x="18.5" y="8" width="5" height="5" fill="#0F2A4F"/></svg>제자리</a><nav aria-label="주요 메뉴"><a href="U-03.html">검색</a><a href="U-08.html">예매 내역</a><a href="U-10.html" class="on" aria-current="page">취소표</a><a href="U-11.html">알림<span class="cnt">2</span></a><a href="U-09.html">내 정보</a></nav><a class="me" href="U-09.html"><i>홍</i>홍*동님</a></header>
+<header class="gnb"><a class="logo" href="U-03.html"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><path d="M2.5 3.5 Q2 2 3.5 2 H28 Q30.5 2.2 30 4 L29.6 28 Q30 30.4 27.5 30 H4 Q1.8 30.2 2.2 27.6 Z" fill="#C8281E"/><rect x="5" y="5" width="22" height="22" fill="none" stroke="#fff" stroke-width="1.4"/><text x="16" y="22.2" text-anchor="middle" font-family="Nanum Myeongjo,serif" font-weight="800" font-size="16" fill="#fff">제</text></svg>제자리</a><nav aria-label="주요 메뉴"><a href="U-03.html">검색</a><a href="U-08.html">예매 내역</a><a href="U-10.html" class="on" aria-current="page">취소표</a><a href="U-11.html">알림<span class="cnt">2</span></a><a href="U-09.html">내 정보</a></nav><a class="me" href="U-09.html"><i>홍</i>홍*동님</a></header>
 <header class="top "><h1>취소표 대기</h1></header>
 <main class="body">
 <div class="lay">
