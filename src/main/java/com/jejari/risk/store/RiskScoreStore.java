@@ -25,9 +25,8 @@ import com.jejari.risk.cache.RiskScoreCache;
  *   <li>Redis를 먼저 쓰면 Oracle이 롤백됐을 때 캐시에만 있는 점수가 생기므로 커밋 뒤에 쓴다.
  *       호출하는 쪽이 트랜잭션 안이면 그 트랜잭션이 커밋된 뒤에 쓴다.</li>
  *   <li>review_status(관리자 판정)는 덮어쓰지 않는다. 새 행만 NONE으로 만든다.</li>
+ *   <li>같은 트랜잭션에서 risk_score_history에 한 행을 남긴다 (ERD: 감쇠 동작 검증·이의 제기 대응).</li>
  * </ul>
- *
- * <p>risk_score_history 기록은 아직 하지 않는다: history_id를 만들 시퀀스가 ERD에 없다 (강동균 님께 요청 예정).
  */
 @Service
 public class RiskScoreStore {
@@ -51,6 +50,10 @@ public class RiskScoreStore {
 			      last_minute_cancel_cnt, linked_account_cnt, avg_request_interval_ms, account_age_days,
 			      rule_score, final_score, reasons, calculated_at, model_version, review_status)
 			     VALUES (s.subject_type, s.subject_hash, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, %1$s, 'NONE')""".formatted(ACTIVE_RULE_MODEL);
+
+	private static final String HISTORY = """
+			INSERT INTO risk_score_history (history_id, subject_type, subject_hash, final_score, reasons, calculated_at)
+			VALUES (risk_score_history_seq.NEXTVAL, ?, ?, ?, ?, ?)""";
 
 	private final JdbcTemplate jdbc;
 	private final TransactionTemplate tx;
@@ -76,7 +79,11 @@ public class RiskScoreStore {
 		System.arraycopy(values, 0, args, 2, values.length);
 		System.arraycopy(values, 0, args, 2 + values.length, values.length);
 
-		tx.executeWithoutResult(st -> jdbc.update(MERGE, args));
+		tx.executeWithoutResult(st -> {
+			jdbc.update(MERGE, args);
+			jdbc.update(HISTORY, s.subjectType().name(), s.subjectHash(), r.finalScore(), r.reasonsJson(),
+					Timestamp.from(r.calculatedAt()));
+		});
 		afterCommit(() -> cache.put(s.subjectType(), s.subjectHash(), r.finalScore()));
 	}
 

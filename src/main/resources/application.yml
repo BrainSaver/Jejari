@@ -83,6 +83,14 @@ jejari:
     # 위험 점수 캐시(risk:*) 재동기화: Oracle risk_score → Redis. 앱 시작 직후 한 번, 그 뒤 이 간격마다 (RiskCacheResync)
     cache-resync-enabled: true
     cache-resync-interval: 10m
+    # 위험 점수 배치 (RISK-02, RiskScoreBatch): 새 신호가 생긴 대상(risk:dirty)만 이 간격마다 다시 계산
+    batch-enabled: true
+    batch-interval: 1m
+    batch-max-run: 40s          # 한 번 실행 한도. 남은 대상은 다음 주기에
+    behavior-window: 1d         # 행동 로그 집계 기간 (지난 증거는 이전 점수의 반감기로 남음)
+    purchase-window: 30d        # 구매·취소 집계 기간
+    decay-refresh-after: 1d     # 새 신호가 없어도 이만큼 지난 점수는 감쇠를 반영해 다시 계산
+    signal-listener-enabled: true  # 예약 확정·취소 이벤트 소비 (risk-signal)
   jwt:
     issuer: jejari
     access-ttl: 15m

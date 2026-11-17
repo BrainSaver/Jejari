@@ -16,6 +16,7 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.ContainerProperties.AckMode;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import com.jejari.risk.batch.RiskDirtyQueue;
 import org.springframework.util.backoff.FixedBackOff;
 
 import tools.jackson.databind.json.JsonMapper;
@@ -43,8 +44,9 @@ public class BehaviorSinkConfig {
 	}
 
 	@Bean
-	BehaviorSink behaviorSink(MongoTemplate mongo, JdbcTemplate jdbc, JsonMapper json, BehaviorPolicy policy) {
-		return new BehaviorSink(mongo, jdbc, json, policy);
+	BehaviorSink behaviorSink(MongoTemplate mongo, JdbcTemplate jdbc, JsonMapper json, BehaviorPolicy policy,
+			RiskDirtyQueue riskDirty) {
+		return new BehaviorSink(mongo, jdbc, json, policy, riskDirty);
 	}
 
 	@Bean(CONTAINER_FACTORY)

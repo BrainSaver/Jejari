@@ -21,6 +21,9 @@ import org.springframework.kafka.annotation.KafkaListener;
 
 import com.jejari.behavior.BehaviorEvent;
 import com.jejari.behavior.sink.BehaviorDocuments.Parsed;
+import com.jejari.risk.SubjectType;
+import com.jejari.risk.batch.RiskDirtyQueue;
+import com.jejari.risk.batch.RiskSubject;
 import com.mongodb.MongoBulkWriteException;
 import com.mongodb.MongoCommandException;
 import com.mongodb.MongoWriteException;
@@ -38,7 +41,7 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <pre>
  * poll(최대 behavior.batch_size건) → 형식 검사(깨진 메시지는 건너뜀) → ci_hash 붙이기 → interval_ms 계산
- *   → insertMany(ordered:false) → 성공하면 오프셋 커밋
+ *   → insertMany(ordered:false) → CI·기기를 위험 점수 재계산 대상(risk:dirty)으로 표시 → 성공하면 오프셋 커밋
  * </pre>
  * <ul>
  *   <li><b>중복</b>: 재전달된 이벤트는 event_id 유니크 인덱스에 걸린다. 중복 키 오류(11000)만 있으면 성공으로 본다.</li>
@@ -55,15 +58,18 @@ public class BehaviorSink {
 	private final JdbcTemplate jdbc;
 	private final JsonMapper json;
 	private final BehaviorPolicy policy;
+	private final RiskDirtyQueue riskDirty;
 	private final IntervalTracker intervals = new IntervalTracker(200_000);
 	private final Map<Long, String> ciCache = new ConcurrentHashMap<>();
 	private volatile boolean indexesReady;
 
-	public BehaviorSink(MongoTemplate mongo, JdbcTemplate jdbc, JsonMapper json, BehaviorPolicy policy) {
+	public BehaviorSink(MongoTemplate mongo, JdbcTemplate jdbc, JsonMapper json, BehaviorPolicy policy,
+			RiskDirtyQueue riskDirty) {
 		this.mongo = mongo;
 		this.jdbc = jdbc;
 		this.json = json;
 		this.policy = policy;
+		this.riskDirty = riskDirty;
 	}
 
 	@KafkaListener(id = "behavior-sink", topics = BehaviorEvent.TOPIC,
@@ -99,6 +105,7 @@ public class BehaviorSink {
 					batch.next(sessionKey, p.ts()), retention));
 		}
 		insert(docs);
+		markRiskSubjects(docs);
 		batch.commit(); // 저장에 성공한 뒤에만 (재시도 때 간격이 0으로 바뀌지 않게)
 	}
 
@@ -137,6 +144,26 @@ public class BehaviorSink {
 					e instanceof MongoCommandException ce ? ce.getErrorCode() : ((MongoWriteException) e).getCode());
 			return false;
 		}
+	}
+
+	/**
+	 * 저장한 이벤트의 CI·기기를 위험 점수 재계산 대상으로 표시한다 (RISK-02 1분 배치가 읽음).
+	 * 실패하면 예외 → 이 묶음을 다시 처리한다 (저장은 event_id 중복으로 무시됨). 표시를 잃으면 그 대상의 점수가
+	 * 다음 활동 전까지 안 바뀌므로, 로그를 남기고 넘어가지 않는다.
+	 */
+	private void markRiskSubjects(List<Document> docs) {
+		Set<RiskSubject> subjects = new LinkedHashSet<>();
+		for (Document d : docs) {
+			RiskSubject ci = RiskSubject.ofNullable(SubjectType.CI, d.getString("ci_hash"));
+			RiskSubject device = RiskSubject.ofNullable(SubjectType.DEVICE, d.getString("device_hash"));
+			if (ci != null) {
+				subjects.add(ci);
+			}
+			if (device != null) {
+				subjects.add(device);
+			}
+		}
+		riskDirty.markAll(subjects);
 	}
 
 	void insert(List<Document> docs) {
