@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router';
 import { get, subscribeRequestLog } from '../api/client.js';
+import { addDays, md, seoulMs, seoulToday } from '../lib/time.js';
 import { usePolling } from '../hooks/usePolling.js';
 import { Who } from './AdminLayout.jsx';
 import Icon from './Icon.jsx';
+import RequestLog from './RequestLog.jsx';
 import { hasRole } from './useAdminAuth.js';
 
 /**
@@ -91,9 +93,8 @@ function useOnSaleRuns() {
         const ids = await get('/api/v1/admin/dashboard/runs');
         let meta = [];
         try {
-          const today = new Date();
-          const to = new Date(today.getTime() + 70 * 86400_000);
-          meta = await get(`/api/v1/admin/runs?status=ON_SALE&from=${ymd(addDays(today, -1))}&to=${ymd(to)}`);
+          const today = seoulToday();
+          meta = await get(`/api/v1/admin/runs?status=ON_SALE&from=${addDays(today, -1)}&to=${addDays(today, 70)}`);
         } catch {
           /* 이름만 못 붙임 */
         }
@@ -113,10 +114,9 @@ function useOnSaleRuns() {
 
 function runLabel(id, m) {
   if (!m) return `운행 ${id}`;
-  const d = new Date(m.runDate + 'T00:00:00');
-  const day = '일월화수목금토'[d.getDay()];
-  const dep = m.departureAt ? ` ${m.departureAt.slice(11, 16)} 출발` : '';
-  return `${m.trainNo} 열차, ${m.runDate.slice(5)} (${day})${dep} · #${id}`;
+  const dep = m.departureAt ? ` ${m.departureAt.slice(11, 16)}` : '';
+  const route = m.origin && m.dest ? ` ${m.origin}→${m.dest}` : '';
+  return `${m.trainNo} 열차, ${md(m.runDate)}${dep}${route} · #${id}`;
 }
 
 /**
@@ -288,33 +288,6 @@ function RateChart({ history, windowSec }) {
   );
 }
 
-function RequestLog() {
-  const [log, setLog] = useState([]);
-  useEffect(() => subscribeRequestLog(setLog), []);
-  const rows = useMemo(() => log.slice(0, 8), [log]);
-  return (
-    <section className="panel">
-      <h2>이 화면이 보낸 요청</h2>
-      <p className="sub">traceId로 서버 로그를 찾을 수 있어요 (응답 헤더 X-Trace-Id, 로그 MDC traceId)</p>
-      <table className="reqlog">
-        <thead>
-          <tr><th>시각</th><th>요청</th><th className="n">상태</th><th className="n">시간</th><th>traceId</th></tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              <td className="num">{seoulTime(r.at)}</td>
-              <td><code>{r.method}</code> {r.path.replace('/api/v1', '')}</td>
-              <td className={'n ' + (r.status >= 200 && r.status < 300 ? 'ok' : 'bad')}>{r.status || '연결 실패'}</td>
-              <td className="n num">{r.ms}ms</td>
-              <td><code>{r.traceId ? r.traceId.slice(0, 12) + '…' : '-'}</code></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
-  );
-}
 
 // ------------------------------------------------------------ 작은 도우미
 
@@ -327,13 +300,6 @@ function useNow(ms) {
   return now;
 }
 
-// 서버 시각(LocalDateTime, 시간대 없음)은 Asia/Seoul 고정이다 (concurrency.md §0.7). 브라우저 시간대와 상관없이 서울로 읽고 쓴다
-const seoulMs = (local) => Date.parse(local.slice(0, 23) + '+09:00');
-const seoulTime = (d) => d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul' });
-
-const pad = (n) => String(n).padStart(2, '0');
-const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const addDays = (d, n) => new Date(d.getTime() + n * 86400_000);
 const fmtSec = (s) => (s >= 60 ? `${Math.floor(s / 60)}분 ${s % 60}초` : `${s}초`);
 function niceCeil(v) {
   const p = 10 ** Math.floor(Math.log10(v));

@@ -193,9 +193,15 @@ public class RunAdminService {
 
 	// ------------------------------------------------------------ 운행
 
+	/**
+	 * @param origin    첫 정차역 이름 (진행 방향 기준)
+	 * @param dest      마지막 정차역 이름
+	 * @param soldSeats 결제까지 끝난 좌석 수. 구간이 나뉘어 팔려도 좌석 하나는 1로 센다 (seat_inventory SOLD)
+	 */
 	public record Run(long runId, long trainId, String trainNo, LocalDate runDate, Long saleEventId,
 			String saleEventName, LocalDateTime saleOpenAt, LocalDateTime saleCloseAt, String status,
-			LocalDateTime departureAt, LocalDateTime arrivalAt) {
+			LocalDateTime departureAt, LocalDateTime arrivalAt, String origin, String dest, int soldSeats,
+			int totalSeats) {
 	}
 
 	public record RunFilter(LocalDate from, LocalDate to, Long trainId, String status, Long saleEventId) {
@@ -222,7 +228,15 @@ public class RunAdminService {
 			SELECT r.run_id, r.train_id, t.train_no, r.run_date, r.sale_event_id, e.name, r.sale_open_at, r.sale_close_at,
 			       r.status,
 			       (SELECT MIN(s.departure_time) FROM train_stop s WHERE s.run_id = r.run_id) AS dep,
-			       (SELECT MAX(s.arrival_time) FROM train_stop s WHERE s.run_id = r.run_id) AS arr
+			       (SELECT MAX(s.arrival_time) FROM train_stop s WHERE s.run_id = r.run_id) AS arr,
+			       (SELECT st.station_name FROM train_stop s JOIN station st ON st.station_id = s.station_id
+			         WHERE s.run_id = r.run_id ORDER BY s.stop_order FETCH FIRST 1 ROWS ONLY) AS origin,
+			       (SELECT st.station_name FROM train_stop s JOIN station st ON st.station_id = s.station_id
+			         WHERE s.run_id = r.run_id ORDER BY s.stop_order DESC FETCH FIRST 1 ROWS ONLY) AS dest,
+			       -- seat_inventory PK가 run_id로 시작해 운행 하나씩 범위 조회로 끝난다 (쓰기 폭주 표지만 읽기만, 인덱스 추가 없음)
+			       (SELECT COUNT(DISTINCT i.seat_id) FROM seat_inventory i
+			         WHERE i.run_id = r.run_id AND i.status = 'SOLD') AS sold,
+			       (SELECT COUNT(*) FROM seat x WHERE x.train_id = r.train_id) AS seats
 			  FROM train_run r
 			  JOIN train t ON t.train_id = r.train_id
 			  LEFT JOIN sale_event e ON e.sale_event_id = r.sale_event_id
@@ -259,7 +273,8 @@ public class RunAdminService {
 		Long eventId = rs.wasNull() ? null : ev;
 		return new Run(rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getDate(4).toLocalDate(), eventId,
 				rs.getString(6), rs.getObject(7, LocalDateTime.class), rs.getObject(8, LocalDateTime.class),
-				rs.getString(9), rs.getObject(10, LocalDateTime.class), rs.getObject(11, LocalDateTime.class));
+				rs.getString(9), rs.getObject(10, LocalDateTime.class), rs.getObject(11, LocalDateTime.class),
+				rs.getString(12), rs.getString(13), rs.getInt(14), rs.getInt(15));
 	}
 
 	/**

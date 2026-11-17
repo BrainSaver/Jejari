@@ -276,7 +276,11 @@ class TrainAdminInfraTest {
 				.param("from", from.toString()).param("to", from.plusDays(3).toString())
 				.header("Authorization", admin(AdminRole.VIEWER)))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(4))
-				.andExpect(jsonPath("$[0].saleEventName").value("시험 명절"));
+				.andExpect(jsonPath("$[0].saleEventName").value("시험 명절"))
+				.andExpect(jsonPath("$[0].origin").value("시험가"))
+				.andExpect(jsonPath("$[0].dest").value("시험다"))
+				.andExpect(jsonPath("$[0].soldSeats").value(0))
+				.andExpect(jsonPath("$[0].totalSeats").value(8));
 	}
 
 	@Test
