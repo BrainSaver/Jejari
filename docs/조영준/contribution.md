@@ -69,6 +69,14 @@
 - 감수한 단점: pepper를 바꾸면 관리자 비밀번호 재설정 필요. 비활성화는 최대 15분(다음 재발급) 뒤 반영
 - 관련 코드·커밋: `auth/admin/*`, [관리자-로그인](features/관리자-로그인.md)
 
+### 결정 7. 공용 서버는 VM 1대 + Caddy(HTTPS) + 앱 2대
+
+- 상황: INF-03. 클라우드는 Google Cloud로 팀 결정. 강동균 님이 "VM 1대에 compose 그대로, 8080 공개, 앱 1대"로 조사해 넘겨줌
+- 고려한 대안: 조사안 그대로(`http://IP:8080`) / 관리형 서비스로 쪼개기(GCP에 관리형 Oracle 없음, 비용 큼) / Cloud Run(상주 스케줄러·Kafka 컨슈머가 멈춤)
+- 선택과 이유: VM 1대는 조사안을 따름. 다만 리프레시 쿠키가 Secure라 http에서는 브라우저 재발급이 전부 실패하고, 8080을 열면 내부 지표가 공개됨 → Caddy로 HTTPS(`외부IP.sslip.io`, 도메인 구매 없음), 80·443만 열기. 멀티 인스턴스 규칙을 실제로 확인하려고 앱 2대, 배포는 한 대씩
+- 감수한 단점: 구성 요소 하나(Caddy) 추가. VM을 껐다 켜면 외부 IP가 바뀔 수 있어 주소가 바뀜 (고정 IP는 유료)
+- 관련 코드·커밋: `deploy/`, `1526769`, [공용서버-배포](features/공용서버-배포.md)
+
 ## 4. 만든 기능
 
 | 기능 | 문서 |
@@ -81,6 +89,7 @@
 | k6 정상 사용자 전체 흐름 (DATA-03, 시나리오 11) | [부하테스트-정상사용자-흐름](features/부하테스트-정상사용자-흐름.md) |
 | k6 봇 탐지 평가 (DATA-03, 시나리오 12) | [부하테스트-봇-탐지](features/부하테스트-봇-탐지.md) |
 | 가상 회원·예매 데이터 (DATA-02, 강다인 님 구현 · 점검·남은 일) | [가상데이터-계획](features/가상데이터-계획.md) |
+| 공용 서버 배포 준비 (INF-03, Google Cloud, VM 전) | [공용서버-배포](features/공용서버-배포.md) |
 | 멀티 인스턴스 대비 코딩 규칙 (초안, 팀 확인 전) | [멀티인스턴스-코딩-규칙](features/멀티인스턴스-코딩-규칙.md) |
 
 ## 5. 다른 파트와의 연결
@@ -91,9 +100,11 @@
 | D 강다인 | 로그인 검증 ↔ 토큰 발급 | 비밀번호(Argon2id)·잠금·`login_attempt`는 D, 검증 후 `authTokenService.issue(MEMBER, memberId, clientInfo)` + `tokenResponses.ok()`는 E. **✅ 연동 완료** (`LoginService` → `AuthTokenService`, `MemberAuthController` → `tokenResponses.ok()`), 2026-11-16 가입 → 로그인 → 대기열 진입까지 실제로 확인. **AUTH-05에서 `PasswordHasher`·`AuthLimiter`·`AuthPolicy`·`LoginAttemptLog` 재사용**, `LoginAttemptLog.recordAdmin()` 추가(기존 `record()` 동작 그대로, 문서에 `actor_type` 필드가 함께 남음) |
 | A 김성원 | 대기열 개발 모드 · Redis | 개발 모드(`X-Member-Id`)는 로컬·부하 테스트 전용, 공용 서버에선 꺼야 함. Redis 즉시 실패(`RedisFailFastConfig`)와 기동 점검은 함께 동작. AUTH-05에서 `Purpose.ADMIN_LOGIN`(enum 끝에 추가, 기존 해시 영향 없음)과 정규화 규칙 추가 |
 | A 김성원 | 부하 테스트 모음 `loadtest/` | 같은 틀에 합류해 시나리오 11·`lib/journey.js` 추가, `config.js`에 실제 예약·결제 경로 추가(기존 `[가정]` 경로·Mock 시나리오는 그대로). 봇 시뮬레이션은 07(Mock용)을 두고 실제 앱용 시나리오 12·`tools/eval_risk.sh`를 새로 추가, `lib/journey.js`에 기기 ID·운행 검색 추가 |
-| D 강다인 | 위험 점수 ↔ 봇 시나리오 | 봇 4종이 각자 한 규칙(FAST_CLICK·SAME_SEAT_RETRY·MULTI_ACCOUNT_SYNC·CANCEL_AFTER_PAY)을 넘게 만들고 정답은 `synthetic_label`에. **공유 필요**: `member_device`를 채우는 곳이 없어 기기 점수의 연결 계정이 0 (평가는 Mongo `behavior_log`로 대신 연결) |
-| B 강동균 | ERD DDL · 시드 | Oracle 첫 기동 때 DDL → 시드 자동 적재. 스키마가 바뀌면 볼륨 재생성 |
-| 팀장 길동현 | 결정 요청 | 공용 서버 후보·사양, GitHub 결제 잠금, 기능설계서 9장 에러 코드 3개 추가, 코딩 규칙 공용 문서화 |
+| D 강다인 | 위험 점수 ↔ 봇 시나리오 | 봇 4종이 각자 한 규칙(FAST_CLICK·SAME_SEAT_RETRY·MULTI_ACCOUNT_SYNC·CANCEL_AFTER_PAY)을 넘게 만들고 정답은 `synthetic_label`에. `member_device`가 비어 있던 빈틈을 공유 → **✅ 강다인 님이 행동 로그 적재 때 기록하도록 수정** (2026-11-17) |
+| D 강다인 | DATA-02 가상 데이터 (공동) | 생성기는 D(`synthetic/`, 시나리오 12와 같은 이메일 라벨 규칙), 평가 도구·시나리오는 E. E가 점검해 결제 번호 버그·미시험 규칙 5개를 공유 ([가상데이터-계획](features/가상데이터-계획.md)) → D가 계획서 기준으로 보완 중, 끝나면 E가 다시 점검. 역할 분담(생성기 D / 평가·시나리오 E)은 합의 필요 |
+| B 강동균 | ERD DDL · 시드 | Oracle 첫 기동 때 DDL → 시드 자동 적재. 스키마가 바뀌면 볼륨 재생성. 시드 `02-seed.sh`의 SET 줄 끝 주석이 SP2-0158 경고를 냄(동작 영향 없음) |
+| B 강동균 | 공용 서버 조사 | GCP 배포 조사 문서를 E에게 넘김 → VM 1대 방식은 따르고 HTTPS·앱 2대·사용자 계정·`.env` 생성은 바꿈 (결정 7) |
+| 팀장 길동현 | 결정 요청 | ~~공용 서버 후보~~ → Google Cloud로 결정됨. 남은 것: 사이트 로드맵 INF-03 제목("Oracle Cloud A1 VM") 변경, GitHub 결제 잠금, 기능설계서 9장 에러 코드 3개 추가, 코딩 규칙 공용 문서화 |
 
 ## 6. 트러블슈팅
 
