@@ -5,13 +5,22 @@ import Dashboard from './admin/Dashboard.jsx';
 import Soon from './admin/Soon.jsx';
 import Master from './admin/Master.jsx';
 import Runs from './admin/Runs.jsx';
-import Home from './user/Home.jsx';
+import Search from './user/Search.jsx';
+import UserLayout from './user/UserLayout.jsx';
+import UserSoon from './user/UserSoon.jsx';
 
 // 경로를 추가하면 서버의 SpaForwardController에도 같은 경로를 넣는다 (새로고침 때 index.html을 돌려주게)
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Home />} />
+      <Route element={<UserLayout />}>
+        <Route path="/" element={<Search />} />
+        <Route path="/queue/:runId" element={<UserSoon id="U-04" title="줄 서기" owner="김성원" />} />
+        <Route path="/reservations" element={<UserSoon id="U-08" title="예매 내역" owner="강다인" />} />
+        <Route path="/waitlist" element={<UserSoon id="U-10" title="취소표" owner="강다인" />} />
+        <Route path="/notifications" element={<UserSoon id="U-11" title="알림" owner="길동현" />} />
+        <Route path="/me" element={<UserSoon id="U-09" title="내 정보" owner="강다인 · 길동현" />} />
+      </Route>
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<Navigate to="dashboard" replace />} />
