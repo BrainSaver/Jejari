@@ -91,6 +91,11 @@ jejari:
     purchase-window: 30d        # 구매·취소 집계 기간
     decay-refresh-after: 1d     # 새 신호가 없어도 이만큼 지난 점수는 감쇠를 반영해 다시 계산
     signal-listener-enabled: true  # 예약 확정·취소 이벤트 소비 (risk-signal)
+  # 첫 관리자 계정 (AUTH-05, AdminBootstrap). admin_user가 비어 있을 때만 SUPERVISOR 1명을 만듭니다
+  admin:
+    bootstrap:
+      login-id: ${JEJARI_ADMIN_BOOTSTRAP_ID:}
+      password: ${JEJARI_ADMIN_BOOTSTRAP_PASSWORD:}
   jwt:
     issuer: jejari
     access-ttl: 15m
@@ -114,6 +119,10 @@ server:
     # 실패 응답은 GlobalExceptionHandler가 { code, message, traceId }로 만듭니다
     include-message: never
     include-stacktrace: never
+  tomcat:
+    # Tomcat 요청 스레드 사용량 메트릭(tomcat_threads_busy_threads) — 스레드가 다 찼는지 보려고 (Grafana)
+    mbeanregistry:
+      enabled: true
 
 management:
   endpoints:
@@ -127,6 +136,18 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    # p95·p99 응답 시간을 Prometheus에서 계산하려면 히스토그램 버킷이 필요합니다 (k6 개선 전후 비교, Grafana)
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        lettuce: true
+        hikaricp.connections.acquire: true
+      minimum-expected-value:
+        http.server.requests: 1ms
+        lettuce: 100us
+      maximum-expected-value:
+        http.server.requests: 10s
+        lettuce: 1s
 
 logging:
   pattern:

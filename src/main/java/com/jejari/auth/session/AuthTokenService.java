@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.jejari.auth.ActorType;
+import com.jejari.auth.AdminRole;
+import com.jejari.auth.AdminRoleLookup;
 import com.jejari.auth.AuthErrorCode;
 import com.jejari.auth.AuthPrincipal;
 import com.jejari.auth.jwt.AccessTokenIssuer;
@@ -29,6 +31,9 @@ import com.jejari.common.error.BusinessException;
  *
  * 탈취 감지: 회전된 옛 리프레시 토큰이 다시 오면 해시가 맞지 않습니다. 세션이 아직 살아 있는데
  * 해시가 다르면 "누군가 옛 토큰을 갖고 있다"는 뜻이므로 계열 전체를 SUSPICIOUS로 폐기합니다.
+ *
+ * <p>관리자 세션은 발급·재발급 때마다 admin_user에서 현재 권한을 다시 읽어 토큰에 담습니다.
+ * 비활성화된 관리자는 다음 재발급에서 세션이 폐기(ADMIN)됩니다.
  */
 @Service
 public class AuthTokenService {
@@ -39,21 +44,26 @@ public class AuthTokenService {
 	private final AccessTokenIssuer accessTokenIssuer;
 	private final JwtProperties props;
 	private final Clock clock;
+	private final AdminRoleLookup adminRoles;
 
 	public AuthTokenService(AuthSessionRepository repository, AccessTokenIssuer accessTokenIssuer,
-			JwtProperties props, Clock clock) {
+			JwtProperties props, Clock clock, AdminRoleLookup adminRoles) {
 		this.repository = repository;
 		this.accessTokenIssuer = accessTokenIssuer;
 		this.props = props;
 		this.clock = clock;
+		this.adminRoles = adminRoles;
 	}
 
 	/**
 	 * 로그인 검증이 끝난 뒤 호출합니다 (비밀번호·잠금·정지 확인은 호출하는 쪽 책임).
-	 * 회원 로그인: {@code issue(ActorType.MEMBER, memberId, client)}
+	 * 회원 로그인: {@code issue(ActorType.MEMBER, memberId, client)}, 관리자 로그인: {@code issue(ActorType.ADMIN, adminId, client)}
 	 */
 	@Transactional
 	public IssuedTokens issue(ActorType actorType, long actorId, ClientInfo client) {
+		AdminRole adminRole = actorType == ActorType.ADMIN
+				? adminRoles.activeRole(actorId).orElseThrow(() -> new BusinessException(AuthErrorCode.AUTH_INVALID_CREDENTIALS))
+				: null;
 		String sessionId = UUID.randomUUID().toString();
 		RefreshToken refreshToken = RefreshToken.generate(sessionId);
 		LocalDateTime now = LocalDateTime.now(clock);
@@ -62,7 +72,7 @@ public class AuthTokenService {
 		repository.save(AuthSession.open(sessionId, UUID.randomUUID().toString(), actorType, actorId,
 				refreshToken.hash(), client, now, expiresAt));
 
-		IssuedAccessToken access = accessTokenIssuer.issue(actorType, actorId, sessionId);
+		IssuedAccessToken access = accessTokenIssuer.issue(actorType, actorId, sessionId, adminRole);
 		return new IssuedTokens(sessionId, access.value(), access.expiresAt(),
 				refreshToken.value(), toInstant(expiresAt));
 	}
@@ -80,7 +90,17 @@ public class AuthTokenService {
 
 		if (repository.rotate(sessionId, presented.hash(), next.hash()) == 1) {
 			AuthSession session = repository.findById(sessionId).orElseThrow();
-			IssuedAccessToken access = accessTokenIssuer.issue(session.getActorType(), session.actorId(), sessionId);
+			AdminRole adminRole = null;
+			if (session.getActorType() == ActorType.ADMIN) {
+				adminRole = adminRoles.activeRole(session.actorId()).orElse(null);
+				if (adminRole == null) {
+					// 그 사이 비활성화·삭제된 관리자: 세션을 닫고 다시 로그인하게 함
+					repository.revoke(sessionId, RevokeReason.ADMIN.name());
+					throw new BusinessException(AuthErrorCode.AUTH_REFRESH_INVALID);
+				}
+			}
+			IssuedAccessToken access = accessTokenIssuer.issue(session.getActorType(), session.actorId(), sessionId,
+					adminRole);
 			return new IssuedTokens(sessionId, access.value(), access.expiresAt(),
 					next.value(), toInstant(session.getExpiresAt()));
 		}

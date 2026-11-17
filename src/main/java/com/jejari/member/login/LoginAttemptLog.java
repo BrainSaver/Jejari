@@ -67,6 +67,20 @@ public class LoginAttemptLog implements DisposableBean {
 	/** 바로 돌아온다. 저장은 뒤에서 한다. */
 	public void record(Long memberId, String emailHash, Result result, String ipHash, String userAgent,
 			String sessionId, Long verifyMs) {
+		write("MEMBER", memberId, null, emailHash, result, ipHash, userAgent, sessionId, verifyMs);
+	}
+
+	/**
+	 * 관리자 로그인 시도 (AUTH-05). login_attempt의 actor_type = ADMIN, admin_id로 남긴다 (DB설계서: 관리자 계정 무차별 대입 탐지).
+	 * email_hash 자리에는 로그인 ID 해시(Purpose.ADMIN_LOGIN)를 넣는다.
+	 */
+	public void recordAdmin(Long adminId, String loginIdHash, Result result, String ipHash, String userAgent,
+			String sessionId, Long verifyMs) {
+		write("ADMIN", null, adminId, loginIdHash, result, ipHash, userAgent, sessionId, verifyMs);
+	}
+
+	private void write(String actorType, Long memberId, Long adminId, String emailHash, Result result, String ipHash,
+			String userAgent, String sessionId, Long verifyMs) {
 		Instant now;
 		long retentionDays;
 		try {
@@ -78,7 +92,9 @@ public class LoginAttemptLog implements DisposableBean {
 			retentionDays = 30;
 		}
 		Document d = new Document()
+				.append("actor_type", actorType)
 				.append("member_id", memberId)
+				.append("admin_id", adminId)
 				.append("email_hash", emailHash)
 				.append("result", result.name())
 				.append("ip_hash", ipHash)
