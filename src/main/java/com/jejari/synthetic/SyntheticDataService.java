@@ -41,12 +41,14 @@ import com.mongodb.client.model.Filters;
  *
  * <pre>
  * 종류     정답(eval_risk)   만드는 것
- * normal   NORMAL           사람 속도 행동 로그, 과거 구매 0~2건. 일부는 한참 뒤 1건 취소(오탐 함정), 일부는 가족과 기기 공유(시간차)
+ * normal   NORMAL           사람 속도 행동 로그 + 사람다운 실수(가끔 연타, 인기 좌석 409 1~2번). 일부는 가족과 기기 공유(시간차).
+ *                           경계 근처 유형: family(누적 매수 많음)·replan(취소 비율 높음)·biz(출발 직전 취소) — {@link #history}
  * fast     MACRO            20~60ms 간격 요청 50번                         → FAST_CLICK
  * retry    MACRO            같은 좌석 선점 실패(409) 8번, 0.3~0.6초 간격      → SAME_SEAT_RETRY
- * multi    RESELLER         3명이 한 기기로 몇 초 안에 각자 선점              → MULTI_ACCOUNT_SYNC (기기)
+ * multi    RESELLER         3명이 한 기기·한 카드로 몇 초 안에 각자 선점       → MULTI_ACCOUNT_SYNC (기기), LINKED_ACCOUNTS (카드)
  * cancel   CANCEL_ABUSER    결제하고 1~3분 뒤 취소 3번                       → CANCEL_AFTER_PAY
  * </pre>
+ * 결제 번호는 앱과 같이 {@code payment_id = reservation_id}.
  *
  * <ul>
  *   <li><b>실제 가입과 같은 형식</b>: CI는 {@link Pseudonymizer#mockCiHash}, 전화번호는 {@link PiiCipher}로 암호화, 카드·기기는 HMAC.
@@ -113,7 +115,23 @@ public class SyntheticDataService {
 			int events) {
 	}
 
-	private record Person(long id, String kind, int group, int no, String email, String ci, String device, String card) {
+	/**
+	 * @param kind    이메일 라벨 종류 (normal·fast·retry·multi·cancel, eval_risk.sh가 읽음)
+	 * @param profile 실제 행동 모양. normal은 plain·family·replan·biz로 나뉘고 나머지는 kind와 같음 (라벨은 그대로 NORMAL)
+	 */
+	private record Person(long id, String kind, String profile, int group, int no, String email, String ci, String device,
+			String card) {
+		Person withCi(String ci) {
+			return new Person(id, kind, profile, group, no, email, ci, device, card);
+		}
+
+		Person withDevice(String device) {
+			return new Person(id, kind, profile, group, no, email, ci, device, card);
+		}
+	}
+
+	/** 과거 구매 한 건. cancelAfterMin이 null이면 취소 안 함 */
+	private record Buy(int seats, Long cancelAfterMin, long beforeDepartureMin) {
 	}
 
 	// ------------------------------------------------------------ 생성
@@ -128,8 +146,7 @@ public class SyntheticDataService {
 
 		List<Person> planned = plan(spec, rnd);
 		Map<Long, String> ciOf = insertMembers(planned, rnd, now);
-		List<Person> people = planned.stream().map(p -> new Person(p.id(), p.kind(), p.group(), p.no(), p.email(),
-				ciOf.get(p.id()), p.device(), p.card())).toList();
+		List<Person> people = planned.stream().map(p -> p.withCi(ciOf.get(p.id()))).toList();
 
 		int[] resv = {0, 0};
 		List<Document> events = new ArrayList<>();
@@ -140,7 +157,7 @@ public class SyntheticDataService {
 				case "fast" -> events.addAll(clicks(p, t, 50, 20, 60, rnd));
 				case "retry" -> events.addAll(retries(p, t, rnd));
 				case "multi" -> { } // 묶음 단위로 아래에서
-				default -> events.addAll(clicks(p, t, 8 + rnd.nextInt(15), 800, 6000, rnd));
+				default -> events.addAll(humanActivity(p, t, rnd));
 			}
 			int[] r = history(p, runId, now, rnd);
 			resv[0] += r[0];
@@ -174,11 +191,15 @@ public class SyntheticDataService {
 		addKind(out, spec.tag(), "retry", retry);
 		addKind(out, spec.tag(), "cancel", cancel);
 		for (int g = 0; g < multiGroups; g++) {
+			// 되팔이 묶음은 기기도 카드도 하나를 같이 쓴다 (명의만 빌린 계정이라 결제는 한 사람 카드)
 			String shared = hmac.device("syn-" + spec.tag() + "-multi-" + g);
+			String sharedCard = null;
 			for (int i = 0; i < 3; i++) {
 				long id = nextMemberId();
-				out.add(new Person(id, "multi", g, i, email(spec.tag(), "multi", g, i), null, shared,
-						hmac.paymentMethod(fakeCard(id))));
+				if (sharedCard == null) {
+					sharedCard = hmac.paymentMethod(fakeCard(id));
+				}
+				out.add(new Person(id, "multi", "multi", g, i, email(spec.tag(), "multi", g, i), null, shared, sharedCard));
 			}
 		}
 		return out;
@@ -187,9 +208,22 @@ public class SyntheticDataService {
 	private void addKind(List<Person> out, String tag, String kind, int count) {
 		for (int i = 0; i < count; i++) {
 			long id = nextMemberId();
-			out.add(new Person(id, kind, 0, i, email(tag, kind, 0, i), null,
+			out.add(new Person(id, kind, "normal".equals(kind) ? normalProfile(i) : kind, 0, i, email(tag, kind, 0, i), null,
 					hmac.device("syn-dev-" + tag + "-" + id), hmac.paymentMethod(fakeCard(id))));
 		}
+	}
+
+	/**
+	 * 정상 회원 중 경계 근처 유형 (조영준 계획 3장 #3). 50명마다 family 3 · replan 2 · biz 2 = 6% · 4% · 4%.
+	 * 비율은 [가정] (근거 통계를 찾으면 바꿈). 순번으로 정해 인원이 적어도 유형마다 최소 몇 명은 생긴다.
+	 */
+	static String normalProfile(int i) {
+		return switch (i % 50) {
+			case 10, 11, 12 -> "family";
+			case 20, 21 -> "replan";
+			case 30, 31 -> "biz";
+			default -> "plain";
+		};
 	}
 
 	/** 가짜 카드번호 16자리. 9로 시작해 실제 카드사 번호(BIN)와 겹치지 않게, 회원 ID로 정해 회원마다 다름 */
@@ -212,6 +246,7 @@ public class SyntheticDataService {
 		List<Object[]> cards = new ArrayList<>();
 		List<Object[]> devices = new ArrayList<>();
 		Set<String> seenDevice = new LinkedHashSet<>();
+		Map<String, String> last4Of = new java.util.HashMap<>(); // 같이 쓰는 카드는 끝 4자리도 같다
 		for (Person p : people) {
 			String name = LAST[rnd.nextInt(LAST.length)] + FIRST[rnd.nextInt(FIRST.length)];
 			String phone = "010" + String.format("%08d", Math.floorMod(p.id() * 7919L + 12345L, 100_000_000L));
@@ -221,7 +256,8 @@ public class SyntheticDataService {
 			ciOf.put(p.id(), ci);
 			members.add(new Object[] {p.id(), p.email(), ci, name, enc.cipherText(),
 					hmac.phone(phone), enc.keyId(), Timestamp.from(now.minus(ageDays, ChronoUnit.DAYS))});
-			cards.add(new Object[] {p.id(), p.card(), String.format("%04d", rnd.nextInt(10_000))});
+			String last4 = String.format("%04d", rnd.nextInt(10_000));
+			cards.add(new Object[] {p.id(), p.card(), last4Of.computeIfAbsent(p.card(), k -> last4)});
 			if (seenDevice.add(p.id() + "|" + p.device())) {
 				devices.add(new Object[] {p.device(), p.id(), Timestamp.from(now.minus(ageDays, ChronoUnit.DAYS)),
 						Timestamp.from(now)});
@@ -280,29 +316,69 @@ public class SyntheticDataService {
 	}
 
 	/** 과거 구매·취소. @return {예약 수, 취소 수} */
+	/**
+	 * 지난 20일 구매. 경계 근처 정상 유형(family·replan·biz)은 규칙 문턱이 아니라 "그런 사람이 실제로 어떻게 사나"로 정했다
+	 * (조영준 계획 3장). 범위는 [가정].
+	 * <pre>
+	 * plain   0~2건, 1~2매. 10%는 한참 뒤(2~35시간) 1건 취소
+	 * family  3~6건, 3~4매 (명절·주말 가족 이동)                            → 누적 매수가 많음 (BULK_PURCHASE 근처)
+	 * replan  4~7건, 1~2매, 건마다 절반 확률로 1시간~2일 뒤 취소 후 다시 예매 → 취소 비율 높음 (HIGH_CANCEL_RATIO 근처)
+	 * biz     4~8건, 1매, 건마다 40% 확률로 출발 10분~10시간 전 취소(일정 변경) → 출발 직전 취소 (LAST_MINUTE_CANCEL 근처)
+	 * cancel  3건, 결제 1~3분 뒤 모두 취소 (봇)
+	 * 그 밖   0~1건
+	 * </pre>
+	 * @return {예약 수, 취소 수}
+	 */
 	private int[] history(Person p, long runId, Instant now, Random rnd) {
-		int buys;
-		int fastCancels = 0;
-		boolean lateCancel = false;
-		switch (p.kind()) {
-			case "cancel" -> { buys = 3; fastCancels = 3; }
-			case "normal" -> { buys = rnd.nextInt(3); lateCancel = buys > 0 && rnd.nextInt(10) == 0; }
-			default -> buys = rnd.nextInt(2);
+		List<Buy> buys = new ArrayList<>();
+		switch (p.profile()) {
+			case "cancel" -> {
+				for (int i = 0; i < 3; i++) buys.add(new Buy(1 + rnd.nextInt(2), 1L + rnd.nextInt(3), 2000 + rnd.nextInt(20_000)));
+			}
+			case "plain" -> {
+				int n = rnd.nextInt(3);
+				boolean lateCancel = n > 0 && rnd.nextInt(10) == 0;
+				for (int i = 0; i < n; i++) {
+					buys.add(new Buy(1 + rnd.nextInt(2), lateCancel && i == 0 ? 120L + rnd.nextInt(2000) : null,
+							2000 + rnd.nextInt(20_000)));
+				}
+			}
+			case "family" -> {
+				int n = 3 + rnd.nextInt(4);
+				for (int i = 0; i < n; i++) buys.add(new Buy(3 + rnd.nextInt(2), null, 0));
+			}
+			case "replan" -> {
+				int n = 4 + rnd.nextInt(4);
+				for (int i = 0; i < n; i++) {
+					buys.add(new Buy(1 + rnd.nextInt(2), rnd.nextBoolean() ? 60L + rnd.nextInt(2880) : null,
+							1440 + rnd.nextInt(5760)));
+				}
+			}
+			case "biz" -> {
+				int n = 4 + rnd.nextInt(5);
+				for (int i = 0; i < n; i++) {
+					buys.add(new Buy(1, rnd.nextInt(10) < 4 ? 60L + rnd.nextInt(1440) : null, 10 + rnd.nextInt(590)));
+				}
+			}
+			default -> {
+				if (rnd.nextBoolean()) buys.add(new Buy(1 + rnd.nextInt(2), null, 0));
+			}
 		}
 		int cancels = 0;
-		for (int i = 0; i < buys; i++) {
+		for (Buy b : buys) {
 			Instant confirmed = now.minus(Duration.ofHours(6 + rnd.nextInt(24 * 20)));
-			boolean canceled = i < fastCancels || (lateCancel && i == 0);
-			long minutesAfter = i < fastCancels ? 1 + rnd.nextInt(3) : 120 + rnd.nextInt(2000);
-			reservation(p, runId, confirmed, canceled, minutesAfter, rnd);
-			if (canceled) cancels++;
+			reservation(p, runId, confirmed, b, now);
+			if (b.cancelAfterMin() != null) cancels++;
 		}
-		return new int[] {buys, cancels};
+		return new int[] {buys.size(), cancels};
 	}
 
-	private void reservation(Person p, long runId, Instant confirmed, boolean canceled, long minutesAfter, Random rnd) {
-		int seats = 1 + rnd.nextInt(2);
+	private void reservation(Person p, long runId, Instant confirmed, Buy b, Instant now) {
+		int seats = b.seats();
 		long amount = FARE * seats;
+		boolean canceled = b.cancelAfterMin() != null;
+		// 취소 시각이 미래로 가지 않게 (구매는 최소 6시간 전)
+		long minutesAfter = canceled ? Math.min(b.cancelAfterMin(), Duration.between(confirmed, now).toMinutes() - 1) : 0;
 		tx.executeWithoutResult(st -> {
 			long r = jdbc.queryForObject("SELECT reservation_seq.NEXTVAL FROM dual", Long.class);
 			Instant canceledAt = confirmed.plus(Duration.ofMinutes(minutesAfter));
@@ -317,11 +393,13 @@ public class SyntheticDataService {
 					"syn-" + UUID.randomUUID(), p.id());
 			long methodId = jdbc.queryForObject("SELECT method_id FROM payment_method WHERE member_id = ? FETCH FIRST 1 ROWS ONLY",
 					Long.class, p.id());
+			// payment_id = reservation_id: 앱(PaymentStartTx)과 같은 규칙. payment_seq를 쓰면 앱이 결제한 적 있는 DB에서
+			// 앱이 쓴 번호(=예약 번호)와 겹쳐 ORA-00001 PK_PAYMENT로 멈춘다 (조영준 님 점검, 2026-11-17)
 			jdbc.update("""
 					INSERT INTO payment (payment_id, reservation_id, method_id, amount, status, pg_tx_id, idempotency_key,
 					  requested_at, approved_at)
-					VALUES (payment_seq.NEXTVAL, ?, ?, ?, ?, ?, ?, ?, ?)""",
-					r, methodId, amount, canceled ? "REFUNDED" : "APPROVED", "syn-" + UUID.randomUUID(),
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+					r, r, methodId, amount, canceled ? "REFUNDED" : "APPROVED", "syn-" + UUID.randomUUID(),
 					"syn-" + UUID.randomUUID(), Timestamp.from(confirmed.minusSeconds(30)), Timestamp.from(confirmed));
 			if (canceled) {
 				long fee = minutesAfter < 60 ? 0 : amount / 10;
@@ -329,7 +407,7 @@ public class SyntheticDataService {
 						INSERT INTO cancellation (cancel_id, reservation_id, cancel_type, canceled_at, minutes_after_purchase,
 						  minutes_before_departure, refund_amount, cancel_fee, refund_status, resold_yn)
 						VALUES (cancellation_seq.NEXTVAL, ?, 'USER', ?, ?, ?, ?, ?, 'DONE', 'N')""",
-						r, Timestamp.from(canceledAt), minutesAfter, 2000 + rnd.nextInt(20_000), amount - fee, fee);
+						r, Timestamp.from(canceledAt), minutesAfter, b.beforeDepartureMin(), amount - fee, fee);
 			}
 		});
 	}
@@ -343,6 +421,42 @@ public class SyntheticDataService {
 			int gap = minMs + rnd.nextInt(maxMs - minMs + 1);
 			out.add(event(p, i == 0 ? "VIEW_TRAIN" : "VIEW_SEAT", t, i == 0 ? null : gap, 200, null));
 			t = t.plusMillis(gap);
+		}
+		return out;
+	}
+
+	/**
+	 * 정상 회원 행동 (조영준 계획 3장 #2). 사람 속도(0.8~6초) 클릭 8~22번에 사람다운 실수를 섞는다. 범위는 [가정].
+	 * <ul>
+	 *   <li>30%는 더블클릭·새로고침 연타: 200ms 미만 간격 1~4번 (60~190ms)</li>
+	 *   <li>15%는 인기 좌석(20석)을 남과 동시에 눌러 선점 실패(409) 1~2번(1~4초 간격) → 다른 좌석으로 성공</li>
+	 * </ul>
+	 */
+	private List<Document> humanActivity(Person p, Instant start, Random rnd) {
+		int n = 8 + rnd.nextInt(15);
+		Set<Integer> quickAt = new java.util.HashSet<>();
+		if (rnd.nextInt(100) < 30) {
+			int quick = 1 + rnd.nextInt(4);
+			while (quickAt.size() < quick) quickAt.add(1 + rnd.nextInt(n - 1));
+		}
+		List<Document> out = new ArrayList<>();
+		Instant t = start;
+		for (int i = 0; i < n; i++) {
+			int gap = quickAt.contains(i) ? 60 + rnd.nextInt(131) : 800 + rnd.nextInt(5201);
+			t = t.plusMillis(i == 0 ? 0 : gap);
+			out.add(event(p, i == 0 ? "VIEW_TRAIN" : "VIEW_SEAT", t, i == 0 ? null : gap, 200, null));
+		}
+		if (rnd.nextInt(100) < 15) {
+			long popular = 400_000 + rnd.nextInt(20);
+			int fails = 1 + rnd.nextInt(2);
+			for (int i = 0; i < fails; i++) {
+				int gap = 1000 + rnd.nextInt(3001);
+				t = t.plusMillis(gap);
+				out.add(event(p, "SEAT_HOLD", t, gap, 409, List.of(popular)));
+			}
+			int gap = 2000 + rnd.nextInt(4001);
+			t = t.plusMillis(gap);
+			out.add(event(p, "SEAT_HOLD", t, gap, 201, List.of(401_000L + rnd.nextInt(1000))));
 		}
 		return out;
 	}
@@ -384,7 +498,7 @@ public class SyntheticDataService {
 		for (int i = 0; i + 1 < normals.size(); i += 40) { // 40명 중 2명 = 5%
 			Person a = normals.get(i);
 			Person b = normals.get(i + 1);
-			Person sharedB = new Person(b.id(), b.kind(), b.group(), b.no(), b.email(), b.ci(), a.device(), b.card());
+			Person sharedB = b.withDevice(a.device());
 			out.add(event(a, "SEAT_HOLD", base.plusSeconds(rnd.nextInt(600)), 3000, 201, List.of(300_000L + i)));
 			out.add(event(sharedB, "SEAT_HOLD", base.plusSeconds(4 * 3600 + rnd.nextInt(600)), 3000, 201,
 					List.of(300_001L + i)));
