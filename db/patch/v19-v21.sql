@@ -1,4 +1,4 @@
--- ERD v18 → v20 델타. 이미 데이터가 들어 있는 Oracle에 v19·v20 변경만 더합니다.
+-- ERD v18 → v21 델타. 이미 데이터가 들어 있는 Oracle에 v19·v20·v21 변경만 더합니다.
 --
 -- 원칙은 "스키마가 바뀌면 볼륨을 지우고 다시 띄운다"입니다 (docker/oracle/init/01-schema.sh).
 -- 그런데 지금은 각자 로컬에 예약·결제 데이터가 쌓여 있어, 지우지 않고 이어서 쓰고 싶을 때를 위해 둡니다.
@@ -78,6 +78,22 @@ BEGIN
 END;
 /
 
+-- 4. 상시 취소 수수료 정책 (강다인 요청, v21) ---------------------------
+-- 기존 예시 1~5는 모두 지난 행사(sale_event_id = 1)에 묶여 있어, 평시 운행(9001·9002)에서는
+-- 적용되는 정책이 없어 예매 내역 상세가 "취소 불가"로 보였습니다.
+-- 3일 전 0% · 1~3일 5% · 3시간~1일 10% · 3시간 이내 20% · 출발 후 40%
+MERGE INTO cancel_fee_policy t
+USING (
+  SELECT 6  AS fee_policy_id, 4320 AS mn, CAST(NULL AS NUMBER) AS mx, 0    AS rate, 'N' AS ad FROM dual UNION ALL
+  SELECT 7,                   1440,       4320,                       0.05,        'N'        FROM dual UNION ALL
+  SELECT 8,                   180,        1440,                       0.1,         'N'        FROM dual UNION ALL
+  SELECT 9,                   0,          180,                        0.2,         'N'        FROM dual UNION ALL
+  SELECT 10,                  CAST(NULL AS NUMBER), CAST(NULL AS NUMBER), 0.4,      'Y'        FROM dual
+) s ON (t.fee_policy_id = s.fee_policy_id)
+WHEN NOT MATCHED THEN
+  INSERT (fee_policy_id, sale_event_id, min_minutes_before, max_minutes_before, fee_rate, after_departure)
+  VALUES (s.fee_policy_id, NULL, s.mn, s.mx, s.rate, s.ad);
+
 COMMIT;
 
 -- 확인 -------------------------------------------------------------------
@@ -88,3 +104,4 @@ SELECT nullable AS "case_marker.session_id(Y여야 함)" FROM user_tab_columns
 SELECT index_name AS "새 인덱스(3개)" FROM user_indexes
  WHERE index_name IN ('IX_MEMBER_CI_HASH', 'IX_PAY_METHOD_HASH', 'UX_CASE_OPEN_SUBJECT')
  ORDER BY 1;
+SELECT COUNT(*) AS "상시 취소 수수료(5여야 함)" FROM cancel_fee_policy WHERE sale_event_id IS NULL;
