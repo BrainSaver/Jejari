@@ -105,6 +105,16 @@ services:
     entrypoint: ["/bin/bash", "/create-topics.sh"]
     restart: "no"
 
+  # Redis 서버 지표 (메모리 사용량·한도, 밀려난 키 수, 초당 명령 수). 앱 쪽 메트릭은 명령 지연만 보여서 따로 둠
+  # noeviction 한도(maxmemory)에 얼마나 가까운지를 Grafana에서 봅니다 (concurrency.md §14.5)
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      redis: { condition: service_healthy }
+
   prometheus:
     image: prom/prometheus:v3.5.0
     command:

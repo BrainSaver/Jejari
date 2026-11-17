@@ -605,5 +605,29 @@
       "auth_rate_limited",
       "auth_overloaded"
     ]
+  },
+  {
+    "id": "journey",
+    "file": "11_user_journey.js",
+    "title": "정상 사용자 전체 흐름 (실제 앱)",
+    "desc": "실제 회원 한 명이 예매를 끝까지 하는 흐름입니다: 로그인(JWT) → 열차 조회 → 대기열 입장 → 좌석 배치도 → 빈 좌석 선점(잡혔으면 다른 좌석) → 결제(모의 PG). 끝까지 마친 비율과 단계별 응답 시간을 봅니다(개선 전후 비교의 기준). 실제 앱 전용이고, 신뢰 프록시 옵션(--jejari.auth.trusted-proxies=127.0.0.1)으로 띄워야 계정을 만들 수 있습니다. 끝나면 회원과 결제된 좌석이 Oracle에 남습니다.",
+    "params": [
+      { "key": "USERS", "label": "사용자 수", "min": 1, "max": 2000, "step": 1, "def": 30, "unit": "명" },
+      { "key": "SPREAD_SEC", "label": "도착 분산 시간", "min": 0, "max": 300, "step": 5, "def": 20, "unit": "초" },
+      { "key": "MAX_WAIT_SEC", "label": "대기열 최대 대기", "min": 10, "max": 600, "step": 10, "def": 120, "unit": "초" }
+    ],
+    "presets": {
+      "light": { "USERS": 10, "SPREAD_SEC": 10, "MAX_WAIT_SEC": 60 },
+      "normal": { "USERS": 50, "SPREAD_SEC": 20, "MAX_WAIT_SEC": 120 },
+      "heavy": { "USERS": 300, "SPREAD_SEC": 30, "MAX_WAIT_SEC": 300 }
+    },
+    "keyMetrics": [
+      "journey_success",
+      "journey_ms",
+      "queue_wait_sec",
+      "seat_conflict",
+      "journey_failed",
+      "journey_sold_out"
+    ]
   }
 ]

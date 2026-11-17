@@ -141,6 +141,13 @@ public final class Pseudonymizer {
 				}
 				yield v.toLowerCase(Locale.ROOT);
 			}
+			case ADMIN_LOGIN -> {
+				// 관리자 로그인 ID (admin_user.login_id 50자). 대소문자를 구분하지 않음
+				if (v.length() > 50) {
+					throw new IllegalArgumentException("관리자 로그인 ID가 너무 깁니다");
+				}
+				yield v.toLowerCase(Locale.ROOT);
+			}
 		};
 	}
 

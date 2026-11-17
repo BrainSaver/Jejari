@@ -1080,14 +1080,38 @@ function applyJump(root, path) {
     target = heads.find((h) => normHead(h.textContent) === parts[i]) || heads.find((h) => normHead(h.textContent).startsWith(parts[i]));
   }
   const el = target || root;
+  const find = pendingFind; pendingFind = null;
   setTimeout(() => {
+    const sec = el.closest('.sec') || el;
+    // 검색에서 왔으면 섹션 안에서 찾은 글자 위치로 바로 가서 표시한다
+    const hit = find && find.length ? markHit(sec, find) || markHit(root, find) : null;
+    if (hit) { hit.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
     el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    const sec = el.closest('.sec') || el; sec.classList.add('flash'); setTimeout(() => sec.classList.remove('flash'), 2200);
+    sec.classList.add('flash'); setTimeout(() => sec.classList.remove('flash'), 2200);
   }, 60);
 }
-function jumpTo(path, heading) {
+let pendingFind = null;
+// root 안 글에서 terms 중 처음 나오는 것을 <mark class="sr-hit">로 감싼다 (접힌 details는 연다)
+function markHit(root, terms) {
+  const low = terms.map((w) => w.toLowerCase());
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement && n.parentElement.closest('.sec-tools,script,style') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+  let best = null;
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    const t = n.nodeValue.toLowerCase();
+    for (const w of low) { const i = t.indexOf(w); if (i >= 0 && (!best || i < best.i)) best = { n, i, w }; }
+    if (best) break;
+  }
+  if (!best) return null;
+  const r = document.createRange(); r.setStart(best.n, best.i); r.setEnd(best.n, best.i + best.w.length);
+  const m = document.createElement('mark'); m.className = 'sr-hit';
+  r.surroundContents(m);
+  for (let d = m.parentElement.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
+  setTimeout(() => { if (m.isConnected) m.classList.add('fade'); }, 4000);
+  return m;
+}
+function jumpTo(path, heading, find) {
   const h = hashOfPath(path); if (!h) return;
-  pendingJump = { path, heading };
+  pendingJump = { path, heading }; pendingFind = find || null;
   closeModal();
   if (window.innerWidth < 700) aiClose();
   if (location.hash === h) route(); else location.hash = h;
@@ -1451,6 +1475,8 @@ async function newPersonDoc(name, kind) {
 
 // ---------- 선 아이콘 (SVG, 24칸 기준, 글자색을 따름) ----------
 const ICON_PATHS = {
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+  doc: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M10 12h5M10 16h5"/>',
   play: '<path d="M7 4.5v15l12-7.5z"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   skip: '<path d="M5 5l9 7-9 7z"/><path d="M18 5v14"/>',
@@ -1510,7 +1536,10 @@ const partColor = (p) => colorOf(partOwner(p));
 const partName = (p) => `${p} ${S.members[partOwner(p)] || ''}`;
 const myPart = () => RM_PARTS.find((p) => partOwner(p) === S.me) || '';
 // "내 파트만" 켜짐: 내 칸이 있는 카드만 진하게, 나머지는 흐리게
-const mineOn = () => !!(RM.f.mine && myPart());
+const focusPart = () => RM.f.part || (RM.f.mine && myPart()) || '';
+const mineOn = () => !!focusPart();
+// 강조 중인 파트를 부르는 말: 내 파트면 "내", 아니면 이름
+const focusWho = () => (focusPart() === myPart() ? '내' : (S.members[partOwner(focusPart())] || focusPart()));
 // 할 순서: 안 끝난 카드를 선행 작업 따라 단계로 (서버 lib/roadmap.js stagesOf와 같은 규칙)
 function rmStages() {
   if (RM.stages && RM.stages.data === RM.data) return RM.stages.map;
@@ -1529,9 +1558,9 @@ function rmStages() {
   RM.stages = { data: RM.data, map };
   return map;
 }
-const mineBtn = () => (S.me && myPart() ? `<button class="btn sm plain fl-tb rm-minebtn${mineOn() ? ' on' : ''}" id="rmMine" style="--pc:${partColor(myPart())}" aria-pressed="${mineOn()}" title="내 파트(${myPart()}) 카드만 진하게 보기">${svgI('user', 16)} 내 파트만${mineOn() ? ' 켜짐' : ''}</button>` : '');
+const mineBtn = () => (S.me && myPart() ? `<button class="btn sm plain fl-tb rm-minebtn${RM.f.mine && !RM.f.part ? ' on' : ''}" id="rmMine" style="--pc:${partColor(myPart())}" aria-pressed="${!!(RM.f.mine && !RM.f.part)}" title="내 파트(${myPart()}) 카드만 진하게 보기">${svgI('user', 16)} 내 파트만${RM.f.mine && !RM.f.part ? ' 켜짐' : ''}</button>` : '');
 const askBtn = (area) => (S.ai ? `<button class="btn sm plain fl-tb" data-rmask="${area || ''}" title="${area ? '이 칸' : '로드맵'} 현황을 보고 AI가 답해요">${svgI('bot', 16)} AI에게 묻기</button>` : '');
-const mineOf = (it) => { const p = myPart(); return p && it.roles && it.roles[p] ? (it.roles[p].done ? 'done' : 'todo') : ''; };
+const mineOf = (it) => { const p = focusPart(); return p && it.roles && it.roles[p] ? (it.roles[p].done ? 'done' : 'todo') : ''; };
 const rmWho = (n) => (n === 'seed' ? '기능설계서' : esc(S.members[n] || n || ''));
 const ago = (t) => {
   const s = (Date.now() - t) / 1000;
@@ -1586,8 +1615,8 @@ function rmCard(it, by, opt = {}) {
   const n = rolesOf(it).length, d = doneN(it);
   const mm = mineOn() ? mineOf(it) : null;
   const cls = mm === null ? '' : mm ? ` mine m-${mm}` : ' dim';
-  return `<div class="rm-card st-${st}${cls}" data-open="${it.id}" tabindex="0" role="button"${mm ? ` style="--pc:${partColor(myPart())}"` : ''}>
-    ${mm ? `<div class="rm-mytag m-${mm}">${mm === 'done' ? `${svgI('check', 13)} 내 칸 했음` : '내 칸 아직'}</div>` : ''}
+  return `<div class="rm-card st-${st}${cls}" data-open="${it.id}" tabindex="0" role="button"${mm ? ` style="--pc:${partColor(focusPart())}"` : ''}>
+    ${mm ? `<div class="rm-mytag m-${mm}">${mm === 'done' ? `${svgI('check', 13)} ${esc(focusWho())} 칸 했음` : `${esc(focusWho())} 칸 아직`}</div>` : ''}
     <div class="rm-card-top">${opt.stage ? `<span class="rm-stage">${opt.stage}단계</span>` : ''}${it.code ? `<span class="rm-code">${esc(it.code)}</span>` : ''}${it.prio !== 'P1' ? `<span class="badge">${it.prio}</span>` : ''}${it.blocked && st !== 'done' ? '<span class="rm-st st-blocked">막힘</span>' : ''}${it.week ? `<span class="muted">${it.week}주차</span>` : ''}<span class="rm-frac">${d}/${n}</span></div>
     <div class="rm-title">${esc(it.title)}</div>
     <div class="rm-chips">${rolesOf(it).map((p) => roleChip(it, p)).join('')}</div>
@@ -1602,7 +1631,7 @@ function rmPartStrip() {
     const done = mine.filter((x) => x.roles[p].done).length;
     const pct = mine.length ? Math.round((done / mine.length) * 100) : 0;
     const msgs = (RM.data.msgs || []).filter((m) => m.to === p).length;
-    return `<button class="rm-part${RM.f.part === p ? ' on' : ''}" data-fpart="${p}" style="--pc:${partColor(p)}" title="누르면 ${esc(partName(p))} 카드만 보여요" aria-pressed="${RM.f.part === p}">
+    return `<button class="rm-part${RM.f.part === p ? ' on' : ''}" data-fpart="${p}" style="--pc:${partColor(p)}" title="누르면 모든 탭에서 ${esc(partName(p))} 것만 보여요 (다시 누르면 풀림)" aria-pressed="${RM.f.part === p}">
       <span class="rm-part-head"><b>${esc(partName(p))}</b><span class="muted">${esc(RM.data.parts[p].label)}</span></span>
       <span class="rm-bar"><i style="width:${pct}%"></i></span>
       <span class="rm-part-nums"><b>${pct}%</b><span>${done}/${mine.length} 했음</span>${RM.f.part === p ? '<span class="rm-part-on" title="다시 누르면 풀려요">선택됨</span>' : ''}${msgs ? `<span class="rm-to">${svgI('msg', 14)} 받은 말 ${msgs}</span>` : ''}</span>
@@ -1630,13 +1659,13 @@ function rmBoard(list, by) {
 function rmOrderView(by) {
   const st = rmStages();
   const open = RM.data.items.filter((x) => !isDone(x));
-  const pool = open.filter((x) => (!mineOn() || mineOf(x)) && (!RM.f.part || (x.roles && x.roles[RM.f.part])));
+  const pool = open.filter((x) => !mineOn() || mineOf(x));
   const n = Math.max(0, ...pool.map((x) => st.get(x.id)));
   const done = RM.data.items.filter(isDone);
   const col = (s) => pool.filter((x) => st.get(x.id) === s).sort((x, y) => sortItems(x, y));
   const myNext = myPart() ? open.filter((x) => mineOf(x) === 'todo' && st.get(x.id) === 1).sort(sortItems) : [];
   return `<div class="rm-order-help">
-      <p><b>먼저 끝나야 하는 일</b>을 따라 단계로 나눴어요. <b>1단계</b>는 기다릴 게 없어서 지금 바로 시작할 수 있는 일이고, 2단계는 그 카드가 기다리는 1단계 일이 끝나야 시작할 수 있어요. 카드를 끝내면 뒤 단계가 앞으로 당겨져요.${mineOn() ? ' 지금은 <b>내 파트 카드만</b> 보여요.' : ''}</p>
+      <p><b>먼저 끝나야 하는 일</b>을 따라 단계로 나눴어요. <b>1단계</b>는 기다릴 게 없어서 지금 바로 시작할 수 있는 일이고, 2단계는 그 카드가 기다리는 1단계 일이 끝나야 시작할 수 있어요. 카드를 끝내면 뒤 단계가 앞으로 당겨져요.${mineOn() ? ` 지금은 <b>${esc(focusWho())} 카드만</b> 보여요.` : ''}</p>
       ${myPart() ? `<p class="rm-order-next" style="--pc:${partColor(myPart())}"><b>${esc(partName(myPart()))}</b> 지금 바로 할 수 있는 내 일: ${myNext.length ? myNext.slice(0, 6).map((x) => `<button class="rm-link sm" data-open="${x.id}">${esc(x.code || x.title)}</button>`).join('') : '<span class="muted">없음 (앞 단계 일을 기다리는 중이거나 다 했어요)</span>'}</p>` : ''}
     </div>
     <div class="rm-order">${Array.from({ length: n }, (_, i) => i + 1).map((s) => { const c = col(s); return `<section class="rm-stagecol">
@@ -1650,7 +1679,7 @@ function rmPartsView(by) {
   return `<div class="rm-partcols">${RM_PARTS.map((p) => {
     const todo = RM.data.items.filter((x) => x.roles && x.roles[p] && !x.roles[p].done).sort(sortItems);
     const msgs = (RM.data.msgs || []).filter((m) => m.to === p).slice(0, 8);
-    return `<section class="rm-partcol${mineOn() ? (p === myPart() ? ' mine' : ' dim') : ''}" style="--pc:${partColor(p)}"><div class="rm-partcol-head"><b>${esc(partName(p))}</b> <span class="muted">남은 ${todo.length}개</span></div>
+    return `<section class="rm-partcol${mineOn() ? (p === focusPart() ? ' mine' : ' dim') : ''}" style="--pc:${partColor(p)}"><div class="rm-partcol-head"><b>${esc(partName(p))}</b> <span class="muted">남은 ${todo.length}개</span></div>
       ${msgs.length ? `<div class="rm-inbox"><div class="rm-rel-h">${svgI('msg', 14)} 받은 말</div>${msgs.map((m) => `<button class="rm-msg" data-open="${m.item}"><span class="muted">${rmWho(m.who)} · ${ago(m.at)} · ${esc(m.code || m.title || '')}</span><span>${esc((m.text || '(사진)').slice(0, 120))}</span></button>`).join('')}</div>` : ''}
       ${todo.map((x) => { const w = waitingOn(x, by); return `<div class="rm-todo" data-open="${x.id}">${roleChip(x, p)}<span class="rm-todo-t"><b>${esc(x.code)}</b> ${esc(x.title)}<small class="muted">${esc(areaLabel(x.area))}${x.week ? ` · ${x.week}주차` : ''}${w.length ? ` · 기다림 ${w.length}` : ''}</small></span></div>`; }).join('') || '<p class="muted">다 했어요.</p>'}
     </section>`;
@@ -1670,13 +1699,14 @@ function rmDepsView(by) {
   const cnt = (a, b) => new Set(edges.filter((e) => e.p === a && e.q === b).map((e) => e.it.id + e.d.id)).size;
   const groups = {};
   edges.forEach((e) => { const g = (groups[e.d.id] = groups[e.d.id] || { d: e.d, list: new Map(), q: new Set(), p: new Set() }); g.list.set(e.it.id, e.it); g.q.add(e.q); g.p.add(e.p); });
-  const hot = Object.values(groups).sort((a, b) => b.list.size - a.list.size);
-  const ready = RM_PARTS.map((p) => [p, RM.data.items.filter((x) => x.roles && x.roles[p] && !x.roles[p].done && !waitingOn(x, by).length).sort(sortItems)]);
+  const fp = RM.f.part;
+  const hot = Object.values(groups).filter((g) => !fp || g.q.has(fp) || g.p.has(fp)).sort((a, b) => b.list.size - a.list.size);
+  const ready = RM_PARTS.filter((p) => !fp || p === fp).map((p) => [p, RM.data.items.filter((x) => x.roles && x.roles[p] && !x.roles[p].done && !waitingOn(x, by).length).sort(sortItems)]);
   return `<p class="muted" style="margin:0 0 10px">다른 파트가 먼저 끝내야 시작할 수 있는 카드 수예요. 숫자를 누르면 아래 목록이 그 칸만 보여요.</p>
   <div class="tbl-wrap"><table class="rm-matrix"><thead><tr><th>기다리는 파트 ↓ / 먼저 끝낼 파트 →</th>${RM_PARTS.map((p) => `<th style="color:${partColor(p)}">${esc(partName(p))}</th>`).join('')}</tr></thead>
-  <tbody>${RM_PARTS.map((a) => `<tr><th style="color:${partColor(a)}">${esc(partName(a))}</th>${RM_PARTS.map((b) => {
+  <tbody>${RM_PARTS.map((a) => `<tr${fp && a !== fp ? ' class="dimrow"' : ''}><th style="color:${partColor(a)}">${esc(partName(a))}</th>${RM_PARTS.map((b) => {
     const c = a === b ? 0 : cnt(a, b);
-    return `<td>${a === b ? '<span class="muted">-</span>' : c ? `<button class="rm-cell" data-a="${a}" data-b="${b}" style="--heat:${Math.min(1, c / 6)}">${c}</button>` : '<span class="muted">0</span>'}</td>`;
+    return `<td${fp && a !== fp && b !== fp ? ' class="dim"' : fp && (a === fp || b === fp) ? ' class="hl"' : ''}>${a === b ? '<span class="muted">-</span>' : c ? `<button class="rm-cell" data-a="${a}" data-b="${b}" style="--heat:${Math.min(1, c / 6)}">${c}</button>` : '<span class="muted">0</span>'}</td>`;
   }).join('')}</tr>`).join('')}</tbody></table></div>
   <div class="section-title">먼저 끝내면 여러 카드가 풀리는 작업</div>
   <div>${hot.length ? hot.map((g) => `<div class="rm-edge" data-q="${[...g.q].join(' ')}" data-p="${[...g.p].join(' ')}">
@@ -1780,10 +1810,10 @@ function flowNode(n) {
   const msgs = items.reduce((s, it) => s + (it.notes || 0), 0);
   const mi = mineOn() && !ed ? items.filter((it) => mineOf(it)) : null;
   const mtodo = mi ? mi.filter((it) => mineOf(it) === 'todo').length : 0;
-  return `<div class="fl-node${pct === 100 && items.length ? ' all' : ''}${mi ? (mi.length ? ' mine' : ' dim') : ''}" data-k="${n.k}" ${pos} tabindex="0" role="button" title="${ed ? '끌어서 옮기기' : `눌러서 ${esc(n.label)} 열기`}">
-    <div class="fl-head">${nodeIcon(n.icon)}<b>${esc(n.label)}</b>${mi && mi.length ? `<span class="fl-mine${mtodo ? '' : ' m-done'}" style="--pc:${partColor(myPart())}" title="내 칸 ${mi.length}개 중 ${mi.length - mtodo}개 했음">${mtodo ? `내 것 ${mtodo}개 남음` : `${svgI('check', 13)} 내 것 다 함`}</span>` : `<span class="fl-pct">${done}/${items.length}</span>`}${tools}</div>
+  return `<div class="fl-node${pct === 100 && items.length ? ' all' : ''}${mi ? (mi.length ? ' mine' : ' dim') : ''}" data-k="${n.k}" ${mi && mi.length ? `style="left:${n.x}px;top:${n.y}px;--pc:${partColor(focusPart())}"` : pos} tabindex="0" role="button" title="${ed ? '끌어서 옮기기' : `눌러서 ${esc(n.label)} 열기`}">
+    <div class="fl-head">${nodeIcon(n.icon)}<b>${esc(n.label)}</b>${mi && mi.length ? `<span class="fl-mine${mtodo ? '' : ' m-done'}" style="--pc:${partColor(focusPart())}" title="${esc(focusWho())} 칸 ${mi.length}개 중 ${mi.length - mtodo}개 했음">${mtodo ? `${mtodo}개 남음` : `${svgI('check', 13)} 다 함`}</span>` : `<span class="fl-pct">${done}/${items.length}</span>`}${tools}</div>
     <span class="rm-bar area"><i style="width:${pct}%"></i></span>
-    <div class="fl-people">${parts.map(({ p, total, done: d }) => { const nw = nowOf(n.k, p); return `<button class="fl-who${mi && p === myPart() ? ' me' : ''}" data-now="${n.k}" data-p="${p}" style="--pc:${partColor(p)}" title="${esc(partName(p))}: ${d}/${total}${nw ? ` · 지금: ${esc(nw.text)}` : ''} (누르면 지금 하는 일 적기)"${ed ? ' disabled' : ''}>
+    <div class="fl-people">${parts.map(({ p, total, done: d }) => { const nw = nowOf(n.k, p); return `<button class="fl-who${mi && p === focusPart() ? ' me' : ''}" data-now="${n.k}" data-p="${p}" style="--pc:${partColor(p)}" title="${esc(partName(p))}: ${d}/${total}${nw ? ` · 지금: ${esc(nw.text)}` : ''} (누르면 지금 하는 일 적기)"${ed ? ' disabled' : ''}>
       <span class="fl-who-name"><b>${p}</b> ${esc(S.members[partOwner(p)])}</span><span class="fl-who-n">${d}/${total}</span>
       ${nw ? `<span class="fl-now">${esc(nw.text)}</span>` : ''}</button>`; }).join('') || '<span class="muted" style="font-size:12.5px">맡은 사람 없음 · 칸을 눌러 할 일을 추가해요</span>'}</div>
     ${blocked || msgs ? `<div class="fl-foot">${blocked ? `<span class="rm-st st-blocked">막힘 ${blocked}</span>` : ''}${msgs ? `<span class="rm-msgs">${svgI('msg', 14)} ${msgs}</span>` : ''}</div>` : ''}
@@ -2231,10 +2261,9 @@ function rmAsk(k) {
 async function pageRoadmap(view) {
   RM.view = ['flow', 'order', 'board', 'parts', 'deps', 'log'].includes(view) ? view : 'flow';
   // 이름 칸 선택은 보드·할 순서에서만 쓰므로 다른 탭으로 가면 푼다
-  if (RM.f.part && !['board', 'order'].includes(RM.view)) { RM.f.part = ''; store.set('rm-f2', RM.f); }
   if (RM.data) {
     // 탭을 옮기거나 다시 열 때는 가진 것으로 바로 그리고, 오래됐으면 뒤에서 새로 받아 바뀐 경우만 다시 그린다
-    rmRender(); rmPoll();
+    rmRender(); rmPoll(); rmPendingOpen();
     if (Date.now() - (RM.at || 0) > 10000) {
       const old = RM.rev;
       rmLoad().then(() => { if (RM.rev !== old && $('#modalBack').hidden && !RM.edit) rmRender(); }).catch(() => {});
@@ -2245,7 +2274,148 @@ async function pageRoadmap(view) {
   await rmLoad();
   rmRender();
   rmPoll();
+  rmPendingOpen();
 }
+
+function rmPendingOpen() {
+  const p = RM.pending; RM.pending = null;
+  if (!p) return;
+  setTimeout(() => { if (p.card && rmById().get(p.card)) rmOpen(p.card); else if (p.area) rmArea(p.area); }, 30);
+}
+
+// ---------- 사이트 전체 검색 (Ctrl+K, /) ----------
+// 문서는 섹션 단위, 화면설계는 화면, 로드맵은 카드·칸·남긴 말·지금 하는 일. 받아 둔 내용(CACHE)을 써서 빠르다
+const SR = { idx: null, ref: null, sel: 0, hits: [] };
+async function searchIndex() {
+  if (SR.idx && SR.ref === S.ref && SR.rev === RM.rev && SR.me === S.me) return SR.idx;
+  const out = [];
+  // 메뉴 페이지와 탭 (이름으로 바로 가기)
+  const go = (h) => () => { location.hash = h; };
+  const PAGES = [
+    ['홈', '#/', '첫 화면 최근 수정'], ['로드맵', '#/roadmap', '할 일 진행 보드 roadmap'],
+    ['로드맵 · 흐름도', '#/roadmap/flow', '다이어그램 흐름 따라가기 시뮬레이션 지금 하는 일'], ['로드맵 · 할 순서', '#/roadmap/order', '단계 순서 먼저 끝나야 하는 일'],
+    ['로드맵 · 보드', '#/roadmap/board', '카드 체크 기능 영역'], ['로드맵 · 파트별 할 일·받은 말', '#/roadmap/parts', '받은 말 메시지 파트 A B C D E'],
+    ['로드맵 · 의존 관계', '#/roadmap/deps', '선행 작업 기다림 표'], ['로드맵 · 최근 변경', '#/roadmap/log', '기록 로그 히스토리'],
+    ['기획서', '#/doc/plan', 'README 프로젝트 개요 역할'], ['기능설계', '#/doc/func', '기능설계서 API 상태 전이'],
+    ['DB설계 · DB설계서', '#/db/doc', '테이블 저장소'], ['DB설계 · ERD', '#/db/erd', 'ERD 편집기 스키마 테이블 관계'],
+    ['화면설계', '#/ui', 'UI 화면 시안'], ['동시성', '#/doc/conc', 'concurrency 트랜잭션 락 Redis Lua'], ['팀원 문서', '#/people', '개발일지 기능 문서 트러블슈팅 devlog'],
+    ...(S.me ? [['DB설계 · ERD 수정 내보내기', '#/db/exp', 'export json'], ['수정 기록', '#/history', '커밋 히스토리'], ['소스트리', '#/tree', '브랜치 그래프 git']] : []),
+  ];
+  for (const [t, h, k] of PAGES) out.push({ kind: 'page', group: '페이지·탭', title: t, text: k, go: go(h) });
+  const docs = await Promise.all(Object.values(DOCS).map((d) => fetchFile(d.path, S.ref).catch(() => null).then((f) => [d, f])));
+  for (const [d, f] of docs) {
+    if (!f) continue;
+    for (const s of splitSections(f.content)) {
+      const head = cleanHead(headOf(s));
+      const body = s.text.replace(/^#+ .*\n?/, '').replace(/<[^>]+>/g, ' ').replace(/[`*>|#]+/g, ' ').replace(/-{3,}/g, ' ').replace(/\s+/g, ' ').trim();
+      out.push({ kind: 'doc', group: d.title, title: head, text: body, go: (terms) => jumpTo(d.path, headOf(s), terms) });
+    }
+  }
+  try {
+    for (const u of await uiIndex()) out.push({ kind: 'ui', group: '화면설계', title: `${u.id} ${u.name}`, text: `${u.summary || ''} ${(u.features || []).join(' ')} ${u.owner || ''}`, go: () => { location.hash = '#/ui/' + u.id; } });
+  } catch {}
+  try {
+    if (!RM.data) await rmLoad();
+    const goRm = (pending, view) => { RM.pending = pending; const h = '#/roadmap/' + view; if (location.hash === h) { rmPendingOpen(); } else location.hash = h; };
+    for (const it of RM.data.items) {
+      const who = rolesOf(it).map((p) => `${p} ${S.members[partOwner(p)] || ''}`).join(' ');
+      out.push({ kind: 'card', group: '로드맵 카드', title: `${it.code || ''} ${it.title}`.trim(), text: `${areaLabel(it.area)} · ${who} · ${ST_LABEL[stateOf(it)]}${it.note ? ' · ' + it.note : ''}`, done: isDone(it), go: () => goRm({ card: it.id }, 'board') });
+    }
+    for (const a of RM.data.areas) out.push({ kind: 'area', group: '로드맵 칸', title: a.label, text: areaParts(a.k).map((x) => `${x.p} ${S.members[partOwner(x.p)] || ''}`).join(' '), go: () => goRm({ area: a.k }, 'flow') });
+    for (const m of RM.data.msgs || []) if (m.text) out.push({ kind: 'msg', group: '남긴 말', title: `${rmWho(m.who).replace(/<[^>]+>/g, '')} → ${partName(m.to)} · ${m.code || m.title || ''}`, text: m.text, go: () => goRm({ card: m.item }, 'board') });
+    for (const n of RM.data.now || []) if (n.text) out.push({ kind: 'now', group: '지금 하는 일', title: `${partName(n.part)} · ${areaLabel(n.area)}`, text: n.text, go: () => goRm({ area: n.area }, 'flow') });
+  } catch {}
+  SR.idx = out; SR.ref = S.ref; SR.rev = RM.rev; SR.me = S.me;
+  return out;
+}
+const srTerms = (q) => q.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
+function srFind(q) {
+  const terms = srTerms(q); if (!terms.length || !SR.idx) return [];
+  const order = { page: -1, card: 0, area: 1, ui: 2, doc: 3, msg: 4, now: 5 };
+  return SR.idx.map((e) => {
+    const t = e.title.toLowerCase(), x = e.text.toLowerCase();
+    let score = 0;
+    for (const w of terms) { if (t.includes(w)) score += t.startsWith(w) ? 6 : 4; else if (x.includes(w)) score += 1; else return null; }
+    if (e.done) score -= 0.5;
+    if (e.kind === 'page') score += 2;
+    return { e, score };
+  }).filter(Boolean).sort((p, q2) => q2.score - p.score || order[p.e.kind] - order[q2.e.kind]).slice(0, 40).map((x) => x.e);
+}
+function srMark(s, terms) {
+  let h = esc(s);
+  for (const w of terms) { const ew = esc(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); h = h.replace(new RegExp(ew, 'gi'), (m) => `<mark>${m}</mark>`); }
+  return h;
+}
+function srSnippet(text, terms) {
+  const low = text.toLowerCase();
+  const i = Math.min(...terms.map((w) => { const k = low.indexOf(w); return k < 0 ? Infinity : k; }));
+  if (!isFinite(i)) return text.slice(0, 110);
+  const s = Math.max(0, i - 40);
+  return (s ? '…' : '') + text.slice(s, s + 130) + (s + 130 < text.length ? '…' : '');
+}
+const SR_ICON = { page: 'link', card: 'check', area: 'map', ui: 'monitor', doc: 'doc', msg: 'msg', now: 'pencil' };
+function searchOpen(q0) {
+  const m = openModal(`<div class="sr">
+      <div class="sr-box">${svgI('search', 18)}<input type="search" id="srQ" placeholder="페이지·탭, 문서, 화면, 로드맵 카드·남긴 말 검색" autocomplete="off" aria-label="검색"><kbd>Esc</kbd></div>
+      <div class="sr-list" id="srList" role="listbox"><p class="muted sr-hint">찾을 말을 쓰세요. 띄어 쓰면 모두 들어 있는 것만 찾아요. 예: <code>결제 saga</code>, <code>RSV-02</code>, <code>강동균 좌석</code></p></div>
+      <p class="muted sr-foot">↑↓로 고르고 Enter로 열어요 · 어디서든 <kbd>Shift</kbd> 두 번, <kbd>Ctrl</kbd>+<kbd>K</kbd>, <kbd>/</kbd></p></div>`, { wide: true });
+  m.classList.add('sr-modal');
+  const input = $('#srQ', m), list = $('#srList', m);
+  let ready = false;
+  const draw = () => {
+    const q = input.value.trim(); const terms = srTerms(q);
+    if (!q && ready) {
+      // 아무것도 안 쳤으면 페이지·탭 목록
+      SR.hits = SR.idx.filter((e) => e.kind === 'page'); SR.sel = 0;
+      list.innerHTML = `<div class="sr-group">페이지·탭</div>${SR.hits.map((e, i) => `<button class="sr-item${i ? '' : ' on'}" data-i="${i}" role="option"><span class="sr-ic">${svgI('link', 16)}</span><span class="sr-txt"><b>${esc(e.title)}</b></span></button>`).join('')}`;
+      $$('.sr-item', list).forEach((b) => { b.addEventListener('click', () => srGo(+b.dataset.i)); b.addEventListener('mousemove', () => srSel(+b.dataset.i, list, false)); });
+      return;
+    }
+    if (!q) { SR.hits = []; return; }
+    if (!ready) { list.innerHTML = '<p class="muted sr-hint">찾는 중…</p>'; return; }
+    SR.hits = srFind(q); SR.sel = 0;
+    if (!SR.hits.length) { list.innerHTML = `<p class="muted sr-hint">"${esc(q)}"에 맞는 게 없어요.</p>`; return; }
+    let last = '';
+    list.innerHTML = SR.hits.map((e, i) => {
+      const g = e.group !== last ? `<div class="sr-group">${esc(e.group)}</div>` : ''; last = e.group;
+      return `${g}<button class="sr-item${i ? '' : ' on'}${e.done ? ' done' : ''}" data-i="${i}" role="option"><span class="sr-ic">${svgI(SR_ICON[e.kind], 16)}</span><span class="sr-txt"><b>${srMark(e.title, terms)}</b><small>${srMark(srSnippet(e.text, terms), terms)}</small></span></button>`;
+    }).join('');
+    $$('.sr-item', list).forEach((b) => {
+      b.addEventListener('click', () => srGo(+b.dataset.i));
+      b.addEventListener('mousemove', () => srSel(+b.dataset.i, list, false));
+    });
+  };
+  let t; input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(draw, 60); });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (SR.hits.length) srSel((SR.sel + (e.key === 'ArrowDown' ? 1 : -1) + SR.hits.length) % SR.hits.length, list, true); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (SR.hits.length) srGo(SR.sel); }
+  });
+  if (q0) input.value = q0;
+  input.focus(); setTimeout(() => input.focus(), 30);
+  searchIndex().then(() => { ready = true; draw(); }).catch((x) => { list.innerHTML = `<p class="err sr-hint">${esc(x.message)}</p>`; });
+}
+function srSel(i, list, scroll) {
+  SR.sel = i;
+  $$('.sr-item', list).forEach((b) => b.classList.toggle('on', +b.dataset.i === i));
+  const b = $(`.sr-item[data-i="${i}"]`, list); if (b && scroll) b.scrollIntoView({ block: 'nearest' });
+}
+function srGo(i) { const e = SR.hits[i]; if (!e) return; const q = $('#srQ'); const terms = q ? srTerms(q.value) : []; closeModal(); e.go(terms); }
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  const typing = /INPUT|TEXTAREA|SELECT/.test(tag) || (e.target && e.target.isContentEditable);
+  if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (!$('#srQ')) searchOpen(); else $('#srQ').focus(); }
+  else if (e.key === '/' && !typing && $('#modalBack').hidden) { e.preventDefault(); searchOpen(); }
+});
+// Shift를 두 번 빠르게 (다른 키 없이) 눌러도 검색이 열린다
+let shiftAt = 0;
+document.addEventListener('keydown', (e) => { if (e.key !== 'Shift') shiftAt = 0; }, true);
+document.addEventListener('keyup', (e) => {
+  if (e.key !== 'Shift' || e.repeat) return;
+  const now = Date.now();
+  if (now - shiftAt < 400) { shiftAt = 0; if (!$('#srQ')) searchOpen(); else $('#srQ').focus(); }
+  else shiftAt = now;
+});
+$('#searchBtn').addEventListener('click', () => searchOpen());
 
 function rmRender() {
   if (!RM.data || !/^#\/roadmap/.test(location.hash)) return;
@@ -2263,15 +2433,22 @@ function rmRender() {
   else if (RM.view === 'parts') body = rmPartsView(by);
   else if (RM.view === 'deps') body = rmDepsView(by);
   else {
-    const log = RM.data.log;
-    body = log.length ? `<div class="rm-logs">${log.map((e) => rmLogLine(e, by)).join('')}</div><p class="muted">최근 ${log.length}건까지 보여요. 체크·풀기는 3분 뒤에 올라오고, 3분 안에 되돌리면 남지 않아요. 카드를 열면 그 카드의 전체 기록이 있어요.${S.admin ? ' 팀장은 줄마다 연필·휴지통으로 기록을 고치거나 지울 수 있어요.' : ''}</p>` : '<p class="empty">아직 기록이 없어요.</p>';
+    const fp = RM.f.part;
+    const owner = fp && partOwner(fp);
+    const log = RM.data.log.filter((e) => {
+      if (!fp) return true;
+      if (e.who === owner || e.part === fp || e.to === fp) return true;
+      const it = e.item && by.get(e.item);
+      return !!(it && it.roles && it.roles[fp]) || (e.changes || []).some((c) => c[1] === fp);
+    });
+    body = !log.length && fp ? `<p class="empty">${esc(partName(fp))}에 관한 최근 기록이 없어요.</p>` : log.length ? `<div class="rm-logs">${log.map((e) => rmLogLine(e, by)).join('')}</div><p class="muted">최근 ${log.length}건까지 보여요. 체크·풀기는 3분 뒤에 올라오고, 3분 안에 되돌리면 남지 않아요. 카드를 열면 그 카드의 전체 기록이 있어요.${S.admin ? ' 팀장은 줄마다 연필·휴지통으로 기록을 고치거나 지울 수 있어요.' : ''}</p>` : '<p class="empty">아직 기록이 없어요.</p>';
   }
   main.innerHTML = `<div class="wide rm">
     <div class="rm-head"><div><h1 class="page">로드맵</h1>
       <p class="page-sub" style="margin:0">카드 ${items.length}장 중 <b>${cardsDone}장 끝</b> · 파트 칸 ${checks}개 중 ${checked}개 체크 (${checks ? Math.round(checked / checks * 100) : 0}%). ${S.me ? '카드 안 A~E 칸을 누르면 했다·안 했다가 바뀌어요.' : '로그인하면 체크하고 할 일을 추가할 수 있어요.'}</p></div>
       <div class="rm-head-acts">${S.me ? `<button class="btn" data-add="">${svgI('plus', 16)} 할 일 추가</button>` : '<button class="btn" data-login>로그인</button>'}</div></div>
     ${rmPartStrip()}
-    ${mineOn() ? (() => { const mi = items.filter((x) => mineOf(x)); const d = mi.filter((x) => mineOf(x) === 'done').length; return `<div class="rm-minesum" style="--pc:${partColor(myPart())}"><b>${esc(partName(myPart()))}</b> 내 칸 ${mi.length}개 중 <b>${d}개 했음</b> · <b>${mi.length - d}개 남음</b><span class="muted">진한 카드가 내 것, 흐린 카드는 다른 파트 것이에요.</span></div>`; })() : ''}
+    ${mineOn() ? (() => { const mi = items.filter((x) => mineOf(x)); const d = mi.filter((x) => mineOf(x) === 'done').length; return `<div class="rm-minesum" style="--pc:${partColor(focusPart())}"><b>${esc(partName(focusPart()))}</b> ${esc(focusWho())} 칸 ${mi.length}개 중 <b>${d}개 했음</b> · <b>${mi.length - d}개 남음</b><span class="muted">진하게 보이는 게 ${esc(focusWho())} 것, 흐린 건 다른 파트 것이에요. 이름 박스를 다시 누르면 풀려요.</span></div>`; })() : ''}
     <div class="tabs">${[['flow', '흐름도'], ['order', '할 순서'], ['board', '보드'], ['parts', '파트별 할 일·받은 말'], ['deps', '의존 관계'], ['log', '최근 변경']].map(([k, l]) => `<button data-v="${k}" class="${RM.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     ${RM.view !== 'flow' ? `<div class="rm-tools">${askBtn('')}${mineBtn()}</div>` : ''}
     ${RM.view === 'board' ? `<div class="filters rm-filters">
@@ -2297,11 +2474,11 @@ function rmBind(root) {
   $$('[data-add]', root).forEach((b) => b.addEventListener('click', () => rmEdit(null, b.dataset.add)));
   $$('[data-rmask]', root).forEach((b) => b.addEventListener('click', () => rmAsk(b.dataset.rmask)));
   rmLogBind(root);
-  const mb = $('#rmMine', root); if (mb) mb.addEventListener('click', () => { RM.f.mine = !RM.f.mine; save(); rmRender(); });
+  const mb = $('#rmMine', root); if (mb) mb.addEventListener('click', () => { if (RM.f.part) { RM.f.part = ''; RM.f.mine = true; } else RM.f.mine = !RM.f.mine; save(); rmRender(); });
   const lg = $('[data-login]', root); if (lg) lg.addEventListener('click', () => loginModal(() => rmRender()));
   $$('[data-fpart]', root).forEach((b) => b.addEventListener('click', () => {
     RM.f.part = RM.f.part === b.dataset.fpart ? '' : b.dataset.fpart; save();
-    if (RM.view !== 'board' && RM.view !== 'order') location.hash = '#/roadmap/board'; else rmRender();
+    rmRender();
   }));
   $$('.rm-cell', root).forEach((b) => b.addEventListener('click', () => {
     const on = b.classList.toggle('on');

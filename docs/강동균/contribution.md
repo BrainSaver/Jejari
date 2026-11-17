@@ -16,6 +16,7 @@
 |---|---|---|---|
 | 중복 예약 | 0건 | **0건** (T1: 같은 좌석 100명 동시 → 성공 1, 거절 99, DB 예약·재고 행 1개) | `SeatHoldInfraTest` (실제 Oracle·Redis), Lua 단독은 `python redis/test/lua_test.py` |
 | 락 방식별 TPS | 비교 수치 확보 | 같은 좌석 100명: A 255 / B 1,457 / **C 2,732** TPS. DB 왕복 201 → **2회** | `python bench/lock_compare.py` (워밍업 1회 + 5회 중앙값) |
+| 락 방식별 DB 왕복 (HTTP 수준) | 비교 수치 확보 | 같은 좌석 100명: A 101 / B 119 / **C 1회**. TPS는 B 2,128 / C 1,724로 **뒤집힘** | `node bench/web/server.js` → 버튼 (k6, 3회차 중앙값) |
 | 기한 초과 좌석 반환율 | 100% | **100%** (기한 지난 HOLD 20건 → 20건 만료, 좌석 행·카운터·Redis 한도 전부 반환) | `SeatReleaseInfraTest` (실제 Oracle·Redis) |
 
 ## 3. 설계 결정
@@ -92,8 +93,14 @@
     순수 오버헤드다. "Redis를 끼우면 항상 빠르다"가 틀렸다.
   - **꼬리 지연(p99)은 ②가 낫다** (43.5ms vs 74.3ms). ③은 패배자가 빨리 끝나 평균을
     끌어내리는 대신 승자들의 INSERT가 몰려 꼬리가 길어진다.
+  - **HTTP 수준(k6, 2026-11-17)에서는 극한 경쟁에서도 TPS가 ②에 진다** (B 2,128 vs C 1,724).
+    요청마다 HTTP·Spring 왕복이 10~15ms 붙으면서 ③이 아끼던 Redis 왕복 한 번의 비중이 작아졌다.
+    **그래도 DB 왕복은 119 → 1이다.** "③이 가장 빠르다"가 아니라 "③만 DB를 지킨다"가 맞는 설명이다
+    ([k6 재측정](features/락비교-k6-재측정.md)).
   - 그래도 1차는 ③으로 통일한다. 운영 중에 "지금 경쟁이 심한가"를 미리 알 수 없고,
-    코드가 두 갈래가 되면 버그 자리가 는다. 대신 `SeatHoldStrategy` 로 바꿔 끼울 수 있게 뒀다.
+    코드가 두 갈래가 되면 버그 자리가 는다. 바꿔 끼우는 `SeatHoldStrategy`는 **설계만 해 두고
+    프로덕션에는 넣지 않았다** — A·B안에서는 Redis `seat:hold` 키가 비어 배치도·해제·결제가
+    어긋난다. 측정용 입구(`com.jejari.bench`, 개발 모드 전용)를 따로 뒀다.
   - Redis 장애 시 선점 자체가 막힌다. DB 최종 판정은 살아 있지만 1차가 없으면 경쟁이
     전부 DB로 간다.
 - 관련 코드·커밋: `bench/lock_compare.py`, `bench/README.md`, `src/main/resources/lua/seat/hold.lua`
@@ -111,6 +118,10 @@
 | RSV-03 만료 스캐너 · RSV-05 결제 전 취소 · 결제 실패 해제(Saga용) | [좌석해제-만료-취소](features/좌석해제-만료-취소.md) |
 | TRN-01~03 역·운행 검색·운임, RSV-01 좌석 배치도 (seatmap 캐시, 행동 로그 4종) | [열차조회-좌석배치도](features/열차조회-좌석배치도.md) |
 | 결제·확정 취소가 부르는 좌석 단계 (PAY-01 마감 연장, PAY-02 좌석 확정, CNL-02 좌석 반환) | [좌석-결제취소-연결](features/좌석-결제취소-연결.md) |
+| ADM-02 판매 오픈 스케줄러 (train_run.status 시각 전이) | [판매오픈-스케줄러](features/판매오픈-스케줄러.md) |
+| ADM-03 실시간 예매 현황 (좌석·분당 건수·대기열·결과 모름 결제) | [실시간-예매현황](features/실시간-예매현황.md) |
+| §17.1 락 비교 k6 HTTP 수준 재측정 + 측정 웹 러너 | [락비교-k6-재측정](features/락비교-k6-재측정.md) |
+| └ 결과를 설치 없이 보는 페이지 (문서 사이트) | [락비교-결과](features/락비교-결과.html) |
 
 ## 5. 다른 파트와의 연결
 
@@ -128,6 +139,13 @@
 | D 강다인 | ERD v13 | `risk_score_history_seq` 시퀀스 추가 → 점수 저장 때 이력도 기록 |
 | D 강다인 | 행동 로그 | 내 API 4곳에 `BehaviorLog.mark`: VIEW_TRAIN·VIEW_SEAT·SEAT_HOLD·CANCEL. 실패 요청도 `errorCode`와 함께 남김 (MongoDB 적재 확인) |
 | D 강다인 | ERD v15 | 회원가입·로그인용 시퀀스 2개, Redis 키 3개, `app_policy` 한도 3개, `login_attempt.result` BANNED |
+| C 길동현 | ERD v19 | `payment_seq`(CACHE 100)·`payment_method_seq`·`cancellation_seq` 추가 |
+| D 강다인 | ERD v19 | RISK-04: `suspicious_case_seq`·`case_marker_seq`, 대상당 열린 케이스 1건 유니크 인덱스, `case_marker.session_id` NULL 허용. 곧 쓸 `waitlist_seq`·`admin_action_seq`. 조회 인덱스 `member(ci_hash)`·`payment_method(method_hash)`·`behavior_log{device_hash,ts}`. Redis 키 `risk:dirty`·`risk:dirty:work`·`risk:batch:lock` |
+| A 김성원 | 판매 오픈 자동화 | `JdbcOnSaleRunProvider`가 보는 운행이 시각에 맞춰 늘고 줄어든다. `9003`은 오픈 시각(내일 07:00)에 자동으로 열림 |
+| E 조영준 | 부하 시나리오 | 오픈 순간 트래픽을 실제로 재현할 수 있다 — `sale_open_at`을 몇 초 뒤로 넣으면 그 시각에 열림 |
+| A 김성원 | 대기열 숫자 | 현황 API가 `QueueKeys`의 `queue:{runId}`·`queue:active:{runId}`·`queue:throughput:{runId}`를 읽기만 함. 키 이름이 바뀌면 알려 주세요 |
+| C 길동현 | 결과 모름 결제 | 현황 API의 `payments.unknown`이 §6.2 건수다. ADM-09 화면의 진입 숫자로 쓰면 됨 |
+| D 강다인 | 취소 건수 | 현황의 `rates.cancels`는 `cancellation` 행 기준이라 **만료가 빠진다** (만료는 돈이 안 오가 행을 만들지 않음). 취소율을 볼 때 주의 |
 
 ## 6. 트러블슈팅
 
