@@ -750,3 +750,5 @@ body.sim-on .ai-fab{display:none}
   .search-btn .search-l,.search-btn kbd{display:none}
   .sr-modal.modal{margin-top:0}
 }
+mark.sr-hit{background:var(--warn);color:var(--warn-fg);border-radius:3px;padding:0 2px;outline:2px solid var(--warn-fg);transition:background 1s,outline-color 1s}
+mark.sr-hit.fade{outline-color:transparent}

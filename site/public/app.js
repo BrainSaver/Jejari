@@ -1080,14 +1080,38 @@ function applyJump(root, path) {
     target = heads.find((h) => normHead(h.textContent) === parts[i]) || heads.find((h) => normHead(h.textContent).startsWith(parts[i]));
   }
   const el = target || root;
+  const find = pendingFind; pendingFind = null;
   setTimeout(() => {
+    const sec = el.closest('.sec') || el;
+    // 검색에서 왔으면 섹션 안에서 찾은 글자 위치로 바로 가서 표시한다
+    const hit = find && find.length ? markHit(sec, find) || markHit(root, find) : null;
+    if (hit) { hit.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
     el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    const sec = el.closest('.sec') || el; sec.classList.add('flash'); setTimeout(() => sec.classList.remove('flash'), 2200);
+    sec.classList.add('flash'); setTimeout(() => sec.classList.remove('flash'), 2200);
   }, 60);
 }
-function jumpTo(path, heading) {
+let pendingFind = null;
+// root 안 글에서 terms 중 처음 나오는 것을 <mark class="sr-hit">로 감싼다 (접힌 details는 연다)
+function markHit(root, terms) {
+  const low = terms.map((w) => w.toLowerCase());
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement && n.parentElement.closest('.sec-tools,script,style') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+  let best = null;
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    const t = n.nodeValue.toLowerCase();
+    for (const w of low) { const i = t.indexOf(w); if (i >= 0 && (!best || i < best.i)) best = { n, i, w }; }
+    if (best) break;
+  }
+  if (!best) return null;
+  const r = document.createRange(); r.setStart(best.n, best.i); r.setEnd(best.n, best.i + best.w.length);
+  const m = document.createElement('mark'); m.className = 'sr-hit';
+  r.surroundContents(m);
+  for (let d = m.parentElement.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
+  setTimeout(() => { if (m.isConnected) m.classList.add('fade'); }, 4000);
+  return m;
+}
+function jumpTo(path, heading, find) {
   const h = hashOfPath(path); if (!h) return;
-  pendingJump = { path, heading };
+  pendingJump = { path, heading }; pendingFind = find || null;
   closeModal();
   if (window.innerWidth < 700) aiClose();
   if (location.hash === h) route(); else location.hash = h;
@@ -2281,7 +2305,7 @@ async function searchIndex() {
     for (const s of splitSections(f.content)) {
       const head = cleanHead(headOf(s));
       const body = s.text.replace(/^#+ .*\n?/, '').replace(/<[^>]+>/g, ' ').replace(/[`*>|#]+/g, ' ').replace(/-{3,}/g, ' ').replace(/\s+/g, ' ').trim();
-      out.push({ kind: 'doc', group: d.title, title: head, text: body, go: () => jumpTo(d.path, headOf(s)) });
+      out.push({ kind: 'doc', group: d.title, title: head, text: body, go: (terms) => jumpTo(d.path, headOf(s), terms) });
     }
   }
   try {
@@ -2372,7 +2396,7 @@ function srSel(i, list, scroll) {
   $$('.sr-item', list).forEach((b) => b.classList.toggle('on', +b.dataset.i === i));
   const b = $(`.sr-item[data-i="${i}"]`, list); if (b && scroll) b.scrollIntoView({ block: 'nearest' });
 }
-function srGo(i) { const e = SR.hits[i]; if (!e) return; closeModal(); e.go(); }
+function srGo(i) { const e = SR.hits[i]; if (!e) return; const q = $('#srQ'); const terms = q ? srTerms(q.value) : []; closeModal(); e.go(terms); }
 document.addEventListener('keydown', (e) => {
   const tag = (e.target && e.target.tagName) || '';
   const typing = /INPUT|TEXTAREA|SELECT/.test(tag) || (e.target && e.target.isContentEditable);
