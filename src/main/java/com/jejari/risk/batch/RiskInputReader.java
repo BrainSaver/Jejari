@@ -97,7 +97,7 @@ public class RiskInputReader {
 	}
 
 	/** 이 대상에 연결된 회원을 찾는 하위 쿼리 (자리표시자 1개 = 해시) */
-	static String membersOf(SubjectType t) {
+	public static String membersOf(SubjectType t) {
 		return switch (t) {
 			case CI -> "SELECT member_id FROM member WHERE ci_hash = ?";
 			case PAYMENT -> "SELECT member_id FROM payment_method WHERE method_hash = ?";
