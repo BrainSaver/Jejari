@@ -106,6 +106,32 @@ class PaymentInfraTest {
 		cleanDb();
 	}
 
+	// ------------------------------------------------------------ 결제 수단 번호
+
+	@Test
+	void 결제_수단_번호는_payment_method_seq에서_받고_옛_행과_겹치면_다음_번호로_넘어간다() {
+		// v19 전 reservation_seq로 만든 행이 마침 다음 시퀀스 번호들을 차지하고 있는 상황
+		long owner = newMember();
+		long next = jdbc.queryForObject("SELECT payment_method_seq.NEXTVAL FROM dual", Long.class);
+		for (long id = next + 1; id <= next + 3; id++) {
+			jdbc.update("""
+					INSERT INTO payment_method (method_id, member_id, method_hash, method_type, card_last4)
+					VALUES (?, ?, NULL, 'CARD', '0000')""", id, owner);
+		}
+		long m = newMember();
+		long r = holdSeat(m, nextSeat());
+
+		PaymentResult res = payments.start(m, r, key(), OK);
+
+		// 겹친 PK가 "같은 키 동시 요청"으로 잘못 읽히지 않고 새 결제로 끝난다
+		assertThat(res.replay()).isFalse();
+		assertThat(res.reservationStatus()).isEqualTo("CONFIRMED");
+		long methodId = jdbc.queryForObject("SELECT method_id FROM payment WHERE reservation_id = ?", Long.class, r);
+		assertThat(methodId).isGreaterThan(next + 3);
+		assertThat(jdbc.queryForObject("SELECT member_id FROM payment_method WHERE method_id = ?", Long.class, methodId))
+				.isEqualTo(m);
+	}
+
 	// ------------------------------------------------------------ 정상 흐름
 
 	@Test
