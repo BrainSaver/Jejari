@@ -10,7 +10,7 @@ Oracle · MongoDB · Redis · Kafka · Prometheus · Grafana를 한 번에 띄�
    - `JWT_SECRET_K1`: `openssl rand -base64 32`
 3. `docker compose up -d`
 
-첫 기동은 이미지 내려받기 + Oracle DDL 실행으로 몇 분 걸립니다. `docker compose ps`에서 oracle·mongo·redis·kafka가 `healthy`, kafka-init이 `Exited (0)`이면 준비 완료입니다.
+첫 기동은 이미지 내려받기 + Oracle DDL 실행으로 몇 분 걸립니다. `docker compose ps`에서 oracle·mongo·redis·kafka가 `healthy`, kafka-init이 `Exited (0)`이면 준비 완료입니다. Oracle의 `healthy`는 앱 계정으로 `FREEPDB1`에 실제 접속까지 확인한 뒤라, 재시작 직후에도 `healthy`가 뜨면 바로 테스트를 돌려도 됩니다.
 
 ## 확인
 
