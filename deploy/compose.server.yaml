@@ -1,0 +1,29 @@
+# 공용 서버(GCP VM) 전용 추가 설정. 로컬에서는 쓰지 않습니다.
+#   docker compose -f compose.yaml -f deploy/compose.server.yaml up -d
+#
+# 더하는 것
+#   - caddy: 80·443만 받아 HTTPS를 끝내고 앱 2대(8080·8081)에 나눠 보냄. 인증서는 Let's Encrypt 자동
+#   - prometheus: 앱 2대를 모두 수집하는 서버용 설정으로 교체
+# compose.override.yml(각자 PC용, gitignore)과 섞이지 않게 파일 이름을 따로 둡니다.
+services:
+  caddy:
+    image: caddy:2.9.1-alpine
+    restart: unless-stopped
+    # 호스트 네트워크: 호스트의 127.0.0.1:8080·8081(앱)에 바로 붙고, 80·443을 직접 엽니다.
+    # 앱이 보는 접속 주소가 127.0.0.1이 되어 --jejari.auth.trusted-proxies=127.0.0.1 과 맞습니다.
+    network_mode: host
+    environment:
+      JEJARI_DOMAIN: ${JEJARI_DOMAIN:?.env에 JEJARI_DOMAIN 필요 (deploy/setup-server.sh가 채움)}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data          # 인증서. 지우면 다시 발급 (Let's Encrypt 발급 횟수 제한 주의)
+      - caddy-config:/config
+
+  prometheus:
+    volumes:
+      - ./deploy/prometheus.server.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+volumes:
+  caddy-data:
+  caddy-config:
