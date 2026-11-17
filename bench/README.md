@@ -2,8 +2,36 @@
 
 담당 B 강동균 · 핵심 수치 "락 방식별 TPS" · 측정일 2026-11-16 (DB 수준, Python)
 
-> **k6 HTTP 수준 재측정(2026-11-17)** 은 [`docs/강동균/features/락비교-k6-재측정.md`](../docs/강동균/features/락비교-k6-재측정.md) 에 있습니다.
-> 버튼으로 돌리려면 `node bench/web/server.js` → http://localhost:8099
+> **k6 HTTP 수준 재측정(2026-11-17)** 이 따로 있습니다.
+> 결과만 보려면 설치 없이 [`락비교-결과.html`](../docs/강동균/features/락비교-결과.html) (문서 사이트에도 뜹니다),
+> 자세한 설명은 [`락비교-k6-재측정.md`](../docs/강동균/features/락비교-k6-재측정.md).
+
+## 폴더 안내
+
+| 경로 | 내용 |
+|---|---|
+| `lock_compare.py` · `schema.sql` | 2026-11-16 Python 측정 (DB 직결). 이 문서의 수치 |
+| `k6/lock-compare.js` | 2026-11-17 k6 재측정 스크립트 (HTTP 수준) |
+| `web/` | 버튼 누르면 k6를 돌리는 측정 러너 (Node 기본 모듈만, 의존성 없음) |
+| `reference/` | 기준 측정 결과 (커밋됨) |
+| `results/` | 실행할 때마다 쌓이는 결과 (gitignore) |
+
+### 웹 러너 돌리는 법
+
+```bash
+winget install --id GrafanaLabs.k6 -e   # 한 번만. Grafana.k6 가 아니라 GrafanaLabs.k6
+docker compose up -d
+
+# 앱 (개발 모드여야 벤치 API가 생긴다)
+set -a && . <(grep -E "^JEJARI_(ENC|PEPPER|HMAC)" .env) && set +a
+LC_ALL=C.UTF-8 TZ=Asia/Seoul ./gradlew bootRun   --args="--jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=9001"
+
+# 다른 터미널
+node bench/web/server.js                # → http://localhost:8099
+```
+
+사전 점검 4개가 초록이면 `▶ 측정 시작`. 내 PC에서만 돌립니다 — 벤치 API는 인증이 없어
+서버에 올리지 않습니다.
 
 ## 무엇을 비교하나
 
