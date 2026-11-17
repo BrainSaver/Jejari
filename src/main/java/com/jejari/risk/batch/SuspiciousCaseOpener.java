@@ -73,6 +73,41 @@ public class SuspiciousCaseOpener {
 			Instant windowFrom, Instant windowTo, Instant openedAt, List<Marker> markers) {
 	}
 
+	private volatile boolean schemaReady;
+	private volatile long schemaCheckedAt;
+
+	/**
+	 * ERD 반영 전 DB(시퀀스 없음, case_marker.session_id NOT NULL)에서는 케이스를 열지 않고 점수 저장만 한다.
+	 * 그대로 열면 케이스 INSERT가 실패해 점수 저장까지 롤백되고, 그 대상은 매분 실패를 되풀이한다 (위험 점수가 대기열에 안 들어감).
+	 * 준비되면 그때부터 연다. 확인은 1분에 한 번만 (준비된 뒤에는 다시 안 함).
+	 */
+	boolean schemaReady() {
+		if (schemaReady) {
+			return true;
+		}
+		long now = System.currentTimeMillis();
+		if (now - schemaCheckedAt < 60_000) {
+			return false;
+		}
+		schemaCheckedAt = now;
+		try {
+			Integer seqs = jdbc.queryForObject("""
+					SELECT COUNT(*) FROM user_sequences
+					 WHERE sequence_name IN ('SUSPICIOUS_CASE_SEQ', 'CASE_MARKER_SEQ')""", Integer.class);
+			String nullable = jdbc.queryForObject("""
+					SELECT MAX(nullable) FROM user_tab_columns
+					 WHERE table_name = 'CASE_MARKER' AND column_name = 'SESSION_ID'""", String.class);
+			schemaReady = seqs != null && seqs == 2 && "Y".equals(nullable);
+		} catch (RuntimeException e) {
+			schemaReady = false;
+		}
+		if (!schemaReady) {
+			log.warn("의심 케이스 테이블 준비 전 (suspicious_case_seq·case_marker_seq, case_marker.session_id NULL 허용 필요) "
+					+ "→ 점수만 저장하고 케이스는 열지 않음");
+		}
+		return schemaReady;
+	}
+
 	/** 케이스 종류. 새 증거가 아니거나 조건을 못 넘으면 null */
 	static String triggerOf(RiskResult r, RiskPolicy policy) {
 		if (r.ruleScore().compareTo(r.finalScore()) < 0) {
@@ -92,7 +127,7 @@ public class SuspiciousCaseOpener {
 	 */
 	public Plan plan(RiskPolicy policy, RiskSubject s, RiskResult r, Instant behaviorFrom, Instant purchaseFrom) {
 		String trigger = triggerOf(r, policy);
-		if (trigger == null) {
+		if (trigger == null || !schemaReady()) {
 			return null;
 		}
 		Instant now = r.calculatedAt();
