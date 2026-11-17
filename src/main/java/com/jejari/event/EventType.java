@@ -15,6 +15,12 @@ public enum EventType {
 	RESERVATION_CONFIRMED,
 	/** 기한 초과·결제 실패로 예약 해제 (§7.1). 원인은 payload의 reason (TIMEOUT / PAY_FAILED) */
 	RESERVATION_EXPIRED,
-	/** 확정 예약 취소 (§8) */
-	RESERVATION_CANCELED
+	/** 결제 전·확정 후 취소 (§7.4, §8). 원인은 payload의 reason (USER_BEFORE_PAY / USER / ADMIN) */
+	RESERVATION_CANCELED,
+	/** 환불 완료 (§7.3, CNL-03) */
+	REFUND_COMPLETED,
+	/** 취소표 제안 (§9). 대기 토픽, 파티션 키 = waitlist_id */
+	WAITLIST_OFFERED,
+	/** 매수 한도 초과로 제안 건너뜀 (§9). 대기 토픽, 파티션 키 = waitlist_id */
+	WAITLIST_SKIPPED
 }
