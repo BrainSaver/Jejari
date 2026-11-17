@@ -120,7 +120,7 @@ echo
 if [ "$MODE" = "bot" ]; then
   echo "기대: final_score 30 이상 (FAST_CLICK 25 + 방금 가입한 계정 NEW_ACCOUNT 5, 간격이 아주 고르면 REGULAR_INTERVAL +15)"
   echo "      review_status PENDING, 케이스 RULE·OPEN, 마커 FAST_CLICK \"200ms 미만 간격 요청 N회\", Redis 값 = final_score"
-  echo "      (케이스가 없으면 ERD 반영 전 DB라서 케이스 생성을 건너뛴 것 → 앱 로그에 '의심 케이스 테이블 준비 전')"
+  echo "      (케이스가 없고 앱 로그에 suspicious_case_seq 오류가 있으면 로컬 DB가 ERD v19 이전 → 최신 DDL로 다시 만들기)"
 else
   echo "기대: final_score 5 (방금 가입한 계정이라 NEW_ACCOUNT 5점만), FAST_CLICK 없음, 케이스 없음, review_status NONE"
   echo "      (가입 7일이 지난 계정이면 0점이라 행 자체가 생기지 않음)"

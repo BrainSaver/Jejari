@@ -223,7 +223,8 @@ public class RiskInputReader {
 	}
 
 	/**
-	 * 기기 해시로 찾는 인덱스. mongo-init.js에는 아직 없다 (ERD 반영 요청 중). 이미 있으면 createIndex는 아무 일도 안 한다.
+	 * 기기 해시로 찾는 인덱스 ix_device_ts (ERD v19). mongo-init.js는 볼륨을 처음 만들 때만 돌아 기존 볼륨에는 없을 수 있어
+	 * 여기서도 보장한다. 이미 있으면 createIndex는 아무 일도 안 한다.
 	 * 실패해도 조회는 된다 (느릴 뿐) → 다음 배치에서 다시 시도.
 	 */
 	private void ensureDeviceIndex(MongoCollection<Document> coll) {

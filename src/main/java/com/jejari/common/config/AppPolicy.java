@@ -27,8 +27,11 @@ public class AppPolicy {
 	public static final String REOFFER_HOLD_SEC = "waitlist.reoffer_hold_sec";
 	public static final String SEATMAP_CACHE_MS = "seatmap.cache_ms";
 	public static final String SALE_OPEN_INTERVAL_SEC = "sale.open_interval_sec";
+	/** 회원당 같은 운행 활성 대기 수 (WL-01) */
 	public static final String WAITLIST_MAX_PER_RUN = "waitlist.max_per_run";
+	/** 회원당 전체 활성 대기 수 (WL-01) */
 	public static final String WAITLIST_MAX_ACTIVE = "waitlist.max_active";
+	/** 위험 점수 1점당 대기 순서를 미루는 ms (concurrency.md §9.3) */
 	public static final String WAITLIST_PENALTY_MS_PER_POINT = "waitlist.penalty_ms_per_point";
 
 	// Map.of는 10쌍까지라 항목이 늘면서 ofEntries로 바꿨다
