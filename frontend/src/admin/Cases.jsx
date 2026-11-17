@@ -182,11 +182,11 @@ function Timeline({ tl, color, range }) {
         {range?.cut ? ` 의심 구간이 24시간보다 길어 마지막 24시간만 보여요 (서버 조회 한도).` : ''}</p>
       {tl && !tl.events.length && <p className="mut">이 기간 행동 로그가 없어요.</p>}
       <ol className="tl">
-        {rows.map((r) =>
+        {rows.map((r, idx) =>
           r.gap ? (
             <li key={r.key} className="gap">{r.gap} 뒤</li>
           ) : (
-            <li key={r.key} className={(r.e.inWindow ? 'hl' : 'out')}>
+            <li key={r.key} className={(r.e.inWindow ? 'hl' : 'out')} style={{ '--i': Math.min(idx, 40) }}>
               <span className="mono">{time(r.e.ts, true)}</span>
               <span className="who-c" style={{ color: color[r.e.account] }}>{r.e.account}</span>
               <span className="grow">

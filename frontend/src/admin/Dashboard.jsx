@@ -214,11 +214,18 @@ function Kpis({ d }) {
   );
 }
 
+/** 값이 바뀌면 카드가 노랗게 깜빡이고 숫자가 올라온다 → "방금 서버 값이 바뀌었다"가 보인다 */
 function Kpi({ label, n, unit, d, src, alarm }) {
+  const prev = useRef(n);
+  const [bump, setBump] = useState(0);
+  useEffect(() => {
+    if (prev.current !== n) setBump((b) => b + 1);
+    prev.current = n;
+  }, [n]);
   return (
-    <div className={'kpi' + (alarm ? ' alarm' : '')}>
+    <div key={bump} className={'kpi' + (alarm ? ' alarm' : '') + (bump ? ' flash' : '')}>
       <div className="l">{label}</div>
-      <div className="n">
+      <div className={'n' + (bump ? ' up' : '')}>
         {Number(n).toLocaleString()}
         {unit && <span style={{ fontSize: 18 }}>{unit}</span>}
       </div>
@@ -275,7 +282,7 @@ function RateChart({ history, windowSec }) {
           return (
             <g key={h.asOf}>
               {SERIES.map(([k, , color], j) => (
-                <rect key={k} x={x0 + j * bw} y={y(h[k])} width={bw - 1} height={Math.max(1, H - y(h[k]))} rx="2" fill={color} />
+                <rect key={k} className="chartbar" x={x0 + j * bw} y={y(h[k])} width={bw - 1} height={Math.max(1, H - y(h[k]))} rx="2" fill={color} />
               ))}
               {(i % 6 === 0 || i === history.length - 1) && (
                 <text x={x0 + bw * 1.5} y={H + 18} textAnchor="middle" fontSize="12" fill="var(--mut)">{h.asOf.slice(11, 16)}</text>

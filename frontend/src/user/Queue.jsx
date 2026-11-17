@@ -33,6 +33,9 @@ export default function Queue() {
   const [error, setError] = useState(null);
   const timer = useRef(null);
   const backoff = useRef(1);
+  const [going, setGoing] = useState(false); // 입장: 기차가 끝까지 달려 나가는 중
+  const [tick, setTick] = useState(0); // 앞사람 수가 줄면 숫자가 톡
+  const lastAhead = useRef(null);
 
   useEffect(() => {
     get(`/api/v1/runs/${runId}?from=${from}&to=${to}`).then(setRun).catch(() => {});
@@ -47,9 +50,14 @@ export default function Queue() {
       setSt(s);
       setFirst((f) => (f == null ? Math.max(1, s.ahead ?? 1) : f));
       setJoinedAt((t) => t || new Date());
+      if (s.ahead != null && lastAhead.current != null && s.ahead < lastAhead.current) setTick((n) => n + 1);
+      lastAhead.current = s.ahead ?? lastAhead.current;
       if (s.state === 'ADMITTED' && s.passToken) {
         savePass(runId, s.passToken, s.passExpiresAt);
-        navigate(`/runs/${runId}/seats?from=${from}&to=${to}`, { replace: true });
+        // 차례가 왔다: 기차가 끝까지 달려 나간 뒤 좌석 화면으로 (움직임 줄이기면 바로)
+        setGoing(true);
+        const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        timer.current = setTimeout(() => navigate(`/runs/${runId}/seats?from=${from}&to=${to}`, { replace: true }), reduce ? 0 : 1000);
         return;
       }
       timer.current = setTimeout(poll, Math.max(1, s.pollIntervalSec || 2) * 1000);
@@ -86,7 +94,7 @@ export default function Queue() {
   };
 
   const ahead = st?.ahead ?? 0;
-  const pct = first ? Math.min(100, Math.max(4, Math.round(((first - ahead) / first) * 100))) : 4;
+  const pct = going ? 100 : first ? Math.min(96, Math.max(4, Math.round(((first - ahead) / first) * 100))) : 4;
   const dep = run?.stops?.find((s) => s.stationId === run.fromStationId);
   const arr = run?.stops?.find((s) => s.stationId === run.toStationId);
 
@@ -118,7 +126,7 @@ export default function Queue() {
           <>
             <section style={{ padding: '22px 0 6px' }} aria-live="polite">
               <div style={{ fontSize: 15, color: '#B9C1D3' }}>내 순번</div>
-              <div className="q-num">{st ? (st.rank ?? st.ticketNo).toLocaleString() : '…'}</div>
+              <div key={tick} className={'q-num' + (tick ? ' tick' : '')}>{st ? (st.rank ?? st.ticketNo).toLocaleString() : '…'}</div>
               <div style={{ marginTop: 12, fontSize: 16 }}>
                 {st?.state === 'ADMITTED'
                   ? '차례가 됐어요! 좌석 고르는 화면으로 넘어가요.'
@@ -127,10 +135,23 @@ export default function Queue() {
                     : '번호표를 받고 있어요…'}
               </div>
             </section>
-            <div className="track" aria-hidden="true">
+            {/* 기차: 앞사람이 줄면 앞으로 가고(left 전환), 늘 바퀴가 돌고 연기가 난다. 입장하면 끝까지 달려 나간다 */}
+            <div className={'track' + (going ? ' go' : '')} aria-hidden="true">
               <div className="rail" /><div className="done" style={{ width: pct + '%' }} />
-              <span className="stn end" />
-              <svg className="train" style={{ left: pct + '%' }} viewBox="0 0 44 32"><rect x="2" y="4" width="40" height="22" rx="8" fill="var(--sign)" /><rect x="8" y="9" width="10" height="7" rx="2" fill="var(--ink)" /><rect x="22" y="9" width="10" height="7" rx="2" fill="var(--ink)" /><circle cx="12" cy="28" r="3" fill="#fff" /><circle cx="32" cy="28" r="3" fill="#fff" /></svg>
+              <span className={'stn end' + (going ? ' admit-flash' : '')} />
+              <div className="train" style={{ left: pct + '%' }}>
+                <span className="puff" style={{ left: 30 }} /><span className="puff" style={{ left: 30 }} /><span className="puff" style={{ left: 30 }} />
+                <svg viewBox="0 0 44 32" width="44" height="32">
+                  <g className="body">
+                    <rect x="2" y="4" width="40" height="22" rx="8" fill="var(--sign)" />
+                    <rect x="8" y="9" width="10" height="7" rx="2" fill="var(--ink)" />
+                    <rect x="22" y="9" width="10" height="7" rx="2" fill="var(--ink)" />
+                    <rect x="34" y="1" width="5" height="5" rx="1" fill="var(--sign)" />
+                  </g>
+                  <g className="wheel"><circle cx="12" cy="28" r="3.4" fill="#fff" /><path d="M12 25.2v5.6" stroke="var(--ink)" strokeWidth="1.2" /></g>
+                  <g className="wheel"><circle cx="32" cy="28" r="3.4" fill="#fff" /><path d="M32 25.2v5.6" stroke="var(--ink)" strokeWidth="1.2" /></g>
+                </svg>
+              </div>
             </div>
             <div className="qlbl">
               <span>번호표 {st ? `${st.ticketNo.toLocaleString()}번` : ''}{joinedAt ? ` 받음 ${joinedAt.toTimeString().slice(0, 8)}` : ''}</span>

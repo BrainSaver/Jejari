@@ -48,7 +48,10 @@ export default function UserLayout() {
           )}
         </header>
 
-        <Outlet />
+        {/* 경로가 바뀌면 key가 바뀌어 새로 그려지며 살짝 올라오며 나타난다 */}
+        <div key={pathname} className="page-enter" style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+          <Outlet />
+        </div>
 
         <nav className="tabbar" aria-label="주요 메뉴">
           {MENU.map(([to, icon, label]) => (
@@ -78,6 +81,7 @@ function useUnread(member, pathname) {
  * 로그인·회원가입 틀 (시안 U-01·U-02의 .app.auth): PC는 왼쪽 남색 그림판 + 오른쪽 폼, 모바일은 폼만
  */
 export function AuthLayout() {
+  const { pathname } = useLocation();
   return (
     <EaseRoot>
       <div className="app auth">
@@ -97,7 +101,9 @@ export function AuthLayout() {
         </aside>
         <div className="app-side">
           <EaseBar />
-          <Outlet />
+          <div key={pathname} className="page-enter" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+            <Outlet />
+          </div>
         </div>
       </div>
     </EaseRoot>

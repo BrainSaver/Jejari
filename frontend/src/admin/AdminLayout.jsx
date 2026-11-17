@@ -1,4 +1,4 @@
-import { Navigate, NavLink, Outlet, useNavigate } from 'react-router';
+import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { logout } from '../api/client.js';
 import Icon, { Seal } from './Icon.jsx';
 import { useAdminAuth } from './useAdminAuth.js';
@@ -11,6 +11,7 @@ const MENU = [
 export default function AdminLayout() {
   const { claims, checking } = useAdminAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   if (checking) return <div className="admin" />;
   if (!claims) return <Navigate to="/admin/login" replace />;
 
@@ -44,7 +45,9 @@ export default function AdminLayout() {
           </button>
         </nav>
         <main className="main">
-          <Outlet context={claims} />
+          <div key={pathname} className="page-enter">
+            <Outlet context={claims} />
+          </div>
         </main>
       </div>
     </div>

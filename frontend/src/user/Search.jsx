@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { get } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
 import { seoulToday } from '../lib/time.js';
+import { MiniTrain } from './RouteLine.jsx';
 
 /**
  * U-03 메인·운행 검색 (TRN-01~03). 비회원도 볼 수 있다.
@@ -21,6 +22,7 @@ export default function Search() {
   const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday() });
   const [state, setState] = useState({ runs: null, loading: false, error: null });
   const [sort, setSort] = useState('dep');
+  const [spun, setSpun] = useState(false); // 바꾸기 버튼이 반 바퀴씩 돈다
 
   // 역 목록. 주소에 조건이 없으면 서울 → 부산(없으면 앞의 두 역)을 기본으로
   useEffect(() => {
@@ -91,7 +93,7 @@ export default function Search() {
                   {stations.map((s) => <option key={s.stationId} value={s.stationId}>{s.stationName}</option>)}
                 </select>
               </label>
-              <button type="button" className="swap" aria-label="출발·도착 바꾸기" onClick={() => setForm({ ...form, from: form.to, to: form.from })}>
+              <button type="button" className={'swap' + (spun ? ' spun' : '')} aria-label="출발·도착 바꾸기" onClick={() => { setSpun(!spun); setForm({ ...form, from: form.to, to: form.from }); }}>
                 <Icon name="swap" />
               </button>
               <label style={{ display: 'block', textAlign: 'right' }}>
@@ -143,7 +145,10 @@ export default function Search() {
                 <button type="button" className={sort === 'dur' ? 'on' : ''} onClick={() => setSort('dur')}>소요 짧은 순</button>
               </div>
             </div>
-            {sorted.map((r) => <RunCard key={r.runId} r={r} from={q.from} to={q.to} name={name} />)}
+            {/* 카드가 차례로 올라오고, 노선 선 위로 기차가 출발역에서 도착역까지 달린다 (정렬을 바꾸면 다시) */}
+            <div className="stagger" key={sort} style={{ display: 'flex', flexDirection: 'column', gap: 'inherit' }}>
+              {sorted.map((r, i) => <RunCard key={r.runId} r={r} i={i} from={q.from} to={q.to} name={name} />)}
+            </div>
             {!sorted.length && (
               <div className="card" style={{ textAlign: 'center' }}>
                 <b>이 날짜에는 다니는 열차가 없어요.</b>
@@ -160,7 +165,7 @@ export default function Search() {
 
 // ------------------------------------------------------------ 운행 카드
 
-function RunCard({ r, from, to, name }) {
+function RunCard({ r, i, from, to, name }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [stops, setStops] = useState(null);
@@ -179,7 +184,7 @@ function RunCard({ r, from, to, name }) {
   };
 
   return (
-    <article className="ticket h">
+    <article className="ticket h" style={{ '--i': i }}>
       <div>
         <div className="row">
           <span className="tno grow"><b>{r.trainNo}</b> 열차 <span className="faint" style={{ fontWeight: 600 }}>{r.trainKind}</span></span>
@@ -187,7 +192,7 @@ function RunCard({ r, from, to, name }) {
         </div>
         <div className="route">
           <div><div className="t">{hm(r.departureAt)}</div><div className="s">{name(from)}</div></div>
-          <div className="mid"><i /><span>{duration(r.durationMin)}</span></div>
+          <div className="mid"><i><MiniTrain replay={view.action === 'book'} /></i><span>{duration(r.durationMin)}</span></div>
           <div className="end"><div className="t">{hm(r.arrivalAt)}</div><div className="s">{name(to)}</div></div>
         </div>
         <button type="button" className="link" onClick={toggle} style={{ border: 0, background: 'none', padding: '10px 0 0', cursor: 'pointer', font: 'inherit', fontSize: 14 }} aria-expanded={open}>

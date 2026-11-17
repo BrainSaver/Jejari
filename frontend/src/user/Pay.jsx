@@ -115,7 +115,7 @@ export default function Pay() {
                   <span className="tno grow"><b>{s.trainNo}</b> 열차<span className="dd">{shortDate(s.runDate)}</span></span>
                   <span className={'st ' + RES_STATUS[s.status][0]}>{RES_STATUS[s.status][1]}</span>
                 </div>
-                <RouteLine from={s.from} to={s.to} />
+                <RouteLine from={s.from} to={s.to} ride />
                 <div className="perf" />
                 <div className="kv"><span>좌석</span><span>{seatText(d.seats)} · {GRADE[d.seats[0]?.grade]}</span></div>
                 <div className="kv"><span>인원</span><span>{people(d.seats)}</span></div>
@@ -148,7 +148,7 @@ export default function Pay() {
               </section>
               <div className="stack" style={{ order: 5 }}>
                 <button className={'btn' + (expired ? ' off' : '')} type="button" disabled={busy || expired || !/^\d{12,19}$/.test(digits)} onClick={pay}>
-                  {busy ? '결제하는 중…' : `${won(s.totalAmount)} 결제하기`}
+                  {busy ? <><span className="spinner" />결제하는 중…</> : `${won(s.totalAmount)} 결제하기`}
                 </button>
                 <ConfirmButton className="btn ghost" confirm="한 번 더 누르면 좌석을 놓아요" onConfirm={cancel} disabled={expired}>
                   잡은 좌석 취소

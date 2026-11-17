@@ -84,7 +84,7 @@ export default function PayResult() {
         )}
         {state === 'fail' && (
           <section className="res">
-            <div className="mark" style={{ background: 'var(--stop-t)', color: 'var(--stop)' }}><Icon name="info" /></div>
+            <div className="mark fail" style={{ background: 'var(--stop-t)', color: 'var(--stop)' }}><Icon name="info" /></div>
             <h2>결제가 승인되지 않았어요</h2>
             <p className="mut" style={{ margin: 0 }}>
               {refunded ? '결제 금액은 환불돼요. ' : '돈은 빠져나가지 않았고, '}잡아 둔 좌석은 다른 분께 돌아갔어요.
@@ -92,12 +92,12 @@ export default function PayResult() {
           </section>
         )}
         {s && state !== 'fail' && (
-          <article className="ticket">
+          <article className={'ticket' + (state === 'ok' ? ' slammed' : '')}>
             <div className="row">
               <span className="tno grow"><b>{s.trainNo}</b> 열차<span className="dd">{shortDate(s.runDate)}</span></span>
               {state === 'ok' ? <span className="st go">확정</span> : <span className="st amber">확인 중</span>}
             </div>
-            <RouteLine from={s.from} to={s.to} />
+            <RouteLine from={s.from} to={s.to} ride={state === 'ok'} />
             <div className="kv" style={{ marginTop: 8 }}><span>좌석</span><span>{seatText(d.seats)}</span></div>
             <div className="kv"><span>결제 금액</span><span>{won(s.totalAmount)}</span></div>
             <div className="perf" />
@@ -105,7 +105,8 @@ export default function PayResult() {
               <span className="mut" style={{ fontSize: 13 }}>승차권 번호</span>
               {ticketNo ? <span className="code">{ticketNo}</span> : <span className="faint">확정되면 나와요</span>}
             </div>
-            {state === 'ok' && <span className="stamp" style={{ position: 'absolute', left: '46%', top: 108, fontSize: 20 }}>확정</span>}
+            {/* 확정 도장이 위에서 쾅 찍힌다 */}
+            {state === 'ok' && <span className="stamp slam" style={{ position: 'absolute', left: '46%', top: 108, fontSize: 20 }}>확정</span>}
           </article>
         )}
         {state === 'ok' && (

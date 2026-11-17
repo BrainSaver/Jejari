@@ -65,16 +65,18 @@ export default function Reservations() {
             <p style={{ margin: '10px 0 0' }}><Link className="link" to="/">열차 찾기</Link></p>
           </div>
         )}
-        {shown.map((r) => (
-          <ResCard key={r.reservationId} r={r} open={open === r.reservationId} onToggle={() => setOpen(open === r.reservationId ? null : r.reservationId)} onCancel={() => setSheet(r.reservationId)} onChanged={load} />
+        <div className="stagger" key={chip} style={{ display: 'flex', flexDirection: 'column', gap: 'inherit' }}>
+        {shown.map((r, i) => (
+          <ResCard key={r.reservationId} i={i} r={r} open={open === r.reservationId} onToggle={() => setOpen(open === r.reservationId ? null : r.reservationId)} onCancel={() => setSheet(r.reservationId)} onChanged={load} />
         ))}
+        </div>
       </main>
       {sheet && <CancelSheet id={sheet} onClose={() => setSheet(null)} onDone={() => { setSheet(null); load(); }} />}
     </>
   );
 }
 
-function ResCard({ r, open, onToggle, onCancel, onChanged }) {
+function ResCard({ r, i, open, onToggle, onCancel, onChanged }) {
   const navigate = useNavigate();
   const [d, setD] = useState(null);
   const [msg, setMsg] = useState(null);
@@ -99,7 +101,7 @@ function ResCard({ r, open, onToggle, onCancel, onChanged }) {
   const leftMin = r.from?.time ? Math.round((toMs(r.from.time) - Date.now()) / 60000) : null;
 
   return (
-    <article className="ticket h" style={{ ...(hold ? { boxShadow: '0 0 0 2px var(--amber) inset' } : {}), ...(dim ? { opacity: 0.7 } : {}) }}>
+    <article className="ticket h" style={{ '--i': i, ...(hold ? { boxShadow: '0 0 0 2px var(--amber) inset' } : {}), ...(dim ? { opacity: 0.7 } : {}) }}>
       <div>
         <div className="row">
           <span className="tno grow"><b>{r.trainNo}</b> 열차<span className="dd">{shortDate(r.runDate)}</span></span>

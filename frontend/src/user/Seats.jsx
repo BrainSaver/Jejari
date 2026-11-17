@@ -48,6 +48,7 @@ export default function Seats() {
   const [picked, setPicked] = useState([]); // [{seatId, seatNo, carNo, grade}]
   const [notice, setNotice] = useState(null); // {kind:'taken'|'error'|'expired', text}
   const [busy, setBusy] = useState(false);
+  const [lost, setLost] = useState([]); // 남이 먼저 잡은 좌석: 잠깐 흔들린다
   const idemKey = useRef(null);
 
   const total = people.ADULT + people.CHILD + people.SENIOR;
@@ -84,6 +85,8 @@ export default function Seats() {
       setNotice({ kind: 'expired' });
     } else if (code === 'SEAT_ALREADY_TAKEN') {
       setNotice({ kind: 'taken', text: `방금 다른 분이 ${picked.map((p) => p.seatNo).join(', ')} 중 일부를 먼저 잡았어요. 다른 좌석을 고르거나, 나란히 빈 좌석을 대신 골라 드릴게요.` });
+      setLost(picked.map((p) => p.seatId));
+      setTimeout(() => setLost([]), 1300);
       setPicked([]);
       loadMap();
     } else {
@@ -193,7 +196,7 @@ export default function Seats() {
                   ))}
                 </div>
                 {notice && notice.kind !== 'expired' && (
-                  <div className="alert stop" role="alert" style={{ flexWrap: 'wrap', order: 4 }}>
+                  <div key={notice.text} className="alert stop shake" role="alert" style={{ flexWrap: 'wrap', order: 4 }}>
                     <Icon name="info" />
                     <span className="grow">{notice.text}</span>
                     {notice.kind === 'taken' && (
@@ -202,7 +205,7 @@ export default function Seats() {
                   </div>
                 )}
                 {!map && <p className="mut" style={{ order: 5 }}>좌석 배치를 불러오는 중…</p>}
-                {car && <SeatMap car={car} picked={picked} onToggle={(s) => toggle(car, s)} />}
+                {car && <SeatMap car={car} picked={picked} lost={lost} onToggle={(s) => toggle(car, s)} />}
                 {car && (
                   <button type="button" className="btn ghost" style={{ order: 5 }} onClick={autoPick}>나란히 빈 좌석 골라 주기</button>
                 )}
@@ -212,7 +215,7 @@ export default function Seats() {
 
           <aside className="c2 stick">
             {pass && !expired && (
-              <div className="timer" style={{ order: 1 }}>
+              <div className={'timer' + (left < 60 ? ' late' : '')} style={{ order: 1 }}>
                 <Icon name="clock" />
                 <span className="grow">좌석을 고를 수 있는 시간</span>
                 <b>{mmss(left)}</b>
@@ -255,7 +258,7 @@ export default function Seats() {
                 <b className="num" style={{ fontSize: 22 }}>{sum.toLocaleString()}원</b>
               </div>
               <button type="button" className={'btn' + (picked.length === total && !expired ? '' : ' off')} disabled={picked.length !== total || busy || expired} onClick={hold}>
-                {busy ? '좌석을 잡는 중…' : picked.length === total ? '이 좌석 잡기' : `${total - picked.length}석 더 골라 주세요`}
+                {busy ? <><span className="spinner" />좌석을 잡는 중…</> : picked.length === total ? '이 좌석 잡기' : `${total - picked.length}석 더 골라 주세요`}
               </button>
               <p className="d-only mut" style={{ fontSize: 12.5, margin: 0 }}>잡은 좌석은 결제 기한까지 나만 결제할 수 있어요. 여러 좌석은 모두 잡히거나 하나도 안 잡혀요.</p>
             </div>
@@ -283,7 +286,7 @@ function grid(car) {
   return { cols, aisleAfter, rows: [...rows.entries()].sort((a, b) => a[0] - b[0]) };
 }
 
-function SeatMap({ car, picked, onToggle }) {
+function SeatMap({ car, picked, lost = [], onToggle }) {
   const { cols, aisleAfter, rows } = useMemo(() => grid(car), [car]);
   const mine = new Set(picked.map((p) => p.seatId));
   const windows = [cols[0], cols[cols.length - 1]].join('·');
@@ -292,7 +295,7 @@ function SeatMap({ car, picked, onToggle }) {
   const seatBtn = (s, label) => {
     if (!s) return <span />;
     const isMine = mine.has(s.seatId);
-    const cls = isMine ? 'mine' : s.state === 'EMPTY' ? 'free' : s.state === 'HELD' ? 'hold' : 'taken';
+    const cls = (isMine ? 'mine' : s.state === 'EMPTY' ? 'free' : s.state === 'HELD' ? 'hold' : 'taken') + (lost.includes(s.seatId) ? ' lost' : '');
     const state = isMine ? '내가 고른 좌석' : s.state === 'EMPTY' ? '빈 좌석' : s.state === 'HELD' ? '다른 분이 고르는 중' : '판매됨';
     return (
       <button

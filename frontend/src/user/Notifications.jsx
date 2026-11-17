@@ -67,7 +67,7 @@ export default function Notifications() {
               </span>
               <span className="faint" style={{ fontSize: 12, whiteSpace: 'nowrap', textAlign: 'right' }}>
                 {ago(n.createdAt)}
-                {!n.readAt && <><br /><span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: 'var(--stop)', marginTop: 6 }} aria-label="안 읽음" /></>}
+                {!n.readAt && <><br /><span className="unread-dot" style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: 'var(--stop)', marginTop: 6 }} aria-label="안 읽음" /></>}
               </span>
             </button>
           );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useOutletContext } from 'react-router';
 import { del, get, post, put } from '../api/client.js';
 import { usePolling } from '../hooks/usePolling.js';
@@ -228,12 +228,19 @@ export default function Runs() {
 
 function RunRow({ r, canWrite, act }) {
   const [editing, setEditing] = useState(false);
+  // 10초 새로고침 사이에 상태가 바뀌면(판매 오픈 스케줄러 등) 그 줄이 깜빡인다
+  const prevStatus = useRef(r.status);
+  const [changed, setChanged] = useState(0);
+  useEffect(() => {
+    if (prevStatus.current !== r.status) setChanged((c) => c + 1);
+    prevStatus.current = r.status;
+  }, [r.status]);
   const [openAt, setOpenAt] = useState(toInput(r.saleOpenAt));
   const scheduled = r.status === 'SCHEDULED';
   const pct = r.totalSeats ? Math.round((r.soldSeats / r.totalSeats) * 100) : 0;
 
   return (
-    <tr>
+    <tr key={changed} className={changed ? 'flash' : ''}>
       <td className="mono faint">#{r.runId}</td>
       <td className="mono">{r.trainNo}</td>
       <td>{md(r.runDate)}</td>
