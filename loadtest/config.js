@@ -50,6 +50,14 @@ export const API = {
   devRiskMembers: '/api/v1/dev/risk/dev-members',              // PUT ?from=&count=&score=
   devPolicy: (key) => `/api/v1/dev/policy/${key}`,             // PUT {"value":"..."}
 
+  // [실제] 열차 조회 (비회원 가능, TRN-01~03)
+  stations: '/api/v1/stations',                                // GET
+  runDetail: (runId) => `/api/v1/runs/${runId}`,               // GET ?from=&to=
+  // [실제] 예약·결제 (B 강동균·C 길동현). 시나리오 11이 쓴다. 아래 [가정] 경로(seatHold 등)는 Mock 서버용으로 남겨 둠
+  reservationHold: '/api/v1/reservations',                     // POST {runId, fromStationId, toStationId, seats:[{seatId, passengerType}], channel} + X-Queue-Token + Idempotency-Key
+  reservationPay: (id) => `/api/v1/reservations/${id}/payments`, // POST {cardNumber} + Idempotency-Key. 모의 PG: 끝자리 0 거절, 8 결과 모름, 그 외 승인
+  reservationCancel: (id) => `/api/v1/reservations/${id}/cancel`, // POST
+
   // [가정] 아래는 B·C·D 파트 구현 전: 경로·필드가 바뀔 수 있다
   seatHold: '/api/seats/hold',
   seatStatus: (runId, seatId) => `/api/runs/${runId}/seats/${seatId}`,
