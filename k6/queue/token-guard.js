@@ -5,7 +5,7 @@
 import http from 'k6/http';
 import exec from 'k6/execution';
 import { Rate, Counter } from 'k6/metrics';
-import { enter, leave, seats, waitUntilAdmitted, preflight } from './lib/queue.js';
+import { enter, leave, seats, waitUntilAdmitted, preflight, preflightSeatMap } from './lib/queue.js';
 
 const GUARD_BASE = Number(__ENV.MEMBER_BASE || 2000000);
 const OTHER_RUN = __ENV.OTHER_RUN_ID || '2002';
@@ -32,6 +32,7 @@ export const options = {
 // 시작 전에 앱·Redis 상태를 점검한다 (실패하면 이유를 알려 주고 중단)
 export function setup() {
   preflight();
+  preflightSeatMap();   // "정상 토큰은 열린다" 판정이 좌석 배치도(Oracle)에 달려 있어서 먼저 확인
 }
 
 // 403이 정상 응답인 요청들이라 실패로 세지 않게 한다

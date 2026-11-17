@@ -7,7 +7,7 @@ import { SharedArray } from 'k6/data';
 import { Counter, Rate } from 'k6/metrics';
 import http from 'k6/http';
 import {
-  parseCsv, login, enterQueue, leaveQueue, getSeatMap, preflight,
+  parseCsv, login, enterQueue, leaveQueue, getSeatMap, preflight, preflightSeatMap,
 } from '../lib/helpers.js';
 import { RUN_ID } from '../config.js';
 
@@ -36,6 +36,7 @@ export const options = {
 // 시작 전에 앱·Redis 상태를 점검한다 (실패하면 이유를 알려 주고 중단)
 export function setup() {
   preflight();
+  preflightSeatMap();   // 좌석 배치도는 실제 API(Oracle). "정상 토큰은 열린다" 판정 전에 확인
 }
 
 // 막혀야 하는 요청이라 403은 정상 응답이다 (http_req_failed로 세지 않는다)
