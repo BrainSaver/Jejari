@@ -174,8 +174,9 @@ class ReservationCancelInfraTest {
 		String payload = one("""
 				SELECT payload FROM outbox_event WHERE aggregate_id = TO_CHAR(?) AND event_type = 'RESERVATION_CANCELED'""", r);
 		assertThat(payload).contains("\"reason\":\"USER\"").contains("\"cancelFee\"").contains("\"seats\"");
-		// 커밋 뒤 좌석 키는 대기자 먼저 (§8.2)
-		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, s1, 0))).isEqualTo("REOFFER:" + r);
+		// 커밋 뒤 좌석 키는 대기자 먼저 REOFFER (§8.2). seat-release 소비자가 이벤트를 바로 받아 대기자가 없으면
+		// 일반 판매로 풀 수 있으므로(키 삭제) 둘 중 하나. 판매됨(SOLD)으로 남아 있으면 안 된다
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, s1, 0))).isIn("REOFFER:" + r, null);
 	}
 
 	@Test
