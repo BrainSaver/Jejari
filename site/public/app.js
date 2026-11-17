@@ -2260,8 +2260,21 @@ function rmPendingOpen() {
 // 문서는 섹션 단위, 화면설계는 화면, 로드맵은 카드·칸·남긴 말·지금 하는 일. 받아 둔 내용(CACHE)을 써서 빠르다
 const SR = { idx: null, ref: null, sel: 0, hits: [] };
 async function searchIndex() {
-  if (SR.idx && SR.ref === S.ref && SR.rev === RM.rev) return SR.idx;
+  if (SR.idx && SR.ref === S.ref && SR.rev === RM.rev && SR.me === S.me) return SR.idx;
   const out = [];
+  // 메뉴 페이지와 탭 (이름으로 바로 가기)
+  const go = (h) => () => { location.hash = h; };
+  const PAGES = [
+    ['홈', '#/', '첫 화면 최근 수정'], ['로드맵', '#/roadmap', '할 일 진행 보드 roadmap'],
+    ['로드맵 · 흐름도', '#/roadmap/flow', '다이어그램 흐름 따라가기 시뮬레이션 지금 하는 일'], ['로드맵 · 할 순서', '#/roadmap/order', '단계 순서 먼저 끝나야 하는 일'],
+    ['로드맵 · 보드', '#/roadmap/board', '카드 체크 기능 영역'], ['로드맵 · 파트별 할 일·받은 말', '#/roadmap/parts', '받은 말 메시지 파트 A B C D E'],
+    ['로드맵 · 의존 관계', '#/roadmap/deps', '선행 작업 기다림 표'], ['로드맵 · 최근 변경', '#/roadmap/log', '기록 로그 히스토리'],
+    ['기획서', '#/doc/plan', 'README 프로젝트 개요 역할'], ['기능설계', '#/doc/func', '기능설계서 API 상태 전이'],
+    ['DB설계 · DB설계서', '#/db/doc', '테이블 저장소'], ['DB설계 · ERD', '#/db/erd', 'ERD 편집기 스키마 테이블 관계'],
+    ['화면설계', '#/ui', 'UI 화면 시안'], ['동시성', '#/doc/conc', 'concurrency 트랜잭션 락 Redis Lua'], ['팀원 문서', '#/people', '개발일지 기능 문서 트러블슈팅 devlog'],
+    ...(S.me ? [['DB설계 · ERD 수정 내보내기', '#/db/exp', 'export json'], ['수정 기록', '#/history', '커밋 히스토리'], ['소스트리', '#/tree', '브랜치 그래프 git']] : []),
+  ];
+  for (const [t, h, k] of PAGES) out.push({ kind: 'page', group: '페이지·탭', title: t, text: k, go: go(h) });
   const docs = await Promise.all(Object.values(DOCS).map((d) => fetchFile(d.path, S.ref).catch(() => null).then((f) => [d, f])));
   for (const [d, f] of docs) {
     if (!f) continue;
@@ -2285,18 +2298,19 @@ async function searchIndex() {
     for (const m of RM.data.msgs || []) if (m.text) out.push({ kind: 'msg', group: '남긴 말', title: `${rmWho(m.who).replace(/<[^>]+>/g, '')} → ${partName(m.to)} · ${m.code || m.title || ''}`, text: m.text, go: () => goRm({ card: m.item }, 'board') });
     for (const n of RM.data.now || []) if (n.text) out.push({ kind: 'now', group: '지금 하는 일', title: `${partName(n.part)} · ${areaLabel(n.area)}`, text: n.text, go: () => goRm({ area: n.area }, 'flow') });
   } catch {}
-  SR.idx = out; SR.ref = S.ref; SR.rev = RM.rev;
+  SR.idx = out; SR.ref = S.ref; SR.rev = RM.rev; SR.me = S.me;
   return out;
 }
 const srTerms = (q) => q.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
 function srFind(q) {
   const terms = srTerms(q); if (!terms.length || !SR.idx) return [];
-  const order = { card: 0, area: 1, ui: 2, doc: 3, msg: 4, now: 5 };
+  const order = { page: -1, card: 0, area: 1, ui: 2, doc: 3, msg: 4, now: 5 };
   return SR.idx.map((e) => {
     const t = e.title.toLowerCase(), x = e.text.toLowerCase();
     let score = 0;
     for (const w of terms) { if (t.includes(w)) score += t.startsWith(w) ? 6 : 4; else if (x.includes(w)) score += 1; else return null; }
     if (e.done) score -= 0.5;
+    if (e.kind === 'page') score += 2;
     return { e, score };
   }).filter(Boolean).sort((p, q2) => q2.score - p.score || order[p.e.kind] - order[q2.e.kind]).slice(0, 40).map((x) => x.e);
 }
@@ -2312,10 +2326,10 @@ function srSnippet(text, terms) {
   const s = Math.max(0, i - 40);
   return (s ? '…' : '') + text.slice(s, s + 130) + (s + 130 < text.length ? '…' : '');
 }
-const SR_ICON = { card: 'check', area: 'map', ui: 'monitor', doc: 'doc', msg: 'msg', now: 'pencil' };
+const SR_ICON = { page: 'link', card: 'check', area: 'map', ui: 'monitor', doc: 'doc', msg: 'msg', now: 'pencil' };
 function searchOpen(q0) {
   const m = openModal(`<div class="sr">
-      <div class="sr-box">${svgI('search', 18)}<input type="search" id="srQ" placeholder="문서·화면·로드맵 카드·남긴 말 검색" autocomplete="off" aria-label="검색"><kbd>Esc</kbd></div>
+      <div class="sr-box">${svgI('search', 18)}<input type="search" id="srQ" placeholder="페이지·탭, 문서, 화면, 로드맵 카드·남긴 말 검색" autocomplete="off" aria-label="검색"><kbd>Esc</kbd></div>
       <div class="sr-list" id="srList" role="listbox"><p class="muted sr-hint">찾을 말을 쓰세요. 띄어 쓰면 모두 들어 있는 것만 찾아요. 예: <code>결제 saga</code>, <code>RSV-02</code>, <code>강동균 좌석</code></p></div>
       <p class="muted sr-foot">↑↓로 고르고 Enter로 열어요 · 어디서든 <kbd>Shift</kbd> 두 번, <kbd>Ctrl</kbd>+<kbd>K</kbd>, <kbd>/</kbd></p></div>`, { wide: true });
   m.classList.add('sr-modal');
@@ -2323,6 +2337,13 @@ function searchOpen(q0) {
   let ready = false;
   const draw = () => {
     const q = input.value.trim(); const terms = srTerms(q);
+    if (!q && ready) {
+      // 아무것도 안 쳤으면 페이지·탭 목록
+      SR.hits = SR.idx.filter((e) => e.kind === 'page'); SR.sel = 0;
+      list.innerHTML = `<div class="sr-group">페이지·탭</div>${SR.hits.map((e, i) => `<button class="sr-item${i ? '' : ' on'}" data-i="${i}" role="option"><span class="sr-ic">${svgI('link', 16)}</span><span class="sr-txt"><b>${esc(e.title)}</b></span></button>`).join('')}`;
+      $$('.sr-item', list).forEach((b) => { b.addEventListener('click', () => srGo(+b.dataset.i)); b.addEventListener('mousemove', () => srSel(+b.dataset.i, list, false)); });
+      return;
+    }
     if (!q) { SR.hits = []; return; }
     if (!ready) { list.innerHTML = '<p class="muted sr-hint">찾는 중…</p>'; return; }
     SR.hits = srFind(q); SR.sel = 0;
