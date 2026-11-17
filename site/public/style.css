@@ -650,7 +650,7 @@ input[type=date]{font:inherit;color:var(--fg);background:var(--bg);border:1px so
 .rm-card.mine.m-done{border-style:dashed}
 .rm-mytag{align-self:flex-start;display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;border:1.5px solid var(--pc);color:var(--pc)}
 .rm-mytag.m-done{border-color:var(--add-fg);color:var(--add-fg)}
-.fl-node.mine{border:2px solid var(--accent)}
+.fl-node.mine{border:2.5px solid var(--pc)}
 .fl-mine{margin-left:auto;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;font-size:12px;font-weight:700;padding:1px 8px;border:1.5px solid var(--pc);color:var(--pc);border-radius:999px}
 .fl-mine.m-done{border-color:var(--add-fg);color:var(--add-fg)}
 .fl-who.me{border-color:var(--pc);border-width:2px}
