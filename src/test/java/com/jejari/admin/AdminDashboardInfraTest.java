@@ -22,6 +22,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.jejari.auth.ActorType;
+import com.jejari.auth.AdminRole;
 import com.jejari.auth.jwt.AccessTokenIssuer;
 import com.jejari.seat.SeatHoldService;
 import com.jejari.seat.SeatHoldService.HoldCommand;
@@ -96,6 +97,22 @@ class AdminDashboardInfraTest {
 		mvc.perform(get(url()).header("Authorization", bearer(ActorType.MEMBER, MEMBER)))
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.code").value("ADMIN_FORBIDDEN"));
+	}
+
+	@Test
+	void 등급이_없는_관리자_토큰은_401_권한_부족이_아니라_위조로_본다() throws Exception {
+		// JwtPrincipalConverter가 adm 클레임 없는 ADMIN 토큰을 위조·손상으로 보고 토큰 자체를 거절한다.
+		// 그래서 403(권한 부족)이 아니라 401이다
+		mvc.perform(get(url()).header("Authorization", bearer(ActorType.ADMIN, ADMIN)))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void REVIEWER_SUPERVISOR도_볼_수_있다_VIEWER가_가장_낮은_등급() throws Exception {
+		for (AdminRole role : new AdminRole[] { AdminRole.REVIEWER, AdminRole.SUPERVISOR }) {
+			mvc.perform(get(url()).header("Authorization", adminBearer(role)))
+					.andExpect(status().isOk());
+		}
 	}
 
 	@Test
@@ -252,8 +269,13 @@ class AdminDashboardInfraTest {
 				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
 	}
 
+	/** 설계서가 정한 최소 등급 VIEWER로 본다 */
 	private String adminBearer() {
-		return bearer(ActorType.ADMIN, ADMIN);
+		return adminBearer(AdminRole.VIEWER);
+	}
+
+	private String adminBearer(AdminRole role) {
+		return "Bearer " + tokens.issue(ActorType.ADMIN, ADMIN, UUID.randomUUID().toString(), role).value();
 	}
 
 	private String bearer(ActorType type, long id) {
