@@ -198,13 +198,25 @@ async function verify(runId) {
 }
 
 async function measure(opts) {
-  const { scenarioIds, strategyIds, rounds, seed } = opts
+  const { scenarioIds, strategyIds, rounds, seed, warmupAll } = opts
   const picked = SCENARIOS.filter((s) => scenarioIds.includes(s.id))
   const strats = STRATEGIES.filter((s) => strategyIds.includes(s.id))
   const total = picked.length * strats.length
   let done = 0
 
   log(`측정 시작 — 시나리오 ${picked.length}개 × 전략 ${strats.length}개 × ${rounds}회차 (워밍업 1회 제외)`)
+
+  // 전체 예열: 앱을 막 띄운 직후 처음 재는 칸은 JIT가 덜 데워져 회차마다 TPS가 오른다
+  // (2026-11-17 측정: 시나리오 1 A안 355 → 568). 칸별 워밍업 1회로는 모자라 모든 칸을 한 번씩 먼저 돌린다
+  if (warmupAll) {
+    log(`전체 예열 — 모든 칸 ${total}개를 한 번씩 돌리고 버립니다`)
+    for (const sc of picked) {
+      for (const st of strats) {
+        if (active && active.cancelled) { log('사용자가 중지했습니다.', 'warn'); return [] }
+        try { await oneRound(sc, st.id, seed) } catch (e) { log(`예열 실패 (${sc.id}/${st.id}) — ${e.message}`, 'warn') }
+      }
+    }
+  }
 
   const results = []
   for (const sc of picked) {
@@ -375,6 +387,7 @@ const server = http.createServer(async (req, res) => {
       ? body.strategies : STRATEGIES.map((s) => s.id)
     const rounds = Math.max(1, Math.min(15, Number(body.rounds) || 3))
     const seed = Number(body.seed) || 42
+    const warmupAll = body.warmupAll !== false // 기본으로 켠다
 
     const checks = await preflight()
     const bad = checks.filter((c) => !c.ok)
@@ -388,7 +401,7 @@ const server = http.createServer(async (req, res) => {
     ;(async () => {
       let results = []
       try {
-        results = await measure({ scenarioIds, strategyIds, rounds, seed })
+        results = await measure({ scenarioIds, strategyIds, rounds, seed, warmupAll })
       } catch (e) {
         log(`측정 중 오류: ${e.message}`, 'error')
       }
@@ -396,7 +409,7 @@ const server = http.createServer(async (req, res) => {
       const payload = {
         measuredAt: new Date().toISOString(),
         appUrl: APP_URL,
-        rounds, seed,
+        rounds, seed, warmupAll,
         // 측정 환경 (예: "앱 CPU 0-1 · Oracle·Redis CPU 2 · k6 CPU 3"). 회차 편차를 읽을 때 같이 봐야 한다
         layout: process.env.BENCH_LAYOUT || null,
         note: 'k6 HTTP 수준 재측정. 실험 테이블(exp_seat·exp_seat_inv) 기준이라 Python 측정과 같은 조건.',
