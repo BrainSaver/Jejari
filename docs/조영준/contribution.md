@@ -13,6 +13,7 @@
 | 지표 | 목표 | 결과 | 측정 방법 |
 |---|---|---|---|
 | TPS·응답 시간 | 개선 전후 수치 확보 | **첫 기준(로컬)**: 정상 사용자 50명 예매 성공 100%, 예매 p95 2.22초, 좌석 선점 p95 141ms. 개선 측정은 공용 서버에서 | k6 시나리오 11 + Grafana |
+| 봇 탐지율 / 오탐률 | 90% 이상 / 5% 이하 | **첫 측정(로컬)**: 탐지율 100% (봇 24명), 오탐률 0% (정상 40명). 문턱을 확실히 넘는 봇이라 "끝까지 동작" 확인이고, 문턱 근처 봇으로 경계 측정이 다음 | k6 시나리오 12 + `eval_risk.sh` (`synthetic_label` ↔ `suspicious_case`) |
 | 무효화된 토큰 재사용 차단율 | 100% | 단위 테스트 + 실제 Oracle 수동 확인에서 재사용 시 세션 폐기 확인 | `AuthTokenServiceTest`, 2026-11-16 E2E |
 | 설정 오류로 인한 잘못된 기동 | 0건 | 시간대·Redis 정책이 틀리면 기동 거부 (실제로 `allkeys-lru`에서 거부 확인) | `TimeZoneVerifier`, `RedisConfigVerifier` |
 | 뼈대 위 팀 전체 테스트 | 인프라 없이 통과 | 306개 통과 (2026-11-16 main) | `./gradlew build` |
@@ -78,6 +79,7 @@
 | 관리자 로그인·세부 권한 (AUTH-05) | [관리자-로그인](features/관리자-로그인.md) |
 | 모니터링 대시보드 (INF-04·ADM-10) | [모니터링-대시보드](features/모니터링-대시보드.md) |
 | k6 정상 사용자 전체 흐름 (DATA-03, 시나리오 11) | [부하테스트-정상사용자-흐름](features/부하테스트-정상사용자-흐름.md) |
+| k6 봇 탐지 평가 (DATA-03, 시나리오 12) | [부하테스트-봇-탐지](features/부하테스트-봇-탐지.md) |
 | 멀티 인스턴스 대비 코딩 규칙 (초안, 팀 확인 전) | [멀티인스턴스-코딩-규칙](features/멀티인스턴스-코딩-규칙.md) |
 
 ## 5. 다른 파트와의 연결
@@ -87,7 +89,8 @@
 | 전체 | `BusinessException`·`ErrorCode`, `AuthPrincipal`, `Clock` | 실패는 도메인별 ErrorCode enum으로 던지기, 로그인 사용자는 `@AuthenticationPrincipal AuthPrincipal`, 시각은 `now(clock)` |
 | D 강다인 | 로그인 검증 ↔ 토큰 발급 | 비밀번호(Argon2id)·잠금·`login_attempt`는 D, 검증 후 `authTokenService.issue(MEMBER, memberId, clientInfo)` + `tokenResponses.ok()`는 E. **✅ 연동 완료** (`LoginService` → `AuthTokenService`, `MemberAuthController` → `tokenResponses.ok()`), 2026-11-16 가입 → 로그인 → 대기열 진입까지 실제로 확인. **AUTH-05에서 `PasswordHasher`·`AuthLimiter`·`AuthPolicy`·`LoginAttemptLog` 재사용**, `LoginAttemptLog.recordAdmin()` 추가(기존 `record()` 동작 그대로, 문서에 `actor_type` 필드가 함께 남음) |
 | A 김성원 | 대기열 개발 모드 · Redis | 개발 모드(`X-Member-Id`)는 로컬·부하 테스트 전용, 공용 서버에선 꺼야 함. Redis 즉시 실패(`RedisFailFastConfig`)와 기동 점검은 함께 동작. AUTH-05에서 `Purpose.ADMIN_LOGIN`(enum 끝에 추가, 기존 해시 영향 없음)과 정규화 규칙 추가 |
-| A 김성원 | 부하 테스트 모음 `loadtest/` | 같은 틀에 합류해 시나리오 11·`lib/journey.js` 추가, `config.js`에 실제 예약·결제 경로 추가(기존 `[가정]` 경로·Mock 시나리오는 그대로). 봇 시뮬레이션(07)은 E가 실제 앱으로 옮길 예정 |
+| A 김성원 | 부하 테스트 모음 `loadtest/` | 같은 틀에 합류해 시나리오 11·`lib/journey.js` 추가, `config.js`에 실제 예약·결제 경로 추가(기존 `[가정]` 경로·Mock 시나리오는 그대로). 봇 시뮬레이션은 07(Mock용)을 두고 실제 앱용 시나리오 12·`tools/eval_risk.sh`를 새로 추가, `lib/journey.js`에 기기 ID·운행 검색 추가 |
+| D 강다인 | 위험 점수 ↔ 봇 시나리오 | 봇 4종이 각자 한 규칙(FAST_CLICK·SAME_SEAT_RETRY·MULTI_ACCOUNT_SYNC·CANCEL_AFTER_PAY)을 넘게 만들고 정답은 `synthetic_label`에. **공유 필요**: `member_device`를 채우는 곳이 없어 기기 점수의 연결 계정이 0 (평가는 Mongo `behavior_log`로 대신 연결) |
 | B 강동균 | ERD DDL · 시드 | Oracle 첫 기동 때 DDL → 시드 자동 적재. 스키마가 바뀌면 볼륨 재생성 |
 | 팀장 길동현 | 결정 요청 | 공용 서버 후보·사양, GitHub 결제 잠금, 기능설계서 9장 에러 코드 3개 추가, 코딩 규칙 공용 문서화 |
 
