@@ -159,6 +159,26 @@ hr.sep{border:0;border-top:2px solid var(--line2);margin:18px 0}
   });
   $$('[data-open]').forEach(function(b){b.addEventListener('click',function(){var s=document.getElementById(b.getAttribute('data-open'));if(s)s.hidden=false;});});
   $$('.scrim').forEach(function(s){s.addEventListener('click',function(e){if(e.target===s||e.target.closest('[data-close]'))s.hidden=true;});});
+
+  // 어르신 모드: 큰 글씨, 화면마다 안내 한 줄, 음성 안내, 전화 도움. 기본은 꺼짐, 켜면 다른 화면으로 가도 유지
+  // (시안은 사이트 미리보기 틀 안에서 열려 localStorage를 못 쓰므로 window.name에도 저장. 실제 앱은 회원 설정에 저장)
+  var KEY='jejari-senior:';
+  function load(){try{var s=localStorage.getItem('jejari-senior');if(s)return JSON.parse(s);}catch(e){}
+    if(window.name.indexOf(KEY)===0){try{return JSON.parse(window.name.slice(KEY.length));}catch(e){}}return {on:0,z:1.15,voice:0};}
+  function save(o){window.name=KEY+JSON.stringify(o);try{localStorage.setItem('jejari-senior',JSON.stringify(o));}catch(e){}}
+  var st=load(),root=document.documentElement;
+  function speak(){if(!st.on||!st.voice||!window.speechSynthesis)return;var g=document.querySelector('.guide span');if(!g)return;
+    try{speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(g.textContent);u.lang='ko-KR';u.rate=.9;speechSynthesis.speak(u);}catch(e){}}
+  function apply(){root.classList.toggle('senior',!!st.on);root.style.setProperty('--z',st.z);
+    $$('[data-senior]').forEach(function(b){b.setAttribute('aria-pressed',st.on?'true':'false');var l=b.querySelector('.lbl');if(l)l.textContent=b.classList.contains('sb-x')?'어르신 모드 끄기':(st.on?'어르신 모드 켜짐':'어르신 모드');});
+    $$('[data-z]').forEach(function(b){var on=+b.getAttribute('data-z')===+st.z;b.classList.toggle('on',on);b.setAttribute('aria-pressed',on?'true':'false');});
+    $$('[data-voice]').forEach(function(b){b.setAttribute('aria-pressed',st.voice?'true':'false');b.textContent=st.voice?'음성 안내 끄기':'음성 안내 듣기';});}
+  document.addEventListener('click',function(e){var b=e.target.closest('[data-senior],[data-z],[data-voice]');if(!b)return;
+    if(b.hasAttribute('data-senior'))st.on=st.on?0:1;
+    if(b.hasAttribute('data-z'))st.z=+b.getAttribute('data-z');
+    if(b.hasAttribute('data-voice')){st.voice=st.voice?0:1;if(!st.voice&&window.speechSynthesis)speechSynthesis.cancel();}
+    save(st);apply();speak();});
+  apply();speak();
 })();
 </script>
 </body>
