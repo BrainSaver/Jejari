@@ -11,6 +11,8 @@ public final class QueueKeys {
 	public static String active(long runId) { return "queue:active:" + runId; }
 	public static String throughput(long runId) { return "queue:throughput:" + runId; }
 	public static String pass(long runId, long memberId) { return "queue:pass:" + runId + ":" + memberId; }
+	/** 입장 토큰을 이미 한 번 연장했다는 표시. 토큰과 같이 사라진다 */
+	public static String passExt(long runId, long memberId) { return "queue:passext:" + runId + ":" + memberId; }
 
 	/** risk:{subjectType}:{hash}. subjectType은 CI / PAYMENT / DEVICE */
 	public static String risk(String subjectType, String hash) { return "risk:" + subjectType + ":" + hash; }

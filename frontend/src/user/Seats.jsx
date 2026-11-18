@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ApiError, get, post } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
-import { clearPass, loadPass } from '../lib/pass.js';
+import { clearPass, loadPass, savePass } from '../lib/pass.js';
 import { useMember } from './useMember.js';
 
 /**
@@ -37,7 +37,7 @@ export default function Seats() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [pass] = useState(() => loadPass(runId));
+  const [pass, setPass] = useState(() => loadPass(runId));
   const left = useCountdown(pass?.expiresAt);
   const expired = !pass || left <= 0;
 
@@ -50,6 +50,7 @@ export default function Seats() {
   const [busy, setBusy] = useState(false);
   const [lost, setLost] = useState([]); // 남이 먼저 잡은 좌석: 잠깐 흔들린다
   const idemKey = useRef(null);
+  const [extending, setExtending] = useState(false);
 
   const total = people.ADULT + people.CHILD + people.SENIOR;
   const passHeader = pass ? { 'X-Queue-Token': pass.token } : undefined;
@@ -93,6 +94,27 @@ export default function Seats() {
       setNotice({ kind: 'error', text: MESSAGES[code] || e.message || '좌석을 잡지 못했어요.' });
     }
   }
+
+  // 좌석 고르는 시간 늘리기: 서버가 1회만 허용한다 (QUEUE_EXTEND_USED). 성공하면 새 만료 시각으로 바꾼다
+  const extend = async () => {
+    if (extending || !pass || pass.extended) return;
+    setExtending(true);
+    try {
+      const r = await post(`/api/v1/runs/${runId}/queue/me/extend`);
+      savePass(runId, r.passToken, r.passExpiresAt, true);
+      setPass({ token: r.passToken, expiresAt: r.passExpiresAt, extended: true });
+      setNotice(null);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'QUEUE_EXTEND_USED') {
+        savePass(runId, pass.token, pass.expiresAt, true);
+        setPass({ ...pass, extended: true });
+      } else {
+        handleError(e);
+      }
+    } finally {
+      setExtending(false);
+    }
+  };
 
   const car = map?.cars.find((c) => c.carNo === carNo);
   const fareOf = (grade) => run?.fares?.[grade] ?? 0;
@@ -220,6 +242,12 @@ export default function Seats() {
                 <span className="grow">좌석을 고를 수 있는 시간</span>
                 <b>{mmss(left)}</b>
               </div>
+            )}
+            {pass && !expired && (
+              <button type="button" className={'btn sm' + (pass.extended ? ' off' : ' soft')} style={{ order: 1 }}
+                disabled={pass.extended || extending} onClick={extend}>
+                {extending ? <><span className="spinner" />늘리는 중…</> : pass.extended ? '시간을 이미 늘렸어요 (1회)' : '5분 더 쓰기 (1회만 가능)'}
+              </button>
             )}
             <div className="card" style={{ padding: '14px 16px', order: 2 }}>
               <div className="row">
