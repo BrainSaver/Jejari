@@ -38,9 +38,15 @@ FEATURES = [
     "accounts_on_device", "accounts_on_card", "accounts_on_ip",
     "min_sync_gap_s_log",        # 같은 기기·카드·IP를 쓰는 다른 계정과 첫 선점 시각 차이(초)의 최솟값, log1p
     "device_missing",            # 기기 ID 헤더가 없음
-    "first_hold_after_open_log", # 판매 오픈(첫 이벤트 기준) 뒤 첫 선점까지 초, log1p
+    "first_hold_after_open_log", # 그 운행의 첫 이벤트(≈ 판매 오픈) 뒤 첫 선점까지 초, log1p
     "account_age_days_log",
+    "n_runs",                    # 몇 개 운행에 손댔나
+    "distinct_devices", "distinct_ips",  # 한 계정이 쓴 기기·IP 수 (회전·저장소 막힘)
+    "hold_unpaid_ratio",         # 잡고 결제하지 않은 선점 비율 (좌석 묶어 두기)
+    "handoff_in",                # 남이 취소한 좌석을 60초 안에 잡은 횟수 (넘겨받기)
+    "handoff_out",               # 내가 취소한 좌석을 남이 60초 안에 잡은 횟수 (넘겨주기)
 ]
+HANDOFF_SEC = 60
 
 
 def ts(s: str) -> datetime:
@@ -73,7 +79,39 @@ def pct(xs, q):
 
 def build(folder: str) -> list[dict]:
     events, members = load(folder)
-    t_open = min((ts(e["ts"]) for evs in events.values() for e in evs), default=None)
+    # 운행마다 첫 이벤트 시각 ≈ 판매 오픈 (실제 오픈 시각은 행동 로그에 없다)
+    run_open = {}
+    for evs in events.values():
+        for e in evs:
+            t = ts(e["ts"])
+            if e.get("run_id") is not None and (e["run_id"] not in run_open or t < run_open[e["run_id"]]):
+                run_open[e["run_id"]] = t
+
+    # 좌석 넘겨주기: 취소된 예약의 좌석이 풀린 시각·계정, 성공한 선점의 좌석·시각·계정
+    resv_owner, resv_seats_all, released, grabbed = {}, {}, [], []
+    for m, evs in events.items():
+        for e in evs:
+            meta = e.get("meta") or {}
+            if e["event_type"] == "SEAT_HOLD" and e["response_status"] < 300 and meta.get("reservationId"):
+                resv_owner[meta["reservationId"]] = m
+                resv_seats_all[meta["reservationId"]] = meta.get("seatIds") or []
+                grabbed.append((ts(e["ts"]), m, set(meta.get("seatIds") or [])))
+    for m, evs in events.items():
+        for e in evs:
+            r = (e.get("meta") or {}).get("reservationId")
+            if e["event_type"] == "CANCEL" and e["response_status"] < 300 and r in resv_seats_all:
+                released.append((ts(e["ts"]), m, set(resv_seats_all[r])))
+    handoff_in, handoff_out = defaultdict(int), defaultdict(int)
+    by_seat = defaultdict(list)
+    for t, m, seats in released:
+        for st in seats:
+            by_seat[st].append((t, m))
+    for t, m, seats in grabbed:
+        for st in seats:
+            for rt, rm in by_seat.get(st, ()):
+                if rm != m and 0 <= (t - rt).total_seconds() <= HANDOFF_SEC:
+                    handoff_in[m] += 1
+                    handoff_out[rm] += 1
 
     # 연결: 기기·카드·IP → 계정들, 계정 → 첫 선점 시각
     by_dev, by_card, by_ip = defaultdict(set), defaultdict(set), defaultdict(set)
@@ -104,6 +142,12 @@ def build(folder: str) -> list[dict]:
     ip_of = lambda m: {e["ip_hash"] for e in events[m] if e.get("ip_hash")}
     card_of = lambda m: set(members.get(m, {}).get("cards") or []) | {
         (e.get("meta") or {}).get("cardHash") for e in events[m] if (e.get("meta") or {}).get("cardHash")}
+
+    def first_hold_log(evs):
+        for e in evs:
+            if e["event_type"] == "SEAT_HOLD" and e.get("run_id") in run_open:
+                return math.log1p(max(0.0, (ts(e["ts"]) - run_open[e["run_id"]]).total_seconds()))
+        return math.nan
 
     rows = []
     for m, info in members.items():
@@ -138,7 +182,7 @@ def build(folder: str) -> list[dict]:
 
         rows.append({
             "member_id": m, "label": info.get("label"), "strategy": info.get("strategy"),
-            "group": info.get("group"), "source": info.get("source"),
+            "group": info.get("group"), "source": info.get("source"), "family": info.get("family"),
             "n_events": len(evs), "n_view": typ.count("VIEW_TRAIN") + typ.count("VIEW_SEAT"),
             "n_hold": len(holds), "n_pay": len(pays), "n_cancel": len(cancels),
             "browse_before_hold": typ[:first_view_hold].count("VIEW_TRAIN"),
@@ -159,8 +203,14 @@ def build(folder: str) -> list[dict]:
             "accounts_on_ip": max((len(by_ip[i]) for i in ip_of(m)), default=0),
             "min_sync_gap_s_log": math.log1p(min(gaps)) if gaps else math.log1p(86400),
             "device_missing": int(not dev_of(m)),
-            "first_hold_after_open_log": math.log1p((first_hold[m] - t_open).total_seconds()) if m in first_hold else math.nan,
+            "first_hold_after_open_log": first_hold_log(evs),
             "account_age_days_log": math.log1p(info.get("created_days_ago") or 0),
+            "n_runs": len({e.get("run_id") for e in evs if e.get("run_id") is not None}),
+            "distinct_devices": len(dev_of(m)),
+            "distinct_ips": len(ip_of(m)),
+            "hold_unpaid_ratio": (1 - len(pays) / len(seats_of)) if seats_of else 0.0,
+            "handoff_in": handoff_in[m],
+            "handoff_out": handoff_out[m],
         })
     return rows
 
@@ -173,7 +223,7 @@ def main():
     rows = build(folder)
     out = os.path.join(folder, "features.csv")
     with open(out, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["member_id", "label", "strategy", "group", "source"] + FEATURES)
+        w = csv.DictWriter(f, fieldnames=["member_id", "label", "strategy", "family", "group", "source"] + FEATURES)
         w.writeheader()
         for r in rows:
             w.writerow({k: (round(v, 4) if isinstance(v, float) else v) for k, v in r.items()})

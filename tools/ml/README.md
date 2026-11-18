@@ -15,8 +15,8 @@ export_live.sh┘   (행동 로그 모양 그대로)                     └→ 
 ```
 
 ```bash
-# 학습용: 생성 (파이썬 기본 모듈만, 몇 초)
-python3 -I tools/ml/generate.py --members 5000 --seed 7 --out data/ml/gen-s7
+# 학습용: 생성 (파이썬 기본 모듈만, 계정 6,000개에 1초 남짓)
+python3 -I tools/ml/generate.py --members 6000 --seed 7 --out data/ml/gen-s7
 python3 -I tools/ml/features.py data/ml/gen-s7
 
 # 시험용: 대회 데이터 꺼내기 (docker compose가 떠 있는 집계자 PC에서)
@@ -33,8 +33,17 @@ python3 -I tools/ml/features.py data/ml/contest-<태그>
 결제(`PAY`)·취소(`CANCEL`)에는 예약 번호만 있고 매수는 선점(`SEAT_HOLD`) 로그에서 찾습니다.
 
 **members.jsonl** — 계정 하나에 한 줄: `member_id`, `label`(정답: NORMAL / MACRO / RESELLER / CANCEL_ABUSER),
-`strategy`(수법 또는 대회 종류), `group`, `ci`, `cards`(결제 수단 해시들), `created_days_ago`, `source`
+`strategy`(수법 또는 대회 종류), `family`(수법 계열), `group`, `ci`, `cards`(결제 수단 해시들), `created_days_ago`, `source`
 (`generator` 또는 `live:{태그}` — **학습·시험을 섞지 않는 기준**).
+
+## 생성 데이터의 폭
+
+- 사람 17가지 · 봇 21가지 수법. 사흘 동안 운행 12편, 판매 오픈마다 몰림
+- **오탐 함정을 일부러 넣었습니다**: 공용 IP·공용 PC·VPN·저장소가 막힌 브라우저·단체 여행 총무·오픈 순간 연타하는 사람.
+  "IP 공유 = 봇", "기기 ID가 자주 바뀜 = 봇" 같은 지름길을 모델이 배우지 못하게
+- **봇 계열**(`family`): speed · retry · multi_account · evasive · cancel · hoard. 생성 데이터 안에서도
+  **한 계열을 통째로 빼고 학습 → 그 계열로 시험**해 보면, 대회 전에 "처음 보는 수법"에 얼마나 버티는지 미리 볼 수 있습니다
+- 수법 목록은 `generate.py`에만 있습니다 (공격자는 대회 전에 보지 않음)
 
 ## 특징 (features.csv)
 
@@ -48,7 +57,9 @@ python3 -I tools/ml/features.py data/ml/contest-<태그>
 | 실패 | `hold_fail_ratio` `max_same_seat_fail` `limit_rejects` |
 | 구매·취소 | `seats_paid_ratio`(한도 대비) `cancel_ratio` `min_cancel_after_pay_min_log` |
 | 연결 | `accounts_on_device` `accounts_on_card` `accounts_on_ip` `min_sync_gap_s_log` `device_missing` |
-| 기타 | `first_hold_after_open_log` `account_age_days_log` |
+| 여러 운행·회전 | `n_runs` `distinct_devices` `distinct_ips` |
+| 좌석 묶기·넘기기 | `hold_unpaid_ratio` `handoff_in` `handoff_out` (남이 취소한 좌석을 60초 안에 잡음 / 내 좌석을 남이 잡음) |
+| 기타 | `first_hold_after_open_log`(운행별 첫 이벤트 기준) `account_age_days_log` |
 
 ## 아직 없는 것
 
