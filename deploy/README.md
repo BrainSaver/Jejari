@@ -16,9 +16,11 @@ VM 1대(e2-standard-4, 서울)에 로컬과 같은 `compose.yaml`을 올리고, 
 | `prometheus.server.yml` | 앱 2대(app-1·app-2) 수집 |
 | `jejari@.service` | 앱 systemd 템플릿 (인스턴스 이름 = 포트) |
 | `make-server-env.sh` | **내 PC에서** 서버용 `.env` 생성 (HMAC 키만 팀 공용, 나머지 새로) |
-| `setup-server.sh` | **서버에서 한 번**: 패키지·docker 그룹·도메인·systemd (앱 2대 + 자동 배포 타이머) |
+| `setup-server.sh` | **서버에서 한 번**: 패키지·docker 그룹·도메인·systemd (앱 2대 + 자동 배포 타이머) + 시간표 타이머 · 서비스 명령 sudo 허용) |
 | `deploy.sh` | 배포: main(또는 `DEPLOY_SHA`) 빌드 → 한 대씩 재시작 → 배포한 커밋 기록 |
 | `auto-deploy.sh` · `jejari-autodeploy.{service,timer}` | **자동 배포**: 10분마다, CI 성공 + DB·인프라 변경 없음일 때만 `deploy.sh` |
+| `tago-refresh.sh` · `jejari-tago.{service,timer}` | 실제 KTX 시간표(앞뒤 7일) 매일 갱신 |
+| `grafana-alerting/` · `grafana-team-user.sh` · `sudoers-jejari` | Discord 경보 · Grafana 팀 계정 · 앱 주인의 좁은 sudo |
 
 ## 강동균 님 문서와 다른 점 (이유)
 
@@ -29,7 +31,7 @@ VM 1대(e2-standard-4, 서울)에 로컬과 같은 `compose.yaml`을 올리고, 
 | `User=ubuntu` | 실제 사용자로 채움 | GCP Ubuntu에는 `ubuntu` 계정이 없음 (`gcloud compute ssh`가 내 PC 사용자 이름으로 만듦) |
 | 내 PC `.env`를 복사 | **새로 생성** | 로컬 비밀번호·임시 키가 서버로 가지 않게. HMAC 키만 팀 공용 |
 
-도메인은 사지 않고 `외부IP.sslip.io`(예: `34-64-12-34.sslip.io`)를 씁니다. IP를 이름으로 바꿔 주는 공개 DNS라 Let's Encrypt 인증서를 바로 받을 수 있습니다.
+도메인은 사지 않습니다. 처음엔 `외부IP.sslip.io`(IP를 이름으로 바꿔 주는 공개 DNS)로 시작했고, **11-18부터 팀장님이 만든 DuckDNS 이름**을 씁니다 (`.env`의 `JEJARI_DOMAIN`, 주소는 팀 채널). 둘 다 Let's Encrypt 인증서를 Caddy가 자동으로 받습니다. DuckDNS는 IP를 가리키는 방식이라 **VM을 껐다 켜 외부 IP가 바뀌면 DuckDNS에서 IP를 다시 맞춰야** 합니다. `setup-server.sh`는 정해 둔 이름을 덮어쓰지 않습니다.
 
 ## 순서
 
@@ -112,7 +114,10 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
   | 자동 배포 실패 또는 사람이 처리해야 함 | 상태가 `FAILED`·`BLOCKED` | 위 "운영자 안내" 표 |
   | 자동 배포가 30분 넘게 돌지 않음 | 타이머·Pushgateway 고장 (5분 지속) | `systemctl list-timers jejari-autodeploy`. 시연 때문에 껐다면 무시 |
   | CI 대기가 1시간 넘게 이어짐 | main 새 커밋이 CI를 못 통과 | GitHub Actions 확인 |
+  | 실제 KTX 시간표 갱신 실패 | 마지막 갱신 실패 또는 26시간 넘게 안 돎 | `journalctl -u jejari-tago -n 50`, 서비스 키 확인 → `sudo systemctl start jejari-tago` |
   | 앱 한 대가 응답하지 않음 | `up{job="jejari-app"}`이 2분 넘게 0 | `journalctl -u jejari@8080` |
+
+- **실제 KTX 시간표** (11-18~, `deploy/tago-refresh.sh`, 매일 새벽 4:30 `jejari-tago.timer`): 시드 운행은 "넣은 날 + 3일" 하루뿐이라, 길동현 님 `tools/load-tago-schedule.js`(공공데이터포털 TAGO)로 **오늘 기준 앞뒤 7일** 실제 KTX를 매일 다시 넣음 (MERGE라 중복 없음, run_id 400000~). 서버에 Node 없이 Node 22 컨테이너로. **`.env`의 `DATA_GO_KR_KEY_DEC` 또는 `DATA_GO_KR_KEY`(공공데이터포털 서비스 키) 필요**. 지금 한 번: `sudo systemctl start jejari-tago`, 결과: `journalctl -u jejari-tago -n 20`
 
   같은 경보는 4시간마다만 다시 오고, 해결되면 "해결됨"이 옴. 웹훅 주소를 바꾸면 `.env` 수정 뒤 `docker compose -f compose.yaml -f deploy/compose.server.yaml up -d grafana`
 - **Caddyfile·`prometheus.server.yml`을 바꾼 뒤에는 그 컨테이너를 재시작** (`docker compose -f compose.yaml -f deploy/compose.server.yaml restart caddy`). 파일 하나를 bind mount한 것이라 git이 파일을 새로 쓰면 실행 중인 컨테이너는 옛 파일을 계속 봄. compose 환경 변수를 바꿨으면 `up -d grafana`처럼 다시 만듦
@@ -158,10 +163,12 @@ journalctl -u jejari-autodeploy -n 50 --no-pager     # 자동 배포 로그
 | 앱 한 대가 이상함 | `sudo systemctl restart jejari@8080` (한 대씩. Caddy가 다른 대로 보냄) |
 | `BLOCKED` (DB·인프라 변경) | 상태 줄에 적힌 파일을 보고: ERD → `db/patch/v*.sql`, `mongo-init.js` → 위 "운영 규칙"의 명령, compose·Caddy → `up -d`·`restart` → 그 다음 `bash deploy/deploy.sh` |
 | `FAILED` (앱이 안 뜸) | `journalctl -u jejari@8080 -n 200` (TZ·`.env` 키 누락이 흔함). 고친 커밋이 main에 오면 자동으로 다시 시도 |
+| 실제 시간표 지금 다시 넣기 | `sudo systemctl start jejari-tago` → `journalctl -u jejari-tago -n 20` |
 
 ### 조심 (데이터가 사라지거나 밖에서 보이게 되는 것)
 
-- **데이터 재생성**(위 "운영 규칙")은 회원·예약을 지웁니다. 시연 전날처럼 정해진 때에만, 팀에 알리고
+- **데이터 재생성**(위 "운영 규칙")은 회원·예약을 지웁니다. 시연 전날처럼 정해진 때에만, 팀에 알리고. 끝나면 실제 시간표를 바로 다시 넣기 (`sudo systemctl start jejari-tago`, 안 하면 다음 새벽 4:30까지 실제 KTX가 없음)
+- ⚠️ **시드 `05_train_stop_fare.sql`을 기존 DB에 다시 돌리면 실제 KTX 시간표의 정차 시각을 전부 시드 시각(09:28)으로 덮어씁니다** (11-18 실제 발생, `docs/조영준/troubleshooting/20261118-시드05가-실제시간표-덮어씀.md`). 시드 05가 실제 시간표 운행을 빼도록 고쳐지기 전까지는, 05를 돌렸으면 **바로 이어서** `sudo systemctl start jejari-tago`
 - `docker volume rm`, `docker compose down -v` 금지 (`caddy-data`를 지우면 인증서를 다시 받아야 하고 발급 횟수 제한이 있음)
 - `compose.yaml`의 `127.0.0.1:` 포트 바인딩, 방화벽 규칙을 바꾸지 않기 (DB가 인터넷에 열림)
 - 서버 `.env`의 `JEJARI_HMAC_KEY`·`JEJARI_PEPPER_KEYS`·`JEJARI_ENC_KEYS`는 바꾸지 않기 (바꾸면 기존 해시·비밀번호·전화번호를 못 읽음)

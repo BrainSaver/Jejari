@@ -91,7 +91,8 @@ fi
 
 # 2)·3) 바뀐 파일
 changed=$(git diff --name-only "$CUR" "$NEW")
-blocking=$(grep -E '^(docs/erd/|db/|compose\.yaml$|docker/|deploy/compose\.server\.yaml$|deploy/Caddyfile$|deploy/prometheus\.server\.yml$|deploy/jejari@\.service$)' <<<"$changed" || true)
+# 사람이 적용해야 하는 것: DB·시드·compose·Caddy·Prometheus 설정, systemd 유닛(설치에 sudo), 경보 규칙(Grafana 재시작), sudoers
+blocking=$(grep -E '^(docs/erd/|db/|compose\.yaml$|docker/|deploy/compose\.server\.yaml$|deploy/Caddyfile$|deploy/prometheus\.server\.yml$|deploy/jejari[@-][a-z]*\.(service|timer)$|deploy/jejari@\.service$|deploy/grafana-alerting/|deploy/sudoers-jejari$)' <<<"$changed" || true)
 if [[ -n "$blocking" ]]; then
   state "BLOCKED $SHORT DB·인프라 변경이 있어 자동 배포를 멈춤 → DB 패치·compose 반영 뒤 'bash deploy/deploy.sh' 직접 실행: $(echo $blocking | cut -c1-200)"
   exit 0

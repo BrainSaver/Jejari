@@ -9,6 +9,16 @@ spring:
     # 기본 인메모리 사용자(기동 로그에 비밀번호 출력)를 만들지 않습니다. 인증은 JWT로 직접 구성합니다
     exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
 
+  # ── 정기 작업(@Scheduled) 스레드 ──
+  # 기본값은 1개라 모든 정기 작업이 줄을 섭니다. 대기열 입장 처리(1초 주기)가 1초를 넘기자
+  # 좌석 선점 만료·Outbox 발행·결제 재확인이 뒤에서 기다렸습니다 (공용 서버 2026-11-18 실측: 대기 9개).
+  # 같은 작업이 겹쳐 돌지는 않고(Spring이 보장), 서로 다른 작업이 동시에 도는 것은 앱 2대에서 이미 일어나는 일이라 새 위험이 아닙니다.
+  task:
+    scheduling:
+      pool:
+        size: 4
+      thread-name-prefix: jejari-sched-
+
   # ── Oracle (gvenzl/oracle-free, 서비스 FREEPDB1) ──
   datasource:
     url: jdbc:oracle:thin:@//${ORACLE_HOST:localhost}:${ORACLE_PORT:1521}/${ORACLE_SERVICE:FREEPDB1}

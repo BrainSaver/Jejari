@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { get } from '../api/client.js';
+import { api, get } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
-import { seoulHm, seoulNowLocal, seoulToday } from '../lib/time.js';
+import { addDays, seoulHm, seoulNowLocal, seoulToday } from '../lib/time.js';
 import { MiniTrain } from './RouteLine.jsx';
 
 /**
@@ -23,23 +23,38 @@ const LOW = 5; // 이만큼 이하면 "얼마 안 남음" 색
 export default function Search() {
   const [params, setParams] = useSearchParams();
   const [stations, setStations] = useState([]);
-  const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday(), time: params.get('time') || defaultTime(params.get('date') || seoulToday()), ...peopleOf(params), grade: GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '' });
+  const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday(), time: params.get('time') || defaultTime(params.get('date') || seoulToday()), timeSet: false, ...peopleOf(params), grade: GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '' });
   const [state, setState] = useState({ runs: null, loading: false, error: null });
   const [sort, setSort] = useState('dep');
   const [spun, setSpun] = useState(false); // 바꾸기 버튼이 반 바퀴씩 돈다
 
-  // 역 목록. 주소에 조건이 없으면 서울 → 부산(없으면 앞의 두 역)을 기본으로
+  // 역 목록. 주소에 조건이 없으면 서울 → 부산(없으면 앞의 두 역)을 기본으로 하고, 첫 화면부터 바로 열차를 보여 준다
+  const [moved, setMoved] = useState(null); // 오늘 남은 열차가 없어 다른 날로 넘겼으면 그 날짜
+  const prefetched = useRef(null); // 첫 화면 자동 검색 결과. 아래 검색 효과가 같은 조건을 다시 부르지 않게
   useEffect(() => {
+    let alive = true;
     get('/api/v1/stations')
-      .then((list) => {
+      .then(async (list) => {
+        if (!alive) return;
         setStations(list);
-        setForm((f) => {
-          if (f.from && f.to) return f;
-          const id = (name) => list.find((s) => s.stationName === name)?.stationId;
-          return { ...f, from: id('서울') || list[0]?.stationId || '', to: id('부산') || list[1]?.stationId || '' };
-        });
+        if (params.get('from') && params.get('to')) return;
+        const id = (name) => list.find((s) => s.stationName === name)?.stationId;
+        const from = id('서울') || list[0]?.stationId || '';
+        const to = id('부산') || list[1]?.stationId || '';
+        setForm((f) => ({ ...f, from, to }));
+        if (!from || !to) return;
+        const start = params.get('date') || seoulToday();
+        const { date, runs } = await autoSearch(from, to, start);
+        if (!alive) return;
+        if (runs) prefetched.current = { key: `${from}|${to}|${date}`, runs };
+        setForm((f) => ({ ...f, date, time: f.timeSet ? f.time : defaultTime(date) }));
+        setMoved(date !== start ? date : null);
+        setParams((p) => ({ ...Object.fromEntries(p), from, to, date }), { replace: true });
       })
-      .catch((error) => setState((s) => ({ ...s, error })));
+      .catch((error) => alive && setState((s) => ({ ...s, error })));
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // 주소의 조건이 바뀌면 검색
@@ -51,6 +66,12 @@ export default function Search() {
   const qGrade = GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '';
   useEffect(() => {
     if (!q.from || !q.to || !q.date) return;
+    const pre = prefetched.current;
+    prefetched.current = null;
+    if (pre && pre.key === `${q.from}|${q.to}|${q.date}`) {
+      setState({ runs: pre.runs, loading: false, error: null });
+      return;
+    }
     let alive = true;
     setState({ runs: null, loading: true, error: null });
     get(`/api/v1/runs?${new URLSearchParams(q)}`)
@@ -63,11 +84,15 @@ export default function Search() {
 
   const submit = (e) => {
     e.preventDefault();
+    setMoved(null);
     if (form.from === form.to) {
       setState({ runs: null, loading: false, error: { message: '출발역과 도착역이 같아요. 다른 역을 골라 주세요.' } });
       return;
     }
-    setParams({ from: form.from, to: form.to, date: form.date, time: form.time, adult: String(form.adult), child: String(form.child), senior: String(form.senior), ...(form.grade ? { grade: form.grade } : {}) });
+    // 주소에서 온 시각은 같은 날짜를 다시 찾을 때만 유지한다 (예전 주소엔 검색 순간의 지금 시각이 자동으로 들어 있었음)
+    const keepTime = form.timeSet || (params.get('time') === form.time && params.get('date') === form.date);
+    // 시각을 직접 고르지 않았으면 주소에 넣지 않는다. 넣으면 "검색한 순간의 지금 시각"이 굳어, 나중에 날짜만 바꾸거나 링크를 다시 열 때 열차가 걸러진다
+    setParams({ from: form.from, to: form.to, date: form.date, ...(keepTime ? { time: form.time } : {}), adult: String(form.adult), child: String(form.child), senior: String(form.senior), ...(form.grade ? { grade: form.grade } : {}) });
   };
 
   const name = (id) => stations.find((s) => s.stationId === id)?.stationName || id;
@@ -128,7 +153,7 @@ export default function Search() {
                 <input
                   type="date" aria-label="운행일" value={form.date} min={seoulToday()} required
                   onClick={openPicker}
-                  onChange={(e) => e.target.value && setForm({ ...form, date: e.target.value, time: e.target.value === seoulToday() ? maxTime(form.time, seoulHm()) : form.time })}
+                  onChange={(e) => e.target.value && setForm({ ...form, date: e.target.value, time: timeForDate(form, e.target.value) })}
                   style={overlay}
                 />
               </label>
@@ -139,7 +164,7 @@ export default function Search() {
                   type="time" aria-label="출발 시각" value={form.time} required
                   min={form.date === seoulToday() ? seoulHm() : undefined}
                   onClick={openPicker}
-                  onChange={(e) => e.target.value && setForm({ ...form, time: e.target.value })}
+                  onChange={(e) => e.target.value && setForm({ ...form, time: e.target.value, timeSet: true })}
                   style={overlay}
                 />
               </label>
@@ -179,6 +204,9 @@ export default function Search() {
           </div>
         )}
         {state.loading && <p className="mut" style={{ textAlign: 'center' }}>열차를 찾고 있어요…</p>}
+        {moved && q.date === moved && (
+          <div className="alert sky" role="status"><Icon name="info" /><span>오늘은 남은 열차가 없어 {shortDate(moved)} 열차를 보여 드려요.</span></div>
+        )}
 
         {sorted && (
           <>
@@ -218,6 +246,21 @@ const openPicker = (e) => {
     /* 이미 열려 있거나 지원하지 않으면 브라우저 기본 동작 */
   }
 };
+/**
+ * 첫 화면용 자동 검색: 오늘(start), 남은 열차가 없으면 다음 날 한 번만 더. 결과를 돌려줘 같은 검색을 다시 부르지 않는다.
+ * X-Search-Auto 헤더로 "사람이 누른 검색이 아님"을 알려 행동 로그에서 구분한다 (위험 점수 특징에서 뺌, tools/ml/features.py)
+ */
+async function autoSearch(from, to, start) {
+  const now = seoulNowLocal();
+  let first = null;
+  for (const date of [start, addDays(start, 1)]) {
+    const runs = await api('GET', `/api/v1/runs?${new URLSearchParams({ from, to, date })}`, undefined, { 'X-Search-Auto': '1' }).catch(() => null);
+    if (runs === null) break;
+    first = first || { date, runs };
+    if (runs.some((r) => !r.departureAt || r.departureAt > now)) return { date, runs };
+  }
+  return first || { date: start, runs: null };
+}
 /** 오늘이면 지금 시각, 다른 날이면 0시 */
 const defaultTime = (date) => (date === seoulToday() ? seoulHm() : '00:00');
 const num = (v) => Math.max(0, Math.min(MAX_PEOPLE, Math.floor(Number(v)) || 0));
@@ -235,6 +278,11 @@ function partyText(p) {
   return parts.length === 1 ? `${parts[0]}명` : parts.join(' · ');
 }
 const maxTime = (a, b) => (a > b ? a : b);
+/** 날짜를 바꿨을 때의 시각. 이 화면에서 직접 고른 시각은 지키고(오늘이면 지금 이후로만), 아니면 그 날짜의 기본값(오늘 = 지금, 다른 날 = 0시) */
+const timeForDate = (form, date) => {
+  if (!form.timeSet) return defaultTime(date);
+  return date === seoulToday() ? maxTime(form.time, seoulHm()) : form.time;
+};
 /** "13:30" → "오후 1:30" (칸이 좁아 "시·분"을 줄여 쓴다) */
 const timeShort = (t) => {
   const [h, m] = (t || '00:00').split(':').map(Number);

@@ -79,6 +79,30 @@ groups:
           description: GitHub Actions에서 main의 최근 실행 결과를 확인 (빌드·테스트·ERD 검사 실패 가능성)
         labels: { severity: info }
 
+      - uid: jejari-tago-failed
+        title: 실제 KTX 시간표 갱신 실패
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            # 마지막 실행이 실패했거나, 하루(26시간) 넘게 실행되지 않음
+            model: { refId: A, instant: true, expr: '(max(jejari_tago_last_success) < 1) or (time() - max(jejari_tago_last_run_timestamp_seconds) > 93600)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [-1] } }]   # 위 식에 값이 하나라도 나오면 경보
+        noDataState: OK        # 아직 한 번도 안 돌았으면 조용히
+        execErrState: Error
+        for: 0m
+        annotations:
+          summary: 공용 서버의 실제 KTX 시간표(앞뒤 7일)를 갱신하지 못했습니다 — 며칠 뒤 검색 결과가 비게 됨
+          description: journalctl -u jejari-tago -n 50 확인. 서비스 키(DATA_GO_KR_KEY_DEC) 만료·공공데이터포털 장애가 흔함. 다시 하기 sudo systemctl start jejari-tago
+        labels: { severity: warning }
+
       - uid: jejari-app-down
         title: 앱 한 대가 응답하지 않음
         condition: C
