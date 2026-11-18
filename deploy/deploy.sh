@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # 앱 배포·재배포 (서버에서). main을 받아 빌드하고 앱 2대를 한 대씩 재시작합니다.
 #   cd ~/Jejari && bash deploy/deploy.sh            (BRANCH=main 기본)
+#   DEPLOY_SHA=<커밋> bash deploy/deploy.sh          (그 커밋으로 고정. 자동 배포가 CI를 확인한 커밋만 올릴 때)
 #
 # 한 대씩 재시작하는 이유: Caddy가 살아 있는 쪽으로 보내 배포 중에도 요청이 끊기지 않게
+# 끝나면 ~/jejari-app/deployed-sha에 배포한 커밋을 남긴다 (자동 배포가 비교 기준으로 씀.
+# 자동 배포가 DB 변경으로 멈췄을 때 DB를 맞추고 이 스크립트를 직접 돌리면 그 기준이 앞으로 가서 풀린다)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BRANCH="${BRANCH:-main}"
+TARGET="${DEPLOY_SHA:-origin/$BRANCH}"
 
 health() { curl -fs "http://127.0.0.1:$1/actuator/health" | grep -q '"status":"UP"'; }
 
@@ -14,8 +18,13 @@ health() { curl -fs "http://127.0.0.1:$1/actuator/health" | grep -q '"status":"U
   || { echo "Oracle이 healthy가 아닙니다. docker compose -f compose.yaml -f deploy/compose.server.yaml up -d 후 기다리세요."; exit 1; }
 
 git fetch -q origin "$BRANCH"
-git checkout -q "$BRANCH"
-git merge -q --ff-only "origin/$BRANCH"
+if [[ -n "${DEPLOY_SHA:-}" ]]; then
+  # 정확히 그 커밋으로 (merge --ff-only는 작업 트리가 이미 더 앞서 있으면 아무것도 안 해서, CI를 확인하지 않은 커밋이 빌드될 수 있음)
+  git checkout -q --detach "$DEPLOY_SHA"
+else
+  git checkout -q "$BRANCH"
+  git merge -q --ff-only "$TARGET"
+fi
 echo "빌드: $(git log --oneline -1)"
 
 # 화면 (frontend/, React + Vite): dist/를 만들어 두면 bootJar가 jar의 static/에 넣는다 (build.gradle).
@@ -47,5 +56,6 @@ for port in 8080 8081; do
   fi
   echo " UP"
 done
+git rev-parse HEAD > "$HOME/jejari-app/deployed-sha"
 DOMAIN=$(grep '^JEJARI_DOMAIN=' .env | cut -d= -f2)
-echo "배포 완료: https://${DOMAIN}/actuator/health"
+echo "배포 완료: https://${DOMAIN}/actuator/health ($(git log --oneline -1 | cut -c1-60))"

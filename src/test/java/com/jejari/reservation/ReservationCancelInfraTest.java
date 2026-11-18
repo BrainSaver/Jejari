@@ -77,6 +77,8 @@ class ReservationCancelInfraTest {
 	JsonMapper json;
 	@Autowired
 	RefundRetryBatch retry;
+	@Autowired
+	ResaleBatch resale;
 
 	List<Long> seatIds;
 	final List<Long> policies = new ArrayList<>();
@@ -149,7 +151,7 @@ class ReservationCancelInfraTest {
 	// ------------------------------------------------------------ CNL-02
 
 	@Test
-	void 확정_취소는_좌석을_돌려주고_수수료를_기록하고_환불한다() throws Exception {
+	void T15_확정_취소는_좌석을_돌려주고_수수료를_기록하고_환불한다() throws Exception {
 		long m = member();
 		long s1 = seatIds.get(10);
 		long s2 = seatIds.get(11);
@@ -381,7 +383,49 @@ class ReservationCancelInfraTest {
 		assertThat(res.givenUp()).isGreaterThanOrEqualTo(1);
 	}
 
+	// ------------------------------------------------------------ CNL-04
+
+	@Test
+	void 출발한_뒤에만_다른_사람이_산_좌석의_취소를_재판매로_기록한다() throws Exception {
+		long a = member();
+		long b = member();
+		long resoldSeat = seatIds.get(38);
+		long r1 = confirmed(a, true, resoldSeat);
+		cancel(a, r1);
+		redis.delete(SeatKeys.hold(RUN, resoldSeat, 0)); // 대기자 우선(REOFFER) 키를 치워 일반 판매로
+		long r2 = confirmed(b, true, resoldSeat); // 다른 사람이 같은 좌석을 삼
+		long r3 = confirmed(a, true, seatIds.get(39));
+		cancel(a, r3); // 아무도 안 삼
+
+		resale.run(); // 출발 전: 재판매는 계속 바뀌므로 N 그대로
+		assertThat(resold(r1)).isEqualTo("N");
+
+		String before = one("SELECT status FROM train_run WHERE run_id = ?", RUN);
+		jdbc.update("UPDATE train_run SET status = 'DEPARTED' WHERE run_id = ?", RUN);
+		try {
+			resale.run();
+			assertThat(resold(r1)).isEqualTo("Y");
+			assertThat(resold(r3)).isEqualTo("N");
+			assertThat(one("SELECT status FROM reservation WHERE reservation_id = ?", r2)).isEqualTo("CONFIRMED");
+			resale.run(); // 다시 돌려도 같다
+			assertThat(resold(r1)).isEqualTo("Y");
+			assertThat(count("SELECT COUNT(*) FROM cancellation WHERE reservation_id IN (?, ?) AND resold_yn = 'Y'", r1, r3))
+					.isOne();
+		} finally {
+			jdbc.update("UPDATE train_run SET status = ? WHERE run_id = ?", before, RUN);
+		}
+	}
+
 	// ------------------------------------------------------------ 도우미
+
+	void cancel(long m, long r) throws Exception {
+		mvc.perform(post("/api/v1/reservations/" + r + "/cancel").header("Authorization", bearer(m)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELED"));
+	}
+
+	String resold(long r) {
+		return one("SELECT resold_yn FROM cancellation WHERE reservation_id = ?", r);
+	}
 
 	/** 재시도 배치의 유예·포기 시간을 시험하려고 시각을 과거로 돌린다 */
 	void backdate(long cancelId, long updatedMinutesAgo, long canceledMinutesAgo) {
