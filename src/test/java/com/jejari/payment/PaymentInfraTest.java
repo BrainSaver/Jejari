@@ -212,6 +212,35 @@ class PaymentInfraTest {
 		assertThat(ttl).isGreaterThan(ext - 10); // Redis 좌석 키도 같이 연장됨
 	}
 
+	/**
+	 * §16 T6: 선점 1분 뒤 결제를 시작해도 마감이 줄지 않는다 (§4.1-1 {@code GREATEST}).
+	 * 선점 마감은 지금+10분이고 후보 마감은 지금+(180+60)초라, 연장하면 오히려 짧아지는 경우다.
+	 */
+	@Test
+	void T6_후보_마감이_기존_마감보다_짧으면_마감은_그대로다() {
+		long m = newMember();
+		long s = nextSeat();
+		long r = holdSeat(m, s);
+		LocalDateTime before = deadline(r);
+		// 선점 직후에도 남은 시간(약 10분)이 후보(약 4분)보다 길어 "1분 뒤"와 같은 조건이다
+		long ext = policy.getLong(PaymentPolicy.PG_TIMEOUT_SEC) + policy.getLong(PaymentPolicy.EXTEND_GRACE_SEC);
+		assertThat(before).isAfter(LocalDateTime.now(clock).plusSeconds(ext + 60));   // 전제: 후보가 더 짧다
+
+		payments.start(m, r, key(), NO_RESPONSE);
+
+		assertThat(deadline(r)).isEqualTo(before);
+		assertThat(jdbc.queryForObject("SELECT hold_expires_at FROM seat_inventory WHERE reservation_id = ?",
+				LocalDateTime.class, r)).isEqualTo(before);
+		assertThat(jdbc.queryForObject("SELECT timeout_at FROM saga_instance WHERE reservation_id = ?",
+				LocalDateTime.class, r)).isEqualTo(before);
+		assertThat(jdbc.queryForObject("SELECT next_check_at FROM payment WHERE payment_id = ?", LocalDateTime.class, r))
+				.isEqualTo(before);
+		assertThat(str("SELECT status FROM reservation WHERE reservation_id = ?", r)).isEqualTo("PAYMENT_PENDING");
+		// Redis 좌석 키도 줄지 않았다 (처음 TTL에서 몇 초만 지남)
+		long remain = java.time.Duration.between(LocalDateTime.now(clock), before).getSeconds();
+		assertThat(redis.getExpire(SeatKeys.hold(RUN, s, 0))).isGreaterThan(remain - 10);
+	}
+
 	// ------------------------------------------------------------ EVT-04 멱등
 
 	@Test
