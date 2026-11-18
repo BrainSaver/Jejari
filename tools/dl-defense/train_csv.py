@@ -75,7 +75,10 @@ def fit_and_threshold(humans, bots, args, seed):
     b_tr, b_va = split(bots, rng)
     cfg = training.TrainConfig(epochs=args.epochs, seed=seed)
     model = training.fit(h_tr + b_tr, h_va + b_va, cfg, log=None if args.quiet else print)
-    thr = training.pick_threshold(training.predict(model, h_va), args.max_fpr)
+    # 문턱은 CSV 어휘 사람(시험할 도메인)의 검증 점수로 고른다. 가상 사람을 섞으면 오탐 0%인 쪽이 평균을 낮춰
+    # 문턱이 너무 높게 잡힌다 (실제 오탐이 목표의 2배가 되는 원인이었다)
+    pool = [s for s in h_va if s.family == args.thr_source] or h_va
+    thr = training.pick_threshold(training.predict(model, pool), args.max_fpr)
     return model, thr, cfg
 
 
@@ -84,11 +87,13 @@ def main(argv=None):
     ap.add_argument("--csv", required=True, help="공격 CSV (봇만 있는 이벤트 로그)")
     ap.add_argument("--gen", default=None, help="공격 생성기 스크립트. 있으면 새 시드로 시험 데이터를 만든다")
     ap.add_argument("--out", default="out/model_csv.pt")
-    ap.add_argument("--epochs", type=int, default=25)
-    ap.add_argument("--n-human", type=int, default=2500, help="CSV 어휘 사람 수 = 기존 가상 사람 수")
+    ap.add_argument("--epochs", type=int, default=40)
+    ap.add_argument("--n-human", type=int, default=5000, help="CSV 어휘 사람 수 = 기존 가상 사람 수")
     ap.add_argument("--n-sim-bot", type=int, default=1200, help="0이면 기존 가상 봇은 빼고 CSV 봇만 쓴다")
     ap.add_argument("--csv-repeat", type=int, default=4)
-    ap.add_argument("--max-fpr", type=float, default=0.02)
+    ap.add_argument("--max-fpr", type=float, default=0.015, help="검증 사람 기준 허용 오탐률 (목표 2%에 여유를 둔 값)")
+    ap.add_argument("--thr-source", default="csv_human", help="문턱을 고를 검증 사람의 출처 (family 이름)")
+    ap.add_argument("--n-test-human", type=int, default=1000, help="시험용 CSV 어휘 사람 수 (많을수록 오탐률이 안정적)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--test-seeds", default="11,12")
     ap.add_argument("--loo", action="store_true")
@@ -105,7 +110,7 @@ def main(argv=None):
 
     def test_set(seed):
         bots = fresh_attack(a.gen, seed) if a.gen else []
-        return bots, botcsv.make_humans(500, 9000 + seed) + sim.make_dataset(500, 0, 9100 + seed)
+        return bots, botcsv.make_humans(a.n_test_human, 9000 + seed) + sim.make_dataset(500, 0, 9100 + seed)
 
     if a.loo:
         if not a.gen:
