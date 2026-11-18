@@ -73,17 +73,22 @@ public class MockPgClient implements PgClient {
 
 	private final Map<String, RefundResult> refunds = new ConcurrentHashMap<>();
 
-	/** 환불은 바로 성공한다 (1차 범위: 기능설계서 1.1 CNL-03). 승인 거래 ID가 없거나 금액이 음수면 실패 */
+	/**
+	 * 환불은 바로 성공한다. 승인 거래 ID가 없거나 금액이 음수면 실패.
+	 * 같은 환불 키는 <b>성공만</b> 기억한다 (실제 PG처럼): 실패를 기억하면 환불 재시도(CNL-03)가 영원히 같은 실패를 받는다.
+	 */
 	@Override
 	public RefundResult refund(long orderId, String pgTxId, long amount, String refundKey) {
-		RefundResult r = refunds.computeIfAbsent(refundKey, k -> pgTxId == null || amount < 0
-				? new RefundResult(false, null, "NO_APPROVED_TX")
-				: new RefundResult(true, "mock-refund-" + UUID.randomUUID(), null));
+		RefundResult r = refunds.get(refundKey);
+		if (r == null) {
+			r = pgTxId == null || amount < 0 ? new RefundResult(false, null, "NO_APPROVED_TX")
+					: refunds.computeIfAbsent(refundKey, k -> new RefundResult(true, "mock-refund-" + UUID.randomUUID(), null));
+		}
 		log.info("[MockPG] 환불 요청 주문 {} 금액 {} → {}", orderId, amount, r.done() ? "DONE" : r.reason());
 		return r;
 	}
 
-	/** 환불 요청을 실제로 처리한 횟수 (같은 환불 키 재요청은 세지 않음) */
+	/** 성공한 환불 수 (같은 환불 키 재요청은 세지 않음, 실패는 기억하지 않음) */
 	public int refundCount() {
 		return refunds.size();
 	}

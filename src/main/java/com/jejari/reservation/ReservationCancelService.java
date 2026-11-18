@@ -244,6 +244,32 @@ public class ReservationCancelService {
 				done.actionId());
 	}
 
+	/**
+	 * CNL-03 환불 재시도: 사용자·관리자 취소 한 건의 환불을 다시 요청한다. 처음 환불과 같은 {@link #refund}를 쓰므로
+	 * 환불 키({@code cancel:<cancel_id>})가 같아 PG에서 한 번만 환불되고, DONE으로 바꾼 쪽만 REFUND_COMPLETED를 남긴다.
+	 *
+	 * @return 이번 결과 (DONE / FAILED). 이미 DONE이거나 없는 건이면 그 상태 또는 null
+	 */
+	public String retryRefund(long cancelId) {
+		List<Map<String, Object>> rows = jdbc.queryForList("""
+				SELECT c.reservation_id, c.refund_amount, c.cancel_fee, c.refund_status, p.payment_id, p.pg_tx_id
+				  FROM cancellation c
+				  LEFT JOIN payment p ON p.reservation_id = c.reservation_id AND p.status = 'APPROVED'
+				 WHERE c.cancel_id = ? AND c.cancel_type IN ('USER', 'ADMIN')""", cancelId);
+		if (rows.isEmpty()) {
+			return null;
+		}
+		Map<String, Object> c = rows.get(0);
+		if ("DONE".equals(c.get("REFUND_STATUS"))) {
+			return "DONE";
+		}
+		long reservationId = ((Number) c.get("RESERVATION_ID")).longValue();
+		Number paymentId = (Number) c.get("PAYMENT_ID");
+		Done d = new Done(cancelId, paymentId == null ? 0 : paymentId.longValue(), (String) c.get("PG_TX_ID"),
+				((Number) c.get("REFUND_AMOUNT")).longValue(), 0, 0, ((Number) c.get("CANCEL_FEE")).longValue(), 0);
+		return refund(reservationId, d);
+	}
+
 	/** §8.1-4 ADMIN: 운영 사유 취소라 수수료 0, 결제 금액 전액. 출발 뒤여도 된다 (사용자 취소 규칙과 무관) */
 	private static Quote adminQuote(Detail d) {
 		long paid = d.payment() != null && "APPROVED".equals(d.payment().status()) ? d.payment().amount()
