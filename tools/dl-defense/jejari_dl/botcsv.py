@@ -16,41 +16,71 @@ from pathlib import Path
 
 import numpy as np
 
-from .schema import STATUS_OK, TYPE_INDEX, Subject
+from .schema import STATUS_CONFLICT, STATUS_OK, TYPE_INDEX, Subject
 
 CSV_TO_TYPE = {"login": None, "search": "VIEW_TRAIN", "select_train": "VIEW_TRAIN", "reserve_click": None,
                "queue_join": "QUEUE_ENTER", "queue_pass": "VIEW_SEAT", "seat_select": "SEAT_HOLD",
                "payment": "PAY", "cancel": "CANCEL",
-               "seat_deselect": None}   # v2: 좌석 선택 해제. BehaviorType에 없어 버린다
+               "seat_deselect": None,   # v2: 좌석 선택 해제. BehaviorType에 없어 버린다
+               "seat_conflict": "SEAT_HOLD",   # v3: 좌석 선점 실패(409)
+               "hold": None}            # v3: 결제 없이 방치. 이벤트가 아니라 대기 시간이라 버린다
+CSV_STATUS = {"seat_conflict": STATUS_CONFLICT}
 
 
 def events_to_subject(events: list[tuple[str, float]], label: int | None, family: str,
                       max_len: int = 64) -> Subject | None:
     """(CSV 이벤트 이름, ts_ms) 목록 → Subject. 매핑이 없는 이벤트는 버린다. 남는 게 없으면 None"""
-    kept = [(TYPE_INDEX[CSV_TO_TYPE[name]], ts) for name, ts in sorted(events, key=lambda e: e[1])
-            if CSV_TO_TYPE.get(name)]
+    kept = [(TYPE_INDEX[CSV_TO_TYPE[name]], ts, CSV_STATUS.get(name, STATUS_OK))
+            for name, ts in sorted(events, key=lambda e: e[1]) if CSV_TO_TYPE.get(name)]
     kept = kept[:max_len]
     if not kept:
         return None
     dt = [0.0] + [max(kept[i][1] - kept[i - 1][1], 1.0) for i in range(1, len(kept))]
-    return Subject([t for t, _ in kept], dt, [STATUS_OK] * len(kept), 1, 0, label, family)
+    return Subject([t for t, _, _ in kept], dt, [st for _, _, st in kept], 1, 0, label, family)
 
 
-def read_csv(path: Path) -> list[Subject]:
+def read_csv(path: Path, device_context: bool = False) -> list[Subject]:
+    """CSV → Subject 목록. device_context=True면 ua_hash를 "같은 기기" 대용으로 보고 기기 공유 신호를 채운다.
+
+    연결 계정 수 = 같은 ua_hash를 쓰는 세션 수, 동시 선점 = 그중 60초 안에 좌석을 선택한 세션 수의 최댓값.
+    (실제 로그에서는 deviceHash가 같은 역할을 한다. ip_hash는 같은 와이파이 사람이 공유해서 쓰지 않는다.)
+    """
     by_session = defaultdict(list)
     meta = {}
     with open(path, encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f):
             sid = row["session_id"]
             by_session[sid].append((row["event"], float(row["ts_ms"])))
-            meta[sid] = (int(row["label"]), row.get("bot_type") or "csv_bot")
-    out = []
+            label = int(row["label"])
+            if row.get("bot_type"):                               # v1·v2
+                fam = row["bot_type"]
+            elif row.get("family"):                               # v3: 사람은 family 그대로, 봇은 계열/변형
+                fam = row["family"] if label == 0 else f"{row['family']}/{row['variant']}"
+            else:
+                fam = "csv_bot"
+            meta[sid] = (label, fam, row.get("ua_hash", ""))
+    out, ua_of = {}, {}
     for sid, evs in by_session.items():
-        label, fam = meta[sid]
+        label, fam, ua = meta[sid]
         s = events_to_subject(evs, label, fam)
         if s:
-            out.append(s)
-    return out
+            out[sid], ua_of[sid] = s, ua
+    if device_context:
+        groups = defaultdict(list)
+        for sid, ua in ua_of.items():
+            if ua:
+                first_hold = next((t for n, t in sorted(by_session[sid], key=lambda e: e[1]) if n == "seat_select"), None)
+                groups[ua].append((sid, first_hold))
+        for ua, members in groups.items():
+            times = sorted(t for _, t in members if t is not None)
+            sync, lo = 1 if times else 0, 0
+            for hi in range(len(times)):
+                while times[hi] - times[lo] > 60_000:
+                    lo += 1
+                sync = max(sync, hi - lo + 1)
+            for sid, _ in members:
+                out[sid].linked, out[sid].sync = len(members), sync if len(members) > 1 else 0
+    return list(out.values())
 
 
 def gen_human(rng: np.random.Generator) -> Subject:

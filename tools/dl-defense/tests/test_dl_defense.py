@@ -99,6 +99,24 @@ class BotCsvTest(unittest.TestCase):
         self.assertEqual([schema.EVENT_TYPES[t] for t in s.types], ["VIEW_TRAIN", "SEAT_HOLD", "SEAT_HOLD", "PAY"])
         self.assertEqual(s.dt_ms, [0.0, 3000.0, 3000.0, 12000.0])      # seat_deselect를 버려도 시각 차이 유지
 
+    def test_v3_family_conflict_and_device_context(self):
+        head = "session_id,email,label,family,variant,step_idx,event,ts_ms,dt_ms,train,seat,n_seats,ip_hash,ua_hash\n"
+        def sess(sid, label, fam, var, ua, t0):
+            evs = [("search", 0), ("seat_select", 1000), ("seat_conflict", 1100), ("hold", 600000)]
+            return "".join(f"{sid},x,{label},{fam},{var},0,{e},{t0 + t},0,1,,1,ipZ,{ua}\n" for e, t in evs)
+        text = head + sess("a", 1, "multi_account", "same_ip", "UA1", 0) + sess("b", 1, "multi_account", "same_ip", "UA1", 5000) \
+            + sess("c", 0, "human_synth", "human", "UA2", 0)
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "v3.csv"
+            f.write_text(text, encoding="utf-8")
+            subs = {s.family: s for s in botcsv.read_csv(f, device_context=True)}
+            off = {s.family: s for s in botcsv.read_csv(f)}
+        a = subs["multi_account/same_ip"]
+        self.assertEqual(a.status, [schema.STATUS_OK, schema.STATUS_OK, schema.STATUS_CONFLICT])   # seat_conflict → 409, hold는 버림
+        self.assertEqual((a.linked, a.sync), (2, 2))                                              # 같은 ua, 60초 안 동시 선점
+        self.assertEqual((subs["human_synth"].linked, subs["human_synth"].sync), (1, 0))
+        self.assertEqual((off["multi_account/same_ip"].linked, off["multi_account/same_ip"].sync), (1, 0))   # 옵션이 꺼져 있으면 안 씀
+
     def test_human_sessions_are_valid_and_label_zero(self):
         hs = botcsv.make_humans(200, seed=3)
         self.assertTrue(all(h.label == 0 and h.family == "csv_human" for h in hs))

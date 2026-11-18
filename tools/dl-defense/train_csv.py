@@ -22,16 +22,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from jejari_dl import botcsv, metrics, sim, training  # noqa: E402
 
 
+PER_FLAG = "per-type"       # v3 생성기는 --per-variant (--gen-per-flag)
+DEVICE_CTX = False          # --device-context
+
+
 def fresh_attack(gen: str, seed: int, per_type: int = 40, humans: int = 0) -> list:
     """사용자가 만든 생성기를 표준 라이브러리만으로 새 시드로 돌려 CSV를 받는다 (humans>0이면 합성 사람도, v2 생성기)"""
     with tempfile.TemporaryDirectory() as d:
         out = Path(d) / "attack.csv"
-        cmd = [sys.executable, "-I", gen, "--tag", f"x{seed}", "--per-type", str(per_type),
+        cmd = [sys.executable, "-I", gen, "--tag", f"x{seed}", f"--{PER_FLAG}", str(per_type),
                "--seed", str(seed), "--out", str(out)]
         if humans > 0:
             cmd += ["--humans", str(humans)]
         subprocess.run(cmd, check=True, capture_output=True, timeout=120)
-        return botcsv.read_csv(out)
+        return botcsv.read_csv(out, DEVICE_CTX)
 
 
 def evaluate(model, thr, test) -> dict:
@@ -99,6 +103,9 @@ def main(argv=None):
     ap.add_argument("--extra-train-seeds", default="", help="생성기를 이 시드들로 더 돌려 학습 데이터를 늘린다 (시험 시드와 겹치면 안 됨)")
     ap.add_argument("--calib-seeds", default="", help="문턱 보정 전용 사람을 만들 생성기 시드들. 학습·시험에 안 쓴다. 검증 사람 수백 명으로 "
                     "문턱을 고르면 모델 시드마다 크게 흔들려서 따로 많이 만든다")
+    ap.add_argument("--gen-per-flag", default="per-type", help="생성기의 유형당 세션 수 옵션 이름 (v3는 per-variant)")
+    ap.add_argument("--gen-per", type=int, default=40, help="생성기 유형(변형)당 세션 수")
+    ap.add_argument("--device-context", action="store_true", help="ua_hash를 같은 기기로 보고 기기 공유 신호를 넣는다")
     ap.add_argument("--gen-humans", type=int, default=0, help="생성기가 합성 사람을 같이 만들게 한다(v2). 학습·시험 모두 적용")
     ap.add_argument("--n-sim-bot", type=int, default=1200, help="0이면 기존 가상 봇은 빼고 CSV 봇만 쓴다")
     ap.add_argument("--csv-repeat", type=int, default=4)
@@ -111,21 +118,23 @@ def main(argv=None):
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--summary-only", action="store_true", help="시드별 표 없이 요약만")
     a = ap.parse_args(argv)
+    global PER_FLAG, DEVICE_CTX
+    PER_FLAG, DEVICE_CTX = a.gen_per_flag, a.device_context
 
-    everything = botcsv.read_csv(Path(a.csv))
+    everything = botcsv.read_csv(Path(a.csv), DEVICE_CTX)
     for seed in [int(x) for x in a.extra_train_seeds.split(",") if x.strip()]:
         if not a.gen:
             sys.exit("--extra-train-seeds 는 --gen 이 필요합니다")
         if str(seed) in a.test_seeds.split(","):
             sys.exit(f"시드 {seed}는 시험 시드와 겹칩니다")
-        everything += fresh_attack(a.gen, seed, humans=a.gen_humans)
+        everything += fresh_attack(a.gen, seed, per_type=a.gen_per, humans=a.gen_humans)
     calib = []
     for seed in [int(x) for x in a.calib_seeds.split(",") if x.strip()]:
         if not a.gen:
             sys.exit("--calib-seeds 는 --gen 이 필요합니다")
         if str(seed) in a.test_seeds.split(",") or str(seed) in a.extra_train_seeds.split(","):
             sys.exit(f"시드 {seed}는 시험·학습 시드와 겹칩니다")
-        calib += [s for s in fresh_attack(a.gen, seed, humans=a.gen_humans) if s.label == 0]
+        calib += [s for s in fresh_attack(a.gen, seed, per_type=a.gen_per, humans=a.gen_humans) if s.label == 0]
     bots_csv = [s for s in everything if s.label == 1]
     humans_given = [s for s in everything if s.label == 0]
     if not bots_csv:
@@ -139,7 +148,7 @@ def main(argv=None):
     def test_set(seed):
         bots, hum = [], []
         if a.gen:
-            fresh = fresh_attack(a.gen, seed, humans=a.gen_humans)
+            fresh = fresh_attack(a.gen, seed, per_type=a.gen_per, humans=a.gen_humans)
             bots = [s for s in fresh if s.label == 1]
             hum = [s for s in fresh if s.label == 0]
         if not hum:                                          # 생성기에 사람이 없으면 직접 만든 사람으로 잰다
@@ -177,12 +186,13 @@ def main(argv=None):
     training.save(model, Path(a.out), thr, cfg, {"data": "attack csv (+simulated humans)", "max_fpr": a.max_fpr})
     print(f"저장: {a.out}")
     if a.gen:
-        fprs, per_type, aucs = [], {}, []
+        fprs, per_type, aucs, detects = [], {}, [], []
         for seed in [int(x) for x in a.test_seeds.split(",")]:
             tb, th = test_set(seed)
             res = evaluate(model, thr, tb + th)
             fprs.append(res["fpr_all"])
             aucs.append(res["auc"])
+            detects.append(res["detect"])
             for f, (r, _) in res["by_type"].items():
                 per_type.setdefault(f, []).append(r)
             if not a.summary_only:
@@ -190,7 +200,13 @@ def main(argv=None):
         print(f"\n== 새 시드 {len(fprs)}개 요약 (학습에 안 쓴 데이터) ==")
         print(f"사람 오탐률 시드별 평균 {np.mean(fprs):.2%} · 최대 {max(fprs):.2%} · AUC 평균 {np.mean(aucs):.3f}")
         print("유형별 탐지율 평균(최저): " + " · ".join(f"{f} {np.mean(v):.0%}({min(v):.0%})" for f, v in per_type.items()))
-        print(f"봇 탐지율 평균 {np.mean([np.mean(v) for v in per_type.values()]):.1%}")
+        fams = {}
+        for f, v in per_type.items():
+            if "/" in f:
+                fams.setdefault(f.split("/")[0], []).extend(v)
+        if fams:
+            print("계열별 탐지율 평균: " + " · ".join(f"{f} {np.mean(v):.0%}" for f, v in fams.items()))
+        print(f"봇 탐지율 평균(세션 가중) {np.mean(detects):.1%}")
 
 
 if __name__ == "__main__":

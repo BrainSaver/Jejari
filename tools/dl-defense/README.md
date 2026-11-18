@@ -33,7 +33,7 @@ pip install -r requirements.txt
 python train.py                              # 가상 데이터로 학습 → out/model.pt (CPU 1~2분)
 python evaluate.py --loo                     # 처음 보는 봇 유형에도 통하는지 (몇 분)
 python score.py --model out/model.pt --input events.jsonl --top 20
-python -m unittest discover -s tests         # 17개, 몇 초
+python -m unittest discover -s tests         # 18개, 몇 초
 ```
 
 `events.jsonl`은 `behavior_log`를 한 줄에 이벤트 하나(JSON)로 내보낸 파일입니다 (`eventType`·`ts`·`memberId`·`deviceHash`·`responseStatus`. 스네이크 표기도 읽습니다). 출력은 대상마다 `key, score, flag, reasons, events`입니다.
@@ -140,6 +140,43 @@ python train_csv.py --csv bot_events_v2.csv --gen gen_bot_data_v2.py --gen-human
 
 - **adaptive와 mimic_hard는 사실상 못 잡습니다.** 생성기 주석 그대로 "사람 분포에서 직접 표본 추출"(adaptive), "거의 사람, 좌석 선택만 약간 빠름"(mimic_hard)이라, 세션 하나만 봐서는 합성 사람과 구별되는 정보가 거의 없습니다. 잡으려고 문턱을 낮추면 오탐이 2%를 넘습니다. 구별하려면 **여러 세션을 묶어서 보는 신호**(분산이 사람보다 작음, 같은 템플릿 공유 등)가 필요합니다.
 - **이 오탐 1%는 생성기의 합성 사람에 대한 값입니다.** 실제 사람 참가자 로그가 아닙니다.
+
+## 공격 생성기 v3로 학습 (계열별: speed evasive hoard cancel retry multi_account)
+
+v3 생성기(`gen_bot_data_v3.py`)는 봇 6계열 17변형과 합성 사람을 만듭니다. 새 이벤트는 이렇게 옮겼습니다: `seat_conflict` → `SEAT_HOLD` 응답 409, `hold`(결제 없이 방치)·`seat_deselect`는 버림. **`--device-context`** 를 주면 `ua_hash`를 "같은 기기"로 보고 기기 공유 신호(연결 계정 수·60초 안 동시 선점 수)를 채웁니다 (실제 로그에서는 deviceHash가 같은 역할). `ip_hash`는 계속 쓰지 않습니다.
+
+```bash
+python train_csv.py --csv bot_events_v3.csv --gen gen_bot_data_v3.py --gen-per-flag per-variant --gen-per 30 \
+  --gen-humans 400 --device-context --extra-train-seeds 301,302,303,304,305,306 \
+  --calib-seeds 401,402,403,404,405,406,407,408 --n-human 0 --n-sim-human 0 --n-sim-bot 0 --csv-repeat 1 \
+  --test-seeds 31,32,33,34,35,36,37,38,39,40 --max-fpr 0.01 --summary-only --seed 0
+```
+
+학습(업로드 CSV + 시드 301~306) · 문턱 보정(시드 401~408의 합성 사람 3,200명) · 시험(시드 31~40, 학습에 안 쓴 데이터)은 서로 겹치지 않습니다. 모델 시드 0~4로 5번 학습했습니다.
+
+| 모델 시드 | 사람 오탐 평균 (시드별 최대) | AUC | 봇 탐지율 (세션 가중) |
+|---|---|---|---|
+| 0 | 1.33% (2.00%) | 0.954 | 88.4% |
+| 1 | 1.37% (2.50%) | 0.953 | 88.4% |
+| 2 | 1.33% (2.25%) | 0.954 | 88.4% |
+| 3 | 1.30% (2.25%) | 0.954 | 88.4% |
+| 4 | 1.40% (2.50%) | 0.955 | 88.4% |
+
+| 계열 | 탐지율 | 비고 |
+|---|---|---|
+| speed · hoard · cancel · retry | 100% | 17변형 중 15개가 모든 시드에서 100% (staggered는 93~100%) |
+| multi_account | 99~100% | 같은 기기 공유(`same_ip`, `ip_pool`)는 기기 공유 신호로, `staggered`는 간격 패턴으로 |
+| **evasive** | **34%** | hybrid 100% · **adaptive 1~2% · mimic_hard 2%** |
+
+### 탐지율 95%는 달성하지 못했습니다 (오탐 2% 이하 조건에서는 불가능)
+
+목표는 사람 오탐 2% 이하 · 봇 탐지율 95% 이상이었고, 오탐은 평균 1.3~1.4%로 맞췄지만 탐지율은 **88.4%에서 멈췄습니다.** 모델 시드나 학습량의 문제가 아닙니다.
+
+- **adaptive와 mimic_hard가 전체 봇의 11.7%**입니다. 95%에 닿으려면 이 둘의 57% 이상을 잡아야 합니다.
+- 생성기의 기준값(BASE)까지 아는 **가장 유리한 선형 판별(oracle)** 로 합성 사람과 가른 한계: adaptive AUC 0.69 (오탐 2%에서 탐지 16%), mimic_hard AUC 0.58 (오탐 2%에서 탐지 5%). 두 유형을 합쳐도 상한이 평균 10% 안팎이라 **전체 탐지율의 이론적 상한은 약 89.5%**이고, 지금 모델은 88.4%입니다.
+- 같은 모델에서 문턱을 낮춰 탐지율을 올리면: 오탐 5% → 89.0%, 10% → 89.8%, 20% → 91.7%, 30% → 93.0%. **90%에는 사람 오탐 11.2%, 95%에는 40.9%가 필요**합니다.
+
+이 둘은 생성기 설계상 "사람 분포에서 직접 표본 추출"(adaptive), "거의 사람, 좌석 선택만 약간 빠름"(mimic_hard)이라 세션 하나에는 구별할 정보가 거의 없습니다. 목표를 달성하려면 ① 목표를 "오탐 2% 이하에서 달성 가능한 범위"로 다시 정하거나 ② 한 계정의 여러 세션·같은 템플릿 공유처럼 **여러 세션을 묶어서 보는 정보**를 입력에 더해야 합니다. 후자도 adaptive는 세션마다 독립 표본이라 효과가 없을 수 있습니다.
 
 ## 한계와 다음 단계
 
