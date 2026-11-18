@@ -66,9 +66,25 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
 
 ## 운영 규칙
 
-- **재배포**: 서버에서 `bash deploy/deploy.sh` (main 기준, 한 대씩 재시작)
+- **재배포**: 서버에서 `bash deploy/deploy.sh` (main 기준, 한 대씩 재시작, 데이터 유지). 서버는 main을 자동으로 따라가지 않음 (GitHub Actions 결제 잠금)
+
+  | 언제 | 무엇 |
+  |---|---|
+  | ERD 버전이 오름 (스키마 변경) | **DB 맞추기 + 재배포**: `db/patch/v*.sql`(데이터 유지) 또는 아래 "데이터 재생성". 코드만 재배포하면 DB는 그대로라 새 코드가 제약에 걸릴 수 있음 |
+  | 통합 확인·시연 전, 팀원이 서버 확인을 요청 | 재배포만 |
+  | 시연 전날 | 데이터 재생성 + 재배포 |
+  | 그 밖의 커밋 | 하지 않음 (각자 로컬에서 확인) |
+
+- **데이터 재생성** (테스트 데이터 삭제): Oracle만 지우면 회원·예약 번호가 1부터 다시 시작해 Redis(매수 카운터·대기열·좌석 키)·Mongo(행동 로그)에 남은 옛 번호 데이터를 새 회원이 물려받음 → **셋을 함께**. Caddy(인증서)·Grafana·Prometheus·Kafka는 남김
+  ```bash
+  C='docker compose -f compose.yaml -f deploy/compose.server.yaml'
+  sudo systemctl stop jejari@8080 jejari@8081
+  $C rm -sf oracle mongo redis && docker volume rm jejari_oracle-data jejari_mongo-data jejari_redis-data
+  $C up -d oracle mongo redis      # Oracle healthy까지 약 5분, 관리자 계정은 같은 .env 비밀번호로 다시 생김
+  bash deploy/deploy.sh
+  ```
+- **시드 날짜**: 운행 9001·9002는 **적재한 날 + 3일 운행, + 4일 0시 판매 마감**. 서버 적재 11-18 → **11-22 0시 마감**. 시연 전날 데이터 재생성
 - **안 쓸 때 끄기**: `gcloud compute instances stop jejari` (디스크 값만 나감). 켜면 **외부 IP가 바뀔 수 있음** → `setup-server.sh`를 다시 돌려 도메인 갱신, 팀에 새 주소 공유. 주소를 고정하려면 고정 IP 예약(유료, 켜 둔 동안에도 과금)
-- **시연 전날 Oracle 볼륨 재생성**: 시드 날짜가 적재일 기준이라 5일 지나면 9001이 판매 중이 아님
 - **로컬 테스트를 서버 DB에 붙이지 않기**: 서버 앱의 스케줄러가 테스트의 HOLD·outbox를 먼저 가져감
 - **서버 `.env`**: 저장소·메신저에 올리지 않음. 관리자·Grafana 비밀번호는 내 PC의 `~/jejari-server.env`에서 확인
 - **Grafana**: 3000은 127.0.0.1에만. `gcloud compute ssh jejari -- -L 3000:localhost:3000` 후 `http://localhost:3000`
