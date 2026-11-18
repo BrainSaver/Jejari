@@ -11,6 +11,7 @@
 | 구분 | 상태 | 시나리오 |
 |---|---|---|
 | **실제 서버와 동작** | 대기열 진입·번호표·이탈, 입장 토큰으로 보호되는 좌석 배치도, 개발용 관리 API | 1, 6, 8, 9 |
+|  | ↳ 6번의 "정상 토큰은 열린다"는 **실제 좌석 배치도 API(Oracle 시드의 운행 필요, 판매 중은 9001·9002)**를 부릅니다. 시작 전에 한 번 불러 보고 실패하면 원인을 알려 줍니다 | |
 | **실제 서버 + Oracle** | 회원 인증(본인인증·가입·로그인)은 Oracle에 쓰고 읽음 (member 모듈) | 10 |
 | **실제 서버 전체 흐름** | 로그인(JWT) → 열차 조회 → 대기열 → 좌석 배치도 → 좌석 선점 → 결제(모의 PG). 예약·결제 API(B·C)가 main에 들어와 실제 앱으로 끝까지 돈다 | 11 |
 | **Mock 서버로만 동작** | 좌석 선점·결제·취소·취소표(다른 파트 구현 전). 실제 서버에 돌리면 사전 점검이 "API가 아직 없다"고 알려 주고 멈춥니다 | 2, 3, 4, 5, 7 |
@@ -175,6 +176,7 @@ docker run --rm --add-host=host.docker.internal:host-gateway -v "$(pwd):/lt" -w 
 | `retry` (5) | MACRO | 이미 팔린 좌석 하나를 0.3~0.6초 간격으로 8번 선점 시도 | `SAME_SEAT_RETRY` |
 | `multi` (3묶음 × 3) | RESELLER | 한 기기(`X-Device-Id`)로 계정 3개가 몇 초 안에 각자 선점 | `MULTI_ACCOUNT_SYNC` (기기) |
 | `cancel` (5) | CANCEL_ABUSER | 결제하고 1~3초 뒤 취소를 3번 | `CANCEL_AFTER_PAY` |
+| `steady` (기본 0, 경계 측정 때) | MACRO | 운행 검색을 정확히 일정한 간격으로 40번 | `REGULAR_INTERVAL` (보조 규칙) |
 
 - 봇마다 규칙 하나만 건드립니다. 놓쳤을 때 어느 규칙인지 바로 보입니다.
 - 회원마다 카드·기기가 다릅니다 (multi 묶음만 기기 공유). 카드를 같이 쓰면 결제 수단 점수가 전원에게 번져 오탐이 됩니다.
@@ -191,7 +193,9 @@ docker run --rm --add-host=host.docker.internal:host-gateway -v "$(pwd):/lt" -w 
 
 - `eval_risk.sh`는 회원에 연결된 대상(CI·결제 수단·기기) 중 하나라도 의심 케이스가 열렸으면 "탐지"로 셉니다. 기기 ↔ 회원 연결은 Mongo `behavior_log`에서 읽습니다. 비밀값은 컨테이너 안 환경 변수로만 써서 화면에 나오지 않습니다.
 - `bot_flow_ok`가 90% 밑이면 봇이 행동을 다 못 한 것(대기열·좌석 부족)이라 탐지율을 믿을 수 없습니다. 먼저 이것부터 봅니다.
-- 옵션: `NORMAL`·`FAST`·`RETRY`·`MULTI_GROUPS`·`MULTI_SIZE`·`CANCEL`(인원), `FAST_CLICKS`·`RETRY_TIMES`·`CANCEL_ROUNDS`(봇 강도, 문턱 근처로 내려 경계 확인), `NORMAL_CANCEL_RATE`, `SPREAD_SEC`.
+- 옵션: `NORMAL`·`FAST`·`RETRY`·`MULTI_GROUPS`·`MULTI_SIZE`·`CANCEL`·`STEADY`(인원), `FAST_CLICKS`·`RETRY_TIMES`·`CANCEL_ROUNDS`(봇 강도), `NORMAL_CANCEL_RATE`, `SPREAD_SEC`.
+- **경계 측정**: `-e BOUNDARY=1` 하나로 강도를 여러 단계로 섞습니다 (연타 10~50번, 같은 좌석 3~8번, 취소 1~3건, 한 기기 2·3계정, 일정 간격 매크로 300·500·1000ms, 강도마다 `PER_LEVEL`명). 직접 주려면 `FAST_LEVELS=10,19,21`, `RETRY_LEVELS`, `CANCEL_LEVELS`, `MULTI_SIZES`, `STEADY_LEVELS`. 강도는 이메일 `g{강도}`에 남고 `eval_risk.sh`가 **강도별 탐지 표**를 냅니다. 문턱 아래 봇을 일부러 섞으므로 전체 탐지율은 목표와 비교하지 않습니다.
+- `steady`(일정 간격 매크로): 요청 시작을 t0 + i×간격에 맞춰 보내 응답 시간이 흔들려도 간격이 일정합니다 → REGULAR_INTERVAL 시험용.
 
 ## Mock 서버 (실제 서버가 없을 때 연습용)
 

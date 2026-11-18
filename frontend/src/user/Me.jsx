@@ -35,7 +35,7 @@ export default function Me() {
 
   const out = async () => {
     await logout();
-    navigate('/login');
+    navigate('/', { state: { loggedOut: true } });
   };
   const withdraw = async () => {
     setError(null);
@@ -70,7 +70,7 @@ export default function Me() {
                   <Icon name="out" /><span className="grow" style={{ textAlign: 'left' }}>로그아웃</span>
                 </button>
                 <div style={{ padding: '12px 0' }}>
-                  <p className="mut" style={{ fontSize: 14, margin: '0 0 8px' }}>탈퇴하면 예매 내역과 대기 신청이 모두 사라져요. 비밀번호를 한 번 더 넣어 주세요.</p>
+                  <p className="mut" style={{ fontSize: 14, margin: '0 0 8px' }}>탈퇴하면 이름·연락처는 지워지고 대기 신청은 취소돼요. 지난 예매 기록은 이름·연락처 없이 남아요. 비밀번호를 한 번 더 넣어 주세요.</p>
                   <div className="row">
                     <input type="password" aria-label="비밀번호 확인" placeholder="비밀번호" value={pw} onChange={(e) => setPw(e.target.value)} style={{ flex: 1 }} />
                     <ConfirmButton className="btn warn sm" confirm="한 번 더 누르면 탈퇴" onConfirm={withdraw} disabled={!pw}>탈퇴</ConfirmButton>

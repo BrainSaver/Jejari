@@ -33,10 +33,14 @@ else
 fi
 
 # 3) systemd 템플릿 (실제 사용자·홈으로 채움)
-sed -e "s#__USER__#${USER}#g" -e "s#__HOME__#${HOME}#g" deploy/jejari@.service \
-  | sudo tee /etc/systemd/system/jejari@.service >/dev/null
+for unit in jejari@.service jejari-autodeploy.service jejari-autodeploy.timer; do
+  sed -e "s#__USER__#${USER}#g" -e "s#__HOME__#${HOME}#g" "deploy/$unit" \
+    | sudo tee "/etc/systemd/system/$unit" >/dev/null
+done
 sudo systemctl daemon-reload
 sudo systemctl enable jejari@8080 jejari@8081 >/dev/null
+# 자동 배포 (10분마다 main 확인, CI 성공·DB 변경 없음일 때만). 끄기: sudo systemctl disable --now jejari-autodeploy.timer
+sudo systemctl enable --now jejari-autodeploy.timer >/dev/null
 
 echo "준비 끝. 주소: https://${DOMAIN}"
 echo "다음: docker compose -f compose.yaml -f deploy/compose.server.yaml up -d  → Oracle healthy 대기 → bash deploy/deploy.sh"

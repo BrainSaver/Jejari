@@ -24,6 +24,16 @@ services:
       - ./deploy/prometheus.server.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
 
+  # Grafana를 https://{도메인}/grafana/ 로 (Caddy가 넘김). 팀원은 보기 전용 계정(deploy/grafana-team-user.sh)
+  grafana:
+    environment:
+      GF_SERVER_ROOT_URL: https://${JEJARI_DOMAIN}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_COOKIE_SECURE: "true"          # HTTPS로만 로그인 쿠키
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"         # 익명 보기 끔 (인터넷에 지표를 그대로 내보내지 않게)
+      GF_USERS_DEFAULT_ROLE: Viewer
+
 volumes:
   caddy-data:
   caddy-config:

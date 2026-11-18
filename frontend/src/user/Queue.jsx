@@ -23,6 +23,8 @@ export default function Queue() {
   const [params] = useSearchParams();
   const from = params.get('from') || '';
   const to = params.get('to') || '';
+  // 검색 화면에서 고른 인원·좌석 종류를 좌석 화면까지 이어 준다
+  const carry = ['people', 'grade'].filter((k) => params.get(k)).map((k) => `&${k}=${encodeURIComponent(params.get(k))}`).join('');
   const { member, checking } = useMember();
   const navigate = useNavigate();
   const location = useLocation();
@@ -57,7 +59,7 @@ export default function Queue() {
         // 차례가 왔다: 기차가 끝까지 달려 나간 뒤 좌석 화면으로 (움직임 줄이기면 바로)
         setGoing(true);
         const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-        timer.current = setTimeout(() => navigate(`/runs/${runId}/seats?from=${from}&to=${to}`, { replace: true }), reduce ? 0 : 1000);
+        timer.current = setTimeout(() => navigate(`/runs/${runId}/seats?from=${from}&to=${to}${carry}`, { replace: true }), reduce ? 0 : 1000);
         return;
       }
       timer.current = setTimeout(poll, Math.max(1, s.pollIntervalSec || 2) * 1000);

@@ -96,6 +96,12 @@ public class SignupService {
 		String email = normalizeEmail(rawEmail);
 		PasswordPolicy.validate(password, email);
 		tokens.peek(verificationToken);
+		// 이미 가입된 이메일이면 토큰을 쓰기 전에 거절한다. 토큰을 먼저 써 버리면 이메일만 바꿔 다시 눌러도
+		// "본인인증 실패"가 나와 처음부터 다시 해야 한다. 최종 판정은 아래 UNIQUE 위반 (동시 가입 두 건)
+		Integer taken = jdbc.queryForObject("SELECT COUNT(*) FROM member WHERE email = ?", Integer.class, email);
+		if (taken != null && taken > 0) {
+			throw new BusinessException(AuthErrorCode.AUTH_EMAIL_DUPLICATED);
+		}
 		Hashed hashed = hasher.hash(password);
 		VerifiedIdentity id = tokens.consume(verificationToken);
 

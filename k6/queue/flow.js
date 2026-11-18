@@ -5,7 +5,7 @@
 import { check } from 'k6';
 import exec from 'k6/execution';
 import { Counter, Trend } from 'k6/metrics';
-import { enter, leave, seats, waitUntilAdmitted, parse, preflight } from './lib/queue.js';
+import { enter, leave, seats, waitUntilAdmitted, parse, preflight, preflightSeatMap, SEAT_CALL } from './lib/queue.js';
 
 const ARRIVAL_RATE = Number(__ENV.ARRIVAL_RATE || 100);   // 초당 새로 줄 서는 사람 수
 const DURATION = __ENV.DURATION || '30s';
@@ -39,6 +39,7 @@ export const options = {
 // 시작 전에 앱·Redis 상태를 점검한다 (실패하면 이유를 알려 주고 중단)
 export function setup() {
   preflight();
+  if (SEAT_CALL) preflightSeatMap();
 }
 
 export default function () {
@@ -64,7 +65,10 @@ export default function () {
   }
   admitWait.add(Date.now() - t0);
 
-  const s = seats(id, w.token);
-  check(s, { '입장 토큰으로 좌석 API 200': (r) => r.status === 200 });
+  if (SEAT_CALL) {
+    // 실제 좌석 배치도 API(Oracle 읽기, 응답이 큼). 대기열 비용만 재려면 -e SEAT_CALL=no
+    const s = seats(id, w.token);
+    check(s, { '입장 토큰으로 좌석 API 200': (r) => r.status === 200 });
+  }
   leave(id);
 }

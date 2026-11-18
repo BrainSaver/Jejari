@@ -62,7 +62,10 @@ public final class RiskEngine {
 
         List<Reason> reasons = new ArrayList<>();
         tier(reasons, RiskRule.FAST_CLICK, policy.fastClick(), s.fastIntervalCount());
-        tier(reasons, RiskRule.SAME_SEAT_RETRY, policy.sameSeatRetry(), s.maxSameSeatFailures());
+        // 한 좌석 최대 실패와, 여러 좌석에 걸친 재시도 실패 합 중 큰 쪽. 좌석마다 4번씩(문턱 5 아래)으로 나눠도
+        // 두 좌석이면 재시도 실패 6이라 걸린다 (조영준 경계 측정 2026-11-18)
+        tier(reasons, RiskRule.SAME_SEAT_RETRY, policy.sameSeatRetry(),
+                Math.max(s.maxSameSeatFailures(), s.seatRetryFailures()));
         tier(reasons, RiskRule.CANCEL_AFTER_PAY, policy.cancelAfterPay(), s.fastCancelCount());
         tier(reasons, RiskRule.MULTI_ACCOUNT_SYNC, policy.multiAccountSync(), s.maxSyncAccounts());
 

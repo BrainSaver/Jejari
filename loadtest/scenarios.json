@@ -258,7 +258,7 @@
     "id": "bypass",
     "file": "06_token_bypass.js",
     "title": "대기열 우회 차단",
-    "desc": "입장 토큰 없음·위조·남의 토큰·다른 운행·이탈 후 재사용으로 좌석 배치도를 호출해 100% 차단되는지, 정상 토큰은 열리는지 봅니다.",
+    "desc": "입장 토큰 없음·위조·남의 토큰·다른 운행·이탈 후 재사용으로 좌석 배치도를 호출해 100% 차단되는지, 정상 토큰은 열리는지 봅니다. 정상 토큰 확인은 실제 좌석 배치도 API(Oracle 시드의 운행 필요)를 부릅니다.",
     "params": [
       {
         "key": "VUS",
@@ -646,7 +646,8 @@
     "presets": {
       "light": { "NORMAL": 10, "FAST": 2, "RETRY": 2, "MULTI_GROUPS": 1, "CANCEL": 2, "SPREAD_SEC": 10 },
       "normal": { "NORMAL": 40, "FAST": 5, "RETRY": 5, "MULTI_GROUPS": 3, "CANCEL": 5, "SPREAD_SEC": 30 },
-      "heavy": { "NORMAL": 200, "FAST": 20, "RETRY": 20, "MULTI_GROUPS": 10, "CANCEL": 20, "SPREAD_SEC": 60 }
+      "heavy": { "NORMAL": 200, "FAST": 20, "RETRY": 20, "MULTI_GROUPS": 10, "CANCEL": 20, "SPREAD_SEC": 60 },
+      "boundary": { "BOUNDARY": 1, "SPREAD_SEC": 30 }
     },
     "keyMetrics": [
       "bot_flow_ok",

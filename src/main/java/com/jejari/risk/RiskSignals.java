@@ -27,6 +27,9 @@ import java.util.regex.Pattern;
  * @param linkedAccountCount  이 대상에 연결된 계정 수 (자기 포함)
  * @param maxSyncAccounts     짧은 창 안에서 선점한 서로 다른 계정 수의 최댓값
  * @param accountAgeDays      연결 계정 중 가장 오래된 계정의 나이(일). 계정이 없는 대상이면 null
+ * @param seatRetryFailures   같은 좌석을 다시 시도해 또 실패한 횟수를 모든 좌석에 걸쳐 합한 값 (좌석마다 실패 수 − 1의 합).
+ *                            좌석을 바꿔 가며 문턱 아래로 반복하는 봇(좌석마다 4번씩)을 잡는다. 사람은 이미 잡힌 좌석을
+ *                            다시 누르기보다 다른 좌석을 고르므로 정상 회원은 대개 0~1
  */
 public record RiskSignals(
         SubjectType subjectType, String subjectHash, Instant windowFrom,
@@ -35,9 +38,23 @@ public record RiskSignals(
         long purchaseCount, long totalPurchaseSeats, long maxSinglePurchase,
         long userCancelCount, long fastCancelCount, long lastMinuteCancelCount, Double avgMinutesToCancel,
         long linkedAccountCount, long maxSyncAccounts,
-        Long accountAgeDays) {
+        Long accountAgeDays, long seatRetryFailures) {
 
     private static final Pattern HASH = Pattern.compile("^[0-9a-f]{64}$");
+
+    /** 좌석 합산 신호 없이 만드는 기존 모양 (테스트·빈 신호용). seatRetryFailures = 0 */
+    public RiskSignals(SubjectType subjectType, String subjectHash, Instant windowFrom,
+            long intervalCount, long fastIntervalCount, double intervalMeanMs, double intervalStdDevMs,
+            long maxSameSeatFailures,
+            long purchaseCount, long totalPurchaseSeats, long maxSinglePurchase,
+            long userCancelCount, long fastCancelCount, long lastMinuteCancelCount, Double avgMinutesToCancel,
+            long linkedAccountCount, long maxSyncAccounts,
+            Long accountAgeDays) {
+        this(subjectType, subjectHash, windowFrom, intervalCount, fastIntervalCount, intervalMeanMs, intervalStdDevMs,
+                maxSameSeatFailures, purchaseCount, totalPurchaseSeats, maxSinglePurchase, userCancelCount,
+                fastCancelCount, lastMinuteCancelCount, avgMinutesToCancel, linkedAccountCount, maxSyncAccounts,
+                accountAgeDays, 0);
+    }
 
     public RiskSignals {
         if (subjectType == null) throw new IllegalArgumentException("subjectType이 없습니다");
@@ -49,6 +66,7 @@ public record RiskSignals(
         nonNegative(intervalCount, "intervalCount");
         nonNegative(fastIntervalCount, "fastIntervalCount");
         nonNegative(maxSameSeatFailures, "maxSameSeatFailures");
+        nonNegative(seatRetryFailures, "seatRetryFailures");
         nonNegative(purchaseCount, "purchaseCount");
         nonNegative(totalPurchaseSeats, "totalPurchaseSeats");
         nonNegative(maxSinglePurchase, "maxSinglePurchase");

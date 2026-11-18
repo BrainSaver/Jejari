@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { get } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
-import { seoulToday } from '../lib/time.js';
+import { seoulHm, seoulNowLocal, seoulToday } from '../lib/time.js';
 import { MiniTrain } from './RouteLine.jsx';
 
 /**
@@ -14,12 +14,14 @@ import { MiniTrain } from './RouteLine.jsx';
  * 검색 조건은 주소(?from=&to=&date=)에 둔다 → 새로고침·뒤로 가기·링크 공유에도 같은 결과.
  */
 const GRADES = [['GENERAL', '일반실'], ['FIRST', '특실']];
+const GRADE_KEYS = GRADES.map(([g]) => g);
+const MAX_PEOPLE = 9; // 한 번에 예매할 수 있는 화면 상한 (실제 한도는 서버 정책)
 const LOW = 5; // 이만큼 이하면 "얼마 안 남음" 색
 
 export default function Search() {
   const [params, setParams] = useSearchParams();
   const [stations, setStations] = useState([]);
-  const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday() });
+  const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday(), time: params.get('time') || defaultTime(params.get('date') || seoulToday()), people: clampPeople(params.get('people')), grade: GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '' });
   const [state, setState] = useState({ runs: null, loading: false, error: null });
   const [sort, setSort] = useState('dep');
   const [spun, setSpun] = useState(false); // 바꾸기 버튼이 반 바퀴씩 돈다
@@ -40,6 +42,9 @@ export default function Search() {
 
   // 주소의 조건이 바뀌면 검색
   const q = { from: params.get('from'), to: params.get('to'), date: params.get('date') };
+  const qTime = params.get('time') || defaultTime(q.date);
+  const qPeople = clampPeople(params.get('people'));
+  const qGrade = GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '';
   useEffect(() => {
     if (!q.from || !q.to || !q.date) return;
     let alive = true;
@@ -58,17 +63,24 @@ export default function Search() {
       setState({ runs: null, loading: false, error: { message: '출발역과 도착역이 같아요. 다른 역을 골라 주세요.' } });
       return;
     }
-    setParams({ from: form.from, to: form.to, date: form.date });
+    setParams({ from: form.from, to: form.to, date: form.date, time: form.time, people: String(form.people), ...(form.grade ? { grade: form.grade } : {}) });
   };
 
   const name = (id) => stations.find((s) => s.stationId === id)?.stationName || id;
   const sorted = useMemo(() => {
     if (!state.runs) return null;
-    const list = [...state.runs];
+    // 고른 날짜·시각 이후에 출발하고, 지금 기준으로 이미 떠났거나 예매가 끝난 열차는 뺀다
+    const since = `${q.date}T${qTime}`;
+    const now = seoulNowLocal();
+    const list = state.runs.filter((r) => {
+      const dep = r.departureAt || '';
+      if (dep && (dep < since || dep <= now)) return false;
+      return matches(r, qPeople, qGrade);
+    });
     return sort === 'dep'
       ? list.sort((a, b) => (a.departureAt || '').localeCompare(b.departureAt || ''))
       : list.sort((a, b) => a.durationMin - b.durationMin);
-  }, [state.runs, sort]);
+  }, [state.runs, sort, q.date, qTime, qPeople, qGrade]);
 
   return (
     <>
@@ -103,20 +115,63 @@ export default function Search() {
                 </select>
               </label>
             </div>
-            <label className="row dt" style={{ position: 'relative' }}>
-              <Icon name="calendar" />
-              <span className="grow">
-                <span className="mut" style={{ fontSize: 12.5, display: 'block' }}>운행일</span>
-                <b>{longDate(form.date)}</b>
-              </span>
-              {form.date === seoulToday() && <span className="st amber">오늘</span>}
-              {/* 날짜 칸은 보이지 않게 덮어 두고, 누르면 브라우저 달력이 열린다 */}
-              <input
-                type="date" aria-label="운행일" value={form.date} min={seoulToday()} required
-                onChange={(e) => e.target.value && setForm({ ...form, date: e.target.value })}
-                style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', minHeight: 0 }}
-              />
-            </label>
+            <div className="opts" style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+            <div className="dtime" style={{ display: 'flex', gap: 16 }}>
+              <label className="row dt" style={{ position: 'relative', flex: 1.4, minWidth: 0 }}>
+                <Icon name="calendar" />
+                <span className="grow">
+                  <span className="mut" style={{ fontSize: 12.5, display: 'block' }}>운행일</span>
+                  <b>{longDate(form.date)}</b>
+                </span>
+                {form.date === seoulToday() && <span className="st amber">오늘</span>}
+                {/* 날짜 칸은 보이지 않게 덮어 두고, 어디를 눌러도 브라우저 달력이 열린다 */}
+                <input
+                  type="date" aria-label="운행일" value={form.date} min={seoulToday()} required
+                  onClick={openPicker}
+                  onChange={(e) => e.target.value && setForm({ ...form, date: e.target.value, time: e.target.value === seoulToday() ? maxTime(form.time, seoulHm()) : form.time })}
+                  style={overlay}
+                />
+              </label>
+              <label className="row dt" style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                <Icon name="clock" />
+                <span className="grow">
+                  <span className="mut" style={{ fontSize: 12.5, display: 'block' }}>출발 시각 이후</span>
+                  <b>{timeText(form.time)}</b>
+                </span>
+                <input
+                  type="time" aria-label="출발 시각" value={form.time} required
+                  min={form.date === seoulToday() ? seoulHm() : undefined}
+                  onClick={openPicker}
+                  onChange={(e) => e.target.value && setForm({ ...form, time: e.target.value })}
+                  style={overlay}
+                />
+              </label>
+            </div>
+            <div className="dtime" style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+              <div className="row dt" style={{ flex: 1.4, minWidth: 0 }}>
+                <Icon name="person" />
+                <span className="grow">
+                  <span className="mut" style={{ fontSize: 12.5, display: 'block' }}>인원</span>
+                  <b>{form.people}명</b>
+                </span>
+                <span className="qty">
+                  <button type="button" aria-label="인원 한 명 빼기" disabled={form.people <= 1} onClick={() => setForm({ ...form, people: form.people - 1 })}>−</button>
+                  <b>{form.people}</b>
+                  <button type="button" aria-label="인원 한 명 더하기" disabled={form.people >= MAX_PEOPLE} onClick={() => setForm({ ...form, people: form.people + 1 })}>+</button>
+                </span>
+              </div>
+              <label className="row dt" style={{ flex: 1, minWidth: 0 }}>
+                <Icon name="ticket" />
+                <span className="grow">
+                  <span className="mut" style={{ fontSize: 12.5, display: 'block' }}>좌석 종류</span>
+                  <select aria-label="좌석 종류" value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })} style={{ fontSize: 16, fontWeight: 800, minHeight: 28, padding: '0 18px 0 0' }}>
+                    <option value="">전체</option>
+                    {GRADES.map(([g, label]) => <option key={g} value={g}>{label}</option>)}
+                  </select>
+                </span>
+              </label>
+            </div>
+            </div>
             <button className="btn ink" type="submit" disabled={!stations.length}>열차 찾기</button>
           </form>
         </div>
@@ -138,7 +193,7 @@ export default function Search() {
           <>
             <div className="row" style={{ margin: '10px 2px 0' }}>
               <b className="grow" style={{ fontSize: 16 }}>
-                {shortDate(q.date)} {name(q.from)}에서 {name(q.to)}까지 열차 {sorted.length}개
+                {shortDate(q.date)} {timeText(qTime)} 이후 {name(q.from)}에서 {name(q.to)}까지 {qPeople}명{qGrade ? ` ${GRADES.find(([g]) => g === qGrade)[1]}` : ''} 열차 {sorted.length}개
               </b>
               <div className="sort">
                 <button type="button" className={sort === 'dep' ? 'on' : ''} onClick={() => setSort('dep')}>출발 빠른 순</button>
@@ -147,12 +202,12 @@ export default function Search() {
             </div>
             {/* 카드가 차례로 올라오고, 노선 선 위로 기차가 출발역에서 도착역까지 달린다 (정렬을 바꾸면 다시) */}
             <div className="stagger" key={sort} style={{ display: 'flex', flexDirection: 'column', gap: 'inherit' }}>
-              {sorted.map((r, i) => <RunCard key={r.runId} r={r} i={i} from={q.from} to={q.to} name={name} />)}
+              {sorted.map((r, i) => <RunCard key={r.runId} r={r} i={i} from={q.from} to={q.to} name={name} people={qPeople} grade={qGrade} />)}
             </div>
             {!sorted.length && (
               <div className="card" style={{ textAlign: 'center' }}>
-                <b>이 날짜에는 다니는 열차가 없어요.</b>
-                <p className="mut" style={{ margin: '6px 0 0' }}>날짜나 역을 바꿔 다시 찾아보세요.</p>
+                <b>조건에 맞는 열차가 없어요.</b>
+                <p className="mut" style={{ margin: '6px 0 0' }}>시각을 앞당기거나 인원·좌석 종류, 날짜·역을 바꿔 다시 찾아보세요.</p>
               </div>
             )}
             {sorted.length > 0 && <p className="faint" style={{ fontSize: 12.5, textAlign: 'center', margin: 0 }}>남은 좌석은 몇 초 늦게 바뀔 수 있어요.</p>}
@@ -163,9 +218,27 @@ export default function Search() {
   );
 }
 
+const overlay = { position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', minHeight: 0, width: '100%' };
+/** 글자 영역을 눌러도 달력·시각 선택창이 열리게 한다 (브라우저는 보통 작은 아이콘만 연다) */
+const openPicker = (e) => {
+  try {
+    e.currentTarget.showPicker?.();
+  } catch {
+    /* 이미 열려 있거나 지원하지 않으면 브라우저 기본 동작 */
+  }
+};
+/** 오늘이면 지금 시각, 다른 날이면 0시 */
+const defaultTime = (date) => (date === seoulToday() ? seoulHm() : '00:00');
+const clampPeople = (v) => Math.min(MAX_PEOPLE, Math.max(1, Number(v) || 1));
+const maxTime = (a, b) => (a > b ? a : b);
+const timeText = (t) => {
+  const [h, m] = (t || '00:00').split(':').map(Number);
+  return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}시${m ? ` ${m}분` : ''}`;
+};
+
 // ------------------------------------------------------------ 운행 카드
 
-function RunCard({ r, i, from, to, name }) {
+function RunCard({ r, i, from, to, name, people, grade }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [stops, setStops] = useState(null);
@@ -211,7 +284,7 @@ function RunCard({ r, i, from, to, name }) {
         ))}
         {!Object.keys(r.fares || {}).length && <p className="mut" style={{ margin: '8px 0' }}>운임이 아직 등록되지 않았어요.</p>}
         {view.action === 'book' && (
-          <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => navigate(`/queue/${r.runId}?from=${from}&to=${to}`)}>예매하기</button>
+          <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => navigate(`/queue/${r.runId}?from=${from}&to=${to}&people=${people}${grade ? `&grade=${grade}` : ''}`)}>예매하기</button>
         )}
         {view.action === 'wait' && (
           <button type="button" className="btn soft" style={{ marginTop: 10 }} onClick={() => navigate(`/waitlist?run=${r.runId}&from=${from}&to=${to}`)}>취소표 대기 신청</button>
@@ -220,6 +293,18 @@ function RunCard({ r, i, from, to, name }) {
       </div>
     </article>
   );
+}
+
+/**
+ * 검색 조건에 맞는 열차인가: 판매 중이고, 고른 좌석 종류(전체면 아무 종류)에 운임이 있으며 남은 좌석이 인원 이상.
+ * 오픈 전 열차는 남은 좌석을 모르니 그 종류의 운임만 있으면 보여 준다. 마감은 뺀다.
+ */
+function matches(r, people, grade) {
+  const kinds = grade ? [grade] : GRADE_KEYS;
+  if (!kinds.some((g) => r.fares?.[g] != null)) return false;
+  if (r.saleStatus === 'SCHEDULED' && !r.bookable) return true;
+  if (!r.bookable) return false;
+  return kinds.some((g) => r.fares?.[g] != null && (r.remaining?.[g] ?? 0) >= people);
 }
 
 /** 판매 상태 → 배지·버튼. 색만이 아니라 글자로도 구분 (DESIGN.md) */

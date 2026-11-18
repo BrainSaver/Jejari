@@ -12,6 +12,8 @@ import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -22,6 +24,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.jejari.replay.ReplayAdminService;
 import com.jejari.risk.PreviousScore;
 import com.jejari.risk.RiskEngine;
 import com.jejari.risk.RiskResult;
@@ -80,6 +83,14 @@ public class RiskScoreBatch {
 	private final Duration maxRun;
 	private final Duration decayRefreshAfter;
 	private final boolean scheduleEnabled;
+
+	/** ADM-11 녹화 삭제 보류. 녹화가 꺼져 있거나(테스트에서 직접 만든 배치) 없으면 건너뜀 */
+	private ObjectProvider<ReplayAdminService> replayAdmin;
+
+	@Autowired
+	void setReplayAdmin(ObjectProvider<ReplayAdminService> replayAdmin) {
+		this.replayAdmin = replayAdmin;
+	}
 
 	public RiskScoreBatch(RiskDirtyQueue dirty, RiskInputReader reader, RiskPolicySource policies, RiskScoreStore store,
 			SuspiciousCaseOpener cases, TransactionTemplate tx,
@@ -218,6 +229,13 @@ public class RiskScoreBatch {
 			store.save(r);
 			return plan == null ? null : cases.open(plan);
 		});
+		if (caseId != null) {
+			// ADM-11: 케이스와 겹치는 화면 녹화가 90일 TTL로 지워지지 않게 삭제 보류 (커밋 뒤, 실패해도 케이스는 그대로)
+			ReplayAdminService replays = replayAdmin == null ? null : replayAdmin.getIfAvailable();
+			if (replays != null) {
+				replays.hold(caseId);
+			}
+		}
 		return caseId == null ? Outcome.WRITTEN : Outcome.OPENED;
 	}
 
