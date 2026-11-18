@@ -11,7 +11,7 @@ import { useMember } from './useMember.js';
  */
 const MESSAGES = {
   AUTH_INVALID_CREDENTIALS: '이메일 또는 비밀번호가 맞지 않아요. 다시 입력해 주세요.',
-  AUTH_LOCKED: '여러 번 틀려서 잠시 잠겼어요. 15분 뒤에 다시 시도해 주세요.',
+  AUTH_LOCKED: '여러 번 틀려서 잠시 잠겼어요. 잠시 후 다시 시도해 주세요.', // 잠금 시간은 app_policy(auth.lock_minutes)라 화면에 박지 않음
   AUTH_RATE_LIMITED: '시도가 너무 많아요. 잠시 후 다시 시도해 주세요.',
   AUTH_BANNED: '이용이 정지된 계정이에요. 1588-0000으로 문의해 주세요.',
 };

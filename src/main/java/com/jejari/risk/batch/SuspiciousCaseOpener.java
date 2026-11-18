@@ -34,7 +34,7 @@ import com.mongodb.client.model.Sorts;
  *
  * <pre>
  * 열 조건: 새 증거가 점수를 만들었고(규칙 점수 ≥ 감쇠한 이전 점수)
- *          규칙 점수 ≥ 80 → RISK_THRESHOLD, 아니면 마커 규칙(FAST_CLICK 등 4개)이 하나라도 걸림 → RULE
+ *          규칙 점수 ≥ 80 → RISK_THRESHOLD, 아니면 마커 규칙(FAST_CLICK 등 5개, RiskRule.marker)이 하나라도 걸림 → RULE
  * 열지 않음: 이 대상에 OPEN·REVIEWING 케이스가 이미 있음 / 감쇠만으로 저장한 경우 / 같은 증거로 다시 계산한 경우(저장 안 함)
  * 함께: case_marker(AUTO) 규칙마다 1개, risk_score.review_status NONE → PENDING
  * </pre>
@@ -197,6 +197,9 @@ public class SuspiciousCaseOpener {
 			case SAME_SEAT_RETRY -> Filters.and(base, Filters.eq("event_type", BehaviorType.SEAT_HOLD.name()),
 					Filters.eq("response_status", 409));
 			case MULTI_ACCOUNT_SYNC -> Filters.and(base, Filters.eq("event_type", BehaviorType.SEAT_HOLD.name()));
+			// 규칙성 통계에 들어간 간격(긴 공백 제외)이 있는 요청들 = 일정하게 반복한 구간
+			case REGULAR_INTERVAL -> Filters.and(base, Filters.exists("interval_ms"),
+					Filters.lt("interval_ms", policy.statsMaxGapMs()));
 			default -> null;
 		};
 		if (filter == null) {
@@ -238,6 +241,9 @@ public class SuspiciousCaseOpener {
 			case SAME_SEAT_RETRY -> "같은 좌석 선점 실패 " + n + "회";
 			case CANCEL_AFTER_PAY -> "구매 후 " + policy.cancelAfterPayMin() + "분 안 취소 " + n + "건";
 			case MULTI_ACCOUNT_SYNC -> policy.multiAccountWindowSec() + "초 안에 계정 " + n + "개가 좌석 선점";
+			// observed는 변동계수(0.001 같은 작은 수)라 반올림하면 0이 된다 → 소수로
+			case REGULAR_INTERVAL -> "요청 간격이 기계처럼 일정함 (변동계수 "
+					+ String.format(java.util.Locale.ROOT, "%.3f", r.observed()) + ")";
 			default -> r.rule().name() + " " + n;
 		};
 	}

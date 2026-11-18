@@ -91,6 +91,18 @@ class RiskEngineTest {
         }
 
         @Test
+        void SAME_SEAT_RETRY_좌석을_바꿔_문턱_아래로_나눠도_합이면_걸린다() {
+            RiskSignals split = new RiskSignals(SubjectType.CI, H, NOW.minusSeconds(3600), 0, 0, 0, 0,
+                    4, 0, 0, 0, 0, 0, 0, null, 1, 1, 30L, 6); // 좌석마다 4번씩 2좌석 → 재시도 실패 6
+            RiskResult r = engine.score(split, null, NOW);
+            assertThat(r.reasons()).extracting(Reason::rule).containsExactly(RiskRule.SAME_SEAT_RETRY);
+            assertThat(r.markerReasons()).isNotEmpty(); // 케이스가 열린다
+            RiskSignals human = new RiskSignals(SubjectType.CI, H, NOW.minusSeconds(3600), 0, 0, 0, 0,
+                    2, 0, 0, 0, 0, 0, 0, null, 1, 1, 30L, 1); // 인기 좌석에서 409 두 번 (정상 노이즈)
+            assertThat(engine.score(human, null, NOW).reasons()).isEmpty();
+        }
+
+        @Test
         void CANCEL_AFTER_PAY() {
             assertThat(score(s().purchases(2, 2).cancels(1, 1, 0)).reasons()).isEmpty();
             assertThat(score(s().purchases(2, 2).cancels(2, 2, 0)).reasons())
@@ -110,6 +122,16 @@ class RiskEngineTest {
                     .extracting(Reason::rule).containsExactly(RiskRule.REGULAR_INTERVAL);
             assertThat(score(s().intervals(29, 0, 1000, 40)).reasons()).isEmpty(); // 표본 부족
             assertThat(score(s().intervals(30, 0, 1000, 300)).reasons()).isEmpty(); // 사람 수준 변동
+        }
+
+        @Test
+        void REGULAR_INTERVAL만_걸려도_케이스가_열린다_마커_규칙() {
+            // 300~1000ms로 일정하게 새로고침하는 매크로: 15점이라 80점엔 못 미치지만 마커라 RULE로 연다 (조영준 경계 측정)
+            RiskResult r = score(s().intervals(40, 0, 700, 0.7));
+            assertThat(r.ruleScore()).isEqualByComparingTo("15");
+            assertThat(r.markerReasons()).extracting(Reason::rule).containsExactly(RiskRule.REGULAR_INTERVAL);
+            assertThat(r.openCase()).isTrue();
+            assertThat(r.triggerType()).isEqualTo("RULE");
         }
 
         @Test

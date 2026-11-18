@@ -121,7 +121,7 @@ public class RiskAdminService {
 		values.forEach(v -> args.add(v.name()));
 	}
 
-	/** reasons JSON에서 마커 규칙(케이스를 여는 4개)만 점수 큰 순서 그대로 */
+	/** reasons JSON에서 마커 규칙(케이스를 여는 규칙, RiskRule.marker)만 점수 큰 순서 그대로 */
 	List<String> markers(String reasons) {
 		Set<String> out = new LinkedHashSet<>();
 		if (reasons == null || reasons.isBlank()) {
