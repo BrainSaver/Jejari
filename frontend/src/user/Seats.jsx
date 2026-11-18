@@ -44,9 +44,11 @@ export default function Seats() {
   const [run, setRun] = useState(null);
   const [map, setMap] = useState(null);
   const [carNo, setCarNo] = useState(null);
-  const wanted = Math.min(MAX_PEOPLE, Math.max(1, Number(params.get('people')) || 1));
+  // 검색 화면에서 고른 유형별 인원 (없으면 어른 1명)
+  const want = Object.fromEntries(['adult', 'child', 'senior'].map((k) => [k, Math.max(0, Math.min(MAX_PEOPLE, Math.floor(Number(params.get(k))) || 0))]));
+  if (want.adult + want.child + want.senior < 1 || want.adult + want.child + want.senior > MAX_PEOPLE) Object.assign(want, { adult: 1, child: 0, senior: 0 });
   const wantGrade = params.get('grade') || '';
-  const [people, setPeople] = useState({ ADULT: wanted, CHILD: 0, SENIOR: 0 });
+  const [people, setPeople] = useState({ ADULT: want.adult, CHILD: want.child, SENIOR: want.senior });
   const [picked, setPicked] = useState([]); // [{seatId, seatNo, carNo, grade}]
   const [notice, setNotice] = useState(null); // {kind:'taken'|'error'|'expired', text}
   const [busy, setBusy] = useState(false);

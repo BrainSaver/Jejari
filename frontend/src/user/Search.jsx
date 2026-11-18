@@ -16,12 +16,14 @@ import { MiniTrain } from './RouteLine.jsx';
 const GRADES = [['GENERAL', '일반실'], ['FIRST', '특실']];
 const GRADE_KEYS = GRADES.map(([g]) => g);
 const MAX_PEOPLE = 9; // 한 번에 예매할 수 있는 화면 상한 (실제 한도는 서버 정책)
+// 서버가 받는 승객 유형은 ADULT / CHILD / SENIOR 세 가지 (reservation_seat.passenger_type)
+const KINDS = [['adult', '어른', '13세 이상'], ['child', '어린이', '6 ~ 12세'], ['senior', '경로', '65세 이상']];
 const LOW = 5; // 이만큼 이하면 "얼마 안 남음" 색
 
 export default function Search() {
   const [params, setParams] = useSearchParams();
   const [stations, setStations] = useState([]);
-  const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday(), time: params.get('time') || defaultTime(params.get('date') || seoulToday()), people: clampPeople(params.get('people')), grade: GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '' });
+  const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday(), time: params.get('time') || defaultTime(params.get('date') || seoulToday()), ...peopleOf(params), grade: GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '' });
   const [state, setState] = useState({ runs: null, loading: false, error: null });
   const [sort, setSort] = useState('dep');
   const [spun, setSpun] = useState(false); // 바꾸기 버튼이 반 바퀴씩 돈다
@@ -43,7 +45,9 @@ export default function Search() {
   // 주소의 조건이 바뀌면 검색
   const q = { from: params.get('from'), to: params.get('to'), date: params.get('date') };
   const qTime = params.get('time') || defaultTime(q.date);
-  const qPeople = clampPeople(params.get('people'));
+  const qParty = peopleOf(params);
+  const qPeople = total(qParty);
+  const [peopleOpen, setPeopleOpen] = useState(false);
   const qGrade = GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '';
   useEffect(() => {
     if (!q.from || !q.to || !q.date) return;
@@ -63,7 +67,7 @@ export default function Search() {
       setState({ runs: null, loading: false, error: { message: '출발역과 도착역이 같아요. 다른 역을 골라 주세요.' } });
       return;
     }
-    setParams({ from: form.from, to: form.to, date: form.date, time: form.time, people: String(form.people), ...(form.grade ? { grade: form.grade } : {}) });
+    setParams({ from: form.from, to: form.to, date: form.date, time: form.time, adult: String(form.adult), child: String(form.child), senior: String(form.senior), ...(form.grade ? { grade: form.grade } : {}) });
   };
 
   const name = (id) => stations.find((s) => s.stationId === id)?.stationName || id;
@@ -139,14 +143,10 @@ export default function Search() {
                   style={overlay}
                 />
               </label>
-              <div className="fld">
+              <button type="button" className="fld" aria-haspopup="dialog" onClick={() => setPeopleOpen(true)}>
                 <span className="k"><Icon name="person" />인원</span>
-                <span className="qty">
-                  <button type="button" aria-label="인원 한 명 빼기" disabled={form.people <= 1} onClick={() => setForm({ ...form, people: form.people - 1 })}>−</button>
-                  <b>{form.people}명</b>
-                  <button type="button" aria-label="인원 한 명 더하기" disabled={form.people >= MAX_PEOPLE} onClick={() => setForm({ ...form, people: form.people + 1 })}>+</button>
-                </span>
-              </div>
+                <span className="v">{partyText(form)}<i className="chev" aria-hidden="true" /></span>
+              </button>
               <label className="fld">
                 <span className="k"><Icon name="ticket" />좌석 종류</span>
                 <select aria-label="좌석 종류" value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })}>
@@ -158,6 +158,13 @@ export default function Search() {
           </div>
             <button className="btn ink" type="submit" disabled={!stations.length}>열차 찾기</button>
           </form>
+          {peopleOpen && (
+            <PeopleDialog
+              value={form}
+              onClose={() => setPeopleOpen(false)}
+              onApply={(v) => { setForm({ ...form, ...v }); setPeopleOpen(false); }}
+            />
+          )}
         </div>
       </section>
 
@@ -177,7 +184,7 @@ export default function Search() {
           <>
             <div className="row" style={{ margin: '10px 2px 0' }}>
               <b className="grow" style={{ fontSize: 16 }}>
-                {shortDate(q.date)} {timeText(qTime)} 이후 {name(q.from)}에서 {name(q.to)}까지 {qPeople}명{qGrade ? ` ${GRADES.find(([g]) => g === qGrade)[1]}` : ''} 열차 {sorted.length}개
+                {shortDate(q.date)} {timeText(qTime)} 이후 {name(q.from)}에서 {name(q.to)}까지 {partyText(qParty)}{qGrade ? ` ${GRADES.find(([g]) => g === qGrade)[1]}` : ''} 열차 {sorted.length}개
               </b>
               <div className="sort">
                 <button type="button" className={sort === 'dep' ? 'on' : ''} onClick={() => setSort('dep')}>출발 빠른 순</button>
@@ -186,7 +193,7 @@ export default function Search() {
             </div>
             {/* 카드가 차례로 올라오고, 노선 선 위로 기차가 출발역에서 도착역까지 달린다 (정렬을 바꾸면 다시) */}
             <div className="stagger" key={sort} style={{ display: 'flex', flexDirection: 'column', gap: 'inherit' }}>
-              {sorted.map((r, i) => <RunCard key={r.runId} r={r} i={i} from={q.from} to={q.to} name={name} people={qPeople} grade={qGrade} />)}
+              {sorted.map((r, i) => <RunCard key={r.runId} r={r} i={i} from={q.from} to={q.to} name={name} party={qParty} grade={qGrade} />)}
             </div>
             {!sorted.length && (
               <div className="card" style={{ textAlign: 'center' }}>
@@ -213,7 +220,20 @@ const openPicker = (e) => {
 };
 /** 오늘이면 지금 시각, 다른 날이면 0시 */
 const defaultTime = (date) => (date === seoulToday() ? seoulHm() : '00:00');
-const clampPeople = (v) => Math.min(MAX_PEOPLE, Math.max(1, Number(v) || 1));
+const num = (v) => Math.max(0, Math.min(MAX_PEOPLE, Math.floor(Number(v)) || 0));
+const total = (p) => p.adult + p.child + p.senior;
+/** 주소에서 유형별 인원을 읽는다. 아무것도 없으면 어른 1명. 옛 주소(?people=3)는 어른 3명 */
+function peopleOf(params) {
+  const p = { adult: num(params.get('adult') ?? params.get('people')), child: num(params.get('child')), senior: num(params.get('senior')) };
+  if (total(p) < 1) return { adult: 1, child: 0, senior: 0 };
+  if (total(p) > MAX_PEOPLE) return { adult: Math.min(p.adult, MAX_PEOPLE), child: 0, senior: 0 };
+  return p;
+}
+/** "어른 1명" / "어른 2 · 어린이 1" */
+function partyText(p) {
+  const parts = KINDS.filter(([k]) => p[k] > 0).map(([k, label]) => `${label} ${p[k]}`);
+  return parts.length === 1 ? `${parts[0]}명` : parts.join(' · ');
+}
 const maxTime = (a, b) => (a > b ? a : b);
 /** "13:30" → "오후 1:30" (칸이 좁아 "시·분"을 줄여 쓴다) */
 const timeShort = (t) => {
@@ -225,9 +245,54 @@ const timeText = (t) => {
   return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}시${m ? ` ${m}분` : ''}`;
 };
 
+// ------------------------------------------------------------ 인원 선택
+
+/** 인원 선택 대화상자. [적용]을 눌러야 검색 조건에 반영되고, [취소]·닫기·Esc·바깥을 누르면 버린다 */
+function PeopleDialog({ value, onClose, onApply }) {
+  const [d, setD] = useState({ adult: value.adult, child: value.child, senior: value.senior });
+  const sum = total(d);
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+  return (
+    <div className="dlg-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dlg" role="dialog" aria-modal="true" aria-labelledby="pp-title">
+        <header>
+          <h2 id="pp-title">인원 선택</h2>
+          <button type="button" className="x" aria-label="닫기" onClick={onClose}>×</button>
+        </header>
+        <ul>
+          {KINDS.map(([k, label, age]) => (
+            <li key={k}>
+              <span>{label}<span className="age">({age})</span></span>
+              <span className="step">
+                <button type="button" aria-label={`${label} 한 명 빼기`} disabled={d[k] === 0 || sum <= 1} onClick={() => setD({ ...d, [k]: d[k] - 1 })}>−</button>
+                <b>{d[k]}</b>
+                <button type="button" aria-label={`${label} 한 명 더하기`} disabled={sum >= MAX_PEOPLE} onClick={() => setD({ ...d, [k]: d[k] + 1 })}>+</button>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="note">한 번에 최대 {MAX_PEOPLE}명까지 고를 수 있어요. 어린이·경로 할인은 아직 없어 어른 운임으로 계산해요.</p>
+        <footer>
+          <button type="button" className="pill" onClick={onClose}>취소</button>
+          <button type="button" className="pill on" onClick={() => onApply(d)}>적용</button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------ 운행 카드
 
-function RunCard({ r, i, from, to, name, people, grade }) {
+function RunCard({ r, i, from, to, name, party, grade }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [stops, setStops] = useState(null);
@@ -273,7 +338,7 @@ function RunCard({ r, i, from, to, name, people, grade }) {
         ))}
         {!Object.keys(r.fares || {}).length && <p className="mut" style={{ margin: '8px 0' }}>운임이 아직 등록되지 않았어요.</p>}
         {view.action === 'book' && (
-          <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => navigate(`/queue/${r.runId}?from=${from}&to=${to}&people=${people}${grade ? `&grade=${grade}` : ''}`)}>예매하기</button>
+          <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => navigate(`/queue/${r.runId}?from=${from}&to=${to}&adult=${party.adult}&child=${party.child}&senior=${party.senior}${grade ? `&grade=${grade}` : ''}`)}>예매하기</button>
         )}
         {view.action === 'wait' && (
           <button type="button" className="btn soft" style={{ marginTop: 10 }} onClick={() => navigate(`/waitlist?run=${r.runId}&from=${from}&to=${to}`)}>취소표 대기 신청</button>

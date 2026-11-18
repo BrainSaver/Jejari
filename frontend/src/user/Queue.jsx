@@ -24,7 +24,7 @@ export default function Queue() {
   const from = params.get('from') || '';
   const to = params.get('to') || '';
   // 검색 화면에서 고른 인원·좌석 종류를 좌석 화면까지 이어 준다
-  const carry = ['people', 'grade'].filter((k) => params.get(k)).map((k) => `&${k}=${encodeURIComponent(params.get(k))}`).join('');
+  const carry = ['adult', 'child', 'senior', 'grade'].filter((k) => params.get(k)).map((k) => `&${k}=${encodeURIComponent(params.get(k))}`).join('');
   const { member, checking } = useMember();
   const navigate = useNavigate();
   const location = useLocation();
