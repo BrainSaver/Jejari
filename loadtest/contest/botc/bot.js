@@ -194,8 +194,10 @@ async function oneAccount(browser, id, i) {
       if (total < SEATS) continue;
       const picks = new Set();
       while (picks.size < SEATS) picks.add(Math.floor(Math.random() * total));
+      // 누르면 그 좌석이 .free에서 빠져 순번이 밀린다 → 누르기 전에 고른 좌석을 요소로 고정해 둔다
+      const handles = await free.elementHandles();
       for (const k of [...picks].sort((a, b) => a - b)) {
-        await humanClick(page, free.nth(k));
+        await humanClick(page, handles[k]);
         await think(300, 2500);
       }
       await think(500, 3000);
