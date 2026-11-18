@@ -49,3 +49,57 @@ WHEN NOT MATCHED THEN
           s.sale_open_at, s.sale_close_at, s.status);
 
 COMMIT;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 예매 가능 기간을 날짜별로 깔기 (열차 2편 × 매일)
+--
+-- 화면 검색은 운행일이 **정확히 일치**하는 운행만 찾습니다 (TrainQueryService의
+-- "WHERE r.run_date = ?"). 위 9001~9003처럼 날짜 몇 개에만 운행을 두면, 화면 기본값인
+-- 오늘로 조회했을 때 늘 "조건에 맞는 열차가 없어요"가 나옵니다. 실제로 그랬습니다.
+--
+-- 그래서 코레일 규칙대로 **예매 가능 기간 전체**에 운행을 넣습니다. 지평은
+-- ADD_MONTHS(오늘, 2) + 1일입니다. 달마다 길이가 달라 2개월이 59~62일이므로 날짜를 세지 않고
+-- ADD_MONTHS로 잡습니다. 하루를 더 두는 이유는 **아직 안 열린 날짜**를 하나 남기려는 것입니다
+-- (status가 SCHEDULED로 들어가고, 07:00이 되면 판매 오픈 스케줄러가 ON_SALE로 넘깁니다).
+--
+-- **이 창은 시드를 돌린 순간의 것입니다.** 하루가 지나면 끝 날짜가 따라와야 하는데 시드는
+-- 다시 돌 일이 없습니다. 그 일은 RunHorizonScheduler가 합니다 (같은 번호 규칙·같은 날짜 규칙).
+-- 시드는 앱이 뜨기 전의 첫 창을 깔고, 그 뒤로는 스케줄러가 하루씩 이어 줍니다.
+--
+-- run_id = 700000 + (운행일 - 2026-01-01) * 10 + train_id
+--   번호를 **날짜에서** 뽑습니다. 적재일 기준으로 매기면 다시 돌릴 때 같은 날짜가 다른
+--   번호를 받고, 운행일을 UPDATE하는 도중 uq_train_run_train_id_run_date에 걸립니다.
+--   700000 대역은 비어 있습니다 (명절 1001~2004 · 평시 시연 9001~9003 ·
+--   스케줄러 테스트 9101~9999 · 합성 데이터 880000~ · 관리자 화면 1000000~).
+MERGE INTO train_run t
+USING (
+  SELECT r.run_id, r.train_id, CAST(NULL AS NUMBER) AS sale_event_id, r.run_date, r.sale_open_at,
+         CAST(r.run_date + 1 AS TIMESTAMP) AS sale_close_at,
+         CASE WHEN r.sale_open_at <= SYSTIMESTAMP THEN 'ON_SALE' ELSE 'SCHEDULED' END AS status
+    FROM (
+      SELECT 700000 + (TRUNC(SYSDATE) + d.n - DATE '2026-01-01') * 10 + tr.train_id AS run_id,
+             tr.train_id,
+             TRUNC(SYSDATE) + d.n AS run_date,
+             CAST(ADD_MONTHS(TRUNC(SYSDATE) + d.n, -2) AS TIMESTAMP) + INTERVAL '7' HOUR AS sale_open_at
+        FROM train tr
+       CROSS JOIN (SELECT LEVEL - 1 AS n
+                     FROM dual
+                  CONNECT BY TRUNC(SYSDATE) + LEVEL - 1 <= ADD_MONTHS(TRUNC(SYSDATE), 2) + 1) d
+       WHERE tr.train_id IN (1, 2)
+    ) r
+   -- 같은 열차·같은 날에 다른 운행(명절 8건, 9001·9002, 9003, 화면에서 만든 것)이 있으면 건너뜁니다.
+   -- (train_id, run_date)가 유일해야 하기 때문입니다
+   WHERE NOT EXISTS (SELECT 1 FROM train_run x
+                      WHERE x.train_id = r.train_id AND x.run_date = r.run_date
+                        AND x.run_id <> r.run_id)
+) s ON (t.run_id = s.run_id)
+WHEN MATCHED THEN
+  -- 번호가 날짜에서 나오므로 운행일은 그대로입니다. status도 건드리지 않습니다 —
+  -- 오늘 운행은 기점을 떠나면 DEPARTED가 되는데, 실제로 떠난 열차라 되살리면 안 됩니다
+  UPDATE SET t.sale_close_at = s.sale_close_at, t.updated_at = SYSTIMESTAMP
+WHEN NOT MATCHED THEN
+  INSERT (run_id, train_id, sale_event_id, run_date, sale_open_at, sale_close_at, status)
+  VALUES (s.run_id, s.train_id, s.sale_event_id, s.run_date,
+          s.sale_open_at, s.sale_close_at, s.status);
+
+COMMIT;
