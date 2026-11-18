@@ -173,16 +173,16 @@
 .user .hero-in{position:relative;z-index:1;padding:8px 16px 20px}
 .user .hero .hello{font-size:28px;line-height:1.3;margin:6px 0 4px;font-weight:800;font-family:var(--serif)}
 .user .hero .hsub{margin:0 0 18px;color:var(--mut);font-size:16px}
-.user .od{display:grid;grid-template-columns:1fr 40px 1fr;align-items:center;gap:4px;padding:10px 0 12px;border-bottom:1px solid var(--line2)}
-.user .od select{border:0;padding:0 18px 0 0;min-height:44px;font-size:28px;font-weight:900;background-position:right 0 center}
+.user .od{display:grid;grid-template-columns:1fr 36px 1fr;align-items:center;gap:4px;padding:6px 0 8px;border-bottom:1px solid var(--line2)}
+.user .od select{border:0;padding:0 18px 0 0;min-height:40px;font-size:22px;font-weight:900;background-position:right 0 center}
 .user .swap{width:40px;height:40px;border-radius:50%;border:0;background:var(--sign);color:var(--ink);display:grid;place-items:center;cursor:pointer}
 .user .dt{padding:12px 0}
 .user .sort{display:flex;gap:4px}
 .user .sort button{border:0;background:none;font-size:13px;color:var(--mut);padding:4px 8px;font-weight:700;cursor:pointer}
 .user .sort button.on{color:var(--ink);font-weight:900;box-shadow:inset 0 -3px 0 var(--sign)}
-@media (min-width:960px){.user .search{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,1.3fr) 190px;align-items:center;gap:0 24px;padding:22px 22px 22px 32px}
-.user .od{border-bottom:0!important;border-right:1px solid rgba(255,248,231,.15);padding:6px 24px 6px 0;grid-template-columns:1fr 44px 1fr}
-.user .od select{font-size:38px;width:auto}
+@media (min-width:960px){.user .search{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1.75fr) 170px;align-items:center;gap:0 24px;padding:22px 22px 22px 32px}
+.user .od{border-bottom:0!important;border-right:1px solid rgba(255,248,231,.15);padding:6px 20px 6px 0;grid-template-columns:1fr 40px 1fr}
+.user .od select{font-size:28px;width:auto}
 .user .od label{display:flex!important;flex-direction:column;align-items:flex-start}
 .user .od label:last-child{align-items:flex-end}
 .user .dt{padding:0}
@@ -275,3 +275,23 @@
 /* 시안은 모든 input에 appearance:none을 걸어 라디오·체크박스가 안 보인다. 고르는 칸은 브라우저 모양을 되살린다 */
 .user input[type=radio],.user input[type=checkbox]{appearance:auto;-webkit-appearance:auto;width:18px;height:18px;min-height:18px;padding:0;accent-color:var(--ink);flex:none}
 .user .btn:disabled:not(.off){opacity:.55;cursor:not-allowed}
+
+/* 검색판 안쪽: 역 선택 한 줄 + 조건 네 칸(운행일·출발 시각·인원·좌석 종류) + 열차 찾기 */
+.user .search .s-main{display:flex;flex-direction:column;gap:14px;min-width:0}
+.user .search .s-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.user .search .fld{position:relative;display:flex;flex-direction:column;justify-content:center;gap:5px;min-width:0;min-height:64px;padding:10px 14px;border:1px solid rgba(255,248,231,.22);border-radius:12px;background:rgba(255,255,255,.04);transition:border-color .15s,background .15s}
+.user .search .fld:hover,.user .search .fld:focus-within{border-color:var(--sign);background:rgba(255,255,255,.08)}
+.user .search .fld .k{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#D6CEBF;white-space:nowrap}
+.user .search .fld .k svg{width:15px;height:15px;flex:none}
+.user .search .fld .v{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:800;color:#fff;white-space:nowrap}
+.user .search .fld select{border:0;padding:0 20px 0 0;min-height:0;height:auto;font-size:17px;font-weight:800;background-position:right 0 center;cursor:pointer}
+.user .search .fld .qty{align-self:flex-start;border:1px solid rgba(255,248,231,.35);border-radius:10px;background:transparent}
+.user .search .fld .qty button{width:34px;height:30px;background:transparent;color:#fff;font-size:18px}
+.user .search .fld .qty button:hover:not(:disabled){background:rgba(242,183,5,.25)}
+.user .search .fld .qty b{min-width:46px;padding-top:0;color:#fff;font-size:16px;font-family:inherit}
+@media (min-width:960px){
+.user .search{grid-template-columns:minmax(0,1fr) 170px;gap:0 22px}
+.user .search .od{border-right:0;border-bottom:1px solid rgba(255,248,231,.15)!important;padding:0 0 14px}
+.user .search .s-fields{grid-template-columns:repeat(4,minmax(0,1fr))}
+.user .search .btn{align-self:stretch;min-height:0}
+}
