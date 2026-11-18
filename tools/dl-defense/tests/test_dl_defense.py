@@ -87,6 +87,18 @@ class BotCsvTest(unittest.TestCase):
         self.assertEqual(s.dt_ms, [0.0, 200.0, 1000.0, 100.0, 100.0])   # login·reserve_click을 버려도 시각 차이 유지
         self.assertEqual((s.label, s.family, s.linked, s.sync), (1, "naive", 1, 0))   # ip를 신호로 쓰지 않음
 
+    def test_v2_events_and_human_rows(self):
+        rows = [("h1", "login", 0), ("h1", "search", 2000), ("h1", "seat_select", 5000),
+                ("h1", "seat_deselect", 6000), ("h1", "seat_select", 8000), ("h1", "payment", 20000)]
+        text = self.HEADER + "".join(f"{sid},a@b,0,human_synth,0,{e},{t},0,,1,ip,ua\n" for sid, e, t in rows)
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "v2.csv"
+            f.write_text(text, encoding="utf-8")
+            (s,) = botcsv.read_csv(f)
+        self.assertEqual((s.label, s.family), (0, "human_synth"))
+        self.assertEqual([schema.EVENT_TYPES[t] for t in s.types], ["VIEW_TRAIN", "SEAT_HOLD", "SEAT_HOLD", "PAY"])
+        self.assertEqual(s.dt_ms, [0.0, 3000.0, 3000.0, 12000.0])      # seat_deselect를 버려도 시각 차이 유지
+
     def test_human_sessions_are_valid_and_label_zero(self):
         hs = botcsv.make_humans(200, seed=3)
         self.assertTrue(all(h.label == 0 and h.family == "csv_human" for h in hs))

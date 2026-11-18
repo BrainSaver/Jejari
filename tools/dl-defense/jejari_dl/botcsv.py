@@ -20,7 +20,8 @@ from .schema import STATUS_OK, TYPE_INDEX, Subject
 
 CSV_TO_TYPE = {"login": None, "search": "VIEW_TRAIN", "select_train": "VIEW_TRAIN", "reserve_click": None,
                "queue_join": "QUEUE_ENTER", "queue_pass": "VIEW_SEAT", "seat_select": "SEAT_HOLD",
-               "payment": "PAY", "cancel": "CANCEL"}
+               "payment": "PAY", "cancel": "CANCEL",
+               "seat_deselect": None}   # v2: 좌석 선택 해제. BehaviorType에 없어 버린다
 
 
 def events_to_subject(events: list[tuple[str, float]], label: int | None, family: str,

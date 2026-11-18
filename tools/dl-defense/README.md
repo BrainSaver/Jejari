@@ -33,7 +33,7 @@ pip install -r requirements.txt
 python train.py                              # 가상 데이터로 학습 → out/model.pt (CPU 1~2분)
 python evaluate.py --loo                     # 처음 보는 봇 유형에도 통하는지 (몇 분)
 python score.py --model out/model.pt --input events.jsonl --top 20
-python -m unittest discover -s tests         # 16개, 몇 초
+python -m unittest discover -s tests         # 17개, 몇 초
 ```
 
 `events.jsonl`은 `behavior_log`를 한 줄에 이벤트 하나(JSON)로 내보낸 파일입니다 (`eventType`·`ts`·`memberId`·`deviceHash`·`responseStatus`. 스네이크 표기도 읽습니다). 출력은 대상마다 `key, score, flag, reasons, events`입니다.
@@ -97,6 +97,36 @@ replay 봇은 세션 하나만 보면 사람 속도(300~2500ms)와 같습니다.
 - **mimic이 약점**입니다. 학습에 없던 유형으로 처음 보여 주면(`--loo`) 10%였습니다(시드 11 한 번 기준, replay는 위 이유로 믿을 수 없음).
 - **사람은 제가 만든 가정입니다.** 간격 분포·검색 반복·긴 결제 입력·줄 대기 길이를 사람답다고 정했을 뿐이라, 오탐 1%대는 **이 가정 안에서의 값**입니다. 사람 참가자 로그로 반드시 다시 확인해야 합니다.
 - 규칙 기준선은 이 데이터(세션 6~9개)에서 의미가 없어 비교하지 않았습니다.
+
+## 공격 생성기 v2로 학습 (강화판, 합성 사람 포함)
+
+v2 생성기(`gen_bot_data_v2.py`)는 봇 9유형(`naive jitter replay_noisy rotating burst_sniper hybrid lowslow adaptive mimic_hard`)과 합성 사람(`label=0`, `human_synth`)을 함께 만듭니다. `seat_deselect`는 BehaviorType에 없어 버립니다. 사람이 CSV에 있으므로 이번에는 **직접 만든 사람·기존 가상 데이터를 빼고** 생성기의 사람만 씁니다.
+
+```bash
+python train_csv.py --csv bot_events_v2.csv --gen gen_bot_data_v2.py --gen-humans 400 \
+  --extra-train-seeds 101,102,103,104,105,106 --n-human 0 --n-sim-human 0 --n-sim-bot 0 --csv-repeat 1 \
+  --test-seeds 31,32,33,34,35,36,37,38,39,40 --max-fpr 0.01 --summary-only
+```
+
+학습 = 업로드 CSV + 같은 생성기를 시드 101~106으로 다시 돌린 데이터(사람 2,520 · 봇 2,520세션). **시험은 학습에 안 쓴 시드 31~40**으로 생성기를 다시 돌려 만든 공격 + 합성 사람(시드마다 400명)이고, 문턱은 검증용 합성 사람에서 오탐 1%가 되는 값으로 골랐습니다 (시험 데이터를 보고 맞추지 않음. 시드 0 한 번 학습).
+
+| 지표 (시드 31~40) | 값 |
+|---|---|
+| **사람 오탐률** | 평균 **1.15%**, 최대 **1.75%** (10개 시드 모두 2% 이하) |
+| AUC | 평균 0.899 |
+| 봇 탐지율 (9유형 평균) | 77.6% |
+
+| 유형 | 탐지율 평균 (최저) |
+|---|---|
+| naive · jitter · rotating · burst_sniper · hybrid · lowslow | 100% (100%) |
+| replay_noisy | 94% (80%) |
+| **adaptive** | **2% (0%)** |
+| **mimic_hard** | **2% (0%)** |
+
+- **오탐은 2% 이하로 맞췄지만, adaptive와 mimic_hard는 사실상 못 잡습니다.** 생성기 주석 그대로 "사람 분포에서 직접 표본 추출"(adaptive), "거의 사람, 좌석 선택만 약간 빠름"(mimic_hard)이라, 한 세션만 봐서는 합성 사람과 구별되는 정보가 거의 없습니다. 이 둘을 잡으려고 문턱을 낮추면 오탐이 2%를 넘습니다 (AUC가 0.9인 이유). 구별하려면 세션 하나가 아니라 **여러 세션을 묶어서 보는 신호**(분산이 사람보다 작음, 같은 템플릿 공유 등)가 필요합니다.
+- **이 오탐 1%대는 생성기의 합성 사람에 대한 값입니다.** 실제 사람 참가자 로그가 아닙니다.
+- v1과 같은 이유로 replay 계열은 시드(템플릿)마다 달라질 수 있습니다. v2의 replay_noisy는 ±25% 흔들림이라 80~100%로 잡혔습니다.
+- 사람 대비 봇을 구별하는 정보가 세션 안에 있는 유형(속도·순서·호딩)은 안정적으로 잡힙니다.
 
 ## 한계와 다음 단계
 
