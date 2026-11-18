@@ -10,7 +10,12 @@
 ## 순서
 
 ```bash
-# 1) 대회 운행 만들기 (관리자 SUPERVISOR 계정, 비밀번호는 환경 변수로만)
+# 0) 대회 날 집계자 PC: 가입 제한을 대회 동안만 올리고 → 대회 운행을 만들고 → 사람 참가자 접속 주소를 띄운다
+ADMIN_ID=… ADMIN_PW=… loadtest/contest/day.sh start
+#    끝나면: ADMIN_ID=… ADMIN_PW=… loadtest/contest/day.sh restore   (가입 제한을 원래 값으로)
+#    사람 참가자에게: loadtest/contest/사람-참가-안내.md
+
+# 1) (day.sh가 대신 해 줌) 대회 운행만 따로 만들 때
 ADMIN_ID=… ADMIN_PW=… loadtest/contest/setup.sh https://<서버>
 #    → "대회 운행 ID = 1000123" 을 공격자 모두에게 알린다
 
@@ -18,8 +23,14 @@ ADMIN_ID=… ADMIN_PW=… loadtest/contest/setup.sh https://<서버>
 #    봇마다 실행 방법은 그 폴더의 README 또는 파일 머리말
 
 # 3) 평가 (서버의 저장소 폴더에서, docker compose가 떠 있는 곳)
-loadtest/tools/eval_contest.sh <태그> <대회 운행 ID>
+loadtest/tools/eval_contest.sh <태그> <대회 운행 ID>          # 규칙 엔진: 막힌 층
+tools/ml/export_live.sh <태그> data/ml/contest-<태그>           # 모델: 같은 데이터를 꺼내
+python3 -I tools/ml/features.py data/ml/contest-<태그>
+python3 tools/ml/score.py data/ml/model/model.pkl data/ml/contest-<태그>/features.csv
 ```
+
+봇과 사람이 **같은 태그**를 쓰면 한 번에 평가됩니다 (사람 이메일 `lt{태그}.human.g{번호}.{번호}@…`).
+모델 점수는 봇·사람을 **같은 폴더에서 같이** 매깁니다 — 판매 오픈 시각·연결 계정 같은 특징이 같은 기준으로 계산되게.
 
 ## 라벨 규칙 (모든 봇 공통)
 
