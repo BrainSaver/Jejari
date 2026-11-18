@@ -18,8 +18,13 @@ health() { curl -fs "http://127.0.0.1:$1/actuator/health" | grep -q '"status":"U
   || { echo "Oracle이 healthy가 아닙니다. docker compose -f compose.yaml -f deploy/compose.server.yaml up -d 후 기다리세요."; exit 1; }
 
 git fetch -q origin "$BRANCH"
-git checkout -q "$BRANCH"
-git merge -q --ff-only "$TARGET"
+if [[ -n "${DEPLOY_SHA:-}" ]]; then
+  # 정확히 그 커밋으로 (merge --ff-only는 작업 트리가 이미 더 앞서 있으면 아무것도 안 해서, CI를 확인하지 않은 커밋이 빌드될 수 있음)
+  git checkout -q --detach "$DEPLOY_SHA"
+else
+  git checkout -q "$BRANCH"
+  git merge -q --ff-only "$TARGET"
+fi
 echo "빌드: $(git log --oneline -1)"
 
 # 화면 (frontend/, React + Vite): dist/를 만들어 두면 bootJar가 jar의 static/에 넣는다 (build.gradle).

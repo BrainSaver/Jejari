@@ -69,7 +69,7 @@ if [[ -n "$blocking" ]]; then
 fi
 appfiles=$(grep -E '^(src/main/|frontend/|build\.gradle$|settings\.gradle$|gradle/|gradlew$|deploy/deploy\.sh$)' <<<"$changed" || true)
 if [[ -z "$appfiles" ]]; then
-  git merge -q --ff-only "$NEW" 2>/dev/null || true
+  git checkout -q --detach "$NEW" 2>/dev/null || true   # 작업 트리도 그 커밋으로 (스크립트 자신의 변경도 여기서 반영됨)
   echo "$NEW" > "$DEPLOYED"
   state "OK $SHORT 앱에 영향 없는 변경만 (문서·테스트 등) → 빌드 없이 반영으로 기록"; exit 0
 fi
@@ -77,6 +77,8 @@ fi
 # 배포 (이 커밋으로 고정: 그사이 새로 올라온 커밋은 CI를 확인한 뒤 다음 차례에)
 echo "자동 배포 시작: ${CUR:0:7} → $SHORT (앱 파일 $(wc -l <<<"$appfiles")개)"
 if DEPLOY_SHA="$NEW" bash deploy/deploy.sh; then
+  done_sha=$(cut -c1-7 "$DEPLOYED")
+  [[ "$done_sha" == "$SHORT" ]] || { state "FAILED $SHORT 배포한 커밋($done_sha)이 고른 커밋과 다름 → 확인 필요"; exit 1; }
   state "OK $SHORT 자동 배포 완료"
 else
   state "FAILED $SHORT deploy.sh 실패 → 살아 있는 한 대가 옛 버전으로 응답 중일 수 있음. journalctl -u jejari-autodeploy 확인"
