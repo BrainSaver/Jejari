@@ -329,7 +329,7 @@ function SeatMap({ car, picked, lost = [], onToggle }) {
     const state = isMine ? '내가 고른 좌석' : s.state === 'EMPTY' ? '빈 좌석' : s.state === 'HELD' ? '다른 분이 고르는 중' : '판매됨';
     return (
       <button
-        key={s.seatId} type="button" className={'seat ' + cls}
+        key={s.seatId} type="button" className={'seat ' + cls} data-rec={'seat-' + s.seatId}
         disabled={!isMine && s.state !== 'EMPTY'} aria-pressed={isMine}
         aria-label={`${s.seatNo} ${state}${s.window ? ', 창가' : ''}`}
         onClick={() => onToggle(s)}

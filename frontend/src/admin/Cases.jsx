@@ -1,3 +1,4 @@
+import ReplayPlayer from './ReplayPlayer.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router';
 import { get, post } from '../api/client.js';
@@ -150,6 +151,7 @@ export default function CaseDetail() {
           </section>
         )}
       </div>
+      <ReplayPlayer caseId={caseId} markers={d?.markers} />
       <RequestLog filter={(r) => r.path.includes('/admin/cases')} rows={6} />
     </>
   );
@@ -176,7 +178,7 @@ function Timeline({ tl, color, range }) {
         <span className="grow">
           타임라인 <span className="mut" style={{ fontWeight: 500 }}>{tl ? `${time(tl.windowFrom)} ~ ${time(tl.windowTo)} 의심 구간 · ${tl.events.length}건` : ''}</span>
         </span>
-        <button className="btn ghost sm" type="button" disabled>재생 (P2)</button>
+        <a className="btn ghost sm" href="#replay">재생 ↓</a>
       </h2>
       <p className="sub">MongoDB 행동 로그. 빨간 줄이 의심 구간 안, 흐린 줄은 앞뒤 맥락이에요. {tl?.truncated ? '많아서 앞부분만 보여요.' : ''}
         {range?.cut ? ` 의심 구간이 24시간보다 길어 마지막 24시간만 보여요 (서버 조회 한도).` : ''}</p>
