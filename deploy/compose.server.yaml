@@ -24,9 +24,22 @@ services:
       - ./deploy/prometheus.server.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
 
+  # 자동 배포 상태를 지표로 (auto-deploy.sh가 실행마다 보고 → Prometheus가 수집 → Grafana 경보 → Discord)
+  pushgateway:
+    image: prom/pushgateway:v1.10.0
+    restart: unless-stopped
+    command: ["--persistence.file=/data/metrics", "--persistence.interval=1m"]   # 재시작해도 마지막 상태 유지
+    ports: ["127.0.0.1:9091:9091"]
+    volumes:
+      - pushgateway-data:/data
+
   # Grafana를 https://{도메인}/grafana/ 로 (Caddy가 넘김). 팀원은 보기 전용 계정(deploy/grafana-team-user.sh)
+  # 경보 규칙·Discord 연락처는 서버에만 (deploy/grafana-alerting/). 웹훅 주소는 .env의 DISCORD_WEBHOOK_URL
   grafana:
+    volumes:
+      - ./deploy/grafana-alerting:/etc/grafana/provisioning/alerting:ro
     environment:
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:?.env에 DISCORD_WEBHOOK_URL 필요 (경보 보낼 Discord 웹훅)}
       GF_SERVER_ROOT_URL: https://${JEJARI_DOMAIN}/grafana/
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_SECURITY_COOKIE_SECURE: "true"          # HTTPS로만 로그인 쿠키
@@ -37,3 +50,4 @@ services:
 volumes:
   caddy-data:
   caddy-config:
+  pushgateway-data:

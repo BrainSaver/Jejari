@@ -53,6 +53,9 @@ until [ "$(docker inspect -f '{{.State.Health.Status}}' jejari-oracle-1)" = heal
 bash deploy/deploy.sh
 ```
 
+> 위는 첫 설치(11-18 오전, OS Login 켜기 전) 순서. **지금은 OS Login이라** 접속하면 구글 계정 사용자가 되므로, 서버 `.env`를 다시 올릴 때는
+> `gcloud compute scp ~/jejari-server.env jejari:/tmp/jejari.env` → 서버에서 `sudo install -o dita_810 -g dita_810 -m 600 /tmp/jejari.env ~dita_810/Jejari/.env && rm /tmp/jejari.env`
+
 ## 확인 (내 PC에서)
 
 ```bash
@@ -102,11 +105,66 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
 - **로컬 테스트를 서버 DB에 붙이지 않기**: 서버 앱의 스케줄러가 테스트의 HOLD·outbox를 먼저 가져감
 - **서버 `.env`**: 저장소·메신저에 올리지 않음. 관리자·Grafana 비밀번호는 내 PC의 `~/jejari-server.env`에서 확인
 - **Grafana**: `https://{도메인}/grafana/` (11-18~). 팀원은 보기 전용 계정 `team`(비밀번호 `GRAFANA_TEAM_PASSWORD`, `bash deploy/grafana-team-user.sh`로 만들기·맞추기), 관리자는 `GRAFANA_ADMIN_*`. 익명 보기는 꺼 둠. 3000 포트 자체는 여전히 127.0.0.1에만
+- **경보 → Discord** (11-18~, `deploy/grafana-alerting/`): 자동 배포가 실행마다 상태를 Pushgateway(127.0.0.1:9091)에 보고 → Prometheus 수집 → Grafana 경보 → `.env`의 `DISCORD_WEBHOOK_URL`
+
+  | 경보 | 언제 | 할 일 |
+  |---|---|---|
+  | 자동 배포 실패 또는 사람이 처리해야 함 | 상태가 `FAILED`·`BLOCKED` | 위 "운영자 안내" 표 |
+  | 자동 배포가 30분 넘게 돌지 않음 | 타이머·Pushgateway 고장 (5분 지속) | `systemctl list-timers jejari-autodeploy`. 시연 때문에 껐다면 무시 |
+  | CI 대기가 1시간 넘게 이어짐 | main 새 커밋이 CI를 못 통과 | GitHub Actions 확인 |
+  | 앱 한 대가 응답하지 않음 | `up{job="jejari-app"}`이 2분 넘게 0 | `journalctl -u jejari@8080` |
+
+  같은 경보는 4시간마다만 다시 오고, 해결되면 "해결됨"이 옴. 웹훅 주소를 바꾸면 `.env` 수정 뒤 `docker compose -f compose.yaml -f deploy/compose.server.yaml up -d grafana`
 - **Caddyfile·`prometheus.server.yml`을 바꾼 뒤에는 그 컨테이너를 재시작** (`docker compose -f compose.yaml -f deploy/compose.server.yaml restart caddy`). 파일 하나를 bind mount한 것이라 git이 파일을 새로 쓰면 실행 중인 컨테이너는 옛 파일을 계속 봄. compose 환경 변수를 바꿨으면 `up -d grafana`처럼 다시 만듦
 - **`docker/mongo/mongo-init.js`가 바뀌면** (새 컬렉션·인덱스, 자동 배포가 BLOCKED로 멈춤): 기존 Mongo에 직접 반영. 같은 이유로 컨테이너 안 파일은 옛것이라 **저장소 파일을 표준 입력으로** 넣음 (createIndex는 여러 번 돌려도 안전)
   ```bash
   docker compose -f compose.yaml -f deploy/compose.server.yaml exec -T mongo bash -c 'mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin' < docker/mongo/mongo-init.js
   ```
+
+## 운영자 안내 (담당 조영준, 대신 운영 길동현)
+
+서버 운영 권한은 **두 명만** 가집니다 (OS Login, 2026-11-18~). 나머지 팀원은 https 주소와 Grafana(`team` 계정)만 씁니다. 결제·방화벽·VM 삭제·권한 부여는 프로젝트 주인(조영준)만 할 수 있습니다.
+
+### 접속
+
+```bash
+gcloud auth login                       # 권한을 받은 구글 계정으로
+gcloud config set project jejari
+gcloud compute ssh jejari --zone=asia-northeast3-a --tunnel-through-iap   # 처음엔 SSH 키를 만들고 구글 계정에 등록 (1~2분)
+sudo -iu dita_810                       # 앱·배포 파일 주인으로 바꾼 뒤 운영 (~/Jejari)
+```
+
+- 로그인하면 **구글 계정 이름의 사용자**가 됩니다 (OS Login). 앱·`.env`·systemd는 `dita_810` 소유라 운영은 꼭 `sudo -iu dita_810` 뒤에
+- Windows는 아래 "Windows(Git Bash)에서 gcloud" 방법으로
+- `sudo`가 있으면 서버 `.env`(모든 비밀값)를 볼 수 있습니다. **밖으로 복사·메신저 공유 금지**
+
+### 상태 보기
+
+```bash
+cat ~/jejari-app/autodeploy.state                    # 자동 배포 마지막 판단 (OK / WAITING_CI / BLOCKED / FAILED)
+curl -s localhost:8080/actuator/health; curl -s localhost:8081/actuator/health
+docker compose -f compose.yaml -f deploy/compose.server.yaml ps
+journalctl -u jejari@8080 -n 100 --no-pager          # 앱 로그 (8081도 같음)
+journalctl -u jejari-autodeploy -n 50 --no-pager     # 자동 배포 로그
+```
+
+### 자주 하는 일
+
+| 상황 | 명령 |
+|---|---|
+| 지금 main으로 배포 | `bash deploy/deploy.sh` |
+| 자동 배포 한 번 지금 실행 | `sudo systemctl start jejari-autodeploy` |
+| **시연 중 자동 배포 끄기** / 다시 켜기 | `sudo systemctl disable --now jejari-autodeploy.timer` / `sudo systemctl enable --now jejari-autodeploy.timer` |
+| 앱 한 대가 이상함 | `sudo systemctl restart jejari@8080` (한 대씩. Caddy가 다른 대로 보냄) |
+| `BLOCKED` (DB·인프라 변경) | 상태 줄에 적힌 파일을 보고: ERD → `db/patch/v*.sql`, `mongo-init.js` → 위 "운영 규칙"의 명령, compose·Caddy → `up -d`·`restart` → 그 다음 `bash deploy/deploy.sh` |
+| `FAILED` (앱이 안 뜸) | `journalctl -u jejari@8080 -n 200` (TZ·`.env` 키 누락이 흔함). 고친 커밋이 main에 오면 자동으로 다시 시도 |
+
+### 조심 (데이터가 사라지거나 밖에서 보이게 되는 것)
+
+- **데이터 재생성**(위 "운영 규칙")은 회원·예약을 지웁니다. 시연 전날처럼 정해진 때에만, 팀에 알리고
+- `docker volume rm`, `docker compose down -v` 금지 (`caddy-data`를 지우면 인증서를 다시 받아야 하고 발급 횟수 제한이 있음)
+- `compose.yaml`의 `127.0.0.1:` 포트 바인딩, 방화벽 규칙을 바꾸지 않기 (DB가 인터넷에 열림)
+- 서버 `.env`의 `JEJARI_HMAC_KEY`·`JEJARI_PEPPER_KEYS`·`JEJARI_ENC_KEYS`는 바꾸지 않기 (바꾸면 기존 해시·비밀번호·전화번호를 못 읽음)
 
 ## Windows(Git Bash)에서 gcloud
 

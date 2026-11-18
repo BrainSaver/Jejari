@@ -22,7 +22,36 @@ mkdir -p "$APP"
 exec 9>"$APP/autodeploy.lock"
 flock -n 9 || { echo "이전 실행이 아직 진행 중 → 건너뜀"; exit 0; }
 
-state() { echo "$(date '+%F %T') $*" | tee "$STATE"; }
+SINCE="$APP/autodeploy.since"   # 지금 상태(OK·WAITING_CI…)가 시작된 시각. 같은 상태가 이어지면 그대로 둠
+state() {
+  local prev; prev=$(awk '{print $3}' "$STATE" 2>/dev/null)
+  [[ "$prev" == "$1" && -f "$SINCE" ]] || date +%s > "$SINCE"
+  echo "$(date '+%F %T') $*" | tee "$STATE"
+}
+
+# 실행이 어떻게 끝나든(정상·조기 종료·실패) 상태를 Pushgateway에 보고 → Grafana 경보 (deploy/grafana-alerting/)
+#   jejari_autodeploy_state{state}        지금 상태 (OK / WAITING_CI / CI_FAILED / BLOCKED / FAILED)
+#   jejari_autodeploy_state_age_seconds   그 상태가 된 뒤 지난 시간 (CI 대기가 너무 길면 경보)
+#   jejari_autodeploy_last_run_timestamp_seconds  마지막 실행 시각 (타이머가 멈추면 경보)
+#   jejari_autodeploy_behind_commits      배포 안 된 main 커밋 수
+report() {
+  local s age now behind
+  now=$(date +%s)
+  s=$(awk '{print $3}' "$STATE" 2>/dev/null); s=${s:-OK}
+  age=$(( now - $(cat "$SINCE" 2>/dev/null || echo "$now") ))
+  behind=$(git rev-list --count --first-parent "$(cat "$DEPLOYED" 2>/dev/null || echo HEAD)..origin/main" 2>/dev/null || echo 0)
+  curl -fsS -m 5 -X PUT --data-binary @- "http://127.0.0.1:9091/metrics/job/jejari_autodeploy" >/dev/null 2>&1 <<EOF || true
+# TYPE jejari_autodeploy_state gauge
+jejari_autodeploy_state{state="$s"} 1
+# TYPE jejari_autodeploy_state_age_seconds gauge
+jejari_autodeploy_state_age_seconds $age
+# TYPE jejari_autodeploy_last_run_timestamp_seconds gauge
+jejari_autodeploy_last_run_timestamp_seconds $now
+# TYPE jejari_autodeploy_behind_commits gauge
+jejari_autodeploy_behind_commits $behind
+EOF
+}
+trap report EXIT
 
 git fetch -q origin main || { echo "git fetch 실패 (네트워크?) → 다음 차례에"; exit 0; }
 HEAD_MAIN=$(git rev-parse origin/main)
