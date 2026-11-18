@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { get } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
-import { seoulHm, seoulNowLocal, seoulToday } from '../lib/time.js';
+import { addDays, seoulHm, seoulNowLocal, seoulToday } from '../lib/time.js';
 import { MiniTrain } from './RouteLine.jsx';
 
 /**
@@ -28,18 +28,30 @@ export default function Search() {
   const [sort, setSort] = useState('dep');
   const [spun, setSpun] = useState(false); // 바꾸기 버튼이 반 바퀴씩 돈다
 
-  // 역 목록. 주소에 조건이 없으면 서울 → 부산(없으면 앞의 두 역)을 기본으로
+  // 역 목록. 주소에 조건이 없으면 서울 → 부산(없으면 앞의 두 역)을 기본으로 하고, 첫 화면부터 바로 열차를 보여 준다
+  const [moved, setMoved] = useState(null); // 오늘 남은 열차가 없어 다른 날로 넘겼으면 그 날짜
   useEffect(() => {
+    let alive = true;
     get('/api/v1/stations')
-      .then((list) => {
+      .then(async (list) => {
+        if (!alive) return;
         setStations(list);
-        setForm((f) => {
-          if (f.from && f.to) return f;
-          const id = (name) => list.find((s) => s.stationName === name)?.stationId;
-          return { ...f, from: id('서울') || list[0]?.stationId || '', to: id('부산') || list[1]?.stationId || '' };
-        });
+        if (params.get('from') && params.get('to')) return;
+        const id = (name) => list.find((s) => s.stationName === name)?.stationId;
+        const from = id('서울') || list[0]?.stationId || '';
+        const to = id('부산') || list[1]?.stationId || '';
+        setForm((f) => ({ ...f, from, to }));
+        if (!from || !to) return;
+        const date = await firstDateWithRuns(from, to, params.get('date') || seoulToday());
+        if (!alive) return;
+        setForm((f) => ({ ...f, date, time: f.timeSet ? f.time : defaultTime(date) }));
+        setMoved(date !== (params.get('date') || seoulToday()) ? date : null);
+        setParams((p) => ({ ...Object.fromEntries(p), from, to, date }), { replace: true });
       })
-      .catch((error) => setState((s) => ({ ...s, error })));
+      .catch((error) => alive && setState((s) => ({ ...s, error })));
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // 주소의 조건이 바뀌면 검색
@@ -63,6 +75,7 @@ export default function Search() {
 
   const submit = (e) => {
     e.preventDefault();
+    setMoved(null);
     if (form.from === form.to) {
       setState({ runs: null, loading: false, error: { message: '출발역과 도착역이 같아요. 다른 역을 골라 주세요.' } });
       return;
@@ -182,6 +195,9 @@ export default function Search() {
           </div>
         )}
         {state.loading && <p className="mut" style={{ textAlign: 'center' }}>열차를 찾고 있어요…</p>}
+        {moved && q.date === moved && (
+          <div className="alert sky" role="status"><Icon name="info" /><span>오늘은 남은 열차가 없어 {shortDate(moved)} 열차를 보여 드려요.</span></div>
+        )}
 
         {sorted && (
           <>
@@ -221,6 +237,17 @@ const openPicker = (e) => {
     /* 이미 열려 있거나 지원하지 않으면 브라우저 기본 동작 */
   }
 };
+/** 첫 화면용: start부터 하루씩 넘기며 아직 떠나지 않은 열차가 있는 첫 날짜 (최대 14일, 없으면 start) */
+async function firstDateWithRuns(from, to, start) {
+  for (let i = 0; i < 14; i++) {
+    const date = addDays(start, i);
+    const runs = await get(`/api/v1/runs?${new URLSearchParams({ from, to, date })}`).catch(() => null);
+    if (runs === null) return start;
+    const now = seoulNowLocal();
+    if (runs.some((r) => !r.departureAt || r.departureAt > now)) return date;
+  }
+  return start;
+}
 /** 오늘이면 지금 시각, 다른 날이면 0시 */
 const defaultTime = (date) => (date === seoulToday() ? seoulHm() : '00:00');
 const num = (v) => Math.max(0, Math.min(MAX_PEOPLE, Math.floor(Number(v)) || 0));
