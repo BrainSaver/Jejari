@@ -33,6 +33,13 @@ public class AppPolicy {
 	public static final String WAITLIST_MAX_ACTIVE = "waitlist.max_active";
 	/** 위험 점수 1점당 대기 순서를 미루는 ms (concurrency.md §9.3) */
 	public static final String WAITLIST_PENALTY_MS_PER_POINT = "waitlist.penalty_ms_per_point";
+	/** ADM-11 화면 녹화 (ERD app_policy 예시값) */
+	public static final String REPLAY_FULL_RECORD_RATIO = "replay.full_record_ratio";
+	public static final String REPLAY_FULL_RECORD_SCORE = "replay.full_record_score";
+	public static final String REPLAY_RETENTION_DAYS = "replay.retention_days";
+	public static final String REPLAY_MAX_PATH_POINTS = "replay.max_path_points";
+	public static final String REPLAY_BATCH_SEC = "replay.batch_sec";
+	public static final String REPLAY_MAX_EVENTS_PER_SESSION = "replay.max_events_per_session";
 
 	// Map.of는 10쌍까지라 항목이 늘면서 ofEntries로 바꿨다
 	private static final Map<String, String> DEFAULTS = Map.ofEntries(
@@ -45,7 +52,13 @@ public class AppPolicy {
 			Map.entry(SALE_OPEN_INTERVAL_SEC, "10"),
 			Map.entry(WAITLIST_MAX_PER_RUN, "1"),
 			Map.entry(WAITLIST_MAX_ACTIVE, "3"),
-			Map.entry(WAITLIST_PENALTY_MS_PER_POINT, "180000"));
+			Map.entry(WAITLIST_PENALTY_MS_PER_POINT, "180000"),
+			Map.entry(REPLAY_FULL_RECORD_RATIO, "0.10"),
+			Map.entry(REPLAY_FULL_RECORD_SCORE, "70"),
+			Map.entry(REPLAY_RETENTION_DAYS, "90"),
+			Map.entry(REPLAY_MAX_PATH_POINTS, "50"),
+			Map.entry(REPLAY_BATCH_SEC, "5"),
+			Map.entry(REPLAY_MAX_EVENTS_PER_SESSION, "5000"));
 	private static final long CACHE_NANOS = 1_000_000_000L;
 
 	private record Cached(String value, long expiresAtNanos) {
@@ -61,13 +74,22 @@ public class AppPolicy {
 	}
 
 	public long getLong(String key) {
+		return Long.parseLong(get(key));
+	}
+
+	/** 소수 값 (예: replay.full_record_ratio = 0.10). 정수 값에도 쓸 수 있다 */
+	public double getDouble(String key) {
+		return Double.parseDouble(get(key));
+	}
+
+	private String get(String key) {
 		Cached c = cache.get(key);
 		if (c != null && System.nanoTime() - c.expiresAtNanos < 0) {
-			return Long.parseLong(c.value);
+			return c.value;
 		}
 		String value = load(key);
 		cache.put(key, new Cached(value, System.nanoTime() + CACHE_NANOS));
-		return Long.parseLong(value);
+		return value;
 	}
 
 	private String load(String key) {

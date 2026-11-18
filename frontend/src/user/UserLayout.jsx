@@ -19,10 +19,22 @@ const MENU = [
 ];
 
 export default function UserLayout() {
-  const { pathname } = useLocation();
+  const { pathname, state: navState } = useLocation();
   const { member } = useMember();
   const navigate = useNavigate();
   const unread = useUnread(member, pathname);
+  // 로그아웃하면 "로그아웃됐어요" 안내를 몇 초 보여 준다 (오른쪽 위 글자만 바뀌면 눈치채기 어렵다)
+  const [bye, setBye] = useState(false);
+  useEffect(() => {
+    if (!navState?.loggedOut) return;
+    setBye(true);
+    navigate(pathname, { replace: true, state: null }); // 새로고침하면 다시 뜨지 않게 표시를 지운다
+  }, [navState]);
+  useEffect(() => {
+    if (!bye) return;
+    const t = setTimeout(() => setBye(false), 8000);
+    return () => clearTimeout(t);
+  }, [bye]);
 
   return (
     <EaseRoot>
@@ -42,12 +54,21 @@ export default function UserLayout() {
             <span className="row" style={{ gap: 14 }}>
               <Link className="me" to="/me"><i><Icon name="person" /></i>회원 #{member.sub}</Link>
               <button type="button" className="me" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }}
-                onClick={() => logout().then(() => navigate('/'))}>로그아웃</button>
+                onClick={() => logout().then(() => navigate('/', { state: { loggedOut: true } }))}>로그아웃</button>
             </span>
           ) : (
             <Link className="me" to={`/login?next=${encodeURIComponent(pathname)}`}><i><Icon name="person" /></i>로그인</Link>
           )}
         </header>
+
+        {bye && !member && (
+          <div className="alert go" role="status" style={{ margin: '12px 16px 0', alignItems: 'center', flexWrap: 'wrap' }}>
+            <Icon name="info" />
+            <span className="grow"><b>로그아웃됐어요.</b> 예매하려면 다시 로그인해 주세요.</span>
+            <Link className="btn sm" to="/login">로그인</Link>
+            <button type="button" className="btn sm ghost" onClick={() => setBye(false)}>닫기</button>
+          </div>
+        )}
 
         {/* 경로가 바뀌면 key가 바뀌어 새로 그려지며 살짝 올라오며 나타난다 */}
         <div key={pathname} className="page-enter" style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>

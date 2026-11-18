@@ -163,7 +163,11 @@ async function oneAccount(browser, id, i) {
     await humanType(page, page.locator('#pw'), id.password);
     await think(300, 1200);
     await humanClick(page, page.getByRole('button', { name: '로그인' }));
-    await page.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 30_000 });
+    const loggedIn = await Promise.race([
+      page.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 30_000 }).then(() => true),
+      page.getByText('이메일 또는 비밀번호가 맞지 않아요').waitFor({ timeout: 30_000 }).then(() => false),
+    ]);
+    if (!loggedIn) throw new Error(`로그인 실패 — 이 명의가 없습니다. MODE=signup TAG=${TAG}로 먼저 만드세요`);
     log(who, '로그인');
 
     // 2. 운행 화면을 잠깐 보고 (사람처럼) 대기열로

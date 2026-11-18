@@ -44,7 +44,9 @@ export default function Seats() {
   const [run, setRun] = useState(null);
   const [map, setMap] = useState(null);
   const [carNo, setCarNo] = useState(null);
-  const [people, setPeople] = useState({ ADULT: 1, CHILD: 0, SENIOR: 0 });
+  const wanted = Math.min(MAX_PEOPLE, Math.max(1, Number(params.get('people')) || 1));
+  const wantGrade = params.get('grade') || '';
+  const [people, setPeople] = useState({ ADULT: wanted, CHILD: 0, SENIOR: 0 });
   const [picked, setPicked] = useState([]); // [{seatId, seatNo, carNo, grade}]
   const [notice, setNotice] = useState(null); // {kind:'taken'|'error'|'expired', text}
   const [busy, setBusy] = useState(false);
@@ -64,7 +66,7 @@ export default function Seats() {
     try {
       const m = await get(`/api/v1/runs/${runId}/seats?from=${from}&to=${to}`, passHeader);
       setMap(m);
-      setCarNo((c) => c ?? firstFreeCar(m));
+      setCarNo((c) => c ?? firstFreeCar(m, wantGrade));
     } catch (e) {
       handleError(e);
     }
@@ -327,7 +329,7 @@ function SeatMap({ car, picked, lost = [], onToggle }) {
     const state = isMine ? '내가 고른 좌석' : s.state === 'EMPTY' ? '빈 좌석' : s.state === 'HELD' ? '다른 분이 고르는 중' : '판매됨';
     return (
       <button
-        key={s.seatId} type="button" className={'seat ' + cls}
+        key={s.seatId} type="button" className={'seat ' + cls} data-rec={'seat-' + s.seatId}
         disabled={!isMine && s.state !== 'EMPTY'} aria-pressed={isMine}
         aria-label={`${s.seatNo} ${state}${s.window ? ', 창가' : ''}`}
         onClick={() => onToggle(s)}
@@ -410,7 +412,7 @@ function pickTogether(car, n) {
   return all.length >= n ? all.slice(0, n) : null;
 }
 
-const firstFreeCar = (m) => (m.cars.find((c) => c.grade === 'GENERAL' && c.available > 0) || m.cars.find((c) => c.available > 0) || m.cars[0])?.carNo ?? null;
+const firstFreeCar = (m, grade) => (m.cars.find((c) => c.grade === (grade || 'GENERAL') && c.available > 0) || m.cars.find((c) => c.available > 0) || m.cars[0])?.carNo ?? null;
 
 // ------------------------------------------------------------ 시간
 

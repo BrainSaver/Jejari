@@ -35,7 +35,7 @@ export default function Me() {
 
   const out = async () => {
     await logout();
-    navigate('/login');
+    navigate('/', { state: { loggedOut: true } });
   };
   const withdraw = async () => {
     setError(null);
