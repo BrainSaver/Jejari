@@ -111,6 +111,9 @@ def main(argv=None):
     ap.add_argument("--scale-aug", default="0.7,1.4", help="학습 중 간격 전체에 곱하는 배율 범위. 생성기 데이터는 속도 수준이 단서라 "
                     "'1,1'(증강 끔)이 나을 수 있다")
     ap.add_argument("--oversample", default="", help="어려운 봇 유형을 더 많이 학습: '유형=배수,…' (예: evasive/adaptive=8)")
+    ap.add_argument("--extra-bot-gen", default=None, help="봇만 더 만들어 학습에 넣을 생성기 (gen_test_attack.py 형식)")
+    ap.add_argument("--extra-bot-seeds", default="", help="그 생성기를 돌릴 시드들 (시험 시드와 겹치면 안 됨)")
+    ap.add_argument("--extra-bot-args", default="", help="그 생성기에 넘길 추가 인자 (한 문자열)")
     ap.add_argument("--gen-per-flag", default="per-type", help="생성기의 유형당 세션 수 옵션 이름 (v3는 per-variant)")
     ap.add_argument("--gen-per", type=int, default=40, help="생성기 유형(변형)당 세션 수")
     ap.add_argument("--device-context", action="store_true", help="ua_hash를 같은 기기로 보고 기기 공유 신호를 넣는다")
@@ -137,6 +140,14 @@ def main(argv=None):
         if str(seed) in a.test_seeds.split(","):
             sys.exit(f"시드 {seed}는 시험 시드와 겹칩니다")
         everything += fresh_attack(a.gen, seed, per_type=a.gen_per, humans=a.gen_humans)
+    for seed in [int(x) for x in a.extra_bot_seeds.split(",") if x.strip()]:
+        if not a.extra_bot_gen:
+            sys.exit("--extra-bot-seeds 는 --extra-bot-gen 이 필요합니다")
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "extra.csv"
+            subprocess.run([sys.executable, "-I", a.extra_bot_gen, "--seed", str(seed), "--tag", f"e{seed}", "--humans", "0",
+                            "--out", str(out)] + a.extra_bot_args.split(), check=True, capture_output=True, timeout=120)
+            everything += botcsv.read_csv(out, DEVICE_CTX, DUP_CTX)
     calib = []
     for seed in [int(x) for x in a.calib_seeds.split(",") if x.strip()]:
         if not a.gen:
