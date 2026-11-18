@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v23 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-18
+> 스키마 v24 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-18
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -1813,7 +1813,7 @@ Oracle
 | `session_id` | VARCHAR2(36) | FK → auth_session | 시스템 | 표시할 세션 (없을 수 있음) | Oracle 기록만으로 찍는 마커(구매 직후 취소 등)는 녹화 세션이 없다. 세션이 있으면 재생기가 그 지점으로 이동 |
 | `at_ts` | TIMESTAMP | NN | 시스템 | 타임라인 위치 | 누르면 그 시점으로 이동 |
 | `marker_type` | VARCHAR2(10) | NN | 시스템 | AUTO / MANUAL | 시스템 탐지와 관리자 메모 구분 |
-| `rule_code` | VARCHAR2(30) | NN | 시스템 | FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / LINEAR_MOUSE | 어떤 규칙이 잡았는지 |
+| `rule_code` | VARCHAR2(30) | NN | 시스템 | FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / REGULAR_INTERVAL / LINEAR_MOUSE | 어떤 규칙이 잡았는지. 값은 RiskRule 중 마커 규칙(marker=true)과 같게 둔다 |
 | `label` | VARCHAR2(200) | NN | 시스템 | 예: 0.1초 간격 좌석 클릭 28회 |  |
 | `severity` | VARCHAR2(6) | NN | 시스템 | LOW / MID / HIGH |  |
 | `created_by` | NUMBER | FK → admin_user | 시스템 | 작성 관리자 (AUTO는 null) |  |
@@ -2348,6 +2348,7 @@ Oracle
 | v21 | 상시 취소 수수료 정책 (강다인 요청): cancel_fee_policy 예시에 sale_event_id NULL 세트 5건. 기존 5건이 모두 지난 행사(1번)에 묶여 있어 평시 운행(9001·9002)에서 수수료가 계산되지 않고 "취소 불가"로 보였다 |
 | v22 | 취소표 행동 로그 (WL-01·02): behavior_log.event_type에 WAITLIST_APPLY·WAITLIST_CANCEL 추가. 취소표는 대기열 토큰 없이 들어오는 유일한 길인데 로그가 없어 FAST_CLICK·REGULAR_INTERVAL이 그 구간을 못 본다 |
 | v23 | train_run.status의 DEPARTED 전이 주체를 판매 오픈 스케줄러로 명시 (기점 출발 시각이 지나면). 지금까지 DEPARTED로 바꾸는 코드도 읽는 코드도 없어 CHECK 제약에만 살아 있던 값이다 |
+| v24 | case_marker.rule_code CHECK에 REGULAR_INTERVAL 추가 (강다인 요청). 일정 간격 매크로가 이 규칙에만 걸리는데 마커 규칙이 아니라 케이스가 열리지 않았다 (조영준 경계 측정). 기존 DB는 db/patch/v24.sql |
 
 ## 참고 자료
 

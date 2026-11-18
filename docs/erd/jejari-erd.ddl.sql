@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v23)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v24)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -896,14 +896,14 @@ CREATE TABLE case_marker (
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_case_marker PRIMARY KEY (marker_id),
   CONSTRAINT ck_case_marker_marker_type CHECK (marker_type IN ('AUTO', 'MANUAL')),
-  CONSTRAINT ck_case_marker_rule_code CHECK (rule_code IN ('FAST_CLICK', 'SAME_SEAT_RETRY', 'CANCEL_AFTER_PAY', 'MULTI_ACCOUNT_SYNC', 'LINEAR_MOUSE')),
+  CONSTRAINT ck_case_marker_rule_code CHECK (rule_code IN ('FAST_CLICK', 'SAME_SEAT_RETRY', 'CANCEL_AFTER_PAY', 'MULTI_ACCOUNT_SYNC', 'REGULAR_INTERVAL', 'LINEAR_MOUSE')),
   CONSTRAINT ck_case_marker_severity CHECK (severity IN ('LOW', 'MID', 'HIGH'))
 );
 COMMENT ON TABLE case_marker IS '타임라인 마커 - 재생 타임라인의 북마크. 시스템이 자동으로 찍고 관리자가 메모를 더한다.';
 COMMENT ON COLUMN case_marker.session_id IS '표시할 세션 (없을 수 있음) / Oracle 기록만으로 찍는 마커(구매 직후 취소 등)는 녹화 세션이 없다. 세션이 있으면 재생기가 그 지점으로 이동';
 COMMENT ON COLUMN case_marker.at_ts IS '타임라인 위치 / 누르면 그 시점으로 이동';
 COMMENT ON COLUMN case_marker.marker_type IS 'AUTO / MANUAL / 시스템 탐지와 관리자 메모 구분';
-COMMENT ON COLUMN case_marker.rule_code IS 'FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / LINEAR_MOUSE / 어떤 규칙이 잡았는지';
+COMMENT ON COLUMN case_marker.rule_code IS 'FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / REGULAR_INTERVAL / LINEAR_MOUSE / 어떤 규칙이 잡았는지. 값은 RiskRule 중 마커 규칙(marker=true)과 같게 둔다';
 COMMENT ON COLUMN case_marker.label IS '예: 0.1초 간격 좌석 클릭 28회';
 COMMENT ON COLUMN case_marker.severity IS 'LOW / MID / HIGH';
 COMMENT ON COLUMN case_marker.created_by IS '작성 관리자 (AUTO는 null)';

@@ -1121,7 +1121,8 @@ const DOCS = {
   ['v20','취소표 구현 (WL-01~03): notification.notification_id 시퀀스. 제안·건너뜀 알림을 제안 트랜잭션과 같이 커밋하려면 ID가 필요'],
   ['v21','상시 취소 수수료 정책 (강다인 요청): cancel_fee_policy 예시에 sale_event_id NULL 세트 5건. 기존 5건이 모두 지난 행사(1번)에 묶여 있어 평시 운행(9001·9002)에서 수수료가 계산되지 않고 "취소 불가"로 보였다'],
   ['v22','취소표 행동 로그 (WL-01·02): behavior_log.event_type에 WAITLIST_APPLY·WAITLIST_CANCEL 추가. 취소표는 대기열 토큰 없이 들어오는 유일한 길인데 로그가 없어 FAST_CLICK·REGULAR_INTERVAL이 그 구간을 못 본다'],
-  ['v23','train_run.status의 DEPARTED 전이 주체를 판매 오픈 스케줄러로 명시 (기점 출발 시각이 지나면). 지금까지 DEPARTED로 바꾸는 코드도 읽는 코드도 없어 CHECK 제약에만 살아 있던 값이다']]}
+  ['v23','train_run.status의 DEPARTED 전이 주체를 판매 오픈 스케줄러로 명시 (기점 출발 시각이 지나면). 지금까지 DEPARTED로 바꾸는 코드도 읽는 코드도 없어 CHECK 제약에만 살아 있던 값이다'],
+  ['v24','case_marker.rule_code CHECK에 REGULAR_INTERVAL 추가 (강다인 요청). 일정 간격 매크로가 이 규칙에만 걸리는데 마커 규칙이 아니라 케이스가 열리지 않았다 (조영준 경계 측정). 기존 DB는 db/patch/v24.sql']]}
 };
 // ===== 스키마 v5: 팀 검토 12건 반영 (2026-11-06) =====
 const V5_TABLES = [
@@ -1532,7 +1533,13 @@ const V23_OPS = [
   ['set','train_run','status',{desc:'SCHEDULED / ON_SALE / CLOSED / DEPARTED',reason:'판매 가능 여부 판단. 전이는 판매 오픈 스케줄러가 한다 — sale_open_at이 지나면 ON_SALE, sale_close_at이 지나면 CLOSED, 기점 출발 시각(MIN(train_stop.departure_time))이 지나면 DEPARTED. 출발은 판매 일정과 무관한 사실이라 DEPARTED가 아닌 모든 상태에서 바로 간다. 주기 app_policy sale.open_interval_sec'}],
   ['notes+','train_run','상태 전이 순서: 출발 → 마감 → 오픈 (센 것부터 봐서 뒤 단계가 앞 단계 결과를 건드리지 않게). 정차 정보가 없는 운행은 출발 시각을 알 수 없어 DEPARTED로 가지 않는다'],
 ];
-const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS} ];
+const V24_TABLES = [];
+const V24_OPS = [
+  // 일정 간격 매크로 (강다인 요청, 조영준 경계 측정). 300·500·1000ms 고정 간격 매크로가 REGULAR_INTERVAL에만
+  // 걸리는데 15점이라 케이스가 열리지 않았다 → 마커 규칙으로 올려 케이스를 연다. 마커를 찍으려면 CHECK에 값이 있어야 한다
+  ['set','case_marker','rule_code',{desc:'FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / REGULAR_INTERVAL / LINEAR_MOUSE',reason:'어떤 규칙이 잡았는지. 값은 RiskRule 중 마커 규칙(marker=true)과 같게 둔다'}],
+];
+const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS}, {v:24,tables:V24_TABLES,ops:V24_OPS} ];
 const SEED_VERSION = Math.max(2,...PATCHES.map(p=>p.v));
 const LAYOUT = [
  ['station','route','route_station','fare','common_code'],
