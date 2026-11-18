@@ -7,6 +7,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -31,7 +34,9 @@ import com.jejari.common.error.ErrorCode;
 @Service
 public class PolicyAdminService {
 
+	private static final Logger log = LoggerFactory.getLogger(PolicyAdminService.class);
 	static final String CACHE = "policy:cache";
+	static final int HISTORY_RETRY = 3;
 	private static final Pattern NUMBER = Pattern.compile("-?\\d{1,15}(\\.\\d{1,6})?");
 	private static final Pattern STRING = Pattern.compile("[\\p{L}\\p{N} ._,=:/+-]{1,200}");
 
@@ -103,14 +108,50 @@ public class PolicyAdminService {
 			if (n == 0) {
 				throw new BusinessException(PolicyErrorCode.POLICY_VERSION_CONFLICT);
 			}
-			// 이력 표에는 시퀀스가 없다. 관리자 화면이라 경합이 드물고, 겹치면 PK 오류로 트랜잭션 전체가 롤백된다
-			Long next = jdbc.queryForObject("SELECT NVL(MAX(history_id), 0) + 1 FROM app_policy_history", Long.class);
-			jdbc.update("""
-					INSERT INTO app_policy_history (history_id, policy_key, old_value, new_value, version, changed_by, changed_at)
-					VALUES (?, ?, ?, ?, ?, ?, SYSTIMESTAMP)""", next, key, cur.value(), value, c.version() + 1, adminId);
+			insertHistory(key, cur.value(), value, c.version() + 1, adminId);
 		});
-		redis.opsForHash().put(CACHE, key, value); // 커밋 뒤에만
+		applyToCache(key);
 		return get(key);
+	}
+
+	/**
+	 * 이력 한 줄. 이력 표에는 시퀀스가 없어 {@code MAX + 1}로 번호를 정한다. 다른 키를 동시에 바꾸면 번호가 겹칠 수 있어
+	 * 겹치면 다음 번호로 다시 넣는다 (Oracle은 실패한 문장만 되돌리므로 트랜잭션의 UPDATE는 그대로 남는다).
+	 */
+	private void insertHistory(String key, String oldValue, String newValue, long version, long adminId) {
+		for (int attempt = 1; ; attempt++) {
+			Long next = jdbc.queryForObject("SELECT NVL(MAX(history_id), 0) + 1 FROM app_policy_history", Long.class);
+			try {
+				jdbc.update("""
+						INSERT INTO app_policy_history (history_id, policy_key, old_value, new_value, version, changed_by, changed_at)
+						VALUES (?, ?, ?, ?, ?, ?, SYSTIMESTAMP)""", next, key, oldValue, newValue, version, adminId);
+				return;
+			} catch (DuplicateKeyException e) {
+				if (attempt >= HISTORY_RETRY) {
+					throw e;
+				}
+			}
+		}
+	}
+
+	/**
+	 * 커밋 뒤 Redis {@code policy:cache}에 반영한다. 앱들은 Redis를 먼저 읽고, 일부(AuthPolicy·BehaviorPolicy)는 Redis에 없으면 DB가 아니라
+	 * 기본값을 쓰므로 "키를 지워 DB를 읽게" 하는 방식은 쓸 수 없다 → 반드시 넣어야 한다.
+	 *
+	 * <ul>
+	 *   <li>넣는 값은 방금 커밋된 DB 값을 다시 읽은 것: 두 관리자가 연달아 바꿀 때 늦게 끝난 쪽의 옛 값이 캐시에 남지 않게</li>
+	 *   <li>Redis가 실패하면 DB는 이미 바뀌었는데 앱들은 옛 값을 계속 쓴다. 조용한 500 대신 그 사실을 그대로 알린다 (503).
+	 *       목록 화면도 DB 값과 캐시 값이 다르면 표시하므로, Redis가 돌아온 뒤 같은 값을 다시 저장하면 맞춰진다</li>
+	 * </ul>
+	 */
+	private void applyToCache(String key) {
+		String committed = jdbc.queryForObject("SELECT policy_value FROM app_policy WHERE policy_key = ?", String.class, key);
+		try {
+			redis.opsForHash().put(CACHE, key, committed);
+		} catch (RuntimeException e) {
+			log.warn("운영 설정 {}: DB에는 저장했지만 Redis 캐시 반영 실패 → 앱들은 옛 값을 계속 씀: {}", key, e.toString());
+			throw new BusinessException(PolicyErrorCode.POLICY_CACHE_NOT_APPLIED);
+		}
 	}
 
 	static void check(String type, String value) {
@@ -137,7 +178,18 @@ public class PolicyAdminService {
 	}
 
 	enum PolicyErrorCode implements ErrorCode {
-		POLICY_VERSION_CONFLICT;
+		POLICY_VERSION_CONFLICT(HttpStatus.CONFLICT, "다른 관리자가 먼저 바꿨습니다. 다시 읽은 뒤 바꿔 주세요."),
+		/** DB는 바뀌었고 Redis 캐시만 실패. 앱들은 옛 값을 쓰는 중 */
+		POLICY_CACHE_NOT_APPLIED(HttpStatus.SERVICE_UNAVAILABLE,
+				"DB에는 저장했지만 서버들에 반영하지 못했습니다 (캐시 오류). 잠시 뒤 같은 값을 다시 저장해 주세요.");
+
+		private final HttpStatus status;
+		private final String message;
+
+		PolicyErrorCode(HttpStatus status, String message) {
+			this.status = status;
+			this.message = message;
+		}
 
 		@Override
 		public String code() {
@@ -146,12 +198,12 @@ public class PolicyAdminService {
 
 		@Override
 		public HttpStatus status() {
-			return HttpStatus.CONFLICT;
+			return status;
 		}
 
 		@Override
 		public String message() {
-			return "다른 관리자가 먼저 바꿨습니다. 다시 읽은 뒤 바꿔 주세요.";
+			return message;
 		}
 	}
 }
