@@ -9,6 +9,12 @@
 //   retry               MACRO           이미 팔린 좌석 하나를 0.3~0.6초 간격으로 반복 선점         SAME_SEAT_RETRY
 //   multi               RESELLER        한 기기(X-Device-Id)로 계정 3개가 몇 초 안에 각자 선점     MULTI_ACCOUNT_SYNC (기기)
 //   cancel              CANCEL_ABUSER   결제하고 1~3초 뒤 취소를 3번                              CANCEL_AFTER_PAY
+//   steady              MACRO           운행 검색을 정확히 일정한 간격(기본 500ms)으로 40번       REGULAR_INTERVAL (보조 규칙)
+//
+// 경계 측정 (봇 강도를 여러 단계로 섞기): *_LEVELS에 쉼표로 강도를 주면 봇마다 돌아가며 배정하고,
+// 이메일의 g{강도}에 남겨 eval_risk.sh가 강도별 탐지율 표를 낸다. 한 번 실행으로 "몇 번부터 잡히나"가 보인다.
+//   FAST_LEVELS=10,15,19,20,21,25,50   RETRY_LEVELS=3,4,5,6,8   CANCEL_LEVELS=1,2,3   MULTI_SIZES=2,3   STEADY_LEVELS=300,500,1000
+//   또는 BOUNDARY=1 (위 값 + 강도마다 3명, 정상 사용자 20명)
 //
 // 봇마다 규칙 하나만 건드리게 만들었다 (fast는 느리게 선점, retry는 느리게 반복). 그래야 어느 규칙이 놓쳤는지 보인다.
 // 모든 회원은 서로 다른 카드·기기를 쓴다 (multi 묶음만 기기 공유). 카드를 같이 쓰면 결제 수단 점수가 전원에게 번진다.
@@ -29,23 +35,46 @@ import {
 } from '../lib/journey.js';
 import { safeJson } from '../lib/helpers.js';
 
-const n = (k, d, max = 2000) => Math.min(max, Math.max(0, Number(__ENV[k] ?? d)));
-const NORMAL = n('NORMAL', 40);
-const FAST = n('FAST', 5);
-const RETRY = n('RETRY', 5);
-const MULTI_GROUPS = n('MULTI_GROUPS', 3);
-const MULTI_SIZE = n('MULTI_SIZE', 3, 10);
-const CANCEL = n('CANCEL', 5);
-const SPREAD_SEC = n('SPREAD_SEC', 30, 600);
+const BOUNDARY = __ENV.BOUNDARY === '1';
+// 경계 측정 기본값: 강도마다 PER_LEVEL명
+const B = BOUNDARY
+  ? { FAST_LEVELS: '10,15,19,20,21,25,50', RETRY_LEVELS: '3,4,5,6,8', CANCEL_LEVELS: '1,2,3', MULTI_SIZES: '2,3',
+      STEADY_LEVELS: '300,500,1000', NORMAL: 20 }
+  : {};
+const env = (k, d) => __ENV[k] ?? B[k] ?? d;
+const n = (k, d, max = 2000) => Math.min(max, Math.max(0, Number(env(k, d))));
+/** "10,20,30" → [10,20,30]. 비었거나 잘못되면 기본값 하나 */
+const levels = (k, d, min, max) => {
+  const out = String(env(k, d)).split(',').map((s) => Math.round(Number(s.trim())))
+    .filter((v) => Number.isFinite(v) && v >= min && v <= max);
+  return out.length ? out : [Number(d)];
+};
+const PER_LEVEL = n('PER_LEVEL', 3, 100);
 const FAST_CLICKS = n('FAST_CLICKS', 50, 500);           // FAST_CLICK 문턱: 200ms 미만 간격 20회(MID)·60회(HIGH)
 const RETRY_TIMES = n('RETRY_TIMES', 8, 100);             // SAME_SEAT_RETRY 문턱: 같은 좌석 실패 5회(MID)·15회(HIGH)
 const CANCEL_ROUNDS = n('CANCEL_ROUNDS', 3, 9);           // CANCEL_AFTER_PAY 문턱: 구매 후 30분 안 취소 2건(MID)·5건(HIGH)
+const FAST_LEVELS = levels('FAST_LEVELS', FAST_CLICKS, 1, 500);
+const RETRY_LEVELS = levels('RETRY_LEVELS', RETRY_TIMES, 1, 100);
+const CANCEL_LEVELS = levels('CANCEL_LEVELS', CANCEL_ROUNDS, 1, 9);
+const MULTI_SIZES = levels('MULTI_SIZES', n('MULTI_SIZE', 3, 10), 2, 10);
+const STEADY_LEVELS = levels('STEADY_LEVELS', 500, 200, 10000); // 간격 ms. 200 미만은 FAST_CLICK과 섞여 제외
+const STEADY_COUNT = n('STEADY_COUNT', 40, 500);                // REGULAR_INTERVAL: 간격 30건 이상, 변동계수 0.05 이하
+// 인원: 강도를 여러 개 주면 강도마다 PER_LEVEL명, 아니면 예전처럼 직접
+const count = (k, d, lv) => n(k, lv.length > 1 ? lv.length * PER_LEVEL : d);
+const NORMAL = n('NORMAL', 40);
+const FAST = count('FAST', 5, FAST_LEVELS);
+const RETRY = count('RETRY', 5, RETRY_LEVELS);
+const MULTI_GROUPS = count('MULTI_GROUPS', 3, MULTI_SIZES);
+const CANCEL = count('CANCEL', 5, CANCEL_LEVELS);
+const STEADY = n('STEADY', BOUNDARY || __ENV.STEADY_LEVELS ? STEADY_LEVELS.length * PER_LEVEL : 0);
+const SPREAD_SEC = n('SPREAD_SEC', 30, 600);
+const pickLevel = (lv, i) => lv[i % lv.length];
 const NORMAL_CANCEL_RATE = Number(__ENV.NORMAL_CANCEL_RATE ?? 0.2); // 정상 사용자도 마음이 바뀌면 1번은 취소한다 (문턱 2건 아래)
 const FROM = __ENV.FROM || '3900023';
 const TO = __ENV.TO || '3900114';
 const MAX_WAIT_SEC = n('MAX_WAIT_SEC', 180, 1800);
 
-const KINDS = ['normal', 'fast', 'retry', 'multi', 'cancel'];
+const KINDS = ['normal', 'fast', 'retry', 'multi', 'cancel', 'steady'];
 const flowOk = new Rate('bot_flow_ok');        // 각 사용자가 의도한 행동을 끝까지 했는지 (kind 태그). 낮으면 평가를 믿을 수 없음
 const fastClicks = new Counter('fast_clicks'); // 실제로 보낸 연타 수
 const retry409 = new Counter('retry_409');     // 반복 선점이 실제로 409를 받은 수 (좌석이 안 팔려 있으면 0)
@@ -63,8 +92,10 @@ const scenarios = {};
 if (NORMAL) scenarios.normal = group('normalUser', NORMAL);
 if (FAST) scenarios.fast = group('fastClicker', FAST);
 if (RETRY) scenarios.retry = group('seatRetrier', RETRY);
-if (MULTI_GROUPS && MULTI_SIZE) scenarios.multi = group('multiAccount', MULTI_GROUPS * MULTI_SIZE);
+const MULTI_TOTAL = Array.from({ length: MULTI_GROUPS }, (_, g) => pickLevel(MULTI_SIZES, g)).reduce((a, b) => a + b, 0);
+if (MULTI_TOTAL) scenarios.multi = group('multiAccount', MULTI_TOTAL);
 if (CANCEL) scenarios.cancel = group('cancelAbuser', CANCEL);
+if (STEADY) scenarios.steady = group('steadyMacro', STEADY);
 
 export const options = {
   setupTimeout: '20m',
@@ -99,11 +130,15 @@ function plan(tag) {
   const add = (kind, count, grpOf = () => 0) => {
     for (let i = 0; i < count; i++) out.push({ kind, i, ...account(tag, kind, grpOf(i), next()), grp: grpOf(i) });
   };
+  // 봇은 묶음 번호(g) 자리에 강도를 적는다 → eval_risk.sh가 강도별로 셈. multi만 g = 묶음 번호
+  const multiGroupOf = [];
+  for (let g = 0; g < MULTI_GROUPS; g++) for (let k = 0; k < pickLevel(MULTI_SIZES, g); k++) multiGroupOf.push(g);
   add('normal', NORMAL);
-  add('fast', FAST);
-  add('retry', RETRY);
-  add('multi', MULTI_GROUPS * MULTI_SIZE, (i) => Math.floor(i / MULTI_SIZE));
-  add('cancel', CANCEL);
+  add('fast', FAST, (i) => pickLevel(FAST_LEVELS, i));
+  add('retry', RETRY, (i) => pickLevel(RETRY_LEVELS, i));
+  add('multi', multiGroupOf.length, (i) => multiGroupOf[i]);
+  add('cancel', CANCEL, (i) => pickLevel(CANCEL_LEVELS, i));
+  add('steady', STEADY, (i) => pickLevel(STEADY_LEVELS, i));
   add('decoy', 1); // 반복 선점용 좌석을 미리 사 두는 도우미. 평가에서 뺀다
   return out;
 }
@@ -130,7 +165,7 @@ export function setup() {
   if (!map.seats || map.seats.length === 0) {
     throw new Error(`사전 점검 실패(좌석 배치도): ${map.res.status} ${codeOf(map.res)} 빈 좌석 ${map.seats ? 0 : '?'}석. Oracle 볼륨을 초기화하세요.`);
   }
-  const need = NORMAL + FAST + RETRY + MULTI_GROUPS * MULTI_SIZE + CANCEL * CANCEL_ROUNDS + 1;
+  const need = NORMAL + FAST + MULTI_TOTAL + CANCEL * Math.max(...CANCEL_LEVELS) + 1;
   if (map.seats.length < need) console.warn(`빈 좌석 ${map.seats.length}석 < 필요 ${need}석: 일부 사용자가 좌석을 못 잡습니다.`);
   const targetSeat = pick(map.seats);
   const h = hold(token, q.passToken, { from: FROM, to: TO, seatIds: [targetSeat] });
@@ -217,16 +252,18 @@ export function fastClicker(data) {
   sleep(Math.random() * SPREAD_SEC);
   const token = loginOrFail(u);
   let sent = 0;
-  for (let i = 0; i < FAST_CLICKS; i++) {
+  const clicks = u.grp; // 강도 (FAST_LEVELS)
+  for (let i = 0; i < clicks; i++) {
     if (search(token, FROM, TO, data.date, 'run_search_bot').status === 200) sent++;
     sleep(rand(0.02, 0.06));
   }
   fastClicks.add(sent);
+  sleep(1); // 연타 뒤 대기열 진입까지는 사람 속도로 (연타 수만 정확히 재려고)
   const q = queueUntilAdmitted(token, { maxWaitSec: MAX_WAIT_SEC });
   if (!q.ok) return done('fast', false);
   try {
     buyOne(u, token, q.passToken); // 사는 것도 사람 속도로 (이 봇은 연타 하나만 보이게)
-    done('fast', sent >= FAST_CLICKS * 0.9);
+    done('fast', sent >= clicks * 0.9);
   } finally {
     queueLeave(token);
   }
@@ -242,13 +279,14 @@ export function seatRetrier(data) {
   if (!q.ok) return done('retry', false);
   try {
     let conflicts = 0;
-    for (let i = 0; i < RETRY_TIMES; i++) {
+    const times = u.grp; // 강도 (RETRY_LEVELS)
+    for (let i = 0; i < times; i++) {
       const h = hold(token, q.passToken, { from: FROM, to: TO, seatIds: [data.targetSeat] });
       if (h.status === 409) conflicts++;
       sleep(rand(0.3, 0.6)); // 200ms 넘게: 연타 규칙은 건드리지 않음
     }
     retry409.add(conflicts);
-    done('retry', conflicts >= RETRY_TIMES - 1);
+    done('retry', conflicts >= times - 1);
   } finally {
     queueLeave(token);
   }
@@ -280,7 +318,8 @@ export function cancelAbuser(data) {
   if (!q.ok) return done('cancel', false);
   try {
     let ok = 0;
-    for (let r = 0; r < CANCEL_ROUNDS; r++) {
+    const rounds = u.grp; // 강도 (CANCEL_LEVELS)
+    for (let r = 0; r < rounds; r++) {
       const rid = buyOne(u, token, q.passToken);
       if (rid == null) continue;
       sleep(rand(1, 3));
@@ -288,10 +327,29 @@ export function cancelAbuser(data) {
       sleep(rand(0.5, 1));
     }
     cancelled.add(ok);
-    done('cancel', ok >= 2);
+    done('cancel', ok >= rounds);
   } finally {
     queueLeave(token);
   }
+}
+
+// ── 봇 5: 일정 간격 매크로 (REGULAR_INTERVAL) ─────────────────
+// 빠르지 않은(200ms 이상) 대신 간격이 기계처럼 일정하다. 요청 시작 시각을 t0 + i×간격에 맞춰
+// 응답 시간이 흔들려도 간격이 일정하게 (서버는 요청을 받은 시각으로 간격을 잼)
+export function steadyMacro(data) {
+  const u = me(data, 'steady');
+  setDevice(`ltdev${data.tag}s${u.i}`);
+  sleep(Math.random() * SPREAD_SEC);
+  const token = loginOrFail(u);
+  const periodMs = u.grp; // 강도 = 간격 ms (STEADY_LEVELS)
+  const t0 = Date.now();
+  let sent = 0;
+  for (let i = 0; i < STEADY_COUNT; i++) {
+    const wait = t0 + i * periodMs - Date.now();
+    if (wait > 0) sleep(wait / 1000);
+    if (search(token, FROM, TO, data.date, 'run_search_steady').status === 200) sent++;
+  }
+  done('steady', sent >= STEADY_COUNT * 0.9);
 }
 
 export function teardown(data) {
