@@ -103,8 +103,34 @@ export async function logout() {
 
 // ------------------------------------------------------------ 요청
 
+/**
+ * 기기 ID. 서버(BehaviorInterceptor)가 X-Device-Id를 해시해 행동 로그에 남기고, 같은 기기의 다계정을
+ * 위험 점수로 묶는다 (MULTI_ACCOUNT_SYNC 등). 처음 열 때 무작위로 만들어 브라우저에 저장한다.
+ * 클라이언트 값이라 마음먹은 봇은 바꾸거나 뺄 수 있다 — "같은 브라우저를 여러 계정이 쓰는" 경우를 잡는 장치다.
+ * 저장소가 막혀 있으면(사생활 보호 창 등) 이 탭에서만 쓰는 ID로 대신한다.
+ */
+const DEVICE_KEY = 'jejari.device';
+let deviceId = null;
+function device() {
+  if (deviceId) return deviceId;
+  const fresh = () =>
+    (crypto.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9_-]/g, '');
+  try {
+    deviceId = localStorage.getItem(DEVICE_KEY);
+    if (!/^[A-Za-z0-9_-]{8,128}$/.test(deviceId || '')) {
+      deviceId = fresh();
+      localStorage.setItem(DEVICE_KEY, deviceId);
+    }
+  } catch {
+    deviceId = fresh();
+  }
+  return deviceId;
+}
+
 async function send(method, path, body, { auth = true, extra } = {}) {
   const headers = { Accept: 'application/json', ...(extra || {}) };
+  // 이용자 요청에만 붙인다. 관리자 조회는 이용자 행동 분석에 섞이지 않게 (AdminDashboardController 주석과 같은 이유)
+  if (!path.startsWith('/api/v1/admin')) headers['X-Device-Id'] = device();
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (auth && accessToken) headers.Authorization = 'Bearer ' + accessToken;
 
