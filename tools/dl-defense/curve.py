@@ -28,6 +28,7 @@ def main(argv=None):
     ap.add_argument("--gen-humans", type=int, default=400)
     ap.add_argument("--device-context", action="store_true")
     ap.add_argument("--dup-context", action="store_true")
+    ap.add_argument("--ensemble", action="store_true", help="--model 의 점수를 평균내 한 모델처럼 잰다")
     ap.add_argument("--seeds", default="31,32,33,34,35,36,37,38,39,40")
     ap.add_argument("--fprs", default="0.01,0.02,0.03,0.05,0.10")
     a = ap.parse_args(argv)
@@ -38,12 +39,18 @@ def main(argv=None):
     y = np.array([s.label for s in allsub])
     fam = np.array([s.family for s in allsub])
     fprs = [float(x) for x in a.fprs.split(",")]
-    for path in a.model:
-        model, thr = training.load(Path(path))
-        p = training.predict(model, allsub)
+    runs = []
+    if a.ensemble:
+        ps = [training.predict(training.load(Path(m))[0], allsub) for m in a.model]
+        runs.append((" + ".join(a.model), np.mean(ps, axis=0), None))
+    else:
+        for path in a.model:
+            model, thr = training.load(Path(path))
+            runs.append((path, training.predict(model, allsub), thr))
+    for path, p, thr in runs:
         h = p[y == 0]
-        print(f"== {path} · 사람 {len(h)}명 · 봇 {int((y == 1).sum())}세션 · 저장된 문턱 {thr:.3f} → "
-              f"오탐 {(h >= thr).mean():.2%} / 탐지 {(p[y == 1] >= thr).mean():.1%}")
+        extra = f" · 저장된 문턱 {thr:.3f} → 오탐 {(h >= thr).mean():.2%} / 탐지 {(p[y == 1] >= thr).mean():.1%}" if thr is not None else ""
+        print(f"== {path} · 사람 {len(h)}명 · 봇 {int((y == 1).sum())}세션{extra}")
         for f in fprs:
             t = np.quantile(h, 1 - f, method="higher")
             ev = {v: (p[fam == v] >= t).mean() for v in sorted(set(fam)) if v.startswith("evasive")}
