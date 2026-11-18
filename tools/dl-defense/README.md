@@ -261,6 +261,33 @@ python eval_csv.py --model out/a.pt out/b.pt --thr 0.612 --csv test_attack.csv -
 
 **fast를 못 잡는 이유는 모델입니다.** 신호는 충분합니다. 모델이 쓰는 정규화 속도 평균(`z평균`) 하나만으로도 fast 대 사람 AUC가 0.937이고, 사람 오탐 1.5%에서 fast의 60%를 잡습니다 (사람 −0.00±0.42, fast −0.97±0.48). 그런데 모델은 17.5%입니다. 학습에 있던 봇은 기계적 간격이거나 사람 속도라서 "사람보다 전반적으로 훨씬 빠르다"는 패턴을 배우지 못했습니다. 이 모델을 쓰려면 속도를 줄인 사람형 봇을 학습 데이터에 넣거나(그러면 이 시험은 더 이상 처음 보는 공격이 아님) 속도 평균 같은 단순 통계량을 별도 경보로 함께 두는 것이 좋습니다.
 
+### fast 공격(사람 리듬을 가속한 매크로)도 막도록 학습
+
+앞 시험에서 17.5%였던 fast를 막으려고 **가속 사람형 봇을 학습 데이터에 넣었습니다** (`--extra-bot-gen attacks/gen_test_attack.py`, 배율 0.2~0.6배에서 세션마다 무작위, 생성기 시드 801~830). 주 모델만 다시 학습했을 때는 fast(0.35배) 27~40%에 그쳤습니다. 어려운 사람형 봇(adaptive·mimic_hard)을 한꺼번에 학습하는 모델이 속도 단서를 충분히 못 썼기 때문입니다. 그래서 **fast 전용 모델**(사람 대 가속 봇만 학습, `--keep-bots test_attack/fast`)을 따로 두고 **OR로 결합**했습니다 (`calibrate_union.py`: 어느 하나라도 문턱 이상이면 봇). 문턱은 보정 전용 사람 3,200명으로 고르고, 전용 모델은 합친 오탐 목표 중 일부(0.5%)만 쓰게 했습니다.
+
+```bash
+python train_csv.py ... --extra-bot-gen attacks/gen_test_attack.py --extra-bot-seeds 801,...,830 \
+  --extra-bot-args "--per-variant 60 --variants fast --fast-scale-lo 0.2 --fast-scale-hi 0.6" ...   # 주 모델
+python train_csv.py ... --keep-bots test_attack/fast ... --max-fpr 0.01 --out out/model_fastspec.pt  # 전용 모델
+python calibrate_union.py --main out/model_fast_s0.pt --spec out/model_fastspec.pt ... --target-fpr 0.015 --spec-fpr 0.005 --out out/union_fast.json
+python eval_csv.py --union out/union_fast.json --csv test_attack.csv --device-context --dup-context
+```
+
+새 시드로 만든 시험 데이터(학습·보정에 안 쓴 데이터, 파일마다 사람 400명)의 탐지율입니다. **합친 목표 1.5% · 전용 몫 0.5%**일 때:
+
+| 데이터 | 탐지율 |
+|---|---|
+| v3 봇 17변형 (10시드) | 88.5% (사람 오탐 합산 1.80%) |
+| pool (템플릿 풀 매크로) | 100% |
+| **fast 0.35배** | **42%** (이전 17.5%) |
+| fast 0.5배 | 18% |
+| fast 0.65배 | 10% |
+| fast 0.8배 | 7% |
+
+시험 공격 5파일의 사람 합산 오탐은 1.90%입니다. 전용 몫을 1.0%로 올리면 fast 0.35배는 50%까지 오르지만 v3 사람 오탐이 2.15%로 목표를 넘고, 1.5%면 53%에 2.45%입니다.
+
+**fast는 일부만 막을 수 있습니다.** 사람의 세션별 속도 편차(σ≈0.35)가 크기 때문에, 0.35배는 사람 속도 분포의 3σ 근처라 오탐 1.5%에서도 60% 안팎이 한계이고 0.5배 이상은 사람과 거의 구별되지 않습니다 (속도 평균 하나만 쓴 규칙도 AUC 0.937). 속도만으로 더 막으려면 오탐을 더 허용해야 합니다. 이 시험의 fast는 학습한 가속 봇과 같은 생성 방식(배율만 시드·값이 다름)이라 **완전히 처음 보는 공격이 아닙니다.**
+
 ## 한계와 다음 단계
 
 - 시뮬레이터가 단순합니다. 대회 1차 로그가 나오면 ① `score.py`로 점수를 매기고 ② 봇마다 어떤 사유로 잡혔는지, 사람 오탐이 몇 건인지 `eval_contest.sh` 결과와 비교해 보세요. 그 로그로 이 모델을 **학습하지는 않습니다** (시험용 데이터).
