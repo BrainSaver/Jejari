@@ -29,11 +29,14 @@ WHEN NOT MATCHED THEN
   INSERT (car_type_code, car_type_name, seat_count, seat_grade, seat_columns)
   VALUES (s.car_type_code, s.car_type_name, s.seat_count, s.seat_grade, s.seat_columns);
 
--- 101 하행(서울→부산), 102 상행(부산→서울)
+-- 열차 번호는 TAGO 열차정보 API에서 고른 실제 KTX 편명입니다 (5역에 모두 서는 09시 이후 첫 편).
+-- train_id 1 = 하행(서울→부산), 2 = 상행(부산→서울).
 MERGE INTO train t
 USING (
-  SELECT 1 AS train_id, '101' AS train_no, 'KTX' AS train_kind, 1 AS route_id, 'DOWN' AS direction FROM dual UNION ALL
-  SELECT 2,             '102',             'KTX',                1,             'UP'               FROM dual
+-- @generated:train (tools/load-public-data.js — 손으로 고치지 마세요)
+  SELECT 1 AS train_id, '00103' AS train_no, 'KTX' AS train_kind, 1 AS route_id, 'DOWN' AS direction FROM dual UNION ALL
+  SELECT 2,             '00026',        'KTX',                1,             'UP'               FROM dual
+-- @end:train
 ) s ON (t.train_id = s.train_id)
 WHEN MATCHED THEN
   UPDATE SET t.train_no = s.train_no, t.train_kind = s.train_kind,
