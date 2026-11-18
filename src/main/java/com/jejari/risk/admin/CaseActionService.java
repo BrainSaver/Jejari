@@ -234,8 +234,8 @@ public class CaseActionService {
 		return s == null ? null : s.strip().toUpperCase(java.util.Locale.ROOT);
 	}
 
-	/** 사유: 앞뒤 공백 제거 후 5~500자, 제어 문자 제거 (로그·화면 위조 방지) */
-	static String memo(String raw) {
+	/** 사유: 앞뒤 공백 제거 후 5~500자, 제어 문자 제거 (로그·화면 위조 방지). 예약 강제 취소(ADM-07)도 같은 규칙 */
+	public static String memo(String raw) {
 		String m = raw == null ? "" : raw.replaceAll("\\p{Cntrl}", " ").strip();
 		if (m.codePointCount(0, m.length()) < MEMO_MIN) {
 			throw new BusinessException(RiskAdminErrorCode.ACTION_REASON_REQUIRED);
