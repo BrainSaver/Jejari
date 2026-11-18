@@ -59,6 +59,10 @@ def load(folder: str):
     with open(os.path.join(folder, "events.jsonl")) as f:
         for line in f:
             e = json.loads(line)
+            # 첫 화면 자동 검색(meta.auto)은 사람이 한 행동이 아니라 화면이 스스로 부른 것이라 뺀다
+            # (안 빼면 화면만 열어도 "검색한 사람"이 되어 n_view·browse_before_hold·간격이 흐려짐)
+            if (e.get("meta") or {}).get("auto"):
+                continue
             if e.get("member_id") is not None:
                 events[e["member_id"]].append(e)
     members = {}
