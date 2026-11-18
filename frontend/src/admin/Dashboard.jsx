@@ -225,10 +225,13 @@ function Kpi({ label, n, unit, d, src, alarm }) {
   );
 }
 
+// 만료는 오방색 파랑(토큰 --saek의 청색)을 쓴다. 앞의 세 색과 겹치지 않고 팀 팔레트 안에 있다.
+// 막대는 늘 이 순서로 서고 범례·툴팁이 이름을 달아 주므로, 색만으로 구분하지 않아도 읽힌다.
 const SERIES = [
   ['reservations', '예약', 'var(--ink)'],
   ['payments', '결제', 'var(--go)'],
   ['cancels', '취소', 'var(--stop)'],
+  ['expires', '만료', '#1D4ED8'],
 ];
 
 /**
@@ -242,16 +245,17 @@ function RateChart({ history, rates, windowSec }) {
   const max = Math.max(10, ...rows.flatMap((h) => SERIES.map(([k]) => h[k])));
   const top = niceCeil(max);
   const slot = (W - 40) / Math.max(rows.length, 1);
-  const bw = Math.max(2, (slot - 6) / 3);
+  const bw = Math.max(2, (slot - 6) / SERIES.length);
   const y = (v) => H - (v / top) * (H - 8);
   const label = rows.length
-    ? `최근 ${rows.length}분 분당 예약·결제·취소. 최근 ${windowSec}초 예약 ${rates.reservations}건, 결제 ${rates.payments}건, 취소 ${rates.cancels}건`
+    ? `최근 ${rows.length}분 분당 예약·결제·취소·만료. 최근 ${windowSec}초 예약 ${rates.reservations}건, `
+      + `결제 ${rates.payments}건, 취소 ${rates.cancels}건, 만료 ${rates.expires}건`
     : '분당 이력을 못 읽음';
 
   return (
     <section className="panel">
       <h2>
-        <span className="grow">분당 예약·결제·취소</span>
+        <span className="grow">분당 예약·결제·취소·만료</span>
         <span className="row" style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--mut)', gap: 14 }}>
           {SERIES.map(([k, name, color]) => (
             <span key={k}>
@@ -263,7 +267,7 @@ function RateChart({ history, rates, windowSec }) {
       </h2>
       <p className="sub">
         막대 한 칸 = 1분 (Oracle 집계, 캐시 없음) · 최근 {rows.length || HISTORY_MIN}분 · 마지막 흐린 칸은 진행 중인 분 ·
-        범례 숫자는 최근 {windowSec}초
+        범례 숫자는 최근 {windowSec}초 · <b>만료</b>는 결제로 이어지지 못하고 풀린 선점
       </p>
       {!rows.length ? (
         <div className="soon-box">분당 이력을 못 읽었어요. 숫자 카드는 그대로 갱신돼요.</div>
@@ -280,12 +284,12 @@ function RateChart({ history, rates, windowSec }) {
             const live = i === rows.length - 1;
             return (
               <g key={h.minute} opacity={live ? 0.5 : 1}>
-                <title>{`${h.minute.slice(11, 16)}${live ? ' (진행 중)' : ''} · 예약 ${h.reservations} · 결제 ${h.payments} · 취소 ${h.cancels}`}</title>
+                <title>{`${h.minute.slice(11, 16)}${live ? ' (진행 중)' : ''} · 예약 ${h.reservations} · 결제 ${h.payments} · 취소 ${h.cancels} · 만료 ${h.expires}`}</title>
                 {SERIES.map(([k, , color], j) => (
                   <rect key={k} className="chartbar" x={x0 + j * bw} y={y(h[k])} width={bw - 1} height={Math.max(1, H - y(h[k]))} rx="2" fill={color} />
                 ))}
                 {((Number(h.minute.slice(14, 16)) % 5 === 0 && i < rows.length - 2) || live) && (
-                  <text x={x0 + bw * 1.5} y={H + 18} textAnchor="middle" fontSize="12" fill="var(--mut)">{h.minute.slice(11, 16)}</text>
+                  <text x={x0 + (bw * SERIES.length) / 2} y={H + 18} textAnchor="middle" fontSize="12" fill="var(--mut)">{h.minute.slice(11, 16)}</text>
                 )}
               </g>
             );
