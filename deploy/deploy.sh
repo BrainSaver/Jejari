@@ -17,9 +17,23 @@ git fetch -q origin "$BRANCH"
 git checkout -q "$BRANCH"
 git merge -q --ff-only "origin/$BRANCH"
 echo "빌드: $(git log --oneline -1)"
+
+# 화면 (frontend/, React + Vite): dist/를 만들어 두면 bootJar가 jar의 static/에 넣는다 (build.gradle).
+# 서버에 Node를 설치하지 않고 Node 22 컨테이너로 빌드. 빠뜨리면 API만 올라가 "/"가 NOT_FOUND
+if [[ -f frontend/package.json ]]; then
+  rm -rf frontend/dist
+  docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD/frontend:/app" -w /app node:22-alpine \
+    sh -c 'npm ci --no-audit --no-fund --loglevel=error && npm run build' > /tmp/jejari-frontend.log 2>&1 \
+    || { echo "화면 빌드 실패: /tmp/jejari-frontend.log"; exit 1; }
+  [[ -f frontend/dist/index.html ]] || { echo "화면 빌드 결과(dist/index.html)가 없습니다."; exit 1; }
+  echo "화면 빌드 완료"
+fi
 LC_ALL=C.UTF-8 TZ=Asia/Seoul ./gradlew -q bootJar   # LC_ALL: 한글 파일 이름 클래스
 
 JAR=$(ls -t build/libs/*.jar | grep -v -- '-plain' | head -1)
+if [[ -f frontend/package.json ]] && ! jar tf "$JAR" | grep -q 'BOOT-INF/classes/static/index.html'; then
+  echo "jar에 화면(static/index.html)이 없습니다. 배포를 멈춥니다."; exit 1
+fi
 mkdir -p "$HOME/jejari-app"
 cp "$JAR" "$HOME/jejari-app/jejari.jar.new"
 mv "$HOME/jejari-app/jejari.jar.new" "$HOME/jejari-app/jejari.jar"
