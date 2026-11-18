@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { get } from '../api/client.js';
+import { api, get } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
 import { addDays, seoulHm, seoulNowLocal, seoulToday } from '../lib/time.js';
 import { MiniTrain } from './RouteLine.jsx';
@@ -30,6 +30,7 @@ export default function Search() {
 
   // 역 목록. 주소에 조건이 없으면 서울 → 부산(없으면 앞의 두 역)을 기본으로 하고, 첫 화면부터 바로 열차를 보여 준다
   const [moved, setMoved] = useState(null); // 오늘 남은 열차가 없어 다른 날로 넘겼으면 그 날짜
+  const prefetched = useRef(null); // 첫 화면 자동 검색 결과. 아래 검색 효과가 같은 조건을 다시 부르지 않게
   useEffect(() => {
     let alive = true;
     get('/api/v1/stations')
@@ -42,10 +43,12 @@ export default function Search() {
         const to = id('부산') || list[1]?.stationId || '';
         setForm((f) => ({ ...f, from, to }));
         if (!from || !to) return;
-        const date = await firstDateWithRuns(from, to, params.get('date') || seoulToday());
+        const start = params.get('date') || seoulToday();
+        const { date, runs } = await autoSearch(from, to, start);
         if (!alive) return;
+        if (runs) prefetched.current = { key: `${from}|${to}|${date}`, runs };
         setForm((f) => ({ ...f, date, time: f.timeSet ? f.time : defaultTime(date) }));
-        setMoved(date !== (params.get('date') || seoulToday()) ? date : null);
+        setMoved(date !== start ? date : null);
         setParams((p) => ({ ...Object.fromEntries(p), from, to, date }), { replace: true });
       })
       .catch((error) => alive && setState((s) => ({ ...s, error })));
@@ -63,6 +66,12 @@ export default function Search() {
   const qGrade = GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '';
   useEffect(() => {
     if (!q.from || !q.to || !q.date) return;
+    const pre = prefetched.current;
+    prefetched.current = null;
+    if (pre && pre.key === `${q.from}|${q.to}|${q.date}`) {
+      setState({ runs: pre.runs, loading: false, error: null });
+      return;
+    }
     let alive = true;
     setState({ runs: null, loading: true, error: null });
     get(`/api/v1/runs?${new URLSearchParams(q)}`)
@@ -237,16 +246,20 @@ const openPicker = (e) => {
     /* 이미 열려 있거나 지원하지 않으면 브라우저 기본 동작 */
   }
 };
-/** 첫 화면용: start부터 하루씩 넘기며 아직 떠나지 않은 열차가 있는 첫 날짜 (최대 14일, 없으면 start) */
-async function firstDateWithRuns(from, to, start) {
-  for (let i = 0; i < 14; i++) {
-    const date = addDays(start, i);
-    const runs = await get(`/api/v1/runs?${new URLSearchParams({ from, to, date })}`).catch(() => null);
-    if (runs === null) return start;
-    const now = seoulNowLocal();
-    if (runs.some((r) => !r.departureAt || r.departureAt > now)) return date;
+/**
+ * 첫 화면용 자동 검색: 오늘(start), 남은 열차가 없으면 다음 날 한 번만 더. 결과를 돌려줘 같은 검색을 다시 부르지 않는다.
+ * X-Search-Auto 헤더로 "사람이 누른 검색이 아님"을 알려 행동 로그에서 구분한다 (위험 점수 특징에서 뺌, tools/ml/features.py)
+ */
+async function autoSearch(from, to, start) {
+  const now = seoulNowLocal();
+  let first = null;
+  for (const date of [start, addDays(start, 1)]) {
+    const runs = await api('GET', `/api/v1/runs?${new URLSearchParams({ from, to, date })}`, undefined, { 'X-Search-Auto': '1' }).catch(() => null);
+    if (runs === null) break;
+    first = first || { date, runs };
+    if (runs.some((r) => !r.departureAt || r.departureAt > now)) return { date, runs };
   }
-  return start;
+  return first || { date: start, runs: null };
 }
 /** 오늘이면 지금 시각, 다른 날이면 0시 */
 const defaultTime = (date) => (date === seoulToday() ? seoulHm() : '00:00');
