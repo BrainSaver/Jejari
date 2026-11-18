@@ -643,6 +643,8 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | `queue:{runId}`, `queue:seq:{runId}` | 대기 순번 ZSET (member = `{12자리 seq}:{memberId}`), 진입 시퀀스 | 운행 판매 마감 |
 | `queue:member:{memberId}`, `queue:ci:{ciHash}` | 회원당·CI당 동시 대기 1개. `queue:member` 값은 `{runId}\|{queue member}\|{ciHash}` | `queue.entry_ttl_sec` / 멤버별 score |
 | `queue:active:{runId}`, `queue:throughput:{runId}` | 입장한 회원 (score = 토큰 만료 시각), 초당 입장 수 | |
+| `queue:runs` | 줄 선 사람이나 입장 중인 사람이 있는 운행 ID 집합(SET). 입장 스케줄러는 이 집합의 운행만 처리한다. `enter.lua`가 넣고 `admit.lua`가 줄·입장자가 모두 비면 뺀다. `reconcile.lua`가 앱 시작·5분마다 판매 중 운행 중 빠진 것을 다시 넣는다 | |
+| `queue:adm:{runId}:{초}` | 그 운행에서 그 1초에 입장시킨 수. 앱이 여러 대여도 합쳐서 `queue.admit_per_sec`를 넘지 않게 `admit.lua`가 남은 만큼만 입장시킨다 | 3초 |
 | `queue:pass:{runId}:{memberId}` | 입장 토큰 | `queue.pass_ttl_sec` |
 | `queue:passext:{runId}:{memberId}` | 입장 토큰을 이미 한 번 연장했다는 표시 (`POST /runs/{runId}/queue/me/extend`, `extend.lua`가 PTTL 확인·표시·`PEXPIRE`를 원자적으로 처리. 연장분은 `queue.pass_extend_sec`, 기본 300초, 회원·운행당 1회) | 토큰과 함께 |
 | `seat:hold:{runId}:{seatId}:{segNo}` | `R`(HOLD), `SOLD:R`(확정), `REOFFER:R`(대기자 제안 대기) | `pay_deadline_at` / 운행 출발 시각 / `waitlist.reoffer_hold_sec` |

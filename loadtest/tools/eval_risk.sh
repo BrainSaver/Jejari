@@ -23,7 +23,7 @@ if [[ ! "$TAG" =~ ^[a-z0-9]{1,8}$ ]]; then
 fi
 WAIT_SEC="${WAIT_SEC:-70}"
 # 정답 라벨로 읽는 종류 (이메일의 {종류}). steady = 일정 간격 매크로
-KINDS="'normal','fast','retry','multi','cancel','steady'"
+KINDS="'normal','fast','retry','multi','cancel','steady','rotate'"
 MAX_WAIT_SEC="${MAX_WAIT_SEC:-300}"
 
 sql() { # 표준 입력의 SQL을 앱 계정으로 실행
@@ -112,7 +112,7 @@ SELECT p.kind, MAX(sl.user_type) label, COUNT(*) members, SUM(p.det) detected,
  GROUP BY p.kind ORDER BY DECODE(p.kind, 'normal', 0, 1), p.kind;
 
 PROMPT
-PROMPT 봇 강도별 탐지 (경계 측정). 강도 = fast 연타 수 · retry 같은 좌석 시도 수 · cancel 결제 직후 취소 수 · steady 요청 간격(ms) · multi 한 기기 계정 수
+PROMPT 봇 강도별 탐지 (경계 측정). 강도 = fast 연타 수 · retry 같은 좌석 시도 수 · rotate 좌석마다 시도 수(여러 좌석) · cancel 결제 직후 취소 수 · steady 요청 간격(ms) · multi 한 기기 계정 수
 PROMPT   문턱: FAST_CLICK 200ms 미만 간격 20회 · SAME_SEAT_RETRY 같은 좌석 실패 5회 · CANCEL_AFTER_PAY 30분 안 취소 2건 · MULTI_ACCOUNT_SYNC 2계정
 COLUMN lvl FORMAT 99999
 WITH lab AS (${LAB}),
