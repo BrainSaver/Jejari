@@ -148,7 +148,7 @@ def evaluate(folder: str, epochs: int):
     print(f"계정 {len(rows)} (사람 {int((~is_bot).sum())} · 봇 {int(is_bot.sum())}) · 이벤트 칸 {STEP_DIM} · "
           f"요약 특징 {T.shape[1]} · 문턱 = 사람 오탐 {FP_TARGET:.0%} · 에폭 {epochs}\n")
 
-    names = ["부스팅", "부스팅+IF (지금 모델)", "GRU (시퀀스만)", "GRU 하이브리드", "부스팅+IF+하이브리드"]
+    names = ["부스팅", "부스팅+IF (지금 모델)", "GRU (시퀀스만)", "GRU 하이브리드", "부스팅+IF+GRU", "부스팅+IF+하이브리드"]
     res = {n: {} for n in names}
     for f in families:
         tr = (hs == "train") | (is_bot & (fam != f))
@@ -164,7 +164,8 @@ def evaluate(folder: str, epochs: int):
         scores = {
             names[0]: g, names[1]: np.maximum(P["g"], P["i"]),
             names[2]: seq, names[3]: hyb,
-            names[4]: np.maximum.reduce([P["g"], P["i"], P["h"]]),
+            names[4]: np.maximum.reduce([P["g"], P["i"], P["s"]]),
+            names[5]: np.maximum.reduce([P["g"], P["i"], P["h"]]),
         }
         tgt = is_bot & (fam == f)
         for n, s in scores.items():
