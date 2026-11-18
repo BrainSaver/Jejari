@@ -55,6 +55,7 @@ def fit(train: list[Subject], val: list[Subject], cfg: TrainConfig | None = None
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg.epochs)
     tr = _tensors(to_batch(train), device)
     va = _tensors(to_batch(val), device)
+    model.init_stats(tr[0], tr[2], tr[3], tr[5])      # 종류별 사람 기준 속도·통계 정규화 (학습 데이터에서만)
     pos = float(tr[5].sum())
     loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor((len(train) - pos) / max(pos, 1.0), device=device))
 

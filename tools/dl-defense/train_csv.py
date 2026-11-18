@@ -24,6 +24,7 @@ from jejari_dl import botcsv, metrics, sim, training  # noqa: E402
 
 PER_FLAG = "per-type"       # v3 생성기는 --per-variant (--gen-per-flag)
 DEVICE_CTX = False          # --device-context
+DUP_CTX = False             # --dup-context
 
 
 def fresh_attack(gen: str, seed: int, per_type: int = 40, humans: int = 0) -> list:
@@ -35,7 +36,7 @@ def fresh_attack(gen: str, seed: int, per_type: int = 40, humans: int = 0) -> li
         if humans > 0:
             cmd += ["--humans", str(humans)]
         subprocess.run(cmd, check=True, capture_output=True, timeout=120)
-        return botcsv.read_csv(out, DEVICE_CTX)
+        return botcsv.read_csv(out, DEVICE_CTX, DUP_CTX)
 
 
 def evaluate(model, thr, test) -> dict:
@@ -65,6 +66,9 @@ def show(res, title):
 def build_train(bots_csv, humans_given, args, seed, use_sim_bots=True):
     humans = list(humans_given) + botcsv.make_humans(args.n_human, seed + 1) + sim.make_dataset(args.n_sim_human, 0, seed + 2)
     bots = list(bots_csv) * args.csv_repeat                    # 적은 CSV 봇을 여러 번 (매번 간격 배율 증강이 달라짐)
+    for item in [x for x in args.oversample.split(",") if x.strip()]:        # 어려운 유형은 더 많이 (이름=배수)
+        name, k = item.split("=")
+        bots += [s for s in bots_csv if s.family == name] * (int(k) - 1)
     if use_sim_bots:
         bots += [s for s in sim.make_dataset(0, args.n_sim_bot, seed + 3) if s.label == 1]
     return humans, bots
@@ -80,7 +84,8 @@ def fit_and_threshold(humans, bots, args, seed, calib=None):
     rng = np.random.default_rng(seed)
     h_tr, h_va = split(humans, rng)
     b_tr, b_va = split(bots, rng)
-    cfg = training.TrainConfig(epochs=args.epochs, seed=seed)
+    lo, hi = (float(x) for x in args.scale_aug.split(","))
+    cfg = training.TrainConfig(epochs=args.epochs, seed=seed, scale_aug=(lo, hi))
     model = training.fit(h_tr + b_tr, h_va + b_va, cfg, log=None if args.quiet else print)
     # 문턱은 CSV 어휘 사람(시험할 도메인)의 검증 점수로 고른다. 가상 사람을 섞으면 오탐 0%인 쪽이 평균을 낮춰
     # 문턱이 너무 높게 잡힌다 (실제 오탐이 목표의 2배가 되는 원인이었다)
@@ -103,9 +108,13 @@ def main(argv=None):
     ap.add_argument("--extra-train-seeds", default="", help="생성기를 이 시드들로 더 돌려 학습 데이터를 늘린다 (시험 시드와 겹치면 안 됨)")
     ap.add_argument("--calib-seeds", default="", help="문턱 보정 전용 사람을 만들 생성기 시드들. 학습·시험에 안 쓴다. 검증 사람 수백 명으로 "
                     "문턱을 고르면 모델 시드마다 크게 흔들려서 따로 많이 만든다")
+    ap.add_argument("--scale-aug", default="0.7,1.4", help="학습 중 간격 전체에 곱하는 배율 범위. 생성기 데이터는 속도 수준이 단서라 "
+                    "'1,1'(증강 끔)이 나을 수 있다")
+    ap.add_argument("--oversample", default="", help="어려운 봇 유형을 더 많이 학습: '유형=배수,…' (예: evasive/adaptive=8)")
     ap.add_argument("--gen-per-flag", default="per-type", help="생성기의 유형당 세션 수 옵션 이름 (v3는 per-variant)")
     ap.add_argument("--gen-per", type=int, default=40, help="생성기 유형(변형)당 세션 수")
     ap.add_argument("--device-context", action="store_true", help="ua_hash를 같은 기기로 보고 기기 공유 신호를 넣는다")
+    ap.add_argument("--dup-context", action="store_true", help="간격이 거의 같은 다른 세션 수(여러 세션 묶기)를 입력에 넣는다")
     ap.add_argument("--gen-humans", type=int, default=0, help="생성기가 합성 사람을 같이 만들게 한다(v2). 학습·시험 모두 적용")
     ap.add_argument("--n-sim-bot", type=int, default=1200, help="0이면 기존 가상 봇은 빼고 CSV 봇만 쓴다")
     ap.add_argument("--csv-repeat", type=int, default=4)
@@ -118,10 +127,10 @@ def main(argv=None):
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--summary-only", action="store_true", help="시드별 표 없이 요약만")
     a = ap.parse_args(argv)
-    global PER_FLAG, DEVICE_CTX
-    PER_FLAG, DEVICE_CTX = a.gen_per_flag, a.device_context
+    global PER_FLAG, DEVICE_CTX, DUP_CTX
+    PER_FLAG, DEVICE_CTX, DUP_CTX = a.gen_per_flag, a.device_context, a.dup_context
 
-    everything = botcsv.read_csv(Path(a.csv), DEVICE_CTX)
+    everything = botcsv.read_csv(Path(a.csv), DEVICE_CTX, DUP_CTX)
     for seed in [int(x) for x in a.extra_train_seeds.split(",") if x.strip()]:
         if not a.gen:
             sys.exit("--extra-train-seeds 는 --gen 이 필요합니다")

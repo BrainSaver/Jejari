@@ -104,4 +104,7 @@ def build_subjects(events: list[dict], max_len: int = MAX_LEN, stride: int = MAX
 
 def load_file(path: Path) -> list[Subject]:
     with open(path, encoding="utf-8") as f:
-        return build_subjects(read_events(f))
+        subjects = build_subjects(read_events(f))
+    from .group import apply_dup           # 같은 로그 안에서 간격이 거의 같은 다른 대상 수
+    apply_dup(subjects)
+    return subjects

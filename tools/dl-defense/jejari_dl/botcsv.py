@@ -39,7 +39,7 @@ def events_to_subject(events: list[tuple[str, float]], label: int | None, family
     return Subject([t for t, _, _ in kept], dt, [st for _, _, st in kept], 1, 0, label, family)
 
 
-def read_csv(path: Path, device_context: bool = False) -> list[Subject]:
+def read_csv(path: Path, device_context: bool = False, dup_context: bool = False) -> list[Subject]:
     """CSV → Subject 목록. device_context=True면 ua_hash를 "같은 기기" 대용으로 보고 기기 공유 신호를 채운다.
 
     연결 계정 수 = 같은 ua_hash를 쓰는 세션 수, 동시 선점 = 그중 60초 안에 좌석을 선택한 세션 수의 최댓값.
@@ -80,7 +80,11 @@ def read_csv(path: Path, device_context: bool = False) -> list[Subject]:
                 sync = max(sync, hi - lo + 1)
             for sid, _ in members:
                 out[sid].linked, out[sid].sync = len(members), sync if len(members) > 1 else 0
-    return list(out.values())
+    subjects = list(out.values())
+    if dup_context:                       # 이 파일 안에서 간격이 거의 같은 세션을 센다 (group.py)
+        from .group import apply_dup
+        apply_dup(subjects)
+    return subjects
 
 
 def gen_human(rng: np.random.Generator) -> Subject:

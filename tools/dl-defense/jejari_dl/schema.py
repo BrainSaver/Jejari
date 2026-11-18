@@ -16,7 +16,7 @@ TYPE_INDEX = {t: i for i, t in enumerate(EVENT_TYPES)}
 N_TYPES = len(EVENT_TYPES)
 
 MAX_LEN = 64          # 한 번에 보는 이벤트 수 (더 길면 창을 밀며 본다)
-CTX_DIM = 2           # log1p(연결 계정 수), log1p(동시 선점 계정 수)
+CTX_DIM = 3           # log1p(연결 계정 수), log1p(동시 선점 계정 수), log1p(간격이 같은 다른 세션 수)
 FAST_MS = 200         # RiskPolicy.fast_interval_ms 와 같은 기준 (피처로만 쓴다)
 STATUS_OK, STATUS_CONFLICT, STATUS_OTHER = 0, 1, 2
 N_STATUS = 3
@@ -43,6 +43,7 @@ class Subject:
     family: str = ""            # 시뮬레이터 유형 이름 (평가표용)
     key: str = ""               # 실제 로그의 대상 키
     same_seat_fail: int = 0     # 한 좌석 선점 실패 최대 횟수. 규칙 기준선 비교 전용, 모델 입력에는 안 들어간다
+    dup: int = 0                # 간격이 거의 같은 다른 세션 수 (group.dup_counts). 0이면 없거나 계산 안 함
 
     def __post_init__(self):
         if not (len(self.types) == len(self.dt_ms) == len(self.status)):
@@ -77,7 +78,7 @@ def to_batch(subjects: list[Subject], max_len: int = MAX_LEN) -> Batch:
         dt[i, :m] = s.dt_ms[:m]
         dt[i, 0] = 0.0
         length[i] = m
-        ctx[i] = (np.log1p(max(s.linked, 0)), np.log1p(max(s.sync, 0)))
+        ctx[i] = (np.log1p(max(s.linked, 0)), np.log1p(max(s.sync, 0)), np.log1p(max(s.dup, 0)))
         if s.label is not None:
             label[i] = s.label
     return Batch(types, status, dt, length, ctx, label, [s.family for s in subjects])

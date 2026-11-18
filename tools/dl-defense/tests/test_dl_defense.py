@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import score as score_cli  # noqa: E402
-from jejari_dl import botcsv, metrics, model as model_mod, realdata, schema, sim, training  # noqa: E402
+from jejari_dl import botcsv, group, metrics, model as model_mod, realdata, schema, sim, training  # noqa: E402
 
 
 class SchemaTest(unittest.TestCase):
@@ -122,6 +122,29 @@ class BotCsvTest(unittest.TestCase):
         self.assertTrue(all(h.label == 0 and h.family == "csv_human" for h in hs))
         self.assertTrue(all(1 <= len(h.types) <= schema.MAX_LEN and min(h.dt_ms[1:] or [1]) > 0 for h in hs))
         self.assertEqual([h.types for h in hs[:5]], [h.types for h in botcsv.make_humans(5, seed=3)])
+
+
+class GroupTest(unittest.TestCase):
+    def mk(self, dts, key=""):
+        types = [0, 0, 2, 1, 3, 3, 3, 4, 4][:len(dts) + 1]
+        return schema.Subject(types, [0.0] + list(dts), [0] * (len(dts) + 1), 1, 0, 0, "x", key)
+
+    def test_near_duplicate_timing_is_counted_and_random_is_not(self):
+        base = [2000, 3000, 1000, 1500, 2500, 900, 4000, 3000]
+        rng = np.random.default_rng(0)
+        near = [self.mk([d * rng.uniform(0.9, 1.1) for d in base]) for _ in range(4)]
+        far = [self.mk(list(rng.lognormal(7.5, 0.8, 8))) for _ in range(30)]
+        short = schema.Subject([0, 1], [0.0, 500.0], [0, 0])
+        counts = group.dup_counts(near + far + [short])
+        self.assertTrue(all(c == 3 for c in counts[:4]))            # 서로 다른 3개
+        self.assertLessEqual(int(counts[4:].max()), 1)              # 독립 간격은 거의 안 겹침
+        self.assertEqual(counts[-1], 0)                             # 너무 짧은 세션은 비교 안 함
+
+    def test_same_key_windows_do_not_count_each_other(self):
+        d = [2000, 3000, 1000, 1500, 2500, 900, 4000, 3000]
+        a, b = self.mk(d, "m:1"), self.mk(d, "m:1")
+        c = self.mk(d, "m:2")
+        self.assertEqual(list(group.dup_counts([a, b, c])), [1, 1, 2])
 
 
 class ModelTest(unittest.TestCase):
