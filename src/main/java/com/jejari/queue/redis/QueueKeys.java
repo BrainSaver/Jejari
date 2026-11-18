@@ -9,6 +9,8 @@ public final class QueueKeys {
 	public static String member(long memberId) { return "queue:member:" + memberId; }
 	public static String ci(String ciHash) { return "queue:ci:" + ciHash; }
 	public static String active(long runId) { return "queue:active:" + runId; }
+	/** 줄 선 사람이나 입장 중인 사람이 있는 운행 목록(SET). 입장 스케줄러는 이 목록의 운행만 처리한다 */
+	public static final String RUNS = "queue:runs";
 	public static String throughput(long runId) { return "queue:throughput:" + runId; }
 	public static String pass(long runId, long memberId) { return "queue:pass:" + runId + ":" + memberId; }
 	/** 입장 토큰을 이미 한 번 연장했다는 표시. 토큰과 같이 사라진다 */

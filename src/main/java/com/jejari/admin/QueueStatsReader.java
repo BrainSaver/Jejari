@@ -14,7 +14,7 @@ import com.jejari.queue.redis.QueueKeys;
  *   <li>{@code queue:{runId}} ZSET 크기 = 지금 줄 서 있는 사람 수</li>
  *   <li>{@code queue:active:{runId}} ZSET 크기 = 입장해 있는 사람 수. 만료분은 입장 스케줄러가 치우므로
  *       치우기 전 몇 초는 조금 크게 보일 수 있다</li>
- *   <li>{@code queue:throughput:{runId}} = 초당 입장 수. 입장 스케줄러가 매번 덮어쓴다</li>
+ *   <li>{@code queue:throughput:{runId}} = 초당 입장 수. 입장 스케줄러가 값이 바뀔 때만 쓴다</li>
  * </ul>
  *
  * <p>세 키를 한 번의 왕복으로 읽는다. Redis가 죽어 있어도 현황 화면 전체가 죽지 않게 0으로 돌려준다 —

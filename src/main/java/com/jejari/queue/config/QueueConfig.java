@@ -63,6 +63,14 @@ public class QueueConfig {
 	}
 
 	@Bean
+	RedisScript<Long> queueReconcileScript() {
+		DefaultRedisScript<Long> s = new DefaultRedisScript<>();
+		s.setLocation(new ClassPathResource("lua/queue/reconcile.lua"));
+		s.setResultType(Long.class);
+		return s;
+	}
+
+	@Bean
 	RedisScript<List> queueExtendScript() {
 		return script("lua/queue/extend.lua");
 	}
@@ -105,8 +113,8 @@ public class QueueConfig {
 
 	@Bean
 	QueueAdmitter queueAdmitter(StringRedisTemplate redis, RedisScript<List> queueAdmitScript,
-			PolicyProvider queuePolicyProvider, ObjectProvider<QueueLogSink> logSink, Clock clock) {
-		return new QueueAdmitter(redis, queueAdmitScript, queuePolicyProvider,
+			RedisScript<Long> queueReconcileScript, PolicyProvider queuePolicyProvider, ObjectProvider<QueueLogSink> logSink, Clock clock) {
+		return new QueueAdmitter(redis, queueAdmitScript, queueReconcileScript, queuePolicyProvider,
 				logSink.orderedStream().findFirst().orElseGet(LoggingQueueLogSink::new), clock);
 	}
 
