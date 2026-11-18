@@ -1,6 +1,8 @@
 -- 제자리 기준 데이터 시드 4/5 : 평시 운행 (코레일 "출발 2개월 전 07:00" 규칙)
 -- 선행: 03_sale_event_run.sql · 후행: 05_train_stop_fare.sql
--- 다시 실행해도 결과가 같습니다 (MERGE). status는 오픈 시각과 지금 시각을 비교해 다시 계산합니다.
+-- 다시 실행해도 결과가 같습니다 (MERGE). 운행일·오픈·마감 시각과 status를 "돌린 날" 기준으로
+-- 다시 계산해 덮어씁니다. 그래서 시연 운행이 오래돼 출발해 버렸으면 DB를 지우지 않고
+-- 04 → 05만 다시 돌리면 창이 앞으로 밀립니다 (05가 정차 시각을 run_date에서 다시 만듭니다).
 --
 -- 코레일은 일반 승차권을 출발일 2개월 전 오전 7시부터 판매합니다. 그래서 오픈 시각을
 -- 손으로 넣지 않고 규칙으로 계산합니다: sale_open_at = ADD_MONTHS(run_date, -2) + 07:00.
@@ -24,16 +26,23 @@ USING (
       SELECT run_id, train_id, run_date,
              CAST(ADD_MONTHS(run_date, -2) AS TIMESTAMP) + INTERVAL '7' HOUR AS sale_open_at
         FROM (
-          -- 지금 판매 중: 출발 3일 뒤 → 오픈은 약 두 달 전이라 이미 지났음
-          SELECT 9001 AS run_id, 1 AS train_id, TRUNC(SYSDATE) + 3 AS run_date FROM dual UNION ALL
-          SELECT 9002,           2,             TRUNC(SYSDATE) + 3            FROM dual UNION ALL
+          -- 지금 판매 중: 출발 45일 뒤 → 오픈(출발 2개월 전)은 15일 전이라 이미 지났음
+          --   예전에는 "+3일"이었다. 오픈은 지나 있어 예매가 되지만, 3일이 지나면 출발해
+          --   판매 오픈 스케줄러가 DEPARTED로 바꾸고 그때부터 예매가 막혔다. 45일이면
+          --   한 번 넣어 두고 시연·테스트 기간(발표 2026-12-05)을 넘긴다.
+          SELECT 9001 AS run_id, 1 AS train_id, TRUNC(SYSDATE) + 45 AS run_date FROM dual UNION ALL
+          SELECT 9002,           2,             TRUNC(SYSDATE) + 45           FROM dual UNION ALL
           -- 오픈 예정: 출발이 두 달 하루 뒤 → 오픈이 내일 07:00 (오픈 스케줄러 테스트용)
           SELECT 9003,           1,             ADD_MONTHS(TRUNC(SYSDATE), 2) + 1 FROM dual
         )
     ) r
 ) s ON (t.run_id = s.run_id)
 WHEN MATCHED THEN
-  UPDATE SET t.status = s.status, t.updated_at = SYSTIMESTAMP
+  -- 날짜까지 덮어씁니다. status만 다시 계산하면 이미 출발한 운행은 되살릴 수 없어
+  -- DB를 지우는 수밖에 없었습니다. 예약은 run_id로 매달려 있어 열차와 함께 밀립니다.
+  UPDATE SET t.run_date = s.run_date, t.sale_open_at = s.sale_open_at,
+             t.sale_close_at = s.sale_close_at, t.status = s.status,
+             t.updated_at = SYSTIMESTAMP
 WHEN NOT MATCHED THEN
   INSERT (run_id, train_id, sale_event_id, run_date, sale_open_at, sale_close_at, status)
   VALUES (s.run_id, s.train_id, s.sale_event_id, s.run_date,

@@ -145,7 +145,7 @@ class SeatPaymentInfraTest {
 				.isEqualTo(2);
 		for (long s : List.of(s1, s2)) {
 			assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, s, 0))).isEqualTo("SOLD:" + r);
-			assertThat(redis.getExpire(SeatKeys.hold(RUN, s, 0))).isGreaterThan(24 * 3600L); // 운행은 3일 뒤
+			assertThat(redis.getExpire(SeatKeys.hold(RUN, s, 0))).isGreaterThan(24 * 3600L); // SOLD 표시는 출발까지 산다 (시드 운행은 한참 뒤)
 		}
 		// 팔린 좌석은 Redis 단계에서 바로 막힌다
 		assertThatThrownBy(() -> hold.hold(newMember(), cmd(s1)))

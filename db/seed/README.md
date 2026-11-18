@@ -21,6 +21,35 @@ docker compose logs oracle | grep "jejari seed loaded"
 docker compose rm -sf oracle && docker volume rm jejari_oracle-data && docker compose up -d oracle
 ```
 
+### 시연 운행이 묵었으면 — 지우지 말고 04 → 05만 다시
+
+시드 운행의 날짜는 **"시드를 돌린 날" 기준 상대값**입니다. 오래 띄워 둔 DB에서는
+9001·9002가 이미 출발해 `DEPARTED`가 되고, **예매가 막혀 좌석 선점·결제·취소 테스트가
+통째로 깨집니다.** `99_verify.sql` **24번**이 이걸 잡습니다.
+
+날짜를 앞으로 밀기만 하면 되고, **지울 것은 없습니다** (회원·예약은 `run_id`로 매달려
+있어 열차와 함께 밀립니다):
+
+```bash
+docker compose exec -T oracle bash -lc '
+cd /seed
+for f in 04_regular_run.sql 05_train_stop_fare.sql; do
+  sqlplus -s "${APP_USER}/${APP_USER_PASSWORD}@//localhost:1521/FREEPDB1" <<SQL
+WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
+SET DEFINE OFF
+SET SQLBLANKLINES ON
+ALTER SESSION SET TIME_ZONE = '"'"'Asia/Seoul'"'"';
+@${f}
+EXIT
+SQL
+done'
+```
+
+`04`가 운행일·오픈·마감을, `05`가 정차 시각을 다시 계산해 덮어씁니다.
+`03`의 명절 운행은 `INSERT`만 하므로 이 방법으로 밀리지 않습니다 (지금은 +30~33일이라
+여유가 있습니다). 자세한 건
+[트러블슈팅](../../docs/강동균/troubleshooting/20261118-시연-운행이-출발해-예매가-막힘.md).
+
 아래는 compose 없이 직접 돌릴 때입니다.
 
 ## 실행 순서
@@ -37,7 +66,7 @@ sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @03_sale_event_run.sql
 sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @04_regular_run.sql
 sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @05_train_stop_fare.sql
 
-# 3. 검증 — 23개 항목이 모두 OK여야 합니다
+# 3. 검증 — 24개 항목이 모두 OK여야 합니다
 sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @99_verify.sql
 ```
 
