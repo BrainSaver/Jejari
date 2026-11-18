@@ -5,7 +5,7 @@
 #   loadtest/tools/eval_contest.sh <실행 태그> <대회 운행 ID>
 #
 # 라벨은 이메일에서 읽는다: lt{태그}.{종류}.g{묶음}.{번호}@…
-#   종류 = bota · botb · botc · botd (봇) · human (사람 참가자)
+#   종류 = bota · botb · botc · botd · botx (봇) · human (사람 참가자)
 #
 # 방어층 (봇 하나가 여러 층에 걸릴 수 있다):
 #   1. 매수 제한   좌석 선점이 422 LIMIT_* 로 거절된 횟수 (Mongo 행동 로그 meta.errorCode)
@@ -25,7 +25,7 @@ TAG="${1:-}"; RUN="${2:-}"
 if [[ ! "$TAG" =~ ^[a-z0-9]{1,8}$ || ! "$RUN" =~ ^[0-9]+$ ]]; then
   echo "사용법: $0 <실행 태그(영문 소문자·숫자)> <대회 운행 ID>"; exit 1
 fi
-KINDS="'bota','botb','botc','botd','human'"
+KINDS="'bota','botb','botc','botd','botx','human'"
 WAIT_SEC="${WAIT_SEC:-70}"
 MAX_WAIT_SEC="${MAX_WAIT_SEC:-300}"
 
