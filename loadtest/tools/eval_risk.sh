@@ -22,6 +22,8 @@ if [[ ! "$TAG" =~ ^[a-z0-9]{1,8}$ ]]; then
   echo "사용법: $0 <실행 태그(영문 소문자·숫자)>"; exit 1
 fi
 WAIT_SEC="${WAIT_SEC:-70}"
+# 정답 라벨로 읽는 종류 (이메일의 {종류}). steady = 일정 간격 매크로
+KINDS="'normal','fast','retry','multi','cancel','steady'"
 MAX_WAIT_SEC="${MAX_WAIT_SEC:-300}"
 
 sql() { # 표준 입력의 SQL을 앱 계정으로 실행
@@ -50,7 +52,7 @@ LAB="SELECT member_id, REGEXP_SUBSTR(email, '^lt[a-z0-9]+\\.([a-z]+)\\.', 1, 1, 
 
 ids=$(sql <<EOF | tr -d ' \t\r' | { grep -E '^[0-9]+$' || true; } | paste -sd, -
 SET HEADING OFF FEEDBACK OFF PAGESIZE 0
-SELECT member_id FROM (${LAB}) WHERE kind IN ('normal','fast','retry','multi','cancel');
+SELECT member_id FROM (${LAB}) WHERE kind IN (${KINDS});
 EOF
 )
 if [[ -z "$ids" ]]; then echo "태그 ${TAG}의 계정이 없습니다. 시나리오 12를 먼저 돌리세요."; exit 1; fi
@@ -59,10 +61,10 @@ sql <<EOF
 SET FEEDBACK OFF DEFINE OFF
 MERGE INTO synthetic_label t
 USING (SELECT member_id,
-              CASE kind WHEN 'normal' THEN 'NORMAL' WHEN 'multi' THEN 'RESELLER' WHEN 'cancel' THEN 'CANCEL_ABUSER' ELSE 'MACRO' END AS user_type,
+              CASE kind WHEN 'normal' THEN 'NORMAL' WHEN 'multi' THEN 'RESELLER' WHEN 'cancel' THEN 'CANCEL_ABUSER' ELSE 'MACRO' END AS user_type, -- fast·retry·steady = MACRO
               CASE kind WHEN 'multi' THEN grp + 1 END AS group_id,
               '{"source":"loadtest/12_bot_detection","run":"${TAG}","behavior":"' || kind || '"}' AS params
-         FROM (${LAB}) WHERE kind IN ('normal','fast','retry','multi','cancel')) s
+         FROM (${LAB}) WHERE kind IN (${KINDS})) s
 ON (t.member_id = s.member_id)
 WHEN MATCHED THEN UPDATE SET t.user_type = s.user_type, t.group_id = s.group_id, t.generation_params = s.params, t.updated_at = SYSTIMESTAMP
 WHEN NOT MATCHED THEN INSERT (member_id, user_type, group_id, generation_params) VALUES (s.member_id, s.user_type, s.group_id, s.params);
@@ -102,12 +104,37 @@ per AS (
                             WHERE s.member_id = l.member_id) THEN 1 ELSE 0 END AS det,
          (SELECT MAX(r.final_score) FROM subj s JOIN risk_score r ON r.subject_type = s.st AND r.subject_hash = s.sh
            WHERE s.member_id = l.member_id) AS score
-    FROM lab l WHERE l.kind IN ('normal','fast','retry','multi','cancel')
+    FROM lab l WHERE l.kind IN (${KINDS})
 )
 SELECT p.kind, MAX(sl.user_type) label, COUNT(*) members, SUM(p.det) detected,
        ROUND(100 * SUM(p.det) / COUNT(*), 1) pct, ROUND(AVG(NVL(p.score, 0)), 1) avg_score, NVL(MAX(p.score), 0) max_score
   FROM per p JOIN synthetic_label sl ON sl.member_id = p.member_id
  GROUP BY p.kind ORDER BY DECODE(p.kind, 'normal', 0, 1), p.kind;
+
+PROMPT
+PROMPT 봇 강도별 탐지 (경계 측정). 강도 = fast 연타 수 · retry 같은 좌석 시도 수 · cancel 결제 직후 취소 수 · steady 요청 간격(ms) · multi 한 기기 계정 수
+PROMPT   문턱: FAST_CLICK 200ms 미만 간격 20회 · SAME_SEAT_RETRY 같은 좌석 실패 5회 · CANCEL_AFTER_PAY 30분 안 취소 2건 · MULTI_ACCOUNT_SYNC 2계정
+COLUMN lvl FORMAT 99999
+WITH lab AS (${LAB}),
+subj AS (
+  SELECT l.member_id, 'CI' st, m.ci_hash sh FROM lab l JOIN member m ON m.member_id = l.member_id
+  UNION ALL
+  SELECT l.member_id, 'PAYMENT', p.method_hash FROM lab l JOIN payment_method p ON p.member_id = l.member_id WHERE p.method_hash IS NOT NULL
+  UNION ALL
+  SELECT member_id, 'DEVICE', device_hash FROM (${dev})
+),
+per AS (
+  SELECT l.member_id, l.kind,
+         CASE WHEN l.kind = 'multi' THEN COUNT(*) OVER (PARTITION BY l.kind, l.grp) ELSE l.grp END AS lvl,
+         CASE WHEN EXISTS (SELECT 1 FROM subj s JOIN suspicious_case c ON c.subject_type = s.st AND c.subject_hash = s.sh
+                            WHERE s.member_id = l.member_id) THEN 1 ELSE 0 END AS det,
+         (SELECT MAX(r.final_score) FROM subj s JOIN risk_score r ON r.subject_type = s.st AND r.subject_hash = s.sh
+           WHERE s.member_id = l.member_id) AS score
+    FROM lab l WHERE l.kind IN (${KINDS}) AND l.kind <> 'normal'
+)
+SELECT kind, lvl, COUNT(*) members, SUM(det) detected, ROUND(100 * SUM(det) / COUNT(*), 1) pct,
+       ROUND(AVG(NVL(score, 0)), 1) avg_score
+  FROM per GROUP BY kind, lvl ORDER BY kind, lvl;
 
 PROMPT
 PROMPT 걸린 규칙 (종류별, 그 규칙의 케이스가 연결된 회원 수)
@@ -123,7 +150,7 @@ SELECT l.kind, c.subject_type subject, NVL(cm.rule_code, c.trigger_type) rule_co
   FROM lab l JOIN subj s ON s.member_id = l.member_id
   JOIN suspicious_case c ON c.subject_type = s.st AND c.subject_hash = s.sh
   LEFT JOIN case_marker cm ON cm.case_id = c.case_id
- WHERE l.kind IN ('normal','fast','retry','multi','cancel')
+ WHERE l.kind IN (${KINDS})
  GROUP BY l.kind, c.subject_type, NVL(cm.rule_code, c.trigger_type)
  ORDER BY l.kind, members DESC;
 
@@ -139,7 +166,7 @@ subj AS (
 per AS (
   SELECT l.kind, CASE WHEN EXISTS (SELECT 1 FROM subj s JOIN suspicious_case c ON c.subject_type = s.st AND c.subject_hash = s.sh
                                     WHERE s.member_id = l.member_id) THEN 1 ELSE 0 END AS det
-    FROM lab l WHERE l.kind IN ('normal','fast','retry','multi','cancel')
+    FROM lab l WHERE l.kind IN (${KINDS})
 )
 SELECT '탐지율(봇) ' || NVL(ROUND(100 * SUM(CASE WHEN kind <> 'normal' THEN det END) / NULLIF(SUM(CASE WHEN kind <> 'normal' THEN 1 END), 0), 1), 0)
        || '% (목표 90% 이상) · 오탐률(정상) ' || NVL(ROUND(100 * SUM(CASE WHEN kind = 'normal' THEN det END) / NULLIF(SUM(CASE WHEN kind = 'normal' THEN 1 END), 0), 1), 0)

@@ -646,7 +646,8 @@
     "presets": {
       "light": { "NORMAL": 10, "FAST": 2, "RETRY": 2, "MULTI_GROUPS": 1, "CANCEL": 2, "SPREAD_SEC": 10 },
       "normal": { "NORMAL": 40, "FAST": 5, "RETRY": 5, "MULTI_GROUPS": 3, "CANCEL": 5, "SPREAD_SEC": 30 },
-      "heavy": { "NORMAL": 200, "FAST": 20, "RETRY": 20, "MULTI_GROUPS": 10, "CANCEL": 20, "SPREAD_SEC": 60 }
+      "heavy": { "NORMAL": 200, "FAST": 20, "RETRY": 20, "MULTI_GROUPS": 10, "CANCEL": 20, "SPREAD_SEC": 60 },
+      "boundary": { "BOUNDARY": 1, "SPREAD_SEC": 30 }
     },
     "keyMetrics": [
       "bot_flow_ok",
