@@ -19,9 +19,11 @@ jejari_tago_runs ${2:-0}
 EOF
 }
 
-KEY=$(grep '^DATA_GO_KR_KEY_DEC=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r')
+# 키 이름: DATA_GO_KR_KEY_DEC(도구 기본), 없으면 DATA_GO_KR_KEY (요즘 공공데이터포털 키는 64자 하나라 인코딩·디코딩 구분 없음)
+KEY=$(grep -E '^DATA_GO_KR_KEY_DEC=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r')
+[[ -n "$KEY" ]] || KEY=$(grep -E '^DATA_GO_KR_KEY=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r')
 if [[ -z "$KEY" ]]; then
-  echo ".env에 DATA_GO_KR_KEY_DEC가 없습니다 (공공데이터포털 서비스 키)."; push 0; exit 1
+  echo ".env에 DATA_GO_KR_KEY_DEC(또는 DATA_GO_KR_KEY)가 없습니다 (공공데이터포털 서비스 키)."; push 0; exit 1
 fi
 
 # 1) 시간표 받기 → build/tago/schedule.sql
