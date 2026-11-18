@@ -3,14 +3,25 @@
 규칙·일정·평가 방법은 제안서 [`docs/강동균/봇-대회-제안.md`](../../docs/강동균/봇-대회-제안.md)가 원본입니다.
 이 폴더는 실행에 필요한 것만 둡니다.
 
-> **공격자는 대회가 끝날 때까지 이 폴더의 다른 봇(`bot*/`)을 열어 보지 않습니다.**
+| 누가 | 볼 것 |
+|---|---|
+| **공격 팀원** | [`공격자-지시문.md`](공격자-지시문.md) — 새 Claude 세션에 그대로 붙여 넣기. 배정표(종류·방향)도 거기에. 마감 11-22(일) |
+| 사람 참가자 | [`사람-참가-안내.md`](사람-참가-안내.md) |
+| 집계자 (강동균) | 아래 "순서" |
+
+> **공격자는 대회가 끝날 때까지 이 폴더의 다른 봇(`bot*/`)과 `tools/ml/generate.py`(학습용 생성 수법)를 열어 보지 않습니다.**
 > 블라인드 공격자(김성원·길동현)는 `loadtest/scenarios/12_bot_detection.js`, `loadtest/tools/eval_risk.sh`,
 > `docs/조영준/features/부하테스트-봇-탐지.md`도 보지 않습니다 — 규칙 문턱이 적혀 있습니다.
 
 ## 순서
 
 ```bash
-# 1) 대회 운행 만들기 (관리자 SUPERVISOR 계정, 비밀번호는 환경 변수로만)
+# 0) 대회 날 집계자 PC: 가입 제한을 대회 동안만 올리고 → 대회 운행을 만들고 → 사람 참가자 접속 주소를 띄운다
+ADMIN_ID=… ADMIN_PW=… loadtest/contest/day.sh start
+#    끝나면: ADMIN_ID=… ADMIN_PW=… loadtest/contest/day.sh restore   (가입 제한을 원래 값으로)
+#    사람 참가자에게: loadtest/contest/사람-참가-안내.md
+
+# 1) (day.sh가 대신 해 줌) 대회 운행만 따로 만들 때
 ADMIN_ID=… ADMIN_PW=… loadtest/contest/setup.sh https://<서버>
 #    → "대회 운행 ID = 1000123" 을 공격자 모두에게 알린다
 
@@ -18,8 +29,14 @@ ADMIN_ID=… ADMIN_PW=… loadtest/contest/setup.sh https://<서버>
 #    봇마다 실행 방법은 그 폴더의 README 또는 파일 머리말
 
 # 3) 평가 (서버의 저장소 폴더에서, docker compose가 떠 있는 곳)
-loadtest/tools/eval_contest.sh <태그> <대회 운행 ID>
+loadtest/tools/eval_contest.sh <태그> <대회 운행 ID>          # 규칙 엔진: 막힌 층
+tools/ml/export_live.sh <태그> data/ml/contest-<태그>           # 모델: 같은 데이터를 꺼내
+python3 -I tools/ml/features.py data/ml/contest-<태그>
+python3 tools/ml/score.py data/ml/model/model.pkl data/ml/contest-<태그>/features.csv
 ```
+
+봇과 사람이 **같은 태그**를 쓰면 한 번에 평가됩니다 (사람 이메일 `lt{태그}.human.g{번호}.{번호}@…`).
+모델 점수는 봇·사람을 **같은 폴더에서 같이** 매깁니다 — 판매 오픈 시각·연결 계정 같은 특징이 같은 기준으로 계산되게.
 
 ## 라벨 규칙 (모든 봇 공통)
 
@@ -27,7 +44,7 @@ loadtest/tools/eval_contest.sh <태그> <대회 운행 ID>
 
 ```
 lt{태그}.{종류}.g{묶음}.{번호}@loadtest.example.com
-   종류: bota · botb · botc · botd · human (사람 참가자)
+   종류: bota · botb · botc · botd · botx · human (사람 참가자)
    묶음: 한 사람(봇)이 쓰는 계정끼리 같은 번호
 ```
 
@@ -52,7 +69,12 @@ lt{태그}.{종류}.g{묶음}.{번호}@loadtest.example.com
 
 ## 폴더
 
-| 폴더 | 공격자 | 부류 |
-|---|---|---|
-| `botc/` | 강동균 | 규칙을 아는 공격자 · 브라우저 봇 |
-| (나머지) | 대회 전날까지 각자 추가 | |
+| 폴더 | 공격자 | 방향 | 부류 |
+|---|---|---|---|
+| `bota/` | 김성원 | B HTTP만으로 빠르게 | 블라인드 |
+| `botb/` | 길동현 | A 단순 반복 매크로 | 블라인드 |
+| `botc/` | 강동균 | C 사람처럼 보이는 브라우저 | 규칙을 아는 공격자 (제출됨) |
+| `botd/` | 조영준 | D 조직이 명의 나눠 쓰기 | 규칙을 아는 공격자 |
+| `botx/` (선택) | 강동균 새 세션 | A·B·D 중 다시 뽑기 | 약한 블라인드 |
+
+공격자 모두 Claude로 만들었다는 점, 그래서 수법이 닮았을 수 있다는 점은 결과를 낼 때 같이 적습니다.

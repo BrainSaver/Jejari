@@ -65,6 +65,8 @@ JEJARI_ADMIN_BOOTSTRAP_PASSWORD=Adm!$(alnum 20)
 
 GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=$(alnum 20)
+# 팀 공용 보기 전용 Grafana 계정(team) 비밀번호. deploy/grafana-team-user.sh가 씀
+GRAFANA_TEAM_PASSWORD=$(alnum 20)
 
 # Caddy 주소. 서버에서 deploy/setup-server.sh가 외부 IP로 채움 (예: 34-64-12-34.sslip.io)
 JEJARI_DOMAIN=

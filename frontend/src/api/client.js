@@ -104,9 +104,8 @@ export async function logout() {
 // ------------------------------------------------------------ 요청
 
 /**
- * 기기 ID. 서버(BehaviorInterceptor)가 X-Device-Id를 해시해 행동 로그에 남기고, 같은 기기의 다계정을
- * 위험 점수로 묶는다 (MULTI_ACCOUNT_SYNC 등). 처음 열 때 무작위로 만들어 브라우저에 저장한다.
- * 클라이언트 값이라 마음먹은 봇은 바꾸거나 뺄 수 있다 — "같은 브라우저를 여러 계정이 쓰는" 경우를 잡는 장치다.
+ * 기기 ID. 서버가 X-Device-Id를 해시해 행동 로그에 남긴다 (기기 단위 분석의 재료).
+ * 처음 열 때 무작위로 만들어 브라우저에 저장한다.
  * 저장소가 막혀 있으면(사생활 보호 창 등) 이 탭에서만 쓰는 ID로 대신한다.
  */
 const DEVICE_KEY = 'jejari.device';
@@ -169,7 +168,18 @@ function safeJson(text) {
  * 토큰을 붙여 부르고, 401이면 한 번 재발급 후 다시 부른다.
  * @param headers 더 붙일 헤더 (예: X-Queue-Token, Idempotency-Key)
  */
+/**
+ * 페이지를 새로 열면 토큰은 메모리에서 사라진다. 첫 요청 전에 리프레시 쿠키로 한 번 받아 둔다.
+ * 안 그러면 공개 API(운행 검색 등)가 토큰 없이 먼저 나가 로그인한 사람의 행동이 "비회원"으로 기록된다
+ * (봇 대회 준비 중 발견: 검색 로그가 회원 행동에서 빠짐). 로그인 안 한 사람은 리프레시가 바로 실패하고 그대로 진행
+ */
+let booted = null;
+
 export async function api(method, path, body, headers) {
+  if (!accessToken) {
+    booted ??= refresh();
+    await booted;
+  }
   try {
     return await send(method, path, body, { extra: headers });
   } catch (e) {
