@@ -4,6 +4,7 @@
     python eval_csv.py --model out/a.pt out/b.pt --thr 0.612 --csv test_attack.csv --device-context --dup-context
 """
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -16,17 +17,25 @@ from jejari_dl import botcsv, metrics, training  # noqa: E402
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--model", required=True, nargs="+", help="여러 개면 점수를 평균낸다 (앙상블)")
+    ap.add_argument("--model", nargs="+", help="여러 개면 점수를 평균낸다 (앙상블)")
+    ap.add_argument("--union", default=None, help="calibrate_union.py 가 만든 JSON. 어느 한 모델이라도 문턱 이상이면 봇")
     ap.add_argument("--thr", type=float, default=None, help="없으면 모델에 저장된 문턱의 평균")
     ap.add_argument("--csv", required=True)
     ap.add_argument("--device-context", action="store_true")
     ap.add_argument("--dup-context", action="store_true")
     a = ap.parse_args(argv)
     subs = botcsv.read_csv(Path(a.csv), a.device_context, a.dup_context)
-    loaded = [training.load(Path(m)) for m in a.model]
-    if a.thr is None:
-        a.thr = float(np.mean([t for _, t in loaded]))
-    p = np.mean([training.predict(m, subs) for m, _ in loaded], axis=0)
+    if a.union:
+        spec = json.loads(Path(a.union).read_text(encoding="utf-8"))["models"]
+        ps = [training.predict(training.load(Path(m["path"]))[0], subs) for m in spec]
+        flag_all = np.any([p >= m["thr"] for p, m in zip(ps, spec)], axis=0)
+        p = np.max([p / m["thr"] for p, m in zip(ps, spec)], axis=0)          # 문턱 대비 비율의 최댓값 (1 이상이면 봇)
+        a.thr = 1.0
+    else:
+        loaded = [training.load(Path(m)) for m in a.model]
+        if a.thr is None:
+            a.thr = float(np.mean([t for _, t in loaded]))
+        p = np.mean([training.predict(m, subs) for m, _ in loaded], axis=0)
     y = np.array([s.label for s in subs])
     fam = np.array([s.family for s in subs])
     flag = p >= a.thr

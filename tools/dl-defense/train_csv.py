@@ -114,6 +114,7 @@ def main(argv=None):
     ap.add_argument("--extra-bot-gen", default=None, help="봇만 더 만들어 학습에 넣을 생성기 (gen_test_attack.py 형식)")
     ap.add_argument("--extra-bot-seeds", default="", help="그 생성기를 돌릴 시드들 (시험 시드와 겹치면 안 됨)")
     ap.add_argument("--extra-bot-args", default="", help="그 생성기에 넘길 추가 인자 (한 문자열)")
+    ap.add_argument("--keep-bots", default="", help="이 봇 유형들만 학습에 쓴다 (전용 모델용, 쉼표). 사람은 그대로")
     ap.add_argument("--gen-per-flag", default="per-type", help="생성기의 유형당 세션 수 옵션 이름 (v3는 per-variant)")
     ap.add_argument("--gen-per", type=int, default=40, help="생성기 유형(변형)당 세션 수")
     ap.add_argument("--device-context", action="store_true", help="ua_hash를 같은 기기로 보고 기기 공유 신호를 넣는다")
@@ -156,6 +157,9 @@ def main(argv=None):
             sys.exit(f"시드 {seed}는 시험·학습 시드와 겹칩니다")
         calib += [s for s in fresh_attack(a.gen, seed, per_type=a.gen_per, humans=a.gen_humans) if s.label == 0]
     bots_csv = [s for s in everything if s.label == 1]
+    if a.keep_bots:
+        keep = set(a.keep_bots.split(","))
+        bots_csv = [s for s in bots_csv if s.family in keep]
     humans_given = [s for s in everything if s.label == 0]
     if not bots_csv:
         sys.exit("CSV에 봇(label=1)이 없습니다")
