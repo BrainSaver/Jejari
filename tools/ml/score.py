@@ -59,11 +59,11 @@ def gru_scores(model, model_path, rows, folder):
     if not os.path.exists(os.path.join(folder, "events.jsonl")):
         return None, "events.jsonl 없음"
     try:
-        from deep import Deep, pad
+        from deep import Ensemble, pad
         from seq import load_sequences
     except ImportError:
         return None, "torch 없음 (pip install torch)"
-    d = Deep.load(os.path.join(os.path.dirname(model_path), model["gru"]["file"]))
+    d = Ensemble.load(os.path.join(os.path.dirname(model_path), model["gru"]["file"]))
     seqs = load_sequences(folder)
     return d.predict(pad([seqs.get(int(r["member_id"]), []) for r in rows])), None
 

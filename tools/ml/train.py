@@ -9,8 +9,10 @@
   - 부스팅 + Isolation Forest 87% (속도형 29 → 89%, 재시도형 73 → 98%)
     부스팅은 "본 적 있는 봇과 닮았나", Isolation Forest는 "사람과 얼마나 다른가"를 본다 → 약점이 서로 다르다
 
-GRU (deep.py, 2026-11-18 추가): 이벤트 순서를 읽는 딥러닝. 4회 비교에서 부스팅+IF에 더하면 탐지율은 그대로(62.3 → 62.5%),
-  사람 오탐 6.5 → 5.2%, 좌석 묶어 두기(hoard) 46~63 → 100%. torch가 없으면 GRU 없이 학습한다 (ML_GRU=0으로 끌 수도 있음).
+GRU (deep.py, 2026-11-18 추가): 이벤트 순서를 읽는 딥러닝. **큰 GRU(연결 10만7천) 5개를 시드만 바꿔 평균**.
+  4세트 비교(데이터·시드 모두 다르게)에서 부스팅+IF에 더하면 탐지 61.6 → 69.7%, 사람 오탐 7.0 → 6.0% (네 번 모두 오탐이 낮음),
+  좌석 묶어 두기(hoard) 46~63 → 100%. GRU 1개는 운에 따라 크게 흔들려(다계정 53~99%) 평균을 낸다.
+  torch가 없으면 GRU 없이 학습한다 (ML_GRU=0으로 끌 수도 있음). 학습은 CPU 4코어에서 15분 남짓 (18,000계정).
   가중치는 같은 폴더의 gru.pt, 점수를 매길 때 features.csv 옆의 events.jsonl을 읽는다.
 
 점수: 모델마다 점수를 "사람 검증 세트에서 몇 백분위인가"로 바꾸고 가장 큰 값을 쓴다 (0~100).
@@ -52,6 +54,7 @@ FP_TARGET = 0.05
 
 
 gru_scores_train = None
+GRU_N, GRU_SIZE = 5, "large"   # deep.py 4세트 비교로 고름
 
 
 def train_gru(rows, folders, X, y, tr, out):
@@ -61,7 +64,7 @@ def train_gru(rows, folders, X, y, tr, out):
         return None
     try:
         import torch
-        from deep import Deep, pad
+        from deep import Ensemble, pad
         from seq import load_sequences
     except ImportError:
         print("torch가 없어 GRU 없이 학습합니다 (pip install torch)")
@@ -70,10 +73,10 @@ def train_gru(rows, folders, X, y, tr, out):
     for fo in sorted(set(folders)):
         seqs[fo] = load_sequences(fo)
     S = pad([seqs[fo].get(int(r["member_id"]), []) for r, fo in zip(rows, folders)])
-    d = Deep(hybrid=False, seed=SEED).fit((S[0][tr], S[1][tr]), None, y[tr].astype(int))
+    d = Ensemble(n=GRU_N, base=SEED, size=GRU_SIZE).fit((S[0][tr], S[1][tr]), y[tr].astype(int))
     os.makedirs(out, exist_ok=True)
-    torch.save(d.net.state_dict(), os.path.join(out, "gru.pt"))
-    gru_scores_train = d.predict(S, None)
+    d.save(os.path.join(out, "gru.pt"))
+    gru_scores_train = d.predict(S)
     return {"file": "gru.pt", "scores": gru_scores_train}
 
 
@@ -147,7 +150,7 @@ def main():
         f"문턱 {model['threshold']:.1f}점 (사람 검증 세트 오탐 {FP_TARGET:.0%})",
         f"학습 데이터 안: 봇 탐지 {flag[y].mean():.1%} · 사람(검증) 오탐 {flag[val].mean():.1%}  ← 낙관적인 값",
         f"뺀 특징: {', '.join(EXCLUDE)}",
-        f"GRU: {'있음 (gru.pt) · 부스팅+IF만일 때 문턱 ' + format(model['threshold_base'], '.1f') + '점' if gru else '없음 (torch 없음 또는 ML_GRU=0)'}",
+        f"GRU: {f'큰 GRU {GRU_N}개 평균' + ' (gru.pt) · 부스팅+IF만일 때 문턱 ' + format(model['threshold_base'], '.1f') + '점' if gru else '없음 (torch 없음 또는 ML_GRU=0)'}",
     ]
     with open(os.path.join(out, "report.txt"), "w") as f:
         f.write("\n".join(lines) + "\n")
