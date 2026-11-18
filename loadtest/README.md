@@ -176,7 +176,8 @@ docker run --rm --add-host=host.docker.internal:host-gateway -v "$(pwd):/lt" -w 
 | `retry` (5) | MACRO | 이미 팔린 좌석 하나를 0.3~0.6초 간격으로 8번 선점 시도 | `SAME_SEAT_RETRY` |
 | `multi` (3묶음 × 3) | RESELLER | 한 기기(`X-Device-Id`)로 계정 3개가 몇 초 안에 각자 선점 | `MULTI_ACCOUNT_SYNC` (기기) |
 | `cancel` (5) | CANCEL_ABUSER | 결제하고 1~3초 뒤 취소를 3번 | `CANCEL_AFTER_PAY` |
-| `steady` (기본 0, 경계 측정 때) | MACRO | 운행 검색을 정확히 일정한 간격으로 40번 | `REGULAR_INTERVAL` (보조 규칙) |
+| `steady` (기본 0, 경계 측정 때) | MACRO | 운행 검색을 정확히 일정한 간격으로 40번 | `REGULAR_INTERVAL` (11-18부터 마커 규칙) |
+| `rotate` (기본 0, 경계 측정 때) | MACRO | 사 둔 좌석 3개를 돌아가며 좌석마다 문턱 아래로 시도 | `SAME_SEAT_RETRY` (여러 좌석 합산) |
 
 - 봇마다 규칙 하나만 건드립니다. 놓쳤을 때 어느 규칙인지 바로 보입니다.
 - 회원마다 카드·기기가 다릅니다 (multi 묶음만 기기 공유). 카드를 같이 쓰면 결제 수단 점수가 전원에게 번져 오탐이 됩니다.
@@ -196,6 +197,7 @@ docker run --rm --add-host=host.docker.internal:host-gateway -v "$(pwd):/lt" -w 
 - 옵션: `NORMAL`·`FAST`·`RETRY`·`MULTI_GROUPS`·`MULTI_SIZE`·`CANCEL`·`STEADY`(인원), `FAST_CLICKS`·`RETRY_TIMES`·`CANCEL_ROUNDS`(봇 강도), `NORMAL_CANCEL_RATE`, `SPREAD_SEC`.
 - **경계 측정**: `-e BOUNDARY=1` 하나로 강도를 여러 단계로 섞습니다 (연타 10~50번, 같은 좌석 3~8번, 취소 1~3건, 한 기기 2·3계정, 일정 간격 매크로 300·500·1000ms, 강도마다 `PER_LEVEL`명). 직접 주려면 `FAST_LEVELS=10,19,21`, `RETRY_LEVELS`, `CANCEL_LEVELS`, `MULTI_SIZES`, `STEADY_LEVELS`. 강도는 이메일 `g{강도}`에 남고 `eval_risk.sh`가 **강도별 탐지 표**를 냅니다. 문턱 아래 봇을 일부러 섞으므로 전체 탐지율은 목표와 비교하지 않습니다.
 - `steady`(일정 간격 매크로): 요청 시작을 t0 + i×간격에 맞춰 보내 응답 시간이 흔들려도 간격이 일정합니다 → REGULAR_INTERVAL 시험용.
+- `rotate`(좌석 돌려 가며 반복): 도우미가 좌석 `ROTATE_SEATS`개(기본 3)를 사 두고, 봇이 그 좌석들을 돌아가며 좌석마다 `ROTATE_LEVELS`번 선점을 시도합니다 → SAME_SEAT_RETRY의 "여러 좌석 합산" 시험용. `BOUNDARY=1`이면 2·3·4번
 
 ## Mock 서버 (실제 서버가 없을 때 연습용)
 
