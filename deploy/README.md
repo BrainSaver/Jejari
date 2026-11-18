@@ -57,6 +57,8 @@ bash deploy/deploy.sh
 ```bash
 D=<외부IP를 하이픈으로>.sslip.io
 curl https://$D/actuator/health                         # {"status":"UP"}
+curl -s -o /dev/null -w '%{http_code} %{content_type}
+' https://$D/   # 200 text/html 여야 함 (화면). JSON NOT_FOUND면 화면 빌드 누락
 curl -o /dev/null -w '%{http_code}\n' https://$D/actuator/prometheus   # 404 여야 함 (지표 숨김)
 curl "https://$D/api/v1/runs?from=3900023&to=3900114&date=$(date -d '+3 days' +%F)"   # 9001 bookable:true
 nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해야 함
