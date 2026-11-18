@@ -147,6 +147,47 @@ class GroupTest(unittest.TestCase):
         self.assertEqual(list(group.dup_counts([a, b, c])), [1, 1, 2])
 
 
+class TierTest(unittest.TestCase):
+    def test_union_thresholds_respect_target_and_spec_share(self):
+        rng = np.random.default_rng(0)
+        main, spec = rng.random(5000), rng.random(5000)
+        thr = training.fit_union_thresholds([main, spec], target_fpr=0.02, spec_fpr=0.005)
+        hit = (main >= thr[0]) | (spec >= thr[1])
+        self.assertLessEqual(hit.mean(), 0.02 + 1e-9)
+        self.assertLessEqual((spec >= thr[1]).mean(), 0.005 + 1e-3)       # 전용 모델은 자기 몫만
+        off = training.fit_union_thresholds([main, spec], 0.02, 0.0)       # 전용 끄기
+        self.assertTrue(np.isinf(off[1]))
+        self.assertLessEqual((main >= off[0]).mean(), 0.02 + 1e-9)
+
+    def test_tiers_are_nested_and_ordered(self):
+        main = np.array([0.1, 0.5, 0.9, 0.2])
+        spec = np.array([0.0, 0.0, 0.0, 0.8])
+        t = training.assign_tier([main, spec], hard=[0.8, 0.95], soft=[0.4, 0.5])
+        self.assertEqual(list(t), [0, 1, 2, 1])                            # 0.5는 약함, 0.9는 강함, spec 0.8은 약함
+        # soft가 hard보다 엄격하게 잘못 주어져도 약한 단계가 강한 단계를 포함하도록 보정된다
+        t2 = training.assign_tier([main], hard=[0.8], soft=[0.95])
+        self.assertEqual(list(t2), [0, 0, 2, 0])
+        with self.assertRaises(ValueError):
+            training.assign_tier([main], hard=[0.8, 0.9], soft=[0.4])
+
+    def test_score_union_cli_gives_tiers_and_shared_device(self):
+        cfg = training.TrainConfig(epochs=1, hidden=16)
+        m = training.fit(sim.make_dataset(60, 40, seed=31), sim.make_dataset(20, 14, seed=32), cfg, log=None)
+        base = "2026-11-23T10:00:{:02d}+09:00"
+        lines = [json.dumps({"eventType": "SEAT_HOLD", "ts": base.format(i), "memberId": mid, "deviceHash": "dev", "responseStatus": 200})
+                 for i, mid in ((1, 1), (2, 2), (3, 3))]
+        with tempfile.TemporaryDirectory() as d:
+            mp = Path(d) / "m.pt"
+            training.save(m, mp, 0.5, cfg)
+            f = Path(d) / "e.jsonl"
+            f.write_text("\n".join(lines), encoding="utf-8")
+            spec = [{"name": "main", "path": str(mp), "thr": 0.99, "soft_thr": 0.01}]
+            rows = score_cli.score_file_union(spec, f)
+        self.assertEqual(len(rows), 3)
+        self.assertTrue(all(r["tier"] == 2 and "shared_device" in r["reasons"] for r in rows))   # 같은 기기 3계정 동시 선점
+        self.assertTrue(all(r["flag"] for r in rows))
+
+
 class ModelTest(unittest.TestCase):
     def test_forward_and_padding_does_not_change_score(self):
         torch.manual_seed(0)

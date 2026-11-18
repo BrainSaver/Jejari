@@ -109,3 +109,39 @@ def load(path: Path) -> tuple[BotDetector, float]:
     model.load_state_dict(ck["state"])
     model.eval()
     return model, float(ck["threshold"])
+
+
+# ------------------------------------------------------------------ 모델 여러 개 OR 결합 · 단계형 판정
+
+def fit_union_thresholds(ps: list[np.ndarray], target_fpr: float, spec_fpr: float) -> list[float]:
+    """보정 사람의 점수 ps[0](주 모델), ps[1:](전용 모델들)로 OR 결합 문턱을 고른다.
+
+    전용 모델마다 사람의 spec_fpr 가 넘는 값을 문턱으로 하고, 합친 오탐이 target_fpr 이하가 되는 가장 낮은 값을
+    주 모델 문턱으로 한다. spec_fpr 가 0이면 전용 모델은 끈다(문턱 무한대).
+    """
+    if not ps:
+        raise ValueError("점수가 없습니다")
+    n = len(ps[0])
+    thrs = [None]
+    hit = np.zeros(n, dtype=bool)
+    for p in ps[1:]:
+        t = float(np.quantile(p, 1 - spec_fpr, method="higher")) if spec_fpr > 0 else float("inf")
+        thrs.append(t)
+        hit |= p >= t
+    cand = np.sort(np.unique(ps[0]))
+    t_main = float(cand[-1]) + 1e-6
+    for t in cand:
+        if ((ps[0] >= t) | hit).mean() <= target_fpr:
+            t_main = float(t)
+            break
+    thrs[0] = t_main
+    return thrs
+
+
+def assign_tier(ps: list[np.ndarray], hard: list[float], soft: list[float]) -> np.ndarray:
+    """0=정상, 1=약한 불이익 후보(soft 문턱 이상), 2=강한 불이익 후보(hard 문턱 이상). soft는 hard보다 느슨하다(포함)"""
+    if len(ps) != len(hard) or len(hard) != len(soft):
+        raise ValueError("모델 수와 문턱 수가 다릅니다")
+    h = np.any([p >= t for p, t in zip(ps, hard)], axis=0)
+    s = np.any([p >= min(t, th) for p, t, th in zip(ps, soft, hard)], axis=0)    # soft ⊇ hard 보장
+    return np.where(h, 2, np.where(s, 1, 0))

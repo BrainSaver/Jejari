@@ -33,7 +33,7 @@ pip install -r requirements.txt
 python train.py                              # 가상 데이터로 학습 → out/model.pt (CPU 1~2분)
 python evaluate.py --loo                     # 처음 보는 봇 유형에도 통하는지 (몇 분)
 python score.py --model out/model.pt --input events.jsonl --top 20
-python -m unittest discover -s tests         # 20개, 몇 초
+python -m unittest discover -s tests         # 23개, 몇 초
 ```
 
 `events.jsonl`은 `behavior_log`를 한 줄에 이벤트 하나(JSON)로 내보낸 파일입니다 (`eventType`·`ts`·`memberId`·`deviceHash`·`responseStatus`. 스네이크 표기도 읽습니다). 출력은 대상마다 `key, score, flag, reasons, events`입니다.
@@ -304,6 +304,36 @@ python eval_csv.py --union out/union_fast.json --csv test_attack.csv --device-co
 2. **서버에서 단계별 최소 체류 시간 강제**: fast 매크로의 이점은 속도입니다. 예: 좌석 선점 뒤 결제 요청은 N초 뒤에만 허용. 사람은 영향이 없고 매크로는 속도 이점이 사라집니다 (탐지가 아니라 무력화).
 3. **새 정보가 필요**: 클라이언트 입력 텔레메트리(마우스·터치·키 입력 리듬), 대기열 진입에 단계 상승 챌린지(애매한 구간에만), 계정 이력(가입 기간·과거 구매). 이번 데이터의 이벤트 간격만으로는 더 나오지 않습니다.
 4. **효과가 없는 것**: 여러 세션 묶기(fast 세션은 계정마다 독립), 로그 안 봇 비율 추정으로 문턱 조정(같은 오탐에서 탐지율은 그대로).
+
+### 단계형 출력 (tier 0·1·2) — 학습 쪽 코드에만 구현
+
+위의 1번(단계형 대응)을 `tools/dl-defense/`의 코드로만 구현했습니다. **Spring 서버(`risk` 패키지)·`app_policy`·ERD는 건드리지 않았고**, 순번을 얼마나 미룰지는 서버가 정합니다. 이 도구는 대상마다 단계만 냅니다.
+
+| 단계 | 뜻 | 보정 기준 (보정 전용 사람) |
+|---|---|---|
+| 0 | 정상 | |
+| 1 | 약한 불이익 후보 | 사람 오탐 5% (`--soft-target-fpr 0.05`, 전용 모델 몫 4%) |
+| 2 | 강한 불이익 후보 | 사람 오탐 1.5% (`--target-fpr 0.015`, 전용 모델 몫 0.5%) |
+
+약한 단계는 강한 단계를 포함합니다 (문턱을 모델마다 `min(soft, hard)`로 보정). 같은 기기에서 60초 안에 계정 2개 이상이 선점하면(`shared_device`) 항상 2단계입니다.
+
+```bash
+python calibrate_union.py --main out/model_fast_s0.pt --spec out/model_fastspec.pt ... --calib-seeds 401,...,408 \
+  --target-fpr 0.015 --spec-fpr 0.005 --soft-target-fpr 0.05 --soft-spec-fpr 0.04 --out out/union_tier.json
+python score.py --union out/union_tier.json --input events.jsonl --top 20      # key, tier, score, scores, reasons
+python eval_csv.py --union out/union_tier.json --csv test_attack.csv --device-context --dup-context
+```
+
+새 시드 시험 결과 (파일마다 사람 400명이라 사람 비율은 ±1%p 흔들립니다):
+
+| 데이터 | 강한 단계(2) 탐지 | 약한 단계 이상(1+) 탐지 | 사람 2단계 / 1+ |
+|---|---|---|---|
+| fast 0.35배 | 41.7% | **65.0%** | 2.50% / 5.75% |
+| fast 0.5배 | 18.3% | 35.0% | 1.50% / 5.25% |
+| fast 0.65배 | 10.0% | 25.0% | 2.00% / 4.25% |
+| pool | 100% | 100% | 1.50% / 4.00% |
+
+fast 0.35배는 약한 단계까지 넣으면 42%에서 65%로 늘어납니다 (사람 5% 안팎이 약한 단계가 되는 비용). 0.5배 이상은 사람과 거의 구별되지 않아 약한 단계에서도 35% 이하입니다. v3 17변형의 단계별 수치는 아직 재지 않았습니다. 사람 약 5%에게 약한 불이익이 가므로, 그 크기는 팀이 정해야 합니다.
 
 ## 한계와 다음 단계
 

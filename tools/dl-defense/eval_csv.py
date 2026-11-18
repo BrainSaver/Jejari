@@ -25,12 +25,15 @@ def main(argv=None):
     ap.add_argument("--dup-context", action="store_true")
     a = ap.parse_args(argv)
     subs = botcsv.read_csv(Path(a.csv), a.device_context, a.dup_context)
+    tier = None
     if a.union:
         spec = json.loads(Path(a.union).read_text(encoding="utf-8"))["models"]
         ps = [training.predict(training.load(Path(m["path"]))[0], subs) for m in spec]
-        flag_all = np.any([p >= m["thr"] for p, m in zip(ps, spec)], axis=0)
-        p = np.max([p / m["thr"] for p, m in zip(ps, spec)], axis=0)          # 문턱 대비 비율의 최댓값 (1 이상이면 봇)
-        a.thr = 1.0
+        hard = [m["thr"] for m in spec]
+        soft = [m.get("soft_thr", m["thr"]) for m in spec]
+        tier = training.assign_tier(ps, hard, soft)
+        p = tier.astype(float)                                       # 단계(0·1·2). AUC는 단계 순위로 계산
+        a.thr = 2.0
     else:
         loaded = [training.load(Path(m)) for m in a.model]
         if a.thr is None:
@@ -39,6 +42,15 @@ def main(argv=None):
     y = np.array([s.label for s in subs])
     fam = np.array([s.family for s in subs])
     flag = p >= a.thr
+    if tier is not None:
+        soft_flag = tier >= 1
+        print(f"단계형 · 세션 {len(subs)} (사람 {int((y == 0).sum())} · 봇 {int((y == 1).sum())})")
+        print(f"  사람: 강한 단계(2) {flag[y == 0].mean():.2%} · 약한 단계 이상(1+) {soft_flag[y == 0].mean():.2%}")
+        for f in sorted(set(fam[y == 1])):
+            m = fam == f
+            print(f"  {f:<20} 강한(2) {flag[m].mean():>6.1%} · 약한 이상(1+) {soft_flag[m].mean():>6.1%}   (n={int(m.sum())})")
+        print(f"  봇 전체: 강한(2) {flag[y == 1].mean():.1%} · 약한 이상(1+) {soft_flag[y == 1].mean():.1%}")
+        return
     print(f"문턱 {a.thr:.3f} · 세션 {len(subs)} (사람 {int((y == 0).sum())} · 봇 {int((y == 1).sum())}) · AUC {metrics.auc(p, y):.3f}")
     print(f"  사람 오탐률 {flag[y == 0].mean():.2%} ({int(flag[y == 0].sum())}/{int((y == 0).sum())})")
     for f in sorted(set(fam[y == 1])):
