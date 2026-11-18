@@ -25,9 +25,11 @@ DAYS="${DAYS:-10}"
 : "${ADMIN_ID:?ADMIN_ID 환경 변수가 필요합니다 (SUPERVISOR 관리자)}"
 : "${ADMIN_PW:?ADMIN_PW 환경 변수가 필요합니다}"
 
-RUN_DATE=$(date -d "+${DAYS} days" +%F 2>/dev/null || date -v+"${DAYS}"d +%F)   # GNU / BSD(macOS)
-NOW=$(date +%Y-%m-%dT%H:%M:%S)
-NAME="${NAME:-봇 대회 $(date +%Y%m%d)}"
+# 서버는 모든 시각을 Asia/Seoul로 받는다 (concurrency.md §0.7). 이 PC의 시간대가 달라도 서울 시각으로 보낸다
+# (UTC 컨테이너에서 그냥 date를 쓰면 판매 오픈 시각이 9시간 앞당겨 저장됐다)
+RUN_DATE=$(TZ=Asia/Seoul date -d "+${DAYS} days" +%F 2>/dev/null || TZ=Asia/Seoul date -v+"${DAYS}"d +%F)   # GNU / BSD(macOS)
+NOW=$(TZ=Asia/Seoul date +%Y-%m-%dT%H:%M:%S)
+NAME="${NAME:-봇 대회 $(TZ=Asia/Seoul date +%Y%m%d)}"
 
 # JSON 한 값 꺼내기 (jq 없이). $1 = 키, 표준 입력 = 응답
 val() { sed -n "s/.*\"$1\":\"\{0,1\}\([^\",}]*\).*/\1/p" | head -1; }

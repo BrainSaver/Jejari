@@ -67,3 +67,6 @@ http-client.private.env.json
 *.hprof
 *.jfr
 heapdump*
+
+# 모델 비교용 생성·대회 데이터 (tools/ml/README.md). 시드로 다시 만들 수 있다
+/data/ml/
