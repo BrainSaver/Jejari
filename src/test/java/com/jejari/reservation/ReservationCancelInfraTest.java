@@ -75,6 +75,8 @@ class ReservationCancelInfraTest {
 	AccessTokenIssuer tokens;
 	@Autowired
 	JsonMapper json;
+	@Autowired
+	RefundRetryBatch retry;
 
 	List<Long> seatIds;
 	final List<Long> policies = new ArrayList<>();
@@ -332,7 +334,76 @@ class ReservationCancelInfraTest {
 				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESERVATION_NOT_FOUND"));
 	}
 
+	// ------------------------------------------------------------ CNL-03
+
+	@Test
+	void 환불_실패는_재시도_배치가_다시_요청해_DONE으로_바꾸고_알림은_한_번() throws Exception {
+		long m = member();
+		long r = confirmed(m, false, seatIds.get(32)); // 승인 거래 ID가 없어 처음 환불은 실패
+		mvc.perform(post("/api/v1/reservations/" + r + "/cancel").header("Authorization", bearer(m)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.refundStatus").value("FAILED"));
+		long cancelId = jdbc.queryForObject("SELECT cancel_id FROM cancellation WHERE reservation_id = ?", Long.class, r);
+
+		// PG가 다시 받아 줄 수 있게 됨 (승인 거래 ID 확인). 막 실패한 건은 유예(1분) 안이라 건드리지 않는다
+		jdbc.update("UPDATE payment SET pg_tx_id = ? WHERE reservation_id = ?", "mock-" + UUID.randomUUID(), r);
+		retry.run();
+		assertThat(one("SELECT refund_status FROM cancellation WHERE cancel_id = ?", cancelId)).isEqualTo("FAILED");
+
+		backdate(cancelId, 2, 2);
+		retry.run();
+		assertThat(one("SELECT refund_status FROM cancellation WHERE cancel_id = ?", cancelId)).isEqualTo("DONE");
+		assertThat(one("SELECT refund_pg_tx_id FROM cancellation WHERE cancel_id = ?", cancelId)).startsWith("mock-refund-");
+		assertThat(one("SELECT status FROM payment WHERE reservation_id = ?", r)).isEqualTo("REFUNDED");
+
+		retry.run(); // 끝난 건은 다시 건드리지 않는다
+		assertThat(count("SELECT COUNT(*) FROM outbox_event WHERE aggregate_id = TO_CHAR(?) AND event_type = 'REFUND_COMPLETED'",
+				r)).isOne();
+	}
+
+	@Test
+	void 늦은_승인_환불도_같은_배치가_재시도하고_오래된_건은_사람에게_넘긴다() throws Exception {
+		long m = member();
+		long r = confirmed(m, true, seatIds.get(33));
+		long late = lateApprovalFailed(r);
+		backdate(late, 2, 2);
+		long oldR = confirmed(m, false, seatIds.get(37)); // 34는 로컬 시연 데이터가 쓰는 경우가 있어 피함
+		mvc.perform(post("/api/v1/reservations/" + oldR + "/cancel").header("Authorization", bearer(m)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.refundStatus").value("FAILED"));
+		long old = jdbc.queryForObject("SELECT cancel_id FROM cancellation WHERE reservation_id = ?", Long.class, oldR);
+		jdbc.update("UPDATE payment SET pg_tx_id = ? WHERE reservation_id = ?", "mock-" + UUID.randomUUID(), oldR);
+		backdate(old, 73 * 60, 73 * 60); // 포기 시간(72시간) 지남
+
+		RefundRetryBatch.Result res = retry.run();
+
+		assertThat(one("SELECT refund_status FROM cancellation WHERE cancel_id = ?", late)).isEqualTo("DONE");
+		assertThat(one("SELECT status FROM payment WHERE reservation_id = ?", r)).isEqualTo("REFUNDED");
+		assertThat(one("SELECT refund_status FROM cancellation WHERE cancel_id = ?", old)).isEqualTo("FAILED"); // 건드리지 않음
+		assertThat(res.givenUp()).isGreaterThanOrEqualTo(1);
+	}
+
 	// ------------------------------------------------------------ 도우미
+
+	/** 재시도 배치의 유예·포기 시간을 시험하려고 시각을 과거로 돌린다 */
+	void backdate(long cancelId, long updatedMinutesAgo, long canceledMinutesAgo) {
+		jdbc.update("""
+				UPDATE cancellation SET updated_at = SYSTIMESTAMP - NUMTODSINTERVAL(?, 'MINUTE'),
+				       canceled_at = SYSTIMESTAMP - NUMTODSINTERVAL(?, 'MINUTE')
+				 WHERE cancel_id = ?""", updatedMinutesAgo, canceledMinutesAgo, cancelId);
+	}
+
+	/** §7.3 늦은 승인 환불이 PG 오류로 FAILED가 된 상태 (확정 예약을 만료된 것처럼 두고 PAY_FAILED 취소를 남김) */
+	long lateApprovalFailed(long r) {
+		jdbc.update("UPDATE reservation SET status = 'EXPIRED', updated_at = SYSTIMESTAMP WHERE reservation_id = ?", r);
+		jdbc.update("DELETE FROM seat_inventory WHERE reservation_id = ?", r);
+		long amount = jdbc.queryForObject("SELECT amount FROM payment WHERE reservation_id = ?", Long.class, r);
+		long id = jdbc.queryForObject("SELECT cancellation_seq.NEXTVAL FROM dual", Long.class);
+		jdbc.update("""
+				INSERT INTO cancellation (cancel_id, reservation_id, cancel_type, canceled_at, refund_amount, cancel_fee,
+				  refund_status, resold_yn)
+				VALUES (?, ?, 'PAY_FAILED', SYSTIMESTAMP, ?, 0, 'FAILED', 'N')""", id, r, amount);
+		return id;
+	}
+
 
 	String admin(AdminRole role) {
 		return "Bearer " + tokens.issue(ActorType.ADMIN, ADMIN, UUID.randomUUID().toString(), role).value();

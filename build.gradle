@@ -60,6 +60,8 @@ tasks.named('test') {
 tasks.withType(Test).configureEach {
 	systemProperty 'jejari.notification.consumer-enabled', 'false'
 	systemProperty 'jejari.notification.reminder-enabled', 'false'
+	// 환불 재시도 배치(CNL-03)도 끈다. 켜 두면 다른 테스트가 일부러 만든 FAILED 환불을 테스트 도중에 DONE으로 바꾼다
+	systemProperty 'jejari.refund.retry-enabled', 'false'
 }
 
 tasks.register('infraTest', Test) {
