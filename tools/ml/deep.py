@@ -111,8 +111,16 @@ class Deep:
                 opt.step()
         return self
 
+    @classmethod
+    def load(cls, path: str):
+        """train.py가 저장한 gru.pt (시퀀스만 쓰는 GRU) 불러오기"""
+        d = cls(hybrid=False)
+        d.net = SeqNet(n_tab=0)
+        d.net.load_state_dict(torch.load(path, weights_only=True))
+        return d
+
     @torch.no_grad()
-    def predict(self, X, T):
+    def predict(self, X, T=None):
         self.net.eval()
         x, mask = X
         tab = self._tab(T) if self.hybrid else None

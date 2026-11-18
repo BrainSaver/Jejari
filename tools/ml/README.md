@@ -99,7 +99,10 @@ python3 tools/ml/train.py data/ml/model data/ml/g7/features.csv data/ml/g8/featu
 python3 tools/ml/score.py data/ml/model/model.pkl data/ml/contest-<태그>/features.csv   # → scores.csv (점수·표시·근거)
 ```
 
-- 본체는 그래디언트 부스팅, Isolation Forest는 안전망. 두 점수를 사람 기준 백분위로 바꿔 큰 쪽을 쓴다 (0~100)
+- 본체는 그래디언트 부스팅, Isolation Forest는 안전망, **GRU(이벤트 순서)는 2026-11-18 추가**. 세 점수를 사람 기준 백분위로 바꿔 가장 큰 값을 쓴다 (0~100)
+- GRU는 `torch`가 있어야 한다. 가중치는 `model.pkl` 옆 `gru.pt`, 점수 매길 때 `features.csv` 옆 `events.jsonl`을 읽는다.
+  둘 중 하나라도 없으면 **부스팅+IF만으로 매기고 그때 맞춘 문턱(`threshold_base`)을 쓴다** (출력 둘째 줄 "쓴 모델"에 표시). `ML_GRU=0`이면 GRU 없이 학습
+- `scores.csv`에 모델별 점수(`score_부스팅` · `score_IF` · `score_GRU`)와 가장 높게 본 모델(`by`)을 같이 낸다. GRU가 가장 높게 본 계정은 근거 맨 앞에 "행동 순서가 학습한 봇과 닮음(GRU)"
 - "계열 하나 빼기"에서 부스팅 혼자 74% → 둘을 합치면 87% (속도형 29 → 89%, 재시도형 73 → 98%)
 - 문턱은 합친 점수로 사람 검증 세트 오탐 5%. 계정마다 **사람과 가장 다른 특징 3개**를 근거로 낸다
 - 학습은 생성 데이터만 받는다 (`source`가 generator가 아니면 멈춤)

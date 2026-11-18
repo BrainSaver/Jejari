@@ -9,7 +9,11 @@
   - 부스팅 + Isolation Forest 87% (속도형 29 → 89%, 재시도형 73 → 98%)
     부스팅은 "본 적 있는 봇과 닮았나", Isolation Forest는 "사람과 얼마나 다른가"를 본다 → 약점이 서로 다르다
 
-점수: 두 모델의 점수를 각각 "사람 검증 세트에서 몇 백분위인가"로 바꾸고 큰 쪽을 쓴다 (0~100).
+GRU (deep.py, 2026-11-18 추가): 이벤트 순서를 읽는 딥러닝. 4회 비교에서 부스팅+IF에 더하면 탐지율은 그대로(62.3 → 62.5%),
+  사람 오탐 6.5 → 5.2%, 좌석 묶어 두기(hoard) 46~63 → 100%. torch가 없으면 GRU 없이 학습한다 (ML_GRU=0으로 끌 수도 있음).
+  가중치는 같은 폴더의 gru.pt, 점수를 매길 때 features.csv 옆의 events.jsonl을 읽는다.
+
+점수: 모델마다 점수를 "사람 검증 세트에서 몇 백분위인가"로 바꾸고 가장 큰 값을 쓴다 (0~100).
 문턱: 사람 검증 세트의 95백분위 (오탐률 5% 목표). 학습 데이터는 생성 데이터만 쓴다 — 대회 데이터로 학습하지 않는다.
 
 pickle 파일은 코드를 실행할 수 있으니 직접 만든 model.pkl만 연다.
@@ -47,13 +51,40 @@ SEED = 7
 FP_TARGET = 0.05
 
 
+gru_scores_train = None
+
+
+def train_gru(rows, folders, X, y, tr, out):
+    """이벤트 순서를 읽는 GRU를 같은 학습 세트로 학습해 out/gru.pt에 저장. torch가 없으면 None"""
+    global gru_scores_train
+    if os.environ.get("ML_GRU", "1") == "0":
+        return None
+    try:
+        import torch
+        from deep import Deep, pad
+        from seq import load_sequences
+    except ImportError:
+        print("torch가 없어 GRU 없이 학습합니다 (pip install torch)")
+        return None
+    seqs = {}
+    for fo in sorted(set(folders)):
+        seqs[fo] = load_sequences(fo)
+    S = pad([seqs[fo].get(int(r["member_id"]), []) for r, fo in zip(rows, folders)])
+    d = Deep(hybrid=False, seed=SEED).fit((S[0][tr], S[1][tr]), None, y[tr].astype(int))
+    os.makedirs(out, exist_ok=True)
+    torch.save(d.net.state_dict(), os.path.join(out, "gru.pt"))
+    gru_scores_train = d.predict(S, None)
+    return {"file": "gru.pt", "scores": gru_scores_train}
+
+
 def main():
     if len(sys.argv) < 3:
         sys.exit("사용법: train.py <출력 폴더> <생성 데이터 features.csv> [...]")
     out, paths = sys.argv[1], sys.argv[2:]
-    rows, X = [], []
+    rows, X, folders = [], [], []
     for p in paths:
         r, x = load(p)
+        folders += [os.path.dirname(p)] * len(r)
         bad = {row.get("source", "") for row in r} - {"generator"}
         if bad:
             sys.exit(f"{p}: 생성 데이터만 학습에 쓴다 (source={bad}). 대회 데이터는 score.py로 적용만 하세요")
@@ -78,15 +109,19 @@ def main():
 
     # 검증 사람을 둘로: 하나는 백분위 기준(ref), 하나는 문턱. 두 점수의 큰 값을 쓰므로 문턱은 합친 점수로 잡아야
     # 오탐이 5%가 된다 (각각 95백분위로 자르면 둘 중 하나라도 넘는 사람이 늘어 8~9%가 됐다)
+    gru = train_gru(rows, folders, X, y, tr, out)
+
     vidx = np.flatnonzero(val)
     rng2 = np.random.default_rng(SEED)
     rng2.shuffle(vidx)
     ref_i, thr_i = vidx[: len(vidx) // 2], vidx[len(vidx) // 2:]
     ref_gbm = np.sort(gbm.predict_proba(X[ref_i])[:, 1])
     ref_iso = np.sort(-iso.score_samples(X[ref_i]))
+    if gru is not None:
+        gru["ref"] = np.sort(gru.pop("scores")[ref_i])
     human = X[~y]
     model = {
-        "gbm": gbm, "iso": iso, "ref_gbm": ref_gbm, "ref_iso": ref_iso,
+        "gbm": gbm, "iso": iso, "ref_gbm": ref_gbm, "ref_iso": ref_iso, "gru": gru,
         "features": FEATURES, "all_features": ALL_FEATURES, "cols": COLS, "excluded": EXCLUDE,
         # 근거 표시용: 사람(생성 데이터)의 특징별 5·50·95 백분위
         "human_q": {f: [float(np.nanquantile(human[:, i], q)) for q in (0.05, 0.5, 0.95)] for i, f in enumerate(FEATURES)},
@@ -99,8 +134,11 @@ def main():
 
     # 학습 데이터 안에서의 확인 (낙관적인 값. 실제 실력은 compare.py의 "계열 하나 빼기"와 대회 데이터로 본다)
     from score import score_matrix
-    s = score_matrix(model, X)
+    seq_scores = gru_scores_train if gru is not None else None
+    s = score_matrix(model, X, seq_scores)
     model["threshold"] = float(np.quantile(s[thr_i], 1 - FP_TARGET))
+    # GRU를 못 쓰는 PC(torch 없음 · events.jsonl 없음)에서 부스팅+IF만으로 매길 때의 문턱
+    model["threshold_base"] = float(np.quantile(score_matrix(model, X, None)[thr_i], 1 - FP_TARGET))
     with open(os.path.join(out, "model.pkl"), "wb") as f:
         pickle.dump(model, f)
     flag = s >= model["threshold"]
@@ -109,6 +147,7 @@ def main():
         f"문턱 {model['threshold']:.1f}점 (사람 검증 세트 오탐 {FP_TARGET:.0%})",
         f"학습 데이터 안: 봇 탐지 {flag[y].mean():.1%} · 사람(검증) 오탐 {flag[val].mean():.1%}  ← 낙관적인 값",
         f"뺀 특징: {', '.join(EXCLUDE)}",
+        f"GRU: {'있음 (gru.pt) · 부스팅+IF만일 때 문턱 ' + format(model['threshold_base'], '.1f') + '점' if gru else '없음 (torch 없음 또는 ML_GRU=0)'}",
     ]
     with open(os.path.join(out, "report.txt"), "w") as f:
         f.write("\n".join(lines) + "\n")

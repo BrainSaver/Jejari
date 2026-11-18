@@ -4,7 +4,8 @@
     python3 tools/ml/score.py data/ml/model/model.pkl data/ml/contest-<태그>/features.csv
     → 같은 폴더의 scores.csv + 종류별 요약
 
-점수 = 부스팅·Isolation Forest 점수를 사람 검증 세트 기준 백분위로 바꾼 것 중 큰 값.
+점수 = 부스팅·Isolation Forest·GRU 점수를 사람 검증 세트 기준 백분위로 바꾼 것 중 큰 값.
+  GRU는 features.csv 옆의 events.jsonl을 읽는다. torch나 events.jsonl이 없으면 GRU 없이 매기고 그때의 문턱(threshold_base)을 쓴다.
 근거 = 사람(생성 데이터) 5~95백분위 밖으로 가장 멀리 나간 특징 3개. 관리자가 "왜 이 점수인가"를 보게 한다
 (설계 원칙: 점수 근거 기록, risk_score.reasons). 모델 점수는 관리자에게 보여 주는 보조 의견이다.
 """
@@ -38,10 +39,33 @@ def pct(ref, v):
     return 100 * np.searchsorted(ref, v, side="right") / len(ref)
 
 
-def score_matrix(model, X):
-    g = pct(model["ref_gbm"], model["gbm"].predict_proba(X)[:, 1])
-    i = pct(model["ref_iso"], -model["iso"].score_samples(X))
-    return np.maximum(g, i)
+def parts(model, X, seq_scores=None):
+    """모델별 백분위 점수. seq_scores = GRU가 낸 봇 확률 (없으면 GRU 칸은 빠짐)"""
+    out = {"부스팅": pct(model["ref_gbm"], model["gbm"].predict_proba(X)[:, 1]),
+           "IF": pct(model["ref_iso"], -model["iso"].score_samples(X))}
+    if seq_scores is not None and model.get("gru"):
+        out["GRU"] = pct(model["gru"]["ref"], seq_scores)
+    return out
+
+
+def score_matrix(model, X, seq_scores=None):
+    return np.maximum.reduce(list(parts(model, X, seq_scores).values()))
+
+
+def gru_scores(model, model_path, rows, folder):
+    """GRU를 쓸 수 있으면 봇 확률, 아니면 (None, 이유)"""
+    if not model.get("gru"):
+        return None, "이 모델에는 GRU가 없음"
+    if not os.path.exists(os.path.join(folder, "events.jsonl")):
+        return None, "events.jsonl 없음"
+    try:
+        from deep import Deep, pad
+        from seq import load_sequences
+    except ImportError:
+        return None, "torch 없음 (pip install torch)"
+    d = Deep.load(os.path.join(os.path.dirname(model_path), model["gru"]["file"]))
+    seqs = load_sequences(folder)
+    return d.predict(pad([seqs.get(int(r["member_id"]), []) for r in rows])), None
 
 
 def reasons(model, x, k=3):
@@ -58,6 +82,12 @@ def reasons(model, x, k=3):
     return [t for _, t in sorted(out, reverse=True)[:k]]
 
 
+def row_reasons(model, x, by):
+    """GRU가 가장 높게 본 계정은 특징 근거만으로는 이유가 안 보여서, 그 사실을 맨 앞에 적는다"""
+    r = reasons(model, x)
+    return (["행동 순서가 학습한 봇과 닮음(GRU)"] + r[:2]) if by == "GRU" else r
+
+
 def main():
     if len(sys.argv) != 3:
         sys.exit("사용법: score.py <model.pkl> <features.csv>")
@@ -66,16 +96,21 @@ def main():
         model = pickle.load(f)
     rows, X = load(sys.argv[2])
     X = X[:, model["cols"]]   # 학습 때 쓴 특징만 (features.py 순서 기준)
-    s = score_matrix(model, X)
-    thr = model["threshold"]
+    seq, why = gru_scores(model, sys.argv[1], rows, os.path.dirname(sys.argv[2]))
+    P = parts(model, X, seq)
+    s = np.maximum.reduce(list(P.values()))
+    by = [max(P, key=lambda k: P[k][j]) for j in range(len(rows))]   # 어느 모델이 가장 높게 봤나
+    thr = model["threshold"] if seq is not None else model.get("threshold_base", model["threshold"])
     out = os.path.join(os.path.dirname(sys.argv[2]), "scores.csv")
     with open(out, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["member_id", "label", "strategy", "score", "flag", "reasons"])
-        for r, v, x in zip(rows, s, X):
-            w.writerow([r["member_id"], r["label"], r["strategy"], round(float(v), 1), int(v >= thr), " · ".join(reasons(model, x))])
+        w.writerow(["member_id", "label", "strategy", "score", "flag", "by", *[f"score_{k}" for k in P], "reasons"])
+        for j, (r, v, x) in enumerate(zip(rows, s, X)):
+            w.writerow([r["member_id"], r["label"], r["strategy"], round(float(v), 1), int(v >= thr), by[j],
+                        *[round(float(P[k][j]), 1) for k in P], " · ".join(row_reasons(model, x, by[j]))])
 
-    print(f"모델 {model['trained']['at']} (계정 {model['trained']['accounts']}) · 문턱 {thr:.1f}점 · 뺀 특징 {model['excluded']} → {out}\n")
+    print(f"모델 {model['trained']['at']} (계정 {model['trained']['accounts']}) · 문턱 {thr:.1f}점 · 뺀 특징 {model['excluded']} → {out}")
+    print(f"쓴 모델: {' + '.join(P)}" + (f"  (GRU 빠짐: {why})" if why and model.get("gru") else "") + "\n")
     kinds = sorted({(r["strategy"], r["label"]) for r in rows})
     print(f"{'종류':<12}{'라벨':<15}{'계정':>5}{'표시':>6}{'점수 중앙값':>12}")
     for k, lab in kinds:
@@ -85,7 +120,7 @@ def main():
     if flagged:
         print("\n근거 예시 (표시된 계정 앞 5개)")
         for j in flagged:
-            print(f"  {rows[j]['member_id']} ({rows[j]['strategy']}) {s[j]:.0f}점: " + " · ".join(reasons(model, X[j])))
+            print(f"  {rows[j]['member_id']} ({rows[j]['strategy']}) {s[j]:.0f}점 [{by[j]}]: " + " · ".join(row_reasons(model, X[j], by[j])))
 
 
 if __name__ == "__main__":
