@@ -51,7 +51,9 @@ import com.jejari.waitlist.offer.WaitlistOfferTx;
 		"jejari.event.relay.enabled=false",
 		"jejari.notification.consumer-enabled=false",
 		"jejari.notification.reminder-enabled=false",
-		"jejari.notification.dispatcher-enabled=false"})
+		"jejari.notification.dispatcher-enabled=false",
+		// seat-release 소비자가 Kafka에 남은 옛 이벤트로 이 테스트의 대기자에게 먼저 제안하지 않게 (제안은 테스트가 직접 부른다)
+		"jejari.waitlist.offer-enabled=false"})
 class WaitlistPaymentInfraTest {
 
 	static final long RUN = 9001;

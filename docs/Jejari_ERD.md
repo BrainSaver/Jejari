@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v22 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-17
+> 스키마 v24 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-18
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -406,9 +406,9 @@ Oracle
 | `run_date` | DATE | NN | 생성 | 운행일 | 명절 기간 |
 | `sale_open_at` | TIMESTAMP | NN | 생성 | 예매 오픈 시각 | 트래픽 폭증 시점. 부하 테스트 시나리오 기준. 일반은 출발 2개월 전 07:00, 명절은 행사 오픈 시각 |
 | `sale_close_at` | TIMESTAMP |  | 생성 | 판매 마감 |  |
-| `status` | VARCHAR2(10) | NN | 시스템 | SCHEDULED / ON_SALE / CLOSED / DEPARTED | 판매 가능 여부 판단. 전이는 판매 오픈 스케줄러가 한다 — sale_open_at이 지나면 ON_SALE, sale_close_at이 지나면 CLOSED. 주기 app_policy sale.open_interval_sec |
+| `status` | VARCHAR2(10) | NN | 시스템 | SCHEDULED / ON_SALE / CLOSED / DEPARTED | 판매 가능 여부 판단. 전이는 판매 오픈 스케줄러가 한다 — sale_open_at이 지나면 ON_SALE, sale_close_at이 지나면 CLOSED, 기점 출발 시각(MIN(train_stop.departure_time))이 지나면 DEPARTED. 출발은 판매 일정과 무관한 사실이라 DEPARTED가 아닌 모든 상태에서 바로 간다. 주기 app_policy sale.open_interval_sec |
 
-> **제약·비고** UNIQUE(train_id, run_date) · UNIQUE(run_id, train_id) — seat_inventory 복합 FK의 참조 대상 · 일반 예매 오픈은 코레일 규칙대로 출발일 2개월 전 07:00: sale_open_at = run_date - 2개월 + 07:00. 명절 운행은 sale_event.sale_open_at을 그대로 복사합니다 (특별예매 일괄 오픈)
+> **제약·비고** UNIQUE(train_id, run_date) · UNIQUE(run_id, train_id) — seat_inventory 복합 FK의 참조 대상 · 일반 예매 오픈은 코레일 규칙대로 출발일 2개월 전 07:00: sale_open_at = run_date - 2개월 + 07:00. 명절 운행은 sale_event.sale_open_at을 그대로 복사합니다 (특별예매 일괄 오픈) · 상태 전이 순서: 출발 → 마감 → 오픈 (센 것부터 봐서 뒤 단계가 앞 단계 결과를 건드리지 않게). 정차 정보가 없는 운행은 출발 시각을 알 수 없어 DEPARTED로 가지 않는다
 
 **관계** train_id → [`train`](#train) · sale_event_id → [`sale_event`](#sale-event) · [`train_stop`](#train-stop).run_id → 이 테이블 · [`seat_inventory`](#seat-inventory).run_id → 이 테이블 · [`reservation`](#reservation).run_id → 이 테이블 · [`waitlist`](#waitlist).run_id → 이 테이블 · [`behavior_log`](#behavior-log).run_id → 이 테이블 · [`queue_log`](#queue-log).run_id → 이 테이블
 
@@ -1813,7 +1813,7 @@ Oracle
 | `session_id` | VARCHAR2(36) | FK → auth_session | 시스템 | 표시할 세션 (없을 수 있음) | Oracle 기록만으로 찍는 마커(구매 직후 취소 등)는 녹화 세션이 없다. 세션이 있으면 재생기가 그 지점으로 이동 |
 | `at_ts` | TIMESTAMP | NN | 시스템 | 타임라인 위치 | 누르면 그 시점으로 이동 |
 | `marker_type` | VARCHAR2(10) | NN | 시스템 | AUTO / MANUAL | 시스템 탐지와 관리자 메모 구분 |
-| `rule_code` | VARCHAR2(30) | NN | 시스템 | FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / LINEAR_MOUSE | 어떤 규칙이 잡았는지 |
+| `rule_code` | VARCHAR2(30) | NN | 시스템 | FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / REGULAR_INTERVAL / LINEAR_MOUSE | 어떤 규칙이 잡았는지. 값은 RiskRule 중 마커 규칙(marker=true)과 같게 둔다 |
 | `label` | VARCHAR2(200) | NN | 시스템 | 예: 0.1초 간격 좌석 클릭 28회 |  |
 | `severity` | VARCHAR2(6) | NN | 시스템 | LOW / MID / HIGH |  |
 | `created_by` | NUMBER | FK → admin_user | 시스템 | 작성 관리자 (AUTO는 null) |  |
@@ -2347,6 +2347,8 @@ Oracle
 | v20 | 취소표 구현 (WL-01~03): notification.notification_id 시퀀스. 제안·건너뜀 알림을 제안 트랜잭션과 같이 커밋하려면 ID가 필요 |
 | v21 | 상시 취소 수수료 정책 (강다인 요청): cancel_fee_policy 예시에 sale_event_id NULL 세트 5건. 기존 5건이 모두 지난 행사(1번)에 묶여 있어 평시 운행(9001·9002)에서 수수료가 계산되지 않고 "취소 불가"로 보였다 |
 | v22 | 취소표 행동 로그 (WL-01·02): behavior_log.event_type에 WAITLIST_APPLY·WAITLIST_CANCEL 추가. 취소표는 대기열 토큰 없이 들어오는 유일한 길인데 로그가 없어 FAST_CLICK·REGULAR_INTERVAL이 그 구간을 못 본다 |
+| v23 | train_run.status의 DEPARTED 전이 주체를 판매 오픈 스케줄러로 명시 (기점 출발 시각이 지나면). 지금까지 DEPARTED로 바꾸는 코드도 읽는 코드도 없어 CHECK 제약에만 살아 있던 값이다 |
+| v24 | case_marker.rule_code CHECK에 REGULAR_INTERVAL 추가 (강다인 요청). 일정 간격 매크로가 이 규칙에만 걸리는데 마커 규칙이 아니라 케이스가 열리지 않았다 (조영준 경계 측정). 기존 DB는 db/patch/v24.sql |
 
 ## 참고 자료
 

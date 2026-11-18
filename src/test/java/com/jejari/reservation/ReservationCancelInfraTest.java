@@ -31,6 +31,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.jejari.auth.ActorType;
+import com.jejari.auth.AdminRole;
 import com.jejari.auth.jwt.AccessTokenIssuer;
 import com.jejari.seat.SeatHoldService;
 import com.jejari.seat.SeatHoldService.HoldCommand;
@@ -45,6 +46,7 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * CNL-01 수수료 미리보기·CNL-02 확정 취소를 실제 흐름으로 확인한다: 좌석 선점(B) → 결제 시작·승인(좌석 단계 B) → 확정 →
  * {@code POST /reservations/{id}/cancel}. 좌석 반환·카운터·REOFFER·cancellation·이력·outbox·환불까지 본다.
+ * ADM-07 관리자 강제 취소({@code POST /admin/reservations/{id}/cancel})도 같은 트랜잭션이라 여기서 본다.
  */
 @FullStackInfraTest
 class ReservationCancelInfraTest {
@@ -55,6 +57,7 @@ class ReservationCancelInfraTest {
 	static final long MEMBER_BASE = 930_000;
 	static final AtomicLong NEXT = new AtomicLong(MEMBER_BASE + 1);
 	static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+	static final long ADMIN = 963_901;
 
 	@Autowired
 	MockMvc mvc;
@@ -72,6 +75,8 @@ class ReservationCancelInfraTest {
 	AccessTokenIssuer tokens;
 	@Autowired
 	JsonMapper json;
+	@Autowired
+	RefundRetryBatch retry;
 
 	List<Long> seatIds;
 	final List<Long> policies = new ArrayList<>();
@@ -86,6 +91,11 @@ class ReservationCancelInfraTest {
 				.subList(300, 340);
 		Integer standing = jdbc.queryForObject("SELECT COUNT(*) FROM cancel_fee_policy WHERE sale_event_id IS NULL",
 				Integer.class);
+		// admin_action.admin_id가 admin_user를 가리키는 FK라 테스트 관리자 행이 있어야 한다 (해시는 쓰지 않으므로 가짜 값)
+		jdbc.update("""
+				INSERT INTO admin_user (admin_id, login_id, password_hash, role, status)
+				SELECT ?, 'cnl-infra-test', 'x', 'SUPERVISOR', 'ACTIVE' FROM dual
+				 WHERE NOT EXISTS (SELECT 1 FROM admin_user WHERE admin_id = ?)""", ADMIN, ADMIN);
 		if (standing == 0) {
 			policy(4320L, null, "0", "N");
 			policy(1440L, 4320L, "0.05", "N");
@@ -101,7 +111,7 @@ class ReservationCancelInfraTest {
 				+ (MEMBER_BASE + 9999);
 		jdbc.update("DELETE FROM outbox_event WHERE aggregate_type = 'RESERVATION' AND aggregate_id IN (SELECT TO_CHAR(reservation_id) FROM reservation WHERE member_id BETWEEN ? AND ?)",
 				MEMBER_BASE + 1, MEMBER_BASE + 9999);
-		for (String t : List.of("cancellation", "payment", "reservation_history", "saga_instance", "reservation_seat",
+		for (String t : List.of("admin_action", "cancellation", "payment", "reservation_history", "saga_instance", "reservation_seat",
 				"seat_inventory")) {
 			jdbc.update("DELETE FROM " + t + " WHERE reservation_id IN (" + mine + ")");
 		}
@@ -109,6 +119,8 @@ class ReservationCancelInfraTest {
 		jdbc.update("DELETE FROM reservation WHERE member_id BETWEEN ? AND ?", MEMBER_BASE + 1, MEMBER_BASE + 9999);
 		jdbc.update("DELETE FROM purchase_counter WHERE ci_hash LIKE 'cnl-ci-%'");
 		jdbc.update("DELETE FROM member WHERE member_id BETWEEN ? AND ?", MEMBER_BASE + 1, MEMBER_BASE + 9999);
+		jdbc.update("DELETE FROM admin_action WHERE admin_id = ?", ADMIN);
+		jdbc.update("DELETE FROM admin_user WHERE admin_id = ?", ADMIN);
 		for (long p : policies) {
 			jdbc.update("DELETE FROM cancel_fee_policy WHERE fee_policy_id = ?", p);
 		}
@@ -237,7 +249,165 @@ class ReservationCancelInfraTest {
 		assertThat(count("SELECT COUNT(*) FROM cancellation WHERE reservation_id = ?", r)).isZero();
 	}
 
+	// ------------------------------------------------------------ ADM-07
+
+	@Test
+	void 관리자_강제_취소는_수수료_없이_전액_환불하고_누가_왜_했는지_남긴다() throws Exception {
+		long m = member();
+		long s1 = seatIds.get(15);
+		long r = confirmed(m, true, s1, seatIds.get(16));
+		long paid = jdbc.queryForObject("SELECT amount FROM payment WHERE reservation_id = ?", Long.class, r);
+
+		mvc.perform(post("/api/v1/admin/reservations/" + r + "/cancel").header("Authorization", admin(AdminRole.SUPERVISOR))
+				.contentType("application/json").content("{\"memo\":\"  되팔이 확정 케이스 조치  \"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.cancel.status").value("CANCELED"))
+				.andExpect(jsonPath("$.cancel.seatCount").value(2))
+				.andExpect(jsonPath("$.cancel.cancelFee").value(0))
+				.andExpect(jsonPath("$.cancel.refundAmount").value(paid))
+				.andExpect(jsonPath("$.cancel.refundStatus").value("DONE"))
+				.andExpect(jsonPath("$.actionId").isNumber());
+
+		assertThat(one("SELECT status FROM reservation WHERE reservation_id = ?", r)).isEqualTo("CANCELED");
+		assertThat(count("SELECT COUNT(*) FROM seat_inventory WHERE reservation_id = ?", r)).isZero();
+		assertThat(counter(m)).isZero();
+		Map<String, Object> c = jdbc.queryForMap("SELECT * FROM cancellation WHERE reservation_id = ?", r);
+		assertThat(c.get("CANCEL_TYPE")).isEqualTo("ADMIN"); // 위험 점수는 USER만 센다
+		assertThat(((Number) c.get("CANCEL_FEE")).longValue()).isZero();
+		assertThat(((Number) c.get("REFUND_AMOUNT")).longValue()).isEqualTo(paid);
+		assertThat(c.get("FEE_POLICY_ID")).isNull();
+		assertThat(c.get("REFUND_STATUS")).isEqualTo("DONE");
+		assertThat(one("SELECT status FROM payment WHERE reservation_id = ?", r)).isEqualTo("REFUNDED");
+		assertThat(one("""
+				SELECT from_status || '>' || to_status || ':' || actor_type FROM reservation_history
+				 WHERE reservation_id = ? AND to_status = 'CANCELED'""", r)).isEqualTo("CONFIRMED>CANCELED:ADMIN");
+		assertThat(one("""
+				SELECT payload FROM outbox_event WHERE aggregate_id = TO_CHAR(?) AND event_type = 'RESERVATION_CANCELED'""", r))
+				.contains("\"reason\":\"ADMIN\"").contains("\"cancelFee\":0").contains("\"seats\"");
+		assertThat(jdbc.queryForList("SELECT event_type FROM outbox_event WHERE aggregate_id = TO_CHAR(?) ORDER BY seq",
+				String.class, r)).endsWith("RESERVATION_CANCELED", "REFUND_COMPLETED");
+		// 감사 기록: 누가(admin_id)·누구에게(예약 회원의 CI)·왜(사유, 앞뒤 공백 제거)
+		Map<String, Object> a = jdbc.queryForMap("SELECT * FROM admin_action WHERE reservation_id = ?", r);
+		assertThat(((Number) a.get("ADMIN_ID")).longValue()).isEqualTo(ADMIN);
+		assertThat(a.get("ACTION_TYPE")).isEqualTo("CANCEL_RESERVATION");
+		assertThat(a.get("SUBJECT_TYPE")).isEqualTo("CI");
+		assertThat(a.get("SUBJECT_HASH")).isEqualTo("cnl-ci-" + m);
+		assertThat(a.get("MEMO")).isEqualTo("되팔이 확정 케이스 조치");
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, s1, 0))).isIn("REOFFER:" + r, null);
+	}
+
+	@Test
+	void 강제_취소는_SUPERVISOR만_사유_필수_확정_예약만_두_번_눌러도_한_번() throws Exception {
+		long m = member();
+		long r = confirmed(m, true, seatIds.get(25));
+		String url = "/api/v1/admin/reservations/" + r + "/cancel";
+		String body = "{\"memo\":\"운영 사유 강제 취소\"}";
+
+		for (AdminRole role : new AdminRole[] { AdminRole.VIEWER, AdminRole.REVIEWER }) {
+			mvc.perform(post(url).header("Authorization", admin(role)).contentType("application/json").content(body))
+					.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ADMIN_FORBIDDEN"));
+		}
+		mvc.perform(post(url).header("Authorization", bearer(m)).contentType("application/json").content(body))
+				.andExpect(status().isForbidden()); // 회원 토큰으로는 관리자 경로에 못 들어온다
+		mvc.perform(post(url).header("Authorization", admin(AdminRole.SUPERVISOR)).contentType("application/json")
+				.content("{\"memo\":\"  짧음 \"}"))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("ACTION_REASON_REQUIRED"));
+		mvc.perform(post(url).header("Authorization", admin(AdminRole.SUPERVISOR)))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("ACTION_REASON_REQUIRED"));
+		// 거절된 요청은 아무것도 바꾸지 않는다
+		assertThat(one("SELECT status FROM reservation WHERE reservation_id = ?", r)).isEqualTo("CONFIRMED");
+		assertThat(count("SELECT COUNT(*) FROM admin_action WHERE reservation_id = ?", r)).isZero();
+
+		mvc.perform(post(url).header("Authorization", admin(AdminRole.SUPERVISOR)).contentType("application/json").content(body))
+				.andExpect(status().isOk());
+		mvc.perform(post(url).header("Authorization", admin(AdminRole.SUPERVISOR)).contentType("application/json").content(body))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("RESERVATION_NOT_CONFIRMED"));
+		assertThat(count("SELECT COUNT(*) FROM cancellation WHERE reservation_id = ?", r)).isOne();
+		assertThat(count("SELECT COUNT(*) FROM admin_action WHERE reservation_id = ?", r)).isOne();
+
+		long held = hold.hold(m, cmd(seatIds.get(26))).reservationId();
+		mvc.perform(post("/api/v1/admin/reservations/" + held + "/cancel").header("Authorization", admin(AdminRole.SUPERVISOR))
+				.contentType("application/json").content(body))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("RESERVATION_NOT_CONFIRMED"));
+		mvc.perform(post("/api/v1/admin/reservations/999999999999/cancel").header("Authorization", admin(AdminRole.SUPERVISOR))
+				.contentType("application/json").content(body))
+				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESERVATION_NOT_FOUND"));
+	}
+
+	// ------------------------------------------------------------ CNL-03
+
+	@Test
+	void 환불_실패는_재시도_배치가_다시_요청해_DONE으로_바꾸고_알림은_한_번() throws Exception {
+		long m = member();
+		long r = confirmed(m, false, seatIds.get(32)); // 승인 거래 ID가 없어 처음 환불은 실패
+		mvc.perform(post("/api/v1/reservations/" + r + "/cancel").header("Authorization", bearer(m)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.refundStatus").value("FAILED"));
+		long cancelId = jdbc.queryForObject("SELECT cancel_id FROM cancellation WHERE reservation_id = ?", Long.class, r);
+
+		// PG가 다시 받아 줄 수 있게 됨 (승인 거래 ID 확인). 막 실패한 건은 유예(1분) 안이라 건드리지 않는다
+		jdbc.update("UPDATE payment SET pg_tx_id = ? WHERE reservation_id = ?", "mock-" + UUID.randomUUID(), r);
+		retry.run();
+		assertThat(one("SELECT refund_status FROM cancellation WHERE cancel_id = ?", cancelId)).isEqualTo("FAILED");
+
+		backdate(cancelId, 2, 2);
+		retry.run();
+		assertThat(one("SELECT refund_status FROM cancellation WHERE cancel_id = ?", cancelId)).isEqualTo("DONE");
+		assertThat(one("SELECT refund_pg_tx_id FROM cancellation WHERE cancel_id = ?", cancelId)).startsWith("mock-refund-");
+		assertThat(one("SELECT status FROM payment WHERE reservation_id = ?", r)).isEqualTo("REFUNDED");
+
+		retry.run(); // 끝난 건은 다시 건드리지 않는다
+		assertThat(count("SELECT COUNT(*) FROM outbox_event WHERE aggregate_id = TO_CHAR(?) AND event_type = 'REFUND_COMPLETED'",
+				r)).isOne();
+	}
+
+	@Test
+	void 늦은_승인_환불도_같은_배치가_재시도하고_오래된_건은_사람에게_넘긴다() throws Exception {
+		long m = member();
+		long r = confirmed(m, true, seatIds.get(33));
+		long late = lateApprovalFailed(r);
+		backdate(late, 2, 2);
+		long oldR = confirmed(m, false, seatIds.get(37)); // 34는 로컬 시연 데이터가 쓰는 경우가 있어 피함
+		mvc.perform(post("/api/v1/reservations/" + oldR + "/cancel").header("Authorization", bearer(m)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.refundStatus").value("FAILED"));
+		long old = jdbc.queryForObject("SELECT cancel_id FROM cancellation WHERE reservation_id = ?", Long.class, oldR);
+		jdbc.update("UPDATE payment SET pg_tx_id = ? WHERE reservation_id = ?", "mock-" + UUID.randomUUID(), oldR);
+		backdate(old, 73 * 60, 73 * 60); // 포기 시간(72시간) 지남
+
+		RefundRetryBatch.Result res = retry.run();
+
+		assertThat(one("SELECT refund_status FROM cancellation WHERE cancel_id = ?", late)).isEqualTo("DONE");
+		assertThat(one("SELECT status FROM payment WHERE reservation_id = ?", r)).isEqualTo("REFUNDED");
+		assertThat(one("SELECT refund_status FROM cancellation WHERE cancel_id = ?", old)).isEqualTo("FAILED"); // 건드리지 않음
+		assertThat(res.givenUp()).isGreaterThanOrEqualTo(1);
+	}
+
 	// ------------------------------------------------------------ 도우미
+
+	/** 재시도 배치의 유예·포기 시간을 시험하려고 시각을 과거로 돌린다 */
+	void backdate(long cancelId, long updatedMinutesAgo, long canceledMinutesAgo) {
+		jdbc.update("""
+				UPDATE cancellation SET updated_at = SYSTIMESTAMP - NUMTODSINTERVAL(?, 'MINUTE'),
+				       canceled_at = SYSTIMESTAMP - NUMTODSINTERVAL(?, 'MINUTE')
+				 WHERE cancel_id = ?""", updatedMinutesAgo, canceledMinutesAgo, cancelId);
+	}
+
+	/** §7.3 늦은 승인 환불이 PG 오류로 FAILED가 된 상태 (확정 예약을 만료된 것처럼 두고 PAY_FAILED 취소를 남김) */
+	long lateApprovalFailed(long r) {
+		jdbc.update("UPDATE reservation SET status = 'EXPIRED', updated_at = SYSTIMESTAMP WHERE reservation_id = ?", r);
+		jdbc.update("DELETE FROM seat_inventory WHERE reservation_id = ?", r);
+		long amount = jdbc.queryForObject("SELECT amount FROM payment WHERE reservation_id = ?", Long.class, r);
+		long id = jdbc.queryForObject("SELECT cancellation_seq.NEXTVAL FROM dual", Long.class);
+		jdbc.update("""
+				INSERT INTO cancellation (cancel_id, reservation_id, cancel_type, canceled_at, refund_amount, cancel_fee,
+				  refund_status, resold_yn)
+				VALUES (?, ?, 'PAY_FAILED', SYSTIMESTAMP, ?, 0, 'FAILED', 'N')""", id, r, amount);
+		return id;
+	}
+
+
+	String admin(AdminRole role) {
+		return "Bearer " + tokens.issue(ActorType.ADMIN, ADMIN, UUID.randomUUID().toString(), role).value();
+	}
 
 	/** 선점 → 결제 시작 → 승인(좌석 확정) → CONFIRMED. withPgTx면 승인 결제 행에 PG 거래 ID를 넣는다 */
 	long confirmed(long m, boolean withPgTx, long... seats) {

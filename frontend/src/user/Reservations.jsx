@@ -21,6 +21,13 @@ const CHIPS = [
   ['ok', '확정', (s) => s === 'CONFIRMED'],
   ['done', '취소·만료', (s) => s === 'CANCELED' || s === 'EXPIRED'],
 ];
+/** 서버 코드는 화면에 그대로 보이지 않게 한글로 */
+const PAY_STATUS = { REQUESTED: '결제 요청', APPROVED: '결제 완료', FAILED: '결제 실패', REFUNDED: '환불 완료' };
+const REFUND_STATUS = {
+  DONE: '환불 완료',
+  REQUESTED: '환불 진행 중',
+  FAILED: '환불이 늦어지고 있어요. 자동으로 다시 시도해요',
+};
 const CANCEL_MSG = {
   CANCEL_NOT_ALLOWED: '지금은 취소할 수 없는 예약이에요 (출발 뒤 일정 시간이 지났어요).',
   PAYMENT_IN_PROGRESS: '결제 중이라 지금은 취소할 수 없어요.',
@@ -61,7 +68,7 @@ export default function Reservations() {
         </div>
         {items && !shown.length && (
           <div className="card" style={{ textAlign: 'center' }}>
-            <b>아직 예매한 표가 없어요.</b>
+            <b>{items.length ? '이 조건의 표가 없어요.' : '아직 예매한 표가 없어요.'}</b>
             <p style={{ margin: '10px 0 0' }}><Link className="link" to="/">열차 찾기</Link></p>
           </div>
         )}
@@ -85,7 +92,7 @@ function ResCard({ r, i, open, onToggle, onCancel, onChanged }) {
   const dim = r.status === 'CANCELED' || r.status === 'EXPIRED';
 
   useEffect(() => {
-    if (open || r.status === 'CONFIRMED' || hold) get(`/api/v1/reservations/${r.reservationId}`).then(setD).catch(() => {});
+    if (open || r.status === 'CONFIRMED' || r.status === 'CANCELED' || hold) get(`/api/v1/reservations/${r.reservationId}`).then(setD).catch(() => {});
   }, [open, r.reservationId, r.status]);
 
   const releaseHold = async () => {
@@ -117,9 +124,9 @@ function ResCard({ r, i, open, onToggle, onCancel, onChanged }) {
             {d.seats.map((s) => (
               <div className="kv" key={s.carNo + s.seatNo}><span>{s.carNo}호차 {s.seatNo}</span><span>{won(s.amount)}{s.ticketNo ? ` · ${s.ticketNo}` : ''}</span></div>
             ))}
-            {d.payment && <div className="kv"><span>결제</span><span>{d.payment.status} · {won(d.payment.amount)}</span></div>}
+            {d.payment && <div className="kv"><span>결제</span><span>{PAY_STATUS[d.payment.status] || d.payment.status} · {won(d.payment.amount)}</span></div>}
             {d.cancellation && (
-              <div className="kv"><span>취소</span><span>수수료 {won(d.cancellation.fee)} · 환불 {won(d.cancellation.refundAmount)}{d.cancellation.refundStatus ? ` (${d.cancellation.refundStatus})` : ''}</span></div>
+              <div className="kv"><span>{d.cancellation.cancelType === 'ADMIN' ? '운영 취소' : '취소'}</span><span>수수료 {won(d.cancellation.fee)} · 환불 {won(d.cancellation.refundAmount)}{d.cancellation.refundStatus ? ` (${REFUND_STATUS[d.cancellation.refundStatus] || d.cancellation.refundStatus})` : ''}</span></div>
             )}
           </div>
         )}
@@ -149,7 +156,11 @@ function ResCard({ r, i, open, onToggle, onCancel, onChanged }) {
           </div>
         )}
         {r.status === 'EXPIRED' && <p className="mut" style={{ fontSize: 13, margin: 0 }}>결제 기한이 지나 좌석이 풀렸어요.</p>}
-        {r.status === 'CANCELED' && <p className="mut" style={{ fontSize: 13, margin: 0 }}>취소한 표예요.</p>}
+        {r.status === 'CANCELED' && (
+          <p className="mut" style={{ fontSize: 13, margin: 0 }}>
+            {d?.cancellation?.cancelType === 'ADMIN' ? '운영 사유로 취소됐어요. 수수료 없이 전액 환불해 드려요.' : '취소된 표예요.'}
+          </p>
+        )}
       </div>
     </article>
   );
@@ -177,7 +188,7 @@ function CancelSheet({ id, onClose, onDone }) {
         {error && <div className="alert stop"><Icon name="info" /><span>{CANCEL_MSG[error.code] || error.message}</span></div>}
         {done ? (
           <>
-            <div className="alert go"><Icon name="info" /><span>취소했어요. {won(done.refundAmount)}을 환불해 드려요{done.refundStatus ? ` (${done.refundStatus})` : ''}.</span></div>
+            <div className="alert go"><Icon name="info" /><span>취소했어요. {won(done.refundAmount)}을 돌려드려요.{done.refundStatus ? ` ${REFUND_STATUS[done.refundStatus] || done.refundStatus}.` : ''}</span></div>
             <button className="btn" type="button" style={{ marginTop: 12 }} onClick={onDone}>확인</button>
           </>
         ) : q ? (

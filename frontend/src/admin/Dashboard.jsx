@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router';
-import { get, subscribeRequestLog } from '../api/client.js';
+import { get, post, subscribeRequestLog } from '../api/client.js';
 import { addDays, md, seoulMs, seoulToday } from '../lib/time.js';
 import { usePolling } from '../hooks/usePolling.js';
 import { Who } from './AdminLayout.jsx';
 import Icon from './Icon.jsx';
 import RequestLog from './RequestLog.jsx';
+import { ConfirmButton, ErrorBox } from './ui.jsx';
 import { hasRole } from './useAdminAuth.js';
 
 /**
@@ -67,13 +68,78 @@ export default function Dashboard() {
         <RequestLog />
         <section className="panel">
           <h2>결제 결과 모름 · 강제 취소</h2>
-          <div className="soon-box">
-            결과 모름 <b>건수</b>는 위 카드에 나와요. 목록과 결과 입력(ADM-09, 길동현), 예약 강제 취소(ADM-07, 강다인)는
-            API가 생기면 이 자리에 붙어요.
-            {!hasRole(claims, 'SUPERVISOR') && <div style={{ marginTop: 8 }}>지금 권한({claims?.adm})으로는 처리 버튼이 꺼져 있어요.</div>}
+          <div className="soon-box" style={{ marginBottom: 16 }}>
+            결과 모름 <b>건수</b>는 위 카드에 나와요. 목록과 결과 입력(ADM-09, 길동현)은 API가 생기면 이 자리에 붙어요.
           </div>
+          <ForceCancel claims={claims} onDone={refreshNow} />
         </section>
       </div>
+    </>
+  );
+}
+
+/**
+ * ADM-07 예약 강제 취소 (강다인 API). POST /api/v1/admin/reservations/{id}/cancel {"memo"}.
+ * 확정 예약만, 수수료 0·전액 환불, admin_action에 사유가 남는다. SUPERVISOR만 — 서버가 막고 화면은 버튼만 끈다.
+ */
+const CANCEL_HINT = {
+  ACTION_REASON_REQUIRED: '사유를 5자 이상 적어 주세요. 아무것도 바뀌지 않았어요.',
+  ADMIN_FORBIDDEN: 'SUPERVISOR만 강제 취소할 수 있어요.',
+  RESERVATION_NOT_FOUND: '없는 예약 번호예요.',
+  RESERVATION_NOT_CONFIRMED: '확정된 예약이 아니거나 이미 취소됐어요. 결제 전 예약은 기한이 지나면 스스로 풀려요.',
+};
+
+function ForceCancel({ claims, onDone }) {
+  const can = hasRole(claims, 'SUPERVISOR');
+  const [rv, setRv] = useState('');
+  const [memo, setMemo] = useState('');
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  // 시안의 "R-501233"처럼 붙여 넣어도 되게 숫자만 남긴다 (API 경로는 숫자 ID)
+  const id = rv.replace(/\D/g, '');
+  const ready = can && id && memo.trim().length >= 5;
+
+  const go = async () => {
+    setError(null);
+    setResult(null);
+    try {
+      setResult(await post(`/api/v1/admin/reservations/${id}/cancel`, { memo: memo.trim() }));
+      setMemo('');
+      onDone?.();
+    } catch (e) {
+      const hint = CANCEL_HINT[e.code];
+      setError(hint ? Object.assign(e, { message: hint }) : e);
+    }
+  };
+
+  return (
+    <>
+      <h2 style={{ fontSize: 14.5 }}>예약 강제 취소</h2>
+      <p className="sub">확정된 예약을 수수료 0원·전액 환불로 취소해요. 사유는 admin_action에 남아요.</p>
+      {!can && <div className="alert amber">지금 권한({claims?.adm})으로는 강제 취소할 수 없어요. SUPERVISOR만 가능해요.</div>}
+      <ErrorBox error={error} onClose={() => setError(null)} />
+      {result && (
+        <div className="alert sky" role="status">
+          예약 {result.cancel.reservationId}을 취소했어요 · {result.cancel.seatCount}석 · 환불{' '}
+          <b>{Number(result.cancel.refundAmount).toLocaleString()}원</b> ({result.cancel.refundStatus}) · 수수료{' '}
+          {Number(result.cancel.cancelFee).toLocaleString()}원 · admin_action #{result.actionId}
+          {result.cancel.refundStatus === 'FAILED' && <div>환불이 실패했어요. 결제 담당(길동현)에게 예약 번호를 알려 주세요.</div>}
+        </div>
+      )}
+      <fieldset disabled={!can} style={{ border: 0, padding: 0, margin: 0 }}>
+        <label className="field">
+          <span className="lbl">예약 번호</span>
+          <input value={rv} onChange={(e) => setRv(e.target.value)} inputMode="numeric" placeholder="예: 501233" />
+        </label>
+        <label className="field">
+          <span className="lbl">사유</span>
+          <textarea rows={2} value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="예: 되팔이 확정 케이스 C-204 조치" />
+          <span className="hint">5자 이상 ({memo.trim().length}자)</span>
+        </label>
+        <ConfirmButton className="btn wide" confirm={`한 번 더 누르면 예약 ${id || ''} 강제 취소`} onConfirm={go} disabled={!ready}>
+          강제 취소
+        </ConfirmButton>
+      </fieldset>
     </>
   );
 }
@@ -225,10 +291,13 @@ function Kpi({ label, n, unit, d, src, alarm }) {
   );
 }
 
+// 만료는 오방색 파랑(토큰 --saek의 청색)을 쓴다. 앞의 세 색과 겹치지 않고 팀 팔레트 안에 있다.
+// 막대는 늘 이 순서로 서고 범례·툴팁이 이름을 달아 주므로, 색만으로 구분하지 않아도 읽힌다.
 const SERIES = [
   ['reservations', '예약', 'var(--ink)'],
   ['payments', '결제', 'var(--go)'],
   ['cancels', '취소', 'var(--stop)'],
+  ['expires', '만료', '#1D4ED8'],
 ];
 
 /**
@@ -242,16 +311,17 @@ function RateChart({ history, rates, windowSec }) {
   const max = Math.max(10, ...rows.flatMap((h) => SERIES.map(([k]) => h[k])));
   const top = niceCeil(max);
   const slot = (W - 40) / Math.max(rows.length, 1);
-  const bw = Math.max(2, (slot - 6) / 3);
+  const bw = Math.max(2, (slot - 6) / SERIES.length);
   const y = (v) => H - (v / top) * (H - 8);
   const label = rows.length
-    ? `최근 ${rows.length}분 분당 예약·결제·취소. 최근 ${windowSec}초 예약 ${rates.reservations}건, 결제 ${rates.payments}건, 취소 ${rates.cancels}건`
+    ? `최근 ${rows.length}분 분당 예약·결제·취소·만료. 최근 ${windowSec}초 예약 ${rates.reservations}건, `
+      + `결제 ${rates.payments}건, 취소 ${rates.cancels}건, 만료 ${rates.expires}건`
     : '분당 이력을 못 읽음';
 
   return (
     <section className="panel">
       <h2>
-        <span className="grow">분당 예약·결제·취소</span>
+        <span className="grow">분당 예약·결제·취소·만료</span>
         <span className="row" style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--mut)', gap: 14 }}>
           {SERIES.map(([k, name, color]) => (
             <span key={k}>
@@ -263,7 +333,7 @@ function RateChart({ history, rates, windowSec }) {
       </h2>
       <p className="sub">
         막대 한 칸 = 1분 (Oracle 집계, 캐시 없음) · 최근 {rows.length || HISTORY_MIN}분 · 마지막 흐린 칸은 진행 중인 분 ·
-        범례 숫자는 최근 {windowSec}초
+        범례 숫자는 최근 {windowSec}초 · <b>만료</b>는 결제로 이어지지 못하고 풀린 선점
       </p>
       {!rows.length ? (
         <div className="soon-box">분당 이력을 못 읽었어요. 숫자 카드는 그대로 갱신돼요.</div>
@@ -280,12 +350,12 @@ function RateChart({ history, rates, windowSec }) {
             const live = i === rows.length - 1;
             return (
               <g key={h.minute} opacity={live ? 0.5 : 1}>
-                <title>{`${h.minute.slice(11, 16)}${live ? ' (진행 중)' : ''} · 예약 ${h.reservations} · 결제 ${h.payments} · 취소 ${h.cancels}`}</title>
+                <title>{`${h.minute.slice(11, 16)}${live ? ' (진행 중)' : ''} · 예약 ${h.reservations} · 결제 ${h.payments} · 취소 ${h.cancels} · 만료 ${h.expires}`}</title>
                 {SERIES.map(([k, , color], j) => (
                   <rect key={k} className="chartbar" x={x0 + j * bw} y={y(h[k])} width={bw - 1} height={Math.max(1, H - y(h[k]))} rx="2" fill={color} />
                 ))}
                 {((Number(h.minute.slice(14, 16)) % 5 === 0 && i < rows.length - 2) || live) && (
-                  <text x={x0 + bw * 1.5} y={H + 18} textAnchor="middle" fontSize="12" fill="var(--mut)">{h.minute.slice(11, 16)}</text>
+                  <text x={x0 + (bw * SERIES.length) / 2} y={H + 18} textAnchor="middle" fontSize="12" fill="var(--mut)">{h.minute.slice(11, 16)}</text>
                 )}
               </g>
             );
