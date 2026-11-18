@@ -98,6 +98,7 @@ export default function Search() {
           <p className="hsub">먼저 줄 선 순서대로 좌석을 드려요.</p>
 
           <form className="card search" onSubmit={submit}>
+            <div className="s-main">
             <div className="od">
               <label style={{ display: 'block' }}>
                 <span className="mut" style={{ fontSize: 12.5 }}>출발</span>
@@ -115,16 +116,11 @@ export default function Search() {
                 </select>
               </label>
             </div>
-            <div className="opts" style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-            <div className="dtime" style={{ display: 'flex', gap: 16 }}>
-              <label className="row dt" style={{ position: 'relative', flex: 1.4, minWidth: 0 }}>
-                <Icon name="calendar" />
-                <span className="grow">
-                  <span className="mut" style={{ fontSize: 12.5, display: 'block' }}>운행일</span>
-                  <b>{longDate(form.date)}</b>
-                </span>
-                {form.date === seoulToday() && <span className="st amber">오늘</span>}
-                {/* 날짜 칸은 보이지 않게 덮어 두고, 어디를 눌러도 브라우저 달력이 열린다 */}
+            <div className="s-fields">
+              <label className="fld">
+                <span className="k"><Icon name="calendar" />운행일</span>
+                <span className="v">{shortDate(form.date)}{form.date === seoulToday() && <span className="st amber">오늘</span>}</span>
+                {/* 칸 전체를 보이지 않는 입력이 덮고 있어서, 어디를 눌러도 브라우저 달력이 열린다 */}
                 <input
                   type="date" aria-label="운행일" value={form.date} min={seoulToday()} required
                   onClick={openPicker}
@@ -132,12 +128,9 @@ export default function Search() {
                   style={overlay}
                 />
               </label>
-              <label className="row dt" style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-                <Icon name="clock" />
-                <span className="grow">
-                  <span className="mut" style={{ fontSize: 12.5, display: 'block' }}>출발 시각 이후</span>
-                  <b>{timeText(form.time)}</b>
-                </span>
+              <label className="fld">
+                <span className="k"><Icon name="clock" />출발 시각 이후</span>
+                <span className="v">{timeShort(form.time)}</span>
                 <input
                   type="time" aria-label="출발 시각" value={form.time} required
                   min={form.date === seoulToday() ? seoulHm() : undefined}
@@ -146,32 +139,23 @@ export default function Search() {
                   style={overlay}
                 />
               </label>
-            </div>
-            <div className="dtime" style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-              <div className="row dt" style={{ flex: 1.4, minWidth: 0 }}>
-                <Icon name="person" />
-                <span className="grow">
-                  <span className="mut" style={{ fontSize: 12.5, display: 'block' }}>인원</span>
-                  <b>{form.people}명</b>
-                </span>
+              <div className="fld">
+                <span className="k"><Icon name="person" />인원</span>
                 <span className="qty">
                   <button type="button" aria-label="인원 한 명 빼기" disabled={form.people <= 1} onClick={() => setForm({ ...form, people: form.people - 1 })}>−</button>
-                  <b>{form.people}</b>
+                  <b>{form.people}명</b>
                   <button type="button" aria-label="인원 한 명 더하기" disabled={form.people >= MAX_PEOPLE} onClick={() => setForm({ ...form, people: form.people + 1 })}>+</button>
                 </span>
               </div>
-              <label className="row dt" style={{ flex: 1, minWidth: 0 }}>
-                <Icon name="ticket" />
-                <span className="grow">
-                  <span className="mut" style={{ fontSize: 12.5, display: 'block' }}>좌석 종류</span>
-                  <select aria-label="좌석 종류" value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })} style={{ fontSize: 16, fontWeight: 800, minHeight: 28, padding: '0 18px 0 0' }}>
-                    <option value="">전체</option>
-                    {GRADES.map(([g, label]) => <option key={g} value={g}>{label}</option>)}
-                  </select>
-                </span>
+              <label className="fld">
+                <span className="k"><Icon name="ticket" />좌석 종류</span>
+                <select aria-label="좌석 종류" value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })}>
+                  <option value="">전체</option>
+                  {GRADES.map(([g, label]) => <option key={g} value={g}>{label}</option>)}
+                </select>
               </label>
             </div>
-            </div>
+          </div>
             <button className="btn ink" type="submit" disabled={!stations.length}>열차 찾기</button>
           </form>
         </div>
@@ -231,6 +215,11 @@ const openPicker = (e) => {
 const defaultTime = (date) => (date === seoulToday() ? seoulHm() : '00:00');
 const clampPeople = (v) => Math.min(MAX_PEOPLE, Math.max(1, Number(v) || 1));
 const maxTime = (a, b) => (a > b ? a : b);
+/** "13:30" → "오후 1:30" (칸이 좁아 "시·분"을 줄여 쓴다) */
+const timeShort = (t) => {
+  const [h, m] = (t || '00:00').split(':').map(Number);
+  return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')}`;
+};
 const timeText = (t) => {
   const [h, m] = (t || '00:00').split(':').map(Number);
   return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}시${m ? ` ${m}분` : ''}`;
