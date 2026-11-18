@@ -135,17 +135,53 @@ export default function Signup() {
   );
 }
 
-/** 서버 PasswordPolicy와 같은 규칙 (흔한 비밀번호 목록은 서버만 본다) */
+/**
+ * 서버 PasswordPolicy와 같은 규칙 (흔한 비밀번호 목록은 서버만 본다).
+ * 화면이 서버보다 엄격하면 서버가 받는 비밀번호도 [가입하기]가 막히므로, 기준을 서버와 똑같이 둔다.
+ */
 function pwRules(pw, email) {
-  const local = (email.split('@')[0] || '').toLowerCase();
+  const local = (email.trim().split('@')[0] || '').toLowerCase();
+  const lower = pw.toLowerCase();
   const len = [...pw].length;
   return [
     { label: '10자 이상 64자 이하', ok: len >= 10 && len <= 64 },
     { label: '서로 다른 문자 4종류 이상', ok: new Set(pw).size >= 4 },
     { label: '앞뒤 공백 없음', ok: pw === pw.trim() },
-    { label: '이메일 아이디를 넣지 않기', ok: !local || local.length < 3 || !pw.toLowerCase().includes(local) },
-    { label: '1234·qwerty 같은 연속 글자 피하기', ok: !/(0123|1234|2345|3456|4567|5678|6789|abcd|qwer|asdf|zxcv)/i.test(pw) },
+    { label: '이메일 아이디를 넣지 않기', ok: local.length < 4 || !lower.includes(local) },
+    { label: '1234567·qwerty 같은 연속 글자로만 만들지 않기', ok: !isSequence(lower) },
   ];
+}
+
+/** 서버 PasswordPolicy.isSequence와 같음: 6자 이상 연속 패턴을 빼고 남는 게 4자 이하면 거절 */
+const SEQUENCES = ['01234567890', '09876543210', 'abcdefghijklmnopqrstuvwxyz', 'zyxwvutsrqponmlkjihgfedcba',
+  'qwertyuiop', 'poiuytrewq', 'asdfghjkl', 'lkjhgfdsa', 'zxcvbnm', 'mnbvcxz', '1q2w3e4r5t6y7u8i9o0p'];
+function isSequence(lower) {
+  let rest = lower;
+  let removed = true;
+  while (removed) {
+    removed = false;
+    for (const seq of SEQUENCES) {
+      const longest = longestCommon(rest, seq);
+      if (longest.length >= 6) {
+        rest = rest.split(longest).join('');
+        removed = true;
+      }
+    }
+  }
+  return rest.length < lower.length && [...rest].length <= 4;
+}
+function longestCommon(a, b) {
+  let best = '';
+  for (let i = 0; i < a.length; i++) {
+    for (let j = a.length; j > i + best.length; j--) {
+      const sub = a.slice(i, j);
+      if (b.includes(sub)) {
+        best = sub;
+        break;
+      }
+    }
+  }
+  return best;
 }
 
 const maskPhone = (p) => {

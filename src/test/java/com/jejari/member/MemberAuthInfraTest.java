@@ -167,6 +167,16 @@ class MemberAuthInfraTest {
 	}
 
 	@Test
+	void 이미_가입된_이메일이면_토큰을_잃지_않고_다른_이메일로_이어서_가입() throws Exception {
+		String taken = signedUp("김철수", "01055556666");
+		String token = verify("홍길동", "01012345678");
+		MvcResult dup = signup(token, taken, PW);
+		assertThat(dup.getResponse().getStatus()).isEqualTo(409);
+		assertThat(code(dup)).isEqualTo("AUTH_EMAIL_DUPLICATED");
+		assertThat(signup(token, email(), PW).getResponse().getStatus()).isEqualTo(201); // 본인인증 다시 안 해도 됨
+	}
+
+	@Test
 	void 위조_토큰은_거절() throws Exception {
 		assertThat(code(signup("A".repeat(43), email(), PW))).isEqualTo("AUTH_VERIFY_FAILED");
 		assertThat(code(signup("not-a-token", email(), PW))).isEqualTo("AUTH_VERIFY_FAILED");
