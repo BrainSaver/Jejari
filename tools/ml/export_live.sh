@@ -61,5 +61,18 @@ db.behavior_log.find({ member_id: { \$in: [${ids}] } }, { _id: 0, expire_at: 0, 
   .forEach(d => { d.ts = d.ts.toISOString(); print(EJSON.stringify(d, null, 0, { relaxed: true })); })" \
   | tr -d '\r' | grep '^{' > "$OUT/events.jsonl"
 
-echo "계정 ${n} · 이벤트 $(wc -l < "$OUT/events.jsonl") → ${OUT}"
+# ── 운행의 실제 판매 오픈 시각 (features.py가 "오픈 뒤 첫 선점" 기준으로 쓴다) ──────
+runs=$(python3 -I -c "import json,sys; print(','.join(sorted({str(json.loads(l)['run_id']) for l in open(sys.argv[1]) if json.loads(l).get('run_id') is not None})))" "$OUT/events.jsonl")
+: > "$OUT/runs.jsonl"
+if [[ -n "$runs" ]]; then
+  sql <<EOF | tr -d '\r' | grep -E '^[0-9]+\|' | while IFS='|' read -r rid opened; do
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 200
+SELECT run_id || '|' || TO_CHAR(SYS_EXTRACT_UTC(FROM_TZ(CAST(sale_open_at AS TIMESTAMP), 'Asia/Seoul')), 'YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
+  FROM train_run WHERE run_id IN (${runs});
+EOF
+    echo "{\"run_id\": ${rid}, \"open_ts\": \"${opened}\"}" >> "$OUT/runs.jsonl"
+  done
+fi
+
+echo "계정 ${n} · 이벤트 $(wc -l < "$OUT/events.jsonl") · 운행 $(wc -l < "$OUT/runs.jsonl") → ${OUT}"
 echo "다음: python3 -I tools/ml/features.py ${OUT}"

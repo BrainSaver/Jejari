@@ -30,6 +30,13 @@ from datetime import datetime, timedelta
 SEAT_POOL = list(range(100_001, 160_001))
 LIMIT_PER_RUN = 4  # 대회 기본 매수 제한 (특징은 이 값에 대한 비율로 쓴다)
 
+# 실제 사람 데이터로 맞춘 "퍼짐" (tools/ml/human_calibration.json, UCI Online Shoppers Purchasing Intention,
+# 구매로 끝난 실제 세션 1,908개). 쇼핑몰과 예매는 도메인이 달라 절대값은 쓰지 않고 사람 사이의 퍼짐만 가져온다
+#   - 사람마다 속도가 다르다: 페이지당 머문 시간의 로그 표준편차 0.53 (약 ±70%)
+#   - 사람마다 둘러보는 양이 크게 다르다: 페이지 수의 로그 표준편차 0.99 (하위 5%는 중앙값의 약 1/5)
+HUMAN_SPEED_SIGMA = 0.53
+HUMAN_BROWSE_SIGMA = 0.99
+
 
 def h(*parts) -> str:
     """가짜 해시 (실제 로그의 HMAC-SHA256 자리). 같은 입력이면 같은 값"""
@@ -180,9 +187,18 @@ class World:
     # ------------------------------------------------------------ 시간 모양
 
     def human_gap(self, lo=1.5, med=5.0, hi=60.0):
-        """사람의 쉬는 시간: 로그 정규 (중앙값 med초, 가끔 길게)"""
+        """사람의 쉬는 시간: 로그 정규 (중앙값 med초, 가끔 길게). 부를 때마다 이 사람의 속도를 새로 뽑는다
+        (실제 사람 데이터의 개인차 HUMAN_SPEED_SIGMA). 사람을 흉내 내는 봇도 같은 함수를 쓴다"""
         r = self.r
+        med = med * r.lognormvariate(0, HUMAN_SPEED_SIGMA)
+        lo = min(lo, med / 2)
         return lambda: min(hi, max(lo, r.lognormvariate(math.log(med), 0.7)))
+
+    def browse(self, lo, hi):
+        """사람이 운행을 둘러보는 횟수. 중앙값은 (lo+hi)/2, 퍼짐은 실제 사람 데이터(HUMAN_BROWSE_SIGMA).
+        그래서 거의 안 둘러보고 바로 사는 사람도, 한참 비교하는 사람도 생긴다"""
+        med = max(0.5, (lo + hi) / 2)
+        return min(20, int(round(self.r.lognormvariate(math.log(med), HUMAN_BROWSE_SIGMA))))
 
     def fixed_gap(self, sec, cv):
         r = self.r
@@ -212,20 +228,20 @@ class World:
 
 def h_casual(w: World, g):
     a = w.account("NORMAL", "h_casual", g)
-    w.buy(a, w.arrival(), w.r.choice([1, 1, 2, 2, 3, 4]), w.human_gap(), browse=w.r.randint(1, 5),
+    w.buy(a, w.arrival(), w.r.choice([1, 1, 2, 2, 3, 4]), w.human_gap(), browse=w.browse(1, 5),
           retry_other=w.r.choice([0, 0, 0, 1]))
 
 
 def h_quick(w: World, g):  # 손이 빠른 익숙한 사람
     a = w.account("NORMAL", "h_quick", g)
     w.buy(a, w.arrival(rush=0.9), w.r.choice([1, 2, 4]), w.human_gap(lo=0.4, med=1.4, hi=8),
-          browse=w.r.randint(0, 2), retry_other=w.r.choice([0, 1, 2]))
+          browse=w.browse(0, 2), retry_other=w.r.choice([0, 1, 2]))
 
 
 def h_slow(w: World, g):  # 천천히 고르는 사람 (어르신·모바일)
     a = w.account("NORMAL", "h_slow", g)
     w.buy(a, w.arrival(rush=0.2, spread_min=120), w.r.choice([1, 2]), w.human_gap(lo=4, med=14, hi=120),
-          browse=w.r.randint(2, 8))
+          browse=w.browse(2, 8))
 
 
 def h_family_device(w: World, g):  # 가족이 기기 하나를 몇 시간 차로 같이 씀
@@ -233,26 +249,26 @@ def h_family_device(w: World, g):  # 가족이 기기 하나를 몇 시간 차�
     t = w.arrival()
     for k in range(w.r.randint(2, 3)):
         a = w.account("NORMAL", "h_family_device", g, device=shared, ip=shared)
-        w.buy(a, t, w.r.choice([1, 2, 3]), w.human_gap(), browse=w.r.randint(1, 4))
+        w.buy(a, t, w.r.choice([1, 2, 3]), w.human_gap(), browse=w.browse(1, 4))
         t += timedelta(hours=w.r.uniform(1, 6))
 
 
 def h_family_bulk(w: World, g):  # 가족 몫까지 한도 가득 (정상인데 많이 삼)
     a = w.account("NORMAL", "h_family_bulk", g)
-    w.buy(a, w.arrival(), LIMIT_PER_RUN, w.human_gap(), browse=w.r.randint(1, 4), together=True)
+    w.buy(a, w.arrival(), LIMIT_PER_RUN, w.human_gap(), browse=w.browse(1, 4), together=True)
 
 
 def h_changed_mind(w: World, g):  # 사고 나서 한참 뒤 한 번 취소
     a = w.account("NORMAL", "h_changed_mind", g)
     n = w.r.choice([1, 2])
-    t, resv = w.buy(a, w.arrival(), n, w.human_gap(), browse=w.r.randint(1, 4))
+    t, resv = w.buy(a, w.arrival(), n, w.human_gap(), browse=w.browse(1, 4))
     if resv:
         w.cancel(a, t + timedelta(hours=w.r.uniform(2, 72)), resv, n)
 
 
 def h_quick_regret(w: World, g):  # 결제 직후 실수를 알아채고 취소 (사람도 한다)
     a = w.account("NORMAL", "h_quick_regret", g)
-    t, resv = w.buy(a, w.arrival(), 1, w.human_gap(), browse=w.r.randint(1, 3))
+    t, resv = w.buy(a, w.arrival(), 1, w.human_gap(), browse=w.browse(1, 3))
     if resv:
         w.cancel(a, t + timedelta(minutes=w.r.uniform(1, 15)), resv, 1)
         w.buy(a, t + timedelta(minutes=w.r.uniform(2, 20)), 1, w.human_gap(), browse=1)
@@ -261,12 +277,12 @@ def h_quick_regret(w: World, g):  # 결제 직후 실수를 알아채고 취소 
 def h_unlucky(w: World, g):  # 인기 좌석이 계속 먼저 팔려 여러 번 실패 (같은 좌석도 두어 번)
     a = w.account("NORMAL", "h_unlucky", g)
     w.buy(a, w.arrival(rush=0.95), w.r.choice([1, 2]), w.human_gap(lo=0.8, med=2.5),
-          browse=w.r.randint(0, 2), retry_same=w.r.choice([0, 2, 3]), retry_other=w.r.randint(1, 4))
+          browse=w.browse(0, 2), retry_same=w.r.choice([0, 2, 3]), retry_other=w.r.randint(1, 4))
 
 
 def h_new_member(w: World, g):  # 명절이라 오늘 가입한 사람
     a = w.account("NORMAL", "h_new_member", g, age=0)
-    w.buy(a, w.arrival(), w.r.choice([1, 2]), w.human_gap(), browse=w.r.randint(1, 5))
+    w.buy(a, w.arrival(), w.r.choice([1, 2]), w.human_gap(), browse=w.browse(1, 5))
 
 
 def b_fast(w: World, g):  # 조회 연타
@@ -354,50 +370,50 @@ def b_cancel_rebuy(w: World, g):  # 사고 바로 취소하고 다시 사기 (�
 def h_office(w: World, g):  # 회사·학교 공용 IP 뒤의 여러 사람 (각자 기기)
     for _ in range(w.r.randint(4, 15)):
         a = w.account("NORMAL", "h_office", g, ip=f"of{g}")
-        w.buy(a, w.arrival(rush=0.5), w.r.choice([1, 2, 2, 3]), w.human_gap(), browse=w.r.randint(1, 4))
+        w.buy(a, w.arrival(rush=0.5), w.r.choice([1, 2, 2, 3]), w.human_gap(), browse=w.browse(1, 4))
 
 
 def h_pc_bang(w: World, g):  # PC방·도서관 공용 PC: 몇 분 차이로 다른 사람이 같은 기기
     t = w.arrival(rush=0.8)
     for _ in range(w.r.randint(2, 4)):
         a = w.account("NORMAL", "h_pc_bang", g, device=f"pc{g}", ip=f"pc{g}")
-        w.buy(a, t, w.r.choice([1, 2]), w.human_gap(lo=1, med=3.5), browse=w.r.randint(0, 3))
+        w.buy(a, t, w.r.choice([1, 2]), w.human_gap(lo=1, med=3.5), browse=w.browse(0, 3))
         t += timedelta(minutes=w.r.uniform(2, 25))
 
 
 def h_organizer(w: World, g):  # 단체 여행 총무: 여러 날·여러 편에 한도까지 (정상 대량 구매)
     a = w.account("NORMAL", "h_organizer", g)
     for run in w.r.sample([r for r, _ in w.runs], w.r.randint(2, 5)):
-        w.buy(a, w.arrival(rush=0.4, run=run), LIMIT_PER_RUN, w.human_gap(), browse=w.r.randint(1, 4),
+        w.buy(a, w.arrival(rush=0.4, run=run), LIMIT_PER_RUN, w.human_gap(), browse=w.browse(1, 4),
               together=True, run=run)
 
 
 def h_open_rusher(w: World, g):  # 오픈 순간 정신없이 누르는 사람 (빠르고 실패 많음)
     a = w.account("NORMAL", "h_open_rusher", g)
     w.buy(a, w.T + timedelta(seconds=w.r.uniform(0, 4)), w.r.choice([1, 2, 4]),
-          w.human_gap(lo=0.25, med=0.8, hi=4), browse=w.r.randint(0, 2), retry_same=w.r.choice([0, 1, 2, 3]),
+          w.human_gap(lo=0.25, med=0.8, hi=4), browse=w.browse(0, 2), retry_same=w.r.choice([0, 1, 2, 3]),
           retry_other=w.r.randint(2, 8), queue=(0.5, 20))
 
 
 def h_refresher(w: World, g):  # 좌석 배치도를 계속 새로 고치며 창가 자리를 기다림
     a = w.account("NORMAL", "h_refresher", g)
-    w.buy(a, w.arrival(), w.r.choice([1, 2]), w.human_gap(lo=2, med=6), browse=w.r.randint(1, 3),
+    w.buy(a, w.arrival(), w.r.choice([1, 2]), w.human_gap(lo=2, med=6), browse=w.browse(1, 3),
           refresh=w.r.randint(5, 25))
 
 
 def h_private_browser(w: World, g):  # 저장소가 막힌 브라우저: 화면을 열 때마다 기기 ID가 새로 생김
     a = w.account("NORMAL", "h_private_browser", g, device_pool="rotate")
-    w.buy(a, w.arrival(), w.r.choice([1, 2]), w.human_gap(), browse=w.r.randint(1, 4))
+    w.buy(a, w.arrival(), w.r.choice([1, 2]), w.human_gap(), browse=w.browse(1, 4))
 
 
 def h_two_devices(w: World, g):  # 휴대폰으로 보다가 PC로 결제 (한 사람, 기기 둘, IP 둘)
     a = w.account("NORMAL", "h_two_devices", g, device_pool=[f"ph{g}", f"pcx{g}"], ip_pool=[f"lte{g}", f"home{g}"])
-    w.buy(a, w.arrival(), w.r.choice([1, 2, 3]), w.human_gap(), browse=w.r.randint(2, 6))
+    w.buy(a, w.arrival(), w.r.choice([1, 2, 3]), w.human_gap(), browse=w.browse(2, 6))
 
 
 def h_vpn(w: World, g):  # 개인정보 보호용 VPN: IP가 자주 바뀜
     a = w.account("NORMAL", "h_vpn", g, ip_pool="rotate")
-    w.buy(a, w.arrival(), w.r.choice([1, 2]), w.human_gap(), browse=w.r.randint(1, 4))
+    w.buy(a, w.arrival(), w.r.choice([1, 2]), w.human_gap(), browse=w.browse(1, 4))
 
 
 # ---------------------------------------------------------------- 봇 — 더 어렵거나 색다른 수법
@@ -560,6 +576,9 @@ def main():
                 (datetime.fromisoformat(e["ts"]) - datetime.fromisoformat(prev)).total_seconds() * 1000)
             last[e["member_id"]] = e["ts"]
             f.write(json.dumps(e, ensure_ascii=False) + "\n")
+    with open(os.path.join(a.out, "runs.jsonl"), "w") as f:   # 판매 오픈 시각 (실제 데이터의 runs.jsonl과 같은 모양)
+        for rid, t0 in w.runs:
+            f.write(json.dumps({"run_id": rid, "open_ts": t0.isoformat(timespec="milliseconds")}) + "\n")
     with open(os.path.join(a.out, "members.jsonl"), "w") as f:
         for acc in w.accounts:
             d = {k: v for k, v in acc.__dict__.items() if k not in ("device_pool", "ip_pool")}

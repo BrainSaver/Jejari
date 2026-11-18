@@ -36,7 +36,8 @@ FEATURES = [
     "seats_paid_ratio",          # 결제한 좌석 / 한도
     "cancel_ratio", "min_cancel_after_pay_min_log",
     "accounts_on_device", "accounts_on_card", "accounts_on_ip",
-    "min_sync_gap_s_log",        # 같은 기기·카드·IP를 쓰는 다른 계정과 첫 선점 시각 차이(초)의 최솟값, log1p
+    "min_sync_gap_s_log",        # 같은 기기·카드를 쓰는 다른 계정과 첫 선점 시각 차이(초)의 최솟값, log1p
+    "min_sync_gap_ip_s_log",     # 같은 IP만 공유하는 계정까지 넣은 시각 차이 (로컬 대회처럼 모두 한 IP면 쓰면 안 됨)
     "device_missing",            # 기기 ID 헤더가 없음
     "first_hold_after_open_log", # 그 운행의 첫 이벤트(≈ 판매 오픈) 뒤 첫 선점까지 초, log1p
     "account_age_days_log",
@@ -79,12 +80,20 @@ def pct(xs, q):
 
 def build(folder: str) -> list[dict]:
     events, members = load(folder)
-    # 운행마다 첫 이벤트 시각 ≈ 판매 오픈 (실제 오픈 시각은 행동 로그에 없다)
+    # 판매 오픈 시각: runs.jsonl(export_live.sh가 DB에서 꺼냄)이 있으면 그것, 없으면 운행마다 첫 이벤트 시각.
+    # 첫 이벤트 기준은 "같이 넣은 데이터"에 따라 바뀐다 (리허설에서 사람만 매기면 0초, 봇과 같이 매기면 40분)
     run_open = {}
+    rp = os.path.join(folder, "runs.jsonl")
+    if os.path.exists(rp):
+        with open(rp) as f:
+            for line in f:
+                if line.strip():
+                    r = json.loads(line)
+                    run_open[r["run_id"]] = ts(r["open_ts"])
     for evs in events.values():
         for e in evs:
             t = ts(e["ts"])
-            if e.get("run_id") is not None and (e["run_id"] not in run_open or t < run_open[e["run_id"]]):
+            if e.get("run_id") is not None and not os.path.exists(rp) and (e["run_id"] not in run_open or t < run_open[e["run_id"]]):
                 run_open[e["run_id"]] = t
 
     # 좌석 넘겨주기: 취소된 예약의 좌석이 풀린 시각·계정, 성공한 선점의 좌석·시각·계정
@@ -174,8 +183,11 @@ def build(folder: str) -> list[dict]:
         seats_cancel = sum(seats_of.get((e.get("meta") or {}).get("reservationId"), 0) for e in cancels)
 
         first_view_hold = typ.index("SEAT_HOLD") if "SEAT_HOLD" in typ else len(typ)
-        linked = (links(m, by_dev, dev_of) | links(m, by_card, card_of) | links(m, by_ip, ip_of)) - {m}
-        gaps = [abs((first_hold[o] - first_hold[m]).total_seconds()) for o in linked if o in first_hold and m in first_hold]
+        linked = (links(m, by_dev, dev_of) | links(m, by_card, card_of)) - {m}
+        linked_ip = linked | (links(m, by_ip, ip_of) - {m})
+        gap = lambda others: [abs((first_hold[o] - first_hold[m]).total_seconds())
+                              for o in others if o in first_hold and m in first_hold]
+        gaps, gaps_ip = gap(linked), gap(linked_ip)
         mean = statistics.fmean(ints) if ints else math.nan
         short = [i for i in ints if i < 10]
         smean = statistics.fmean(short) if short else math.nan
@@ -202,6 +214,7 @@ def build(folder: str) -> list[dict]:
             "accounts_on_card": max((len(by_card[c]) for c in card_of(m)), default=0),
             "accounts_on_ip": max((len(by_ip[i]) for i in ip_of(m)), default=0),
             "min_sync_gap_s_log": math.log1p(min(gaps)) if gaps else math.log1p(86400),
+            "min_sync_gap_ip_s_log": math.log1p(min(gaps_ip)) if gaps_ip else math.log1p(86400),
             "device_missing": int(not dev_of(m)),
             "first_hold_after_open_log": first_hold_log(evs),
             "account_age_days_log": math.log1p(info.get("created_days_ago") or 0),

@@ -92,6 +92,35 @@ Isolation Forest(라벨 없이) · 그래디언트 부스팅 · 작은 신경망
 - 처음 돌렸을 때 기기 ID를 고치기 전 리허설(c1)도 전부 잡혔는데, 생성 데이터에서 "기기 정보 없음"은 봇뿐이라 배운 탓이었다.
   데이터를 모으는 방식이 바뀌면(헤더 추가) 모델도 그 차이를 학습해 버린다
 
+## 쓰는 모델 — 그래디언트 부스팅 + Isolation Forest (`train.py` · `score.py`)
+
+```bash
+python3 tools/ml/train.py data/ml/model data/ml/g7/features.csv data/ml/g8/features.csv data/ml/g9/features.csv
+python3 tools/ml/score.py data/ml/model/model.pkl data/ml/contest-<태그>/features.csv   # → scores.csv (점수·표시·근거)
+```
+
+- 본체는 그래디언트 부스팅, Isolation Forest는 안전망. 두 점수를 사람 기준 백분위로 바꿔 큰 쪽을 쓴다 (0~100)
+- "계열 하나 빼기"에서 부스팅 혼자 74% → 둘을 합치면 87% (속도형 29 → 89%, 재시도형 73 → 98%)
+- 문턱은 합친 점수로 사람 검증 세트 오탐 5%. 계정마다 **사람과 가장 다른 특징 3개**를 근거로 낸다
+- 학습은 생성 데이터만 받는다 (`source`가 generator가 아니면 멈춤)
+
+**모델에서 뺀 특징** — 대회 환경이 만드는 가짜 신호라서 (리허설에서 확인)
+
+| 특징 | 이유 |
+|---|---|
+| `account_age_days_log` | 대회에서는 사람·봇 모두 그날 가입한다 |
+| `accounts_on_ip` · `distinct_ips` · `min_sync_gap_ip_s_log` | 로컬 대회는 모두 한 PC(한 IP)에서 들어온다. 사람 3명이 봇과 같이 매겨지자 "한 IP에 8계정"으로 100점 오탐됐다. 실제 운영처럼 사람마다 IP가 다르면 `ML_USE_IP=1` |
+
+**판매 오픈 시각**: 실제 데이터는 `export_live.sh`가 DB의 `sale_open_at`을 `runs.jsonl`로 꺼낸다. 없으면 운행의 첫 이벤트를 쓰는데,
+그건 같이 넣은 데이터에 따라 바뀐다 (사람만 매기면 0초, 봇과 같이 매기면 40분).
+
+## 실제 사람 데이터로 맞춘 것 (`human_calibration.json`)
+
+캐글은 로그인 키가 필요하고 이 환경의 네트워크가 막아, 공개 데이터 중 받을 수 있는 것을 썼다:
+**UCI Online Shoppers Purchasing Intention** (Sakar et al. 2019, CC BY 4.0) — 실제 쇼핑몰 세션 12,330개 중 구매로 끝난 1,908개.
+쇼핑몰과 예매는 도메인이 달라 절대값은 쓰지 않고 **사람 사이의 퍼짐**만 생성기에 입혔다:
+사람마다 속도 차이(로그 표준편차 0.53), 둘러보는 양의 차이(0.99). 원본 CSV는 저장소에 넣지 않는다.
+
 ## 아직 없는 것
 
 - **실제 사람 데이터** — 오탐률을 믿을 수 있으려면 필요 (대회 날)
