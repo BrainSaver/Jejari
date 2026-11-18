@@ -12,6 +12,7 @@
  *
  * 하는 일
  *   - db/seed/data/*.csv 를 읽는다 (cp949. Node 기본 ICU의 euc-kr 디코더로 읽는다)
+ *   - db/seed/data/tago-train-info.json 도 읽는다 (tools/fetch-train-api.js 가 받아 둔 실제 시각표·운임)
  *   - 역코드·역 순번·누적거리·차량유형을 뽑아 SQL의 @generated 블록만 바꾼다
  *     (MERGE 문과 주석은 손으로 쓴 것이라 건드리지 않는다)
  *   - 거리 원본은 역×역 매트릭스라 기준역명이 ORIGIN 인 행을 읽어 누적거리로 바꾼다
@@ -123,8 +124,16 @@ function extract() {
   });
   notes.push(`차량유형 ${carTypes.map((c) => `${c.code}(${c.seats}석)`).join(' · ')}`);
 
-  const files = [stn.file, ktx.file, dist.file, car.file];
-  return { stations, carTypes, files, notes };
+  // 5) TAGO 열차정보 (실제 시각표·운임). tools/fetch-train-api.js 가 받아 둔 것
+  if (!fs.existsSync(TAGO_FILE)) {
+    throw new Error('db/seed/data/tago-train-info.json 이 없습니다. node tools/fetch-train-api.js 로 먼저 받으세요');
+  }
+  const doc = JSON.parse(fs.readFileSync(TAGO_FILE, 'utf8'));
+  const tago = { down: pickTrain(doc, 'down'), up: pickTrain(doc, 'up'), fares: fareTable(doc) };
+  notes.push(`TAGO 조회일 ${doc.queryDate} · 하행 ${tago.down.trainNo} · 상행 ${tago.up.trainNo} · 구간 운임 ${tago.fares.size}개`);
+
+  const files = [stn.file, ktx.file, dist.file, car.file, path.basename(TAGO_FILE)];
+  return { stations, carTypes, tago, files, notes };
 }
 
 // ───────────────────────────────── SQL 블록 만들기
@@ -179,9 +188,100 @@ function blockTrainCar(d) {
   return `         CASE WHEN c.car_no = 1 THEN ${q(first.code)} ELSE ${q(general.code)} END AS car_type_code`;
 }
 
+// ───────────────────────────────── TAGO 열차정보 (실제 시각표·운임)
+// tools/fetch-train-api.js 가 받아 둔 파일을 읽는다. 없으면 그 블록만 건너뛴다
+// (CSV만 있는 사람도 검사가 돌게).
+const TAGO_FILE = path.join(DATA, 'tago-train-info.json');
+
+/** 정차·운임에 쓸 열차 한 편을 고른다: 순수 KTX · 5역 전정차 · 09시 이후 첫 편 */
+function pickTrain(doc, dirn) {
+  const names = doc.stations.map((s) => s.name);
+  const order = dirn === 'down' ? names : [...names].reverse();
+  const origin = order[0], term = order[order.length - 1];
+  const arr = {}, dep = {}, grade = {};
+  for (const r of doc[dirn].fares) {
+    if (r.from === origin) (arr[r.trainNo] ??= {})[r.to] = r.arrive;
+    if (r.to === term) (dep[r.trainNo] ??= {})[r.from] = r.depart;
+    grade[r.trainNo] = r.grade;
+  }
+  const full = Object.keys(arr).filter((t) => grade[t] === 'KTX'
+    && order.slice(1).every((s) => arr[t]?.[s]) && order.slice(0, -1).every((s) => dep[t]?.[s]));
+  if (!full.length) throw new Error(`${dirn}: 5역에 모두 서는 KTX가 없습니다`);
+  full.sort((a, b) => dep[a][origin].slice(8, 12).localeCompare(dep[b][origin].slice(8, 12)));
+  const trainNo = full.find((t) => dep[t][origin].slice(8, 10) >= '09') ?? full[0];
+  return { trainNo, order, arr: arr[trainNo], dep: dep[trainNo] };
+}
+
+/** 구간 운임(일반실 어른). 같은 구간에 여러 편이 있으면 최빈값을 쓴다 (특별열차 값에 끌려가지 않게) */
+function fareTable(doc) {
+  const by = new Map();
+  for (const dirn of ['down', 'up']) {
+    for (const r of doc[dirn].fares) {
+      if (r.grade !== 'KTX' || !Number.isFinite(r.adultCharge) || r.adultCharge <= 0) continue;
+      const k = `${r.from}>${r.to}`;
+      if (!by.has(k)) by.set(k, new Map());
+      const m = by.get(k);
+      m.set(r.adultCharge, (m.get(r.adultCharge) ?? 0) + 1);
+    }
+  }
+  const out = new Map();
+  for (const [k, m] of by) {
+    out.set(k, [...m.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0]);
+  }
+  return out;
+}
+
+function blockTrain(d) {
+  const [down, up] = [d.tago.down.trainNo, d.tago.up.trainNo];
+  return `  SELECT 1 AS train_id, ${q(down)} AS train_no, 'KTX' AS train_kind, ${TARGET.routeId} AS route_id, 'DOWN' AS direction FROM dual UNION ALL\n`
+       + `  SELECT 2,             ${q(up)},${' '.repeat(Math.max(1, 13 - up.length))}'KTX',${' '.repeat(16)}${TARGET.routeId},${' '.repeat(13)}'UP'               FROM dual`;
+}
+
+/** 방향별 정차 시각표. 시·분만 쓰고 날짜는 SQL이 run_date에서 붙인다 */
+function blockSchedule(d) {
+  const codeOf = new Map(d.stations.map((s) => [s.name, s.code]));
+  const rows = [];
+  for (const [dirn, label] of [['down', 'DOWN'], ['up', 'UP']]) {
+    const t = d.tago[dirn];
+    t.order.forEach((name, i) => {
+      const hm = (v) => (v ? q(v.slice(8, 12)) : 'CAST(NULL AS VARCHAR2(4))');
+      const first = rows.length === 0;
+      rows.push(`  SELECT ${q(label)}${first ? ' AS direction,' : ','} ${pad(q(codeOf.get(name)), 11)}`
+        + `${first ? ' AS station_id,' : ','} ${i + 1}${first ? ' AS stop_order,' : ','} `
+        + `${pad(hm(t.arr[name]), 29)}${first ? ' AS arr_hm,' : ','} ${pad(hm(t.dep[name]), 29)}`
+        + `${first ? ' AS dep_hm' : ''} FROM dual`);
+    });
+  }
+  return rows.join(' UNION ALL\n');
+}
+
+function blockFare(d) {
+  const codeOf = new Map(d.stations.map((s) => [s.name, s.code]));
+  const names = d.stations.map((s) => s.name);
+  const rows = [];
+  for (const g of [{ grade: 'GENERAL', rate: 1.0, base: 0 }, { grade: 'FIRST', rate: 1.4, base: 1000 }]) {
+    for (let i = 0; i < names.length; i++) {
+      for (let j = 0; j < names.length; j++) {
+        if (i === j) continue;
+        const basic = d.tago.fares.get(`${names[i]}>${names[j]}`);
+        if (!basic) throw new Error(`운임 없음: ${names[i]} → ${names[j]}`);
+        const amount = Math.round(basic * g.rate / 100) * 100;
+        const first = rows.length === 0;
+        rows.push(`  SELECT ${g.base + (i + 1) * 10 + (j + 1)}${first ? ' AS fare_id,' : ','} `
+          + `'KTX'${first ? ' AS train_kind,' : ','} ${pad(q(g.grade), 9)}${first ? ' AS seat_grade,' : ','} `
+          + `${pad(q(codeOf.get(names[i])), 11)}${first ? ' AS from_station_id,' : ','} `
+          + `${pad(q(codeOf.get(names[j])), 11)}${first ? ' AS to_station_id,' : ','} `
+          + `${pad(amount, 6)}${first ? ' AS amount' : ''} FROM dual`);
+      }
+    }
+  }
+  return rows.join(' UNION ALL\n');
+}
+
 const BLOCKS = {
   'db/seed/01_station_route.sql': { station: blockStation, route: blockRoute, route_station: blockRouteStation },
-  'db/seed/02_car_type_train_seat.sql': { car_type: blockCarType, train_car: blockTrainCar },
+  'db/seed/02_car_type_train_seat.sql': { car_type: blockCarType, train_car: blockTrainCar, train: blockTrain },
+  'db/seed/05_train_stop_fare.sql': { schedule: blockSchedule, fare: blockFare },
 };
 
 // ───────────────────────────────── 블록 교체·비교
