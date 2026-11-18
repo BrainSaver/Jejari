@@ -26,8 +26,13 @@ public record RunDashboard(
 	public record Seats(int total, int sold, int held, int remaining) {
 	}
 
-	/** 최근 {@code windowSec}초 동안의 건수 */
-	public record Rates(int reservations, int payments, int cancels) {
+	/**
+	 * 최근 {@code windowSec}초 동안의 건수.
+	 *
+	 * @param cancels  사용자·운영 취소 ({@code cancellation} 행 기준. 만료는 여기 없다)
+	 * @param expires  결제로 이어지지 못하고 풀린 선점 (HOLD → EXPIRED, 기한 초과 + 재선점)
+	 */
+	public record Rates(int reservations, int payments, int cancels, int expires) {
 	}
 
 	/**

@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v22)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v23)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -172,7 +172,7 @@ COMMENT ON COLUMN train_run.sale_event_id IS '명절 예매 행사 / 오픈 일�
 COMMENT ON COLUMN train_run.run_date IS '운행일 / 명절 기간';
 COMMENT ON COLUMN train_run.sale_open_at IS '예매 오픈 시각 / 트래픽 폭증 시점. 부하 테스트 시나리오 기준. 일반은 출발 2개월 전 07:00, 명절은 행사 오픈 시각';
 COMMENT ON COLUMN train_run.sale_close_at IS '판매 마감';
-COMMENT ON COLUMN train_run.status IS 'SCHEDULED / ON_SALE / CLOSED / DEPARTED / 판매 가능 여부 판단. 전이는 판매 오픈 스케줄러가 한다 — sale_open_at이 지나면 ON_SALE, sale_close_at이 지나면 CLOSED. 주기 app_policy sale.open_interval_sec';
+COMMENT ON COLUMN train_run.status IS 'SCHEDULED / ON_SALE / CLOSED / DEPARTED / 판매 가능 여부 판단. 전이는 판매 오픈 스케줄러가 한다 — sale_open_at이 지나면 ON_SALE, sale_close_at이 지나면 CLOSED, 기점 출발 시각(MIN(train_stop.departure_time))이 지나면 DEPARTED. 출발은 판매 일정과 무관한 사실이라 DEPARTED가 아닌 모든 상태에서 바로 간다. 주기 app_policy sale.open_interval_sec';
 COMMENT ON COLUMN train_run.created_at IS '생성 시각';
 COMMENT ON COLUMN train_run.updated_at IS '수정 시각';
 

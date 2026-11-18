@@ -208,6 +208,38 @@ class AdminDashboardInfraTest {
 		assertThat(rates.get("cancels").asInt()).isEqualTo(1);
 	}
 
+	/**
+	 * 만료는 cancellation 행을 만들지 않아 "취소"에 안 잡힌다. 그래서 reservation_history의
+	 * {@code HOLD → EXPIRED}를 따로 센다 (팀 확인 2번, A안).
+	 */
+	@Test
+	void 결제로_이어지지_못한_선점은_만료_수에_들어온다() throws Exception {
+		long r = hold.hold(MEMBER, cmd(seat(6))).reservationId();
+		assertThat(dashboard().get("rates").get("expires").asInt()).isZero();
+
+		jdbc.update("""
+				INSERT INTO reservation_history (history_id, reservation_id, from_status, to_status, event_id, actor_type, changed_at)
+				VALUES (reservation_history_seq.NEXTVAL, ?, 'HOLD', 'EXPIRED', ?, 'SYSTEM', SYSTIMESTAMP)""",
+				r, "ev-expire-1");
+
+		assertThat(dashboard().get("rates").get("expires").asInt()).isEqualTo(1);
+		// 만료는 취소가 아니다 (돈이 오가지 않아 cancellation 행이 없다)
+		assertThat(dashboard().get("rates").get("cancels").asInt()).isZero();
+	}
+
+	/** 결제 실패도 EXPIRED로 끝나지만 from_status가 PAYMENT_PENDING이라 "결제 안 함"과 섞이지 않는다 */
+	@Test
+	void 결제_실패로_인한_만료는_만료_수에_넣지_않는다() throws Exception {
+		long r = hold.hold(MEMBER, cmd(seat(7))).reservationId();
+
+		jdbc.update("""
+				INSERT INTO reservation_history (history_id, reservation_id, from_status, to_status, event_id, actor_type, changed_at)
+				VALUES (reservation_history_seq.NEXTVAL, ?, 'PAYMENT_PENDING', 'EXPIRED', ?, 'SYSTEM', SYSTIMESTAMP)""",
+				r, "ev-payfail-1");
+
+		assertThat(dashboard().get("rates").get("expires").asInt()).isZero();
+	}
+
 	@Test
 	void 결과를_모르는_결제_건수는_확인_시각이_지난_REQUESTED() throws Exception {
 		long r = hold.hold(MEMBER, cmd(seat(6))).reservationId();

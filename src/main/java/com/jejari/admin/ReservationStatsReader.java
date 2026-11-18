@@ -50,6 +50,22 @@ public class ReservationStatsReader {
 			  JOIN reservation r ON r.reservation_id = c.reservation_id
 			 WHERE r.run_id = ? AND c.canceled_at >= SYSTIMESTAMP - NUMTODSINTERVAL(?, 'SECOND')""";
 
+	/**
+	 * 결제로 이어지지 못하고 풀린 선점 (RSV-03). 명절 예매에서 가장 많은 이탈이라 따로 센다.
+	 *
+	 * <p>{@code HOLD → EXPIRED}만 센다. 동시성 §7.1에서 EXPIRED로 끝나는 길은 셋인데,
+	 * 결제 실패는 {@code PAYMENT_PENDING → EXPIRED}라 여기서 빠지고(카드 거절은 "결제 안 함"이 아니다),
+	 * 기한 초과(TIMEOUT)와 재선점(PREEMPTED)은 둘 다 {@code HOLD → EXPIRED}라 <b>합쳐서</b> 센다.
+	 * 둘을 가르려면 outbox payload의 {@code reason}을 봐야 하는데 발행 뒤 24시간이면 지워지고,
+	 * 재선점도 결국 기한이 지난 선점이라 "결제로 안 이어진 것"에 넣는 편이 뜻에 맞는다 (팀 확인 2번, A안).
+	 */
+	private static final String EXPIRES = """
+			SELECT COUNT(*)
+			  FROM reservation_history h
+			  JOIN reservation r ON r.reservation_id = h.reservation_id
+			 WHERE r.run_id = ? AND h.from_status = 'HOLD' AND h.to_status = 'EXPIRED'
+			   AND h.changed_at >= SYSTIMESTAMP - NUMTODSINTERVAL(?, 'SECOND')""";
+
 	/** 결과를 모르는 결제 (concurrency.md §6.2). 운행과 무관한 전체 건수 */
 	private static final String UNKNOWN_PAYMENTS = """
 			SELECT COUNT(*) FROM payment
@@ -77,23 +93,33 @@ public class ReservationStatsReader {
 			 WHERE r.run_id = ? AND c.canceled_at >= ?
 			 GROUP BY TRUNC(c.canceled_at, 'MI')""";
 
+	/** 세는 기준은 {@link #EXPIRES}와 같다 */
+	private static final String EXPIRES_BY_MINUTE = """
+			SELECT TRUNC(h.changed_at, 'MI'), COUNT(*)
+			  FROM reservation_history h
+			  JOIN reservation r ON r.reservation_id = h.reservation_id
+			 WHERE r.run_id = ? AND h.from_status = 'HOLD' AND h.to_status = 'EXPIRED'
+			   AND h.changed_at >= ?
+			 GROUP BY TRUNC(h.changed_at, 'MI')""";
+
 	private final JdbcTemplate jdbc;
 
 	public ReservationStatsReader(JdbcTemplate jdbc) {
 		this.jdbc = jdbc;
 	}
 
-	/** 최근 {@code windowSec}초 동안 그 운행에 생긴 예약·승인된 결제·취소 건수 */
+	/** 최근 {@code windowSec}초 동안 그 운행에 생긴 예약·승인된 결제·취소·만료 건수 */
 	public RunDashboard.Rates rates(long runId, int windowSec) {
 		return new RunDashboard.Rates(
 				count(RESERVATIONS, runId, windowSec),
 				count(PAYMENTS, runId, windowSec),
-				count(CANCELS, runId, windowSec));
+				count(CANCELS, runId, windowSec),
+				count(EXPIRES, runId, windowSec));
 	}
 
 	/**
 	 * 최근 {@code minutes}분의 분별 건수. 지금 진행 중인 분이 마지막 칸이고, 건수가 0인 분도 채워 준다.
-	 * 쿼리는 4번 (지금 분 1 + 종류별 GROUP BY 3).
+	 * 쿼리는 5번 (지금 분 1 + 종류별 GROUP BY 4).
 	 */
 	public RateHistory history(long runId, int minutes) {
 		LocalDateTime now = jdbc.queryForObject(NOW_MINUTE, Timestamp.class).toLocalDateTime();
@@ -101,10 +127,11 @@ public class ReservationStatsReader {
 		Map<LocalDateTime, Integer> resv = byMinute(RESERVATIONS_BY_MINUTE, runId, from);
 		Map<LocalDateTime, Integer> pay = byMinute(PAYMENTS_BY_MINUTE, runId, from);
 		Map<LocalDateTime, Integer> cancel = byMinute(CANCELS_BY_MINUTE, runId, from);
+		Map<LocalDateTime, Integer> expire = byMinute(EXPIRES_BY_MINUTE, runId, from);
 		List<RateHistory.Minute> rows = new ArrayList<>(minutes);
 		for (LocalDateTime m = from; !m.isAfter(now); m = m.plusMinutes(1)) {
 			rows.add(new RateHistory.Minute(m, resv.getOrDefault(m, 0), pay.getOrDefault(m, 0),
-					cancel.getOrDefault(m, 0)));
+					cancel.getOrDefault(m, 0), expire.getOrDefault(m, 0)));
 		}
 		return new RateHistory(runId, now, rows);
 	}
