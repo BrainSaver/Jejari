@@ -165,6 +165,38 @@ docker run --rm --add-host=host.docker.internal:host-gateway -v "$(pwd):/lt" -w 
 - 끝나면 회원과 결제된 예약(좌석 SOLD)이 Oracle에 남아 빈 좌석이 줄어듭니다. 기준 수치를 다시 잴 때는 Oracle 볼륨을 초기화하고 같은 `USERS`·`SPREAD_SEC`로 돌려야 비교가 됩니다.
 - 한 사람은 한 번만 예매합니다 (열차당 매수 제한 때문에 같은 사람이 반복하면 `LIMIT_PER_RUN`).
 
+## 시나리오 12: 봇 탐지 평가 (실제 앱으로)
+
+정상 사용자와 봇 4종을 같이 돌리고, 끝난 뒤 정답 라벨과 서버 판정을 비교해 **탐지율(목표 90% 이상)·오탐률(5% 이하)**을 냅니다. 07(Mock용)의 실제 앱 버전입니다.
+
+| 종류 | 정답 라벨 | 행동 | 걸려야 하는 규칙 |
+|---|---|---|---|
+| `normal` (40) | NORMAL | 사람 속도로 검색 → 대기열 → 좌석 → 결제. 20%는 한 번 취소 | 없음 (오탐 측정) |
+| `fast` (5) | MACRO | 운행 검색을 20~60ms 간격으로 50번 연타 후 예매 | `FAST_CLICK` |
+| `retry` (5) | MACRO | 이미 팔린 좌석 하나를 0.3~0.6초 간격으로 8번 선점 시도 | `SAME_SEAT_RETRY` |
+| `multi` (3묶음 × 3) | RESELLER | 한 기기(`X-Device-Id`)로 계정 3개가 몇 초 안에 각자 선점 | `MULTI_ACCOUNT_SYNC` (기기) |
+| `cancel` (5) | CANCEL_ABUSER | 결제하고 1~3초 뒤 취소를 3번 | `CANCEL_AFTER_PAY` |
+| `steady` (기본 0, 경계 측정 때) | MACRO | 운행 검색을 정확히 일정한 간격으로 40번 | `REGULAR_INTERVAL` (보조 규칙) |
+
+- 봇마다 규칙 하나만 건드립니다. 놓쳤을 때 어느 규칙인지 바로 보입니다.
+- 회원마다 카드·기기가 다릅니다 (multi 묶음만 기기 공유). 카드를 같이 쓰면 결제 수단 점수가 전원에게 번져 오탐이 됩니다.
+- 라벨은 서버로 보내지 않고 계정 이메일에 넣습니다 (`lt{tag}.{종류}.g{묶음}.{번호}@loadtest.example.com`). 평가 스크립트만 읽습니다.
+
+```bash
+./run.sh 12                                         # 끝에 "실행 태그 ab12 ..." 출력
+./tools/eval_risk.sh ab12                           # 1분 배치를 기다린 뒤 synthetic_label 기록 + 탐지율·오탐률
+
+# Docker로 (Windows Git Bash는 MSYS_NO_PATHCONV=1을 앞에)
+docker run --rm --add-host=host.docker.internal:host-gateway -v "$(pwd):/lt" -w /lt grafana/k6:1.1.0 \
+  run scenarios/12_bot_detection.js -e BASE_URL=http://host.docker.internal:8080
+```
+
+- `eval_risk.sh`는 회원에 연결된 대상(CI·결제 수단·기기) 중 하나라도 의심 케이스가 열렸으면 "탐지"로 셉니다. 기기 ↔ 회원 연결은 Mongo `behavior_log`에서 읽습니다. 비밀값은 컨테이너 안 환경 변수로만 써서 화면에 나오지 않습니다.
+- `bot_flow_ok`가 90% 밑이면 봇이 행동을 다 못 한 것(대기열·좌석 부족)이라 탐지율을 믿을 수 없습니다. 먼저 이것부터 봅니다.
+- 옵션: `NORMAL`·`FAST`·`RETRY`·`MULTI_GROUPS`·`MULTI_SIZE`·`CANCEL`·`STEADY`(인원), `FAST_CLICKS`·`RETRY_TIMES`·`CANCEL_ROUNDS`(봇 강도), `NORMAL_CANCEL_RATE`, `SPREAD_SEC`.
+- **경계 측정**: `-e BOUNDARY=1` 하나로 강도를 여러 단계로 섞습니다 (연타 10~50번, 같은 좌석 3~8번, 취소 1~3건, 한 기기 2·3계정, 일정 간격 매크로 300·500·1000ms, 강도마다 `PER_LEVEL`명). 직접 주려면 `FAST_LEVELS=10,19,21`, `RETRY_LEVELS`, `CANCEL_LEVELS`, `MULTI_SIZES`, `STEADY_LEVELS`. 강도는 이메일 `g{강도}`에 남고 `eval_risk.sh`가 **강도별 탐지 표**를 냅니다. 문턱 아래 봇을 일부러 섞으므로 전체 탐지율은 목표와 비교하지 않습니다.
+- `steady`(일정 간격 매크로): 요청 시작을 t0 + i×간격에 맞춰 보내 응답 시간이 흔들려도 간격이 일정합니다 → REGULAR_INTERVAL 시험용.
+
 ## Mock 서버 (실제 서버가 없을 때 연습용)
 
 앱의 `환경 설정 → Mock 서버`에서 `▶ 시작`을 누르면 `localhost:8080`에 가짜 서버가 뜨고 대상 URL이 자동으로 맞춰집니다(이 PC 실행 모드 전용).
@@ -190,6 +222,7 @@ docker run --rm --add-host=host.docker.internal:host-gateway -v "$(pwd):/lt" -w 
 | 9 | `09_penalty_order.js` | **순번 조정 정확도**: 위험 점수 높은 계정이 먼저 와도 정상 사용자 뒤에 입장 | `bot_admitted_after_all_normals == 100%`, `normal_admitted_before_bots == 100%` |
 | 10 | `10_auth_oracle.js` | **회원가입·로그인 (Oracle)**: 같은 이메일 동시 가입은 1명만 성공, 가입·로그인 처리량·응답 시간, 비밀번호 5회 오류 잠금 | `auth_race_winners == 1`(라운드마다), `auth_signup_fail == 0`, `auth_login_fail == 0`, `auth_lockout_ok == 1`, `auth_rate_limited == 0`, 가입·로그인 p95 < 2초 |
 | 11 | `11_user_journey.js` | **정상 사용자 전체 흐름 (실제 앱)**: 한 명이 예매를 끝내는 비율·시간, 단계별 응답 시간. 개선 전후 비교의 기준 | `journey_success >= 95%`, 로그인 p95 < 2초, 대기열 진입·좌석 배치도·선점 p95 < 1초(`P95_MS`), 결제 p95 < 2초 |
+| 12 | `12_bot_detection.js` | **봇 탐지율·오탐률 (실제 앱)**: 정상 사용자 + 봇 4종 → `tools/eval_risk.sh`가 `synthetic_label`과 의심 케이스 비교 | `bot_flow_ok >= 90%`, 평가: 탐지율 ≥ 90%, 오탐률 ≤ 5% |
 
 ## 준비
 

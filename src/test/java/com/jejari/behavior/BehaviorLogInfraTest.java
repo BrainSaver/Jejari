@@ -2,6 +2,7 @@ package com.jejari.behavior;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.security.SecureRandom;
 import java.util.ArrayList;
@@ -64,6 +65,7 @@ class BehaviorLogInfraTest {
 	void cleanUp() {
 		for (long id : members) {
 			mongo.remove(Query.query(Criteria.where("member_id").is(id)), "behavior_log");
+			jdbc.update("DELETE FROM member_device WHERE member_id = ?", id); // 적재가 회원↔기기 연결을 남김
 			jdbc.update("DELETE FROM member WHERE member_id = ?", id);
 		}
 		if (!eventIds.isEmpty()) {
@@ -109,6 +111,28 @@ class BehaviorLogInfraTest {
 	BehaviorEvent event(String eventId, long memberId) {
 		return new BehaviorEvent(eventId, "VIEW_SEAT", "2026-11-20T10:00:00+09:00", memberId, null, null, hash(), 9001L,
 				"WEB", null, 200, Map.of());
+	}
+
+	@Test
+	void 취소표_신청은_거절돼도_행동_로그에_남는다() throws Exception {
+		// 취소표는 대기열 입장 토큰 없이 들어오는 유일한 경로다. 매진 직후 거절당하며 재시도하는
+		// 패턴이 봇 신호라, 실패한 신청도 남아야 한다 (ERD v22)
+		long id = member(hash());
+		String bearer = "Bearer " + tokens.issue(ActorType.MEMBER, id, UUID.randomUUID().toString()).value();
+
+		// 9001은 좌석이 남아 있으므로 WAITLIST_NOT_SOLD_OUT으로 거절된다
+		mvc.perform(post("/api/v1/waitlists").header("Authorization", bearer)
+				.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+				.content("""
+						{"runId":9001,"fromStationId":"3900023","toStationId":"3900114",
+						 "seatGrade":"GENERAL","seatCount":1}"""))
+				.andExpect(status().isConflict());
+
+		List<Document> docs = await(Query.query(Criteria.where("member_id").is(id)), 1);
+		assertThat(docs).hasSize(1);
+		assertThat(docs.get(0).getString("event_type")).isEqualTo("WAITLIST_APPLY");
+		assertThat(docs.get(0).getInteger("response_status")).as("거절된 신청도 남는다").isEqualTo(409);
+		assertThat(docs.get(0).getLong("run_id")).isEqualTo(9001L);
 	}
 
 	@Test

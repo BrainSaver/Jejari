@@ -8,11 +8,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.jejari.common.config.AppPolicy;
+import com.jejari.support.NoRunningApp;
 import com.jejari.train.SaleOpenScheduler.Swept;
 
 /**
@@ -25,6 +27,7 @@ import com.jejari.train.SaleOpenScheduler.Swept;
  * 먼 미래(+400일 이후)로 둔다.
  */
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 @SpringBootTest(properties = {
 		"spring.data.redis.database=15",
 		"jejari.queue.scheduler-enabled=false",
@@ -67,7 +70,8 @@ class SaleOpenSchedulerInfraTest {
 
 	@AfterEach
 	void cleanUp() {
-		jdbc.update("DELETE FROM train_run WHERE run_id >= ?", BASE);
+		// 관리자 화면 운행(1000000~)은 정차 시각이 붙어 있어 지우면 FK에 걸린다. 테스트 대역만 지운다
+		jdbc.update("DELETE FROM train_run WHERE run_id >= ? AND run_id < 1000000", BASE);
 	}
 
 	/**

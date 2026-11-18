@@ -27,15 +27,25 @@ public class AppPolicy {
 	public static final String REOFFER_HOLD_SEC = "waitlist.reoffer_hold_sec";
 	public static final String SEATMAP_CACHE_MS = "seatmap.cache_ms";
 	public static final String SALE_OPEN_INTERVAL_SEC = "sale.open_interval_sec";
+	/** 회원당 같은 운행 활성 대기 수 (WL-01) */
+	public static final String WAITLIST_MAX_PER_RUN = "waitlist.max_per_run";
+	/** 회원당 전체 활성 대기 수 (WL-01) */
+	public static final String WAITLIST_MAX_ACTIVE = "waitlist.max_active";
+	/** 위험 점수 1점당 대기 순서를 미루는 ms (concurrency.md §9.3) */
+	public static final String WAITLIST_PENALTY_MS_PER_POINT = "waitlist.penalty_ms_per_point";
 
-	private static final Map<String, String> DEFAULTS = Map.of(
-			PAY_DEADLINE_MIN, "10",
-			IDEM_TTL_SEC, "600",
-			SCANNER_HOLD_INTERVAL_SEC, "5",
-			SCANNER_BATCH_SIZE, "500",
-			REOFFER_HOLD_SEC, "60",
-			SEATMAP_CACHE_MS, "1000",
-			SALE_OPEN_INTERVAL_SEC, "10");
+	// Map.of는 10쌍까지라 항목이 늘면서 ofEntries로 바꿨다
+	private static final Map<String, String> DEFAULTS = Map.ofEntries(
+			Map.entry(PAY_DEADLINE_MIN, "10"),
+			Map.entry(IDEM_TTL_SEC, "600"),
+			Map.entry(SCANNER_HOLD_INTERVAL_SEC, "5"),
+			Map.entry(SCANNER_BATCH_SIZE, "500"),
+			Map.entry(REOFFER_HOLD_SEC, "60"),
+			Map.entry(SEATMAP_CACHE_MS, "1000"),
+			Map.entry(SALE_OPEN_INTERVAL_SEC, "10"),
+			Map.entry(WAITLIST_MAX_PER_RUN, "1"),
+			Map.entry(WAITLIST_MAX_ACTIVE, "3"),
+			Map.entry(WAITLIST_PENALTY_MS_PER_POINT, "180000"));
 	private static final long CACHE_NANOS = 1_000_000_000L;
 
 	private record Cached(String value, long expiresAtNanos) {

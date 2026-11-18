@@ -113,6 +113,13 @@ jejari:
       send-timeout: 10s       # Kafka 확인(acks=all) 대기 한도
     cleanup-enabled: true     # 발행 끝난 outbox·오래된 processed_event 정리 (매일 04:10)
     policy-cache-ms: 10000    # app_policy 값을 앱에서 들고 있는 시간
+  # 알림 (EVT-06·WL-04). 실제 푸시·메일 없이 알림함(IN_APP) + 로그
+  notification:
+    consumer-enabled: true      # 예약 이벤트 → 알림 행 (소비 그룹 notification: 만료·환불)
+    reminder-enabled: true      # 결제 기한 임박 PAY_REMINDER (기한 notification.pay_reminder_sec 전)
+    reminder-interval-ms: 10000
+    dispatcher-enabled: true    # 안 보낸 알림을 가상 채널로 발송(로그)하고 sent_at 기록
+    dispatch-interval-ms: 1000
 
 server:
   error:

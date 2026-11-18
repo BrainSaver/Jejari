@@ -1,0 +1,892 @@
+{
+  "measuredAt": "2026-11-17T09:14:19.354Z",
+  "appUrl": "http://localhost:8080",
+  "rounds": 10,
+  "seed": 42,
+  "layout": "클라우드 컨테이너 4코어 · 앱 CPU 0-1 · Oracle·Redis·Mongo·Kafka CPU 2 · k6 CPU 3",
+  "note": "k6 HTTP 수준 재측정. 실험 테이블(exp_seat·exp_seat_inv) 기준이라 Python 측정과 같은 조건.",
+  "results": [
+    {
+      "scenario": "s1",
+      "strategy": "PESSIMISTIC",
+      "rounds": 10,
+      "tps": 893,
+      "avgMs": 38.5,
+      "p95Ms": 70.3,
+      "p99Ms": 83.65,
+      "dbCalls": 101,
+      "ok": 1,
+      "lost": 99,
+      "err": 0,
+      "retries": 0,
+      "lockWaitAvgMs": 7,
+      "lockWaitP99Ms": 25.6,
+      "tpsRange": [
+        690,
+        1176
+      ],
+      "spread": {
+        "tps": {
+          "min": 690,
+          "max": 1176,
+          "cvPct": 15.4,
+          "values": [
+            690,
+            1176,
+            901,
+            1031,
+            885,
+            917,
+            763,
+            901,
+            800,
+            840
+          ]
+        },
+        "avgMs": {
+          "min": 29.1,
+          "max": 50.5,
+          "cvPct": 17.8,
+          "values": [
+            50.5,
+            29.1,
+            41.8,
+            30.1,
+            36.5,
+            34.2,
+            44.6,
+            40.5,
+            42,
+            33.2
+          ]
+        },
+        "p99Ms": {
+          "min": 60.6,
+          "max": 111.9,
+          "cvPct": 18.5,
+          "values": [
+            111.9,
+            60.6,
+            93.4,
+            66.8,
+            81.9,
+            75.2,
+            90.6,
+            87.2,
+            85.4,
+            67.7
+          ]
+        }
+      },
+      "duplicates": 0,
+      "python": {
+        "tps": 255,
+        "avgMs": 146.9,
+        "p99Ms": 286.7,
+        "dbCalls": 201
+      },
+      "checks": [
+        {
+          "label": "중복 예약 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "HTTP 오류 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "성공 1건",
+          "ok": true,
+          "got": "1건"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "scenario": "s1",
+      "strategy": "OPTIMISTIC",
+      "rounds": 10,
+      "tps": 2247.5,
+      "avgMs": 9.55,
+      "p95Ms": 17.75,
+      "p99Ms": 21.05,
+      "dbCalls": 108,
+      "ok": 1,
+      "lost": 99,
+      "err": 0,
+      "retries": 3.5,
+      "lockWaitAvgMs": null,
+      "lockWaitP99Ms": null,
+      "tpsRange": [
+        1282,
+        3704
+      ],
+      "spread": {
+        "tps": {
+          "min": 1282,
+          "max": 3704,
+          "cvPct": 32.8,
+          "values": [
+            3704,
+            2632,
+            2273,
+            2703,
+            2222,
+            1282,
+            3226,
+            1333,
+            2000,
+            1961
+          ]
+        },
+        "avgMs": {
+          "min": 7.5,
+          "max": 24.6,
+          "cvPct": 45.4,
+          "values": [
+            7.5,
+            10.3,
+            8.6,
+            7.5,
+            8.5,
+            24.6,
+            8.8,
+            16.2,
+            16.7,
+            15.4
+          ]
+        },
+        "p99Ms": {
+          "min": 16,
+          "max": 47.7,
+          "cvPct": 43.9,
+          "values": [
+            16.6,
+            24,
+            17.4,
+            16,
+            18.1,
+            47.7,
+            16.2,
+            36.8,
+            37.6,
+            34.5
+          ]
+        }
+      },
+      "duplicates": 0,
+      "python": {
+        "tps": 1457,
+        "avgMs": 11.4,
+        "p99Ms": 16.3,
+        "dbCalls": 210
+      },
+      "checks": [
+        {
+          "label": "중복 예약 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "HTTP 오류 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "성공 1건",
+          "ok": true,
+          "got": "1건"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "scenario": "s1",
+      "strategy": "REDIS",
+      "rounds": 10,
+      "tps": 2044.5,
+      "avgMs": 12.5,
+      "p95Ms": 19.799999999999997,
+      "p99Ms": 21.7,
+      "dbCalls": 1,
+      "ok": 1,
+      "lost": 99,
+      "err": 0,
+      "retries": 0,
+      "lockWaitAvgMs": null,
+      "lockWaitP99Ms": null,
+      "tpsRange": [
+        1515,
+        3030
+      ],
+      "spread": {
+        "tps": {
+          "min": 1515,
+          "max": 3030,
+          "cvPct": 22.7,
+          "values": [
+            2439,
+            2128,
+            3030,
+            1667,
+            2778,
+            1515,
+            2439,
+            1818,
+            1887,
+            1961
+          ]
+        },
+        "avgMs": {
+          "min": 7.8,
+          "max": 17,
+          "cvPct": 23,
+          "values": [
+            13.2,
+            17,
+            10.3,
+            14.2,
+            10.4,
+            12.7,
+            7.8,
+            14.7,
+            12.3,
+            9.1
+          ]
+        },
+        "p99Ms": {
+          "min": 14.1,
+          "max": 35.4,
+          "cvPct": 27.4,
+          "values": [
+            23.9,
+            35.4,
+            19.1,
+            23.6,
+            19,
+            21.7,
+            14.1,
+            30.9,
+            21.7,
+            18.5
+          ]
+        }
+      },
+      "duplicates": 0,
+      "python": {
+        "tps": 2732,
+        "avgMs": 3.2,
+        "p99Ms": 8.2,
+        "dbCalls": 2
+      },
+      "checks": [
+        {
+          "label": "중복 예약 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "HTTP 오류 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "성공 1건",
+          "ok": true,
+          "got": "1건"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "scenario": "s2",
+      "strategy": "PESSIMISTIC",
+      "rounds": 10,
+      "tps": 2120.5,
+      "avgMs": 22.1,
+      "p95Ms": 47.75,
+      "p99Ms": 61.75,
+      "dbCalls": 320,
+      "ok": 20,
+      "lost": 280,
+      "err": 0,
+      "retries": 0,
+      "lockWaitAvgMs": 1.15,
+      "lockWaitP99Ms": 4.75,
+      "tpsRange": [
+        958,
+        2400
+      ],
+      "spread": {
+        "tps": {
+          "min": 958,
+          "max": 2400,
+          "cvPct": 21.1,
+          "values": [
+            1744,
+            2308,
+            1974,
+            2400,
+            2098,
+            2326,
+            2143,
+            2222,
+            1863,
+            958
+          ]
+        },
+        "avgMs": {
+          "min": 19,
+          "max": 52.1,
+          "cvPct": 38.8,
+          "values": [
+            27.8,
+            19,
+            24.9,
+            19.9,
+            22.2,
+            19.9,
+            19.8,
+            22,
+            26.3,
+            52.1
+          ]
+        },
+        "p99Ms": {
+          "min": 48.8,
+          "max": 112.3,
+          "cvPct": 27.7,
+          "values": [
+            81.3,
+            57.8,
+            63,
+            60.5,
+            53.3,
+            55,
+            48.8,
+            66.7,
+            68.1,
+            112.3
+          ]
+        }
+      },
+      "duplicates": 0,
+      "python": {
+        "tps": 707,
+        "avgMs": 58.7,
+        "p99Ms": 125,
+        "dbCalls": 620
+      },
+      "checks": [
+        {
+          "label": "중복 예약 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "HTTP 오류 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "성공 20건",
+          "ok": true,
+          "got": "20건"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "scenario": "s2",
+      "strategy": "OPTIMISTIC",
+      "rounds": 10,
+      "tps": 2565,
+      "avgMs": 16.55,
+      "p95Ms": 41.4,
+      "p99Ms": 55.25,
+      "dbCalls": 333,
+      "ok": 20,
+      "lost": 280,
+      "err": 0,
+      "retries": 6.5,
+      "lockWaitAvgMs": null,
+      "lockWaitP99Ms": null,
+      "tpsRange": [
+        1604,
+        3488
+      ],
+      "spread": {
+        "tps": {
+          "min": 1604,
+          "max": 3488,
+          "cvPct": 20.7,
+          "values": [
+            3000,
+            2521,
+            2804,
+            3125,
+            2609,
+            3488,
+            2206,
+            1604,
+            2439,
+            2206
+          ]
+        },
+        "avgMs": {
+          "min": 12.4,
+          "max": 28.7,
+          "cvPct": 26.4,
+          "values": [
+            15.1,
+            17.8,
+            14.2,
+            14.3,
+            15.3,
+            12.4,
+            19.5,
+            28.7,
+            19.5,
+            19.4
+          ]
+        },
+        "p99Ms": {
+          "min": 41.7,
+          "max": 81.7,
+          "cvPct": 22.5,
+          "values": [
+            55.3,
+            73.6,
+            46.1,
+            42.5,
+            55.2,
+            41.7,
+            57,
+            81.7,
+            61.3,
+            55
+          ]
+        }
+      },
+      "duplicates": 0,
+      "python": {
+        "tps": 1825,
+        "avgMs": 15.8,
+        "p99Ms": 43.5,
+        "dbCalls": 626
+      },
+      "checks": [
+        {
+          "label": "중복 예약 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "HTTP 오류 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "성공 20건",
+          "ok": true,
+          "got": "20건"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "scenario": "s2",
+      "strategy": "REDIS",
+      "rounds": 10,
+      "tps": 3015,
+      "avgMs": 14.55,
+      "p95Ms": 35.1,
+      "p99Ms": 40.4,
+      "dbCalls": 20,
+      "ok": 20,
+      "lost": 280,
+      "err": 0,
+      "retries": 0,
+      "lockWaitAvgMs": null,
+      "lockWaitP99Ms": null,
+      "tpsRange": [
+        2143,
+        3409
+      ],
+      "spread": {
+        "tps": {
+          "min": 2143,
+          "max": 3409,
+          "cvPct": 14.8,
+          "values": [
+            2439,
+            3030,
+            2857,
+            3409,
+            3191,
+            2439,
+            3000,
+            2143,
+            3191,
+            3371
+          ]
+        },
+        "avgMs": {
+          "min": 12.8,
+          "max": 22.2,
+          "cvPct": 18.9,
+          "values": [
+            18,
+            14.3,
+            16.9,
+            13.2,
+            13.8,
+            14.9,
+            14.8,
+            22.2,
+            12.8,
+            13.2
+          ]
+        },
+        "p99Ms": {
+          "min": 35,
+          "max": 57.3,
+          "cvPct": 16.5,
+          "values": [
+            40.9,
+            42.1,
+            39.9,
+            35,
+            35.3,
+            38.6,
+            36.4,
+            48.3,
+            57.3,
+            45.8
+          ]
+        }
+      },
+      "duplicates": 0,
+      "python": {
+        "tps": 2083,
+        "avgMs": 10.5,
+        "p99Ms": 74.3,
+        "dbCalls": 40
+      },
+      "checks": [
+        {
+          "label": "중복 예약 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "HTTP 오류 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "성공 20건",
+          "ok": true,
+          "got": "20건"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "scenario": "s3",
+      "strategy": "PESSIMISTIC",
+      "rounds": 10,
+      "tps": 1553,
+      "avgMs": 33,
+      "p95Ms": 69.9,
+      "p99Ms": 90,
+      "dbCalls": 819,
+      "ok": 319,
+      "lost": 181,
+      "err": 0,
+      "retries": 0,
+      "lockWaitAvgMs": 1.4,
+      "lockWaitP99Ms": 4.7,
+      "tpsRange": [
+        873,
+        2041
+      ],
+      "spread": {
+        "tps": {
+          "min": 873,
+          "max": 2041,
+          "cvPct": 27.1,
+          "values": [
+            901,
+            1524,
+            1908,
+            1582,
+            1736,
+            1969,
+            1412,
+            2041,
+            1292,
+            873
+          ]
+        },
+        "avgMs": {
+          "min": 25.8,
+          "max": 61.9,
+          "cvPct": 35,
+          "values": [
+            60.1,
+            33.7,
+            27.4,
+            32.3,
+            30.9,
+            26.4,
+            37.4,
+            25.8,
+            39.8,
+            61.9
+          ]
+        },
+        "p99Ms": {
+          "min": 76.5,
+          "max": 148,
+          "cvPct": 26.2,
+          "values": [
+            140.9,
+            90.1,
+            76.5,
+            83,
+            92.7,
+            80.3,
+            89.9,
+            77.8,
+            100.2,
+            148
+          ]
+        }
+      },
+      "duplicates": 0,
+      "python": {
+        "tps": 787,
+        "avgMs": 66.3,
+        "p99Ms": 180.7,
+        "dbCalls": 1312
+      },
+      "checks": [
+        {
+          "label": "중복 예약 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "HTTP 오류 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "성공 수 기록",
+          "ok": true,
+          "got": "319건 (좌석 겹침만큼)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "scenario": "s3",
+      "strategy": "OPTIMISTIC",
+      "rounds": 10,
+      "tps": 2128.5,
+      "avgMs": 23.3,
+      "p95Ms": 60.2,
+      "p99Ms": 84.9,
+      "dbCalls": 829,
+      "ok": 319,
+      "lost": 181,
+      "err": 0,
+      "retries": 5,
+      "lockWaitAvgMs": null,
+      "lockWaitP99Ms": null,
+      "tpsRange": [
+        1147,
+        2793
+      ],
+      "spread": {
+        "tps": {
+          "min": 1147,
+          "max": 2793,
+          "cvPct": 28.1,
+          "values": [
+            1305,
+            1250,
+            2058,
+            2488,
+            1147,
+            2252,
+            2092,
+            2793,
+            2174,
+            2165
+          ]
+        },
+        "avgMs": {
+          "min": 17.9,
+          "max": 47.5,
+          "cvPct": 38.4,
+          "values": [
+            40.6,
+            42.6,
+            23.3,
+            18.7,
+            47.5,
+            21.8,
+            23.3,
+            17.9,
+            22.7,
+            24.4
+          ]
+        },
+        "p99Ms": {
+          "min": 54.4,
+          "max": 146.3,
+          "cvPct": 36.2,
+          "values": [
+            124.5,
+            140.9,
+            109.6,
+            54.4,
+            146.3,
+            63.8,
+            85.1,
+            55.6,
+            77.6,
+            84.7
+          ]
+        }
+      },
+      "duplicates": 0,
+      "python": {
+        "tps": 1256,
+        "avgMs": 35.5,
+        "p99Ms": 99.5,
+        "dbCalls": 1321
+      },
+      "checks": [
+        {
+          "label": "중복 예약 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "HTTP 오류 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "성공 수 기록",
+          "ok": true,
+          "got": "319건 (좌석 겹침만큼)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "scenario": "s3",
+      "strategy": "REDIS",
+      "rounds": 10,
+      "tps": 2597.5,
+      "avgMs": 19.200000000000003,
+      "p95Ms": 50.2,
+      "p99Ms": 61.55,
+      "dbCalls": 319,
+      "ok": 319,
+      "lost": 181,
+      "err": 0,
+      "retries": 0,
+      "lockWaitAvgMs": null,
+      "lockWaitP99Ms": null,
+      "tpsRange": [
+        1214,
+        3106
+      ],
+      "spread": {
+        "tps": {
+          "min": 1214,
+          "max": 3106,
+          "cvPct": 29.5,
+          "values": [
+            2110,
+            3106,
+            2674,
+            2618,
+            2577,
+            2857,
+            2825,
+            1667,
+            1214,
+            1319
+          ]
+        },
+        "avgMs": {
+          "min": 15.9,
+          "max": 42.3,
+          "cvPct": 40.3,
+          "values": [
+            23.8,
+            15.9,
+            19.1,
+            16.4,
+            19.3,
+            17.7,
+            17.1,
+            30.1,
+            42.3,
+            38.6
+          ]
+        },
+        "p99Ms": {
+          "min": 41.9,
+          "max": 130.1,
+          "cvPct": 43,
+          "values": [
+            74.5,
+            45.6,
+            48.7,
+            52.8,
+            70.3,
+            41.9,
+            46.9,
+            95.4,
+            130.1,
+            110.1
+          ]
+        }
+      },
+      "duplicates": 0,
+      "python": {
+        "tps": 756,
+        "avgMs": 65.7,
+        "p99Ms": 180.8,
+        "dbCalls": 624
+      },
+      "checks": [
+        {
+          "label": "중복 예약 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "HTTP 오류 0건",
+          "ok": true,
+          "got": "0건"
+        },
+        {
+          "label": "성공 수 기록",
+          "ok": true,
+          "got": "319건 (좌석 겹침만큼)"
+        }
+      ],
+      "pass": true
+    }
+  ]
+}

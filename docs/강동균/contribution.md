@@ -121,7 +121,22 @@
 | ADM-02 판매 오픈 스케줄러 (train_run.status 시각 전이) | [판매오픈-스케줄러](features/판매오픈-스케줄러.md) |
 | ADM-03 실시간 예매 현황 (좌석·분당 건수·대기열·결과 모름 결제) | [실시간-예매현황](features/실시간-예매현황.md) |
 | §17.1 락 비교 k6 HTTP 수준 재측정 + 측정 웹 러너 | [락비교-k6-재측정](features/락비교-k6-재측정.md) |
+| WL-03 취소표 제안 (seat-release 소비자 = §14.3 보장 경로) | [취소표-제안](features/취소표-대기-제안.md) |
+| ADM-01·02 관리자 기준 데이터·운행 관리 API (화면 A-02·A-03) | [관리자-기준데이터-운행](features/관리자-기준데이터-운행.md) |
+| (조사) 구글 클라우드 배포 방법 정리 — 담당 조영준 씨께 넘김 | [한 장 요약](features/배포-한장요약.md) · [전체](features/배포-구글클라우드.md) |
 | └ 결과를 설치 없이 보는 페이지 (문서 사이트) | [락비교-결과](features/락비교-결과.html) |
+
+### 화면 (React 프론트엔드)
+
+서버 코드만으로는 보이지 않아서 화면까지 만들었습니다. 다른 팀원 담당 화면도 최소판으로
+만들어 두었으니 담당이 확인·다듬으면 됩니다 (전체-화면 문서의 표 참고).
+
+| 화면 | 문서 |
+|---|---|
+| 프론트엔드 틀(React + Vite) + A-04 실시간 예매 현황 | [프론트엔드-틀-실시간현황](features/프론트엔드-틀-실시간현황.md) |
+| U-03 메인·운행 검색 | [운행검색-화면](features/운행검색-화면.md) |
+| U-05 좌석 선택 (+ U-01 로그인·U-04 줄 서기 최소판) | [좌석선택-화면](features/좌석선택-화면.md) |
+| 전체 화면 목록과 담당 표 | [전체-화면](features/전체-화면.md) |
 
 ## 5. 다른 파트와의 연결
 
@@ -140,6 +155,7 @@
 | D 강다인 | 행동 로그 | 내 API 4곳에 `BehaviorLog.mark`: VIEW_TRAIN·VIEW_SEAT·SEAT_HOLD·CANCEL. 실패 요청도 `errorCode`와 함께 남김 (MongoDB 적재 확인) |
 | D 강다인 | ERD v15 | 회원가입·로그인용 시퀀스 2개, Redis 키 3개, `app_policy` 한도 3개, `login_attempt.result` BANNED |
 | C 길동현 | ERD v19 | `payment_seq`(CACHE 100)·`payment_method_seq`·`cancellation_seq` 추가 |
+| D 강다인 | ERD v21·v22 | 상시 취소 수수료 5건(`sale_event_id` NULL) · `behavior_log.event_type`에 `WAITLIST_APPLY`·`WAITLIST_CANCEL`. 취소표는 대기열 토큰 없이 들어오는 유일한 경로라 로그가 없으면 `FAST_CLICK`·`REGULAR_INTERVAL`이 그 구간을 통째로 못 본다 |
 | D 강다인 | ERD v19 | RISK-04: `suspicious_case_seq`·`case_marker_seq`, 대상당 열린 케이스 1건 유니크 인덱스, `case_marker.session_id` NULL 허용. 곧 쓸 `waitlist_seq`·`admin_action_seq`. 조회 인덱스 `member(ci_hash)`·`payment_method(method_hash)`·`behavior_log{device_hash,ts}`. Redis 키 `risk:dirty`·`risk:dirty:work`·`risk:batch:lock` |
 | A 김성원 | 판매 오픈 자동화 | `JdbcOnSaleRunProvider`가 보는 운행이 시각에 맞춰 늘고 줄어든다. `9003`은 오픈 시각(내일 07:00)에 자동으로 열림 |
 | E 조영준 | 부하 시나리오 | 오픈 순간 트래픽을 실제로 재현할 수 있다 — `sale_open_at`을 몇 초 뒤로 넣으면 그 시각에 열림 |
@@ -152,6 +168,7 @@
 | 날짜 | 제목 | 수치 |
 |---|---|---|
 | 2026-11-16 | [커넥션 풀 중첩 조회 멈춤](troubleshooting/20261116-커넥션-풀-중첩-조회-멈춤.md) | T1 실패(30초 타임아웃) → 통과 |
+| 2026-11-17 | [앱이 떠 있으면 통합테스트가 조용히 깨짐](troubleshooting/20261117-앱이-떠-있으면-통합테스트가-조용히-깨짐.md) | 통합 3~5개 실패(매번 다름) → **351개 전부 통과** |
 
 ## 7. 예상 질문
 

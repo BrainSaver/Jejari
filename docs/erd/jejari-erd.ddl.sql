@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v19)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v22)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -12,6 +12,7 @@ CREATE SEQUENCE payment_seq CACHE 100;
 CREATE SEQUENCE cancellation_seq;
 CREATE SEQUENCE outbox_seq CACHE 1000;
 CREATE SEQUENCE waitlist_seq;
+CREATE SEQUENCE notification_seq CACHE 100;
 CREATE SEQUENCE risk_score_history_seq;
 CREATE SEQUENCE admin_action_seq;
 CREATE SEQUENCE identity_verification_seq;
@@ -1282,4 +1283,9 @@ INSERT INTO cancel_fee_policy (fee_policy_id, sale_event_id, min_minutes_before,
 INSERT INTO cancel_fee_policy (fee_policy_id, sale_event_id, min_minutes_before, max_minutes_before, fee_rate, after_departure) VALUES (3, 1, 180, 1440, 0.1, 'N');
 INSERT INTO cancel_fee_policy (fee_policy_id, sale_event_id, min_minutes_before, max_minutes_before, fee_rate, after_departure) VALUES (4, 1, 0, 180, 0.2, 'N');
 INSERT INTO cancel_fee_policy (fee_policy_id, sale_event_id, min_minutes_before, max_minutes_before, fee_rate, after_departure) VALUES (5, 1, NULL, NULL, 0.4, 'Y');
+INSERT INTO cancel_fee_policy (fee_policy_id, sale_event_id, min_minutes_before, max_minutes_before, fee_rate, after_departure) VALUES (6, NULL, 4320, NULL, 0, 'N');
+INSERT INTO cancel_fee_policy (fee_policy_id, sale_event_id, min_minutes_before, max_minutes_before, fee_rate, after_departure) VALUES (7, NULL, 1440, 4320, 0.05, 'N');
+INSERT INTO cancel_fee_policy (fee_policy_id, sale_event_id, min_minutes_before, max_minutes_before, fee_rate, after_departure) VALUES (8, NULL, 180, 1440, 0.1, 'N');
+INSERT INTO cancel_fee_policy (fee_policy_id, sale_event_id, min_minutes_before, max_minutes_before, fee_rate, after_departure) VALUES (9, NULL, 0, 180, 0.2, 'N');
+INSERT INTO cancel_fee_policy (fee_policy_id, sale_event_id, min_minutes_before, max_minutes_before, fee_rate, after_departure) VALUES (10, NULL, NULL, NULL, 0.4, 'Y');
 COMMIT;

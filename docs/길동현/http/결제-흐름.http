@@ -105,3 +105,16 @@ Content-Type: application/json
 ### 거절·응답 없음을 보려면: 6 → 7 → 8을 다시 하되, 8의 카드번호 끝자리를 0 또는 9로 바꾼다
 # 0: paymentStatus FAILED, reservationStatus EXPIRED (좌석 반환)
 # 9: paymentStatus REQUESTED, reservationStatus PAYMENT_PENDING (마감이 지나면 스캐너가 PG에 조회)
+
+### 12. 알림함 (EVT-06). 거절(끝자리 0)로 결제했다면 1초쯤 뒤 EXPIRED 알림이 보인다
+# 좌석을 잡고(7) 결제하지 않고 두면, 기한 2분 전에 PAY_REMINDER가 생긴다 (스캐너 10초 주기)
+GET {{host}}/api/v1/notifications?size=20
+Authorization: Bearer {{accessToken}}
+
+> {%
+    if (response.body.items.length > 0) client.global.set("notificationId", response.body.items[0].notificationId);
+%}
+
+### 13. 읽음 표시 (204, 다시 보내도 204). 12를 다시 보면 unreadCount가 1 줄어 있다
+PATCH {{host}}/api/v1/notifications/{{notificationId}}/read
+Authorization: Bearer {{accessToken}}

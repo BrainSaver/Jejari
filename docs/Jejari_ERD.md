@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v19 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-17
+> 스키마 v22 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-17
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -1262,7 +1262,7 @@ Oracle
 | `fee_rate` | NUMBER(4,3) |  | 생성 | 수수료율 | 노쇼 억제 |
 | `after_departure` | CHAR(1) | NN | 생성 | 출발 후 반환 여부 | 출발 후 반환은 재판매 불가 구간 |
 
-> **제약·비고** 예시값이며 실제 코레일 기준이 아님 · 구간은 [min, max) 반열림, max가 null이면 상한 없음 · 같은 행사 안에서 구간이 겹치면 안 됨 · after_departure=Y 행은 출발 후 반환에 적용
+> **제약·비고** 예시값이며 실제 코레일 기준이 아님 · 구간은 [min, max) 반열림, max가 null이면 상한 없음 · 같은 행사 안에서 구간이 겹치면 안 됨 · after_departure=Y 행은 출발 후 반환에 적용 · sale_event_id가 NULL인 행이 상시 정책이다. 행사 정책이 있으면 그쪽이 우선하고, 없으면 상시를 쓴다 (매수 제한 §10.6과 같은 규칙)
 
 **관계** sale_event_id → [`sale_event`](#sale-event) · [`cancellation`](#cancellation).fee_policy_id → 이 테이블
 
@@ -1275,6 +1275,11 @@ Oracle
 | 3 | 1 | 180 | 1440 | 0.1 | N |
 | 4 | 1 | 0 | 180 | 0.2 | N |
 | 5 | 1 | null | null | 0.4 | Y |
+| 6 | null | 4320 | null | 0 | N |
+| 7 | null | 1440 | 4320 | 0.05 | N |
+| 8 | null | 180 | 1440 | 0.1 | N |
+| 9 | null | 0 | 180 | 0.2 | N |
+| 10 | null | null | null | 0.4 | Y |
 
 <a id="ticket-transfer"></a>
 #### `ticket_transfer` 승차권 양도 (확장)
@@ -1476,6 +1481,8 @@ Oracle
 | `channel` | VARCHAR2(10) | NN | 시스템 | PUSH / EMAIL / IN_APP | 채널 추가 확장 |
 | `sent_at` | TIMESTAMP |  | 시스템 | 발송 시각 | 알림→결제 전환 분석 |
 | `read_at` | TIMESTAMP |  | 시스템 | 확인 시각 |  |
+
+> **제약·비고** CREATE SEQUENCE notification_seq CACHE 100;
 
 **관계** member_id → [`member`](#member)
 
@@ -1908,7 +1915,7 @@ MongoDB · 🅱 빅데이터
 | `device_hash` | String |  | 생성 |  | 묶음 단위 집계 |
 | `ip_hash` | String |  | 생성 |  | IP 집중도 |
 | `session_id` | String | FK → auth_session | 생성 | = auth_session.session_id | 세션 단위 패턴, CCTV 녹화와 연결 |
-| `event_type` | String |  | 생성 | VIEW_TRAIN / VIEW_SEAT / QUEUE_ENTER / SEAT_HOLD / PAY / CANCEL |  |
+| `event_type` | String |  | 생성 | VIEW_TRAIN / VIEW_SEAT / QUEUE_ENTER / SEAT_HOLD / PAY / CANCEL / WAITLIST_APPLY / WAITLIST_CANCEL | 취소표(WL-01·02)는 대기열 토큰 없이 들어오는 유일한 경로라 남기지 않으면 매크로 구간이 비어 보인다. 빠진 구간은 interval_ms도 늘어나 보여 다른 이벤트의 간격까지 왜곡한다 |
 | `run_id` | Long | FK → train_run | 생성 | 대상 운행 | 인기 열차 쏠림 분석 |
 | `ts` | Date |  | 생성 | 이벤트 시각 (ms) |  |
 | `expire_at` | Date |  | 시스템 | 삭제 예정 시각 | TTL 기준. ts + behavior.retention_days로 기록 |
@@ -2337,6 +2344,9 @@ Oracle
 | v17 | 좌석 배치도·운행 검색 구현: seatmap:{runId} 값 형식(H/S, 빈 좌석은 필드 없음)과 app_policy seatmap.cache_ms(1000) |
 | v18 | 판매 오픈 스케줄러 (ADM-02): app_policy sale.open_interval_sec(10초). train_run.status 전이 주체를 스케줄러로 명시 |
 | v19 | 결제·취소 ID 시퀀스(payment·payment_method·cancellation, 길동현 요청). RISK-04 의심 케이스 자동 생성(강다인 요청): suspicious_case·case_marker 시퀀스, 대상당 열린 케이스 1건 유니크 인덱스, case_marker.session_id NULL 허용. 곧 쓸 시퀀스 waitlist·admin_action. 조회 인덱스 member(ci_hash)·payment_method(method_hash)·behavior_log{device_hash,ts}. 위험 점수 배치 Redis 키 risk:dirty·risk:dirty:work·risk:batch:lock |
+| v20 | 취소표 구현 (WL-01~03): notification.notification_id 시퀀스. 제안·건너뜀 알림을 제안 트랜잭션과 같이 커밋하려면 ID가 필요 |
+| v21 | 상시 취소 수수료 정책 (강다인 요청): cancel_fee_policy 예시에 sale_event_id NULL 세트 5건. 기존 5건이 모두 지난 행사(1번)에 묶여 있어 평시 운행(9001·9002)에서 수수료가 계산되지 않고 "취소 불가"로 보였다 |
+| v22 | 취소표 행동 로그 (WL-01·02): behavior_log.event_type에 WAITLIST_APPLY·WAITLIST_CANCEL 추가. 취소표는 대기열 토큰 없이 들어오는 유일한 길인데 로그가 없어 FAST_CLICK·REGULAR_INTERVAL이 그 구간을 못 본다 |
 
 ## 참고 자료
 

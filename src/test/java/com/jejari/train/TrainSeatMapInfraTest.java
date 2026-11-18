@@ -14,6 +14,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -24,11 +25,12 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.jejari.auth.ActorType;
 import com.jejari.auth.jwt.AccessTokenIssuer;
-import com.jejari.seat.SeatHoldService;
 import com.jejari.seat.SeatHoldService.HoldCommand;
 import com.jejari.seat.SeatHoldService.SeatRequest;
+import com.jejari.seat.SeatHoldService;
 import com.jejari.seat.SeatKeys;
 import com.jejari.seat.SeatReleaseService;
+import com.jejari.support.NoRunningApp;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -38,6 +40,7 @@ import tools.jackson.databind.json.JsonMapper;
  * 운행 9001: 열차 1 (1호차 특실 30석 + 2~10호차 일반 55석씩), 서울(3900023) → 부산(3900114).
  */
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 @SpringBootTest(properties = {
 		"spring.data.redis.database=15",
 		"jejari.queue.scheduler-enabled=false",

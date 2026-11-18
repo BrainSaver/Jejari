@@ -52,6 +52,7 @@ export const API = {
 
   // [실제] 열차 조회 (비회원 가능, TRN-01~03)
   stations: '/api/v1/stations',                                // GET
+  runSearch: '/api/v1/runs',                                   // GET ?from=&to=&date=YYYY-MM-DD (행동 로그 VIEW_TRAIN)
   runDetail: (runId) => `/api/v1/runs/${runId}`,               // GET ?from=&to=
   // [실제] 예약·결제 (B 강동균·C 길동현). 시나리오 11이 쓴다. 아래 [가정] 경로(seatHold 등)는 Mock 서버용으로 남겨 둠
   reservationHold: '/api/v1/reservations',                     // POST {runId, fromStationId, toStationId, seats:[{seatId, passengerType}], channel} + X-Queue-Token + Idempotency-Key
@@ -94,6 +95,7 @@ export const HEADERS = {
   mockPg: 'X-Mock-PG',                 // [가정] mock PG 동작 지시 (success | fail | timeout)
   lockStrategy: 'X-Lock-Strategy',     // [가정] 락 방식 전환: pessimistic | optimistic | redis
   loadTest: 'X-Load-Test',             // 부하 테스트 트래픽 표시
+  deviceId: 'X-Device-Id',             // [실제] 기기 ID (행동 로그가 해시로 남김, 영문·숫자·_- 8~128자). 기기 단위 위험 점수의 재료
   forwardedFor: 'X-Forwarded-For',     // 요청마다 다른 IP로 보이게 함 (앱이 --jejari.auth.trusted-proxies=127.0.0.1 일 때만 의미 있음)
 };
 

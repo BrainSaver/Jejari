@@ -1,0 +1,36 @@
+/* 디자인 토큰과 공통 바탕. 값은 docs/ui/DESIGN.md · 시안 HTML의 :root와 같다. 색·크기는 여기 변수로만 쓴다 */
+:root{
+  /* 한지: 따뜻한 한지 바탕, 먹색 글자, 황금 강조, 인장 빨강, 솔잎 초록 (팀장 시안 B) */
+  --ink:#162436;--ink2:#243852;--mut:#57534E;--faint:#6B635A;
+  --line:#D5CBB8;--line2:#EFE8D5;--paper:#F6F1E3;--card:#FFFDF8;--night:#162436;--cream:#FFF8E7;
+  --sign:#F2B705;--sign-d:#7A5A00;--sign-t:#FEF7DC;
+  --go:#15803D;--go-d:#116632;--go-t:#DCFCE7;
+  --amber:#F2B705;--amber-d:#8A4B00;--amber-t:#FEF3D0;
+  --stop:#B91C1C;--stop-t:#FEE2E2;
+  --sky:#162436;--sky-t:#E7E3D8;
+  --num:"Noto Sans KR",system-ui,sans-serif;
+  --serif:"Noto Serif KR","Nanum Myeongjo",serif;
+  --seal:#B91C1C;
+  --saek:linear-gradient(90deg,#B91C1C 0 20%,#F2B705 20% 40%,#15803D 40% 60%,#1D4ED8 60% 80%,#D97757 80% 100%);
+  --salt:linear-gradient(to right,rgba(255,248,231,.06) 1px,transparent 1px) 0 0/36px 36px,linear-gradient(to bottom,rgba(255,248,231,.06) 1px,transparent 1px) 0 0/36px 36px,radial-gradient(rgba(242,183,5,.08) 2px,transparent 2px) 18px 18px/36px 36px;
+  --hanji:radial-gradient(at 20% 30%,rgba(255,252,242,.8) 0px,transparent 60%),radial-gradient(at 80% 70%,rgba(235,225,203,.6) 0px,transparent 60%),url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+  --sans:"Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+}
+*{box-sizing:border-box}[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--hanji),var(--paper);background-attachment:fixed;color:var(--ink);font:17px/1.65 var(--sans);-webkit-font-smoothing:antialiased;word-break:keep-all}
+a{color:inherit}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--sign);outline-offset:2px}
+.num{font-family:var(--num);font-variant-numeric:tabular-nums}
+.mut{color:var(--mut)}.faint{color:var(--faint)}.grow{flex:1;min-width:0}
+.row{display:flex;align-items:center;gap:8px}
+.saek{height:6px;background:var(--saek)}
+.serif{font-family:var(--serif)}
+.stamp{display:inline-grid;place-items:center;font-family:var(--serif);font-weight:800;color:var(--seal);border:3px solid var(--seal);border-radius:16px;padding:4px 10px;transform:rotate(-10deg);letter-spacing:.1em;background:rgba(255,255,255,.6);box-shadow:inset 0 0 0 2px #fff,inset 0 0 0 3px var(--seal)}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;padding:3px 9px;border-radius:8px;background:var(--line2);color:var(--ink2);white-space:nowrap;line-height:1.4}
+.st.go{background:var(--go);color:#fff}.st.amber{background:var(--amber);color:#2A1408}
+.st.stop{background:var(--stop);color:#fff}.st.sky{background:var(--ink);color:#fff}
+.st.plain{background:transparent;padding:2px 7px;box-shadow:inset 0 0 0 2px currentColor}
+.st.plain.go{color:var(--go)}.st.plain.amber{color:var(--amber-d)}.st.plain.stop{color:var(--stop)}.st.plain.sky{color:var(--ink)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}

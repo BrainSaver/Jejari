@@ -629,5 +629,31 @@
       "journey_failed",
       "journey_sold_out"
     ]
+  },
+  {
+    "id": "botdetect",
+    "file": "12_bot_detection.js",
+    "title": "봇 탐지 평가 (실제 앱)",
+    "desc": "정상 사용자와 봇 4종(검색 연타, 같은 좌석 반복 선점, 한 기기 다계정 동시 선점, 결제 직후 취소 반복)을 같이 돌립니다. 끝나면 tools/eval_risk.sh <실행 태그>로 정답 라벨(synthetic_label)과 서버의 의심 케이스를 비교해 탐지율(목표 90% 이상)·오탐률(5% 이하)을 냅니다. 실제 앱 전용이고, 신뢰 프록시 옵션(--jejari.auth.trusted-proxies=127.0.0.1)으로 띄워야 계정을 만들 수 있습니다.",
+    "params": [
+      { "key": "NORMAL", "label": "정상 사용자", "min": 0, "max": 2000, "step": 1, "def": 40, "unit": "명" },
+      { "key": "FAST", "label": "검색 연타 봇", "min": 0, "max": 500, "step": 1, "def": 5, "unit": "명" },
+      { "key": "RETRY", "label": "같은 좌석 반복 봇", "min": 0, "max": 500, "step": 1, "def": 5, "unit": "명" },
+      { "key": "MULTI_GROUPS", "label": "다계정 묶음 (3계정씩)", "min": 0, "max": 100, "step": 1, "def": 3, "unit": "묶음" },
+      { "key": "CANCEL", "label": "결제 직후 취소 봇", "min": 0, "max": 500, "step": 1, "def": 5, "unit": "명" },
+      { "key": "SPREAD_SEC", "label": "도착 분산 시간", "min": 0, "max": 300, "step": 5, "def": 30, "unit": "초" }
+    ],
+    "presets": {
+      "light": { "NORMAL": 10, "FAST": 2, "RETRY": 2, "MULTI_GROUPS": 1, "CANCEL": 2, "SPREAD_SEC": 10 },
+      "normal": { "NORMAL": 40, "FAST": 5, "RETRY": 5, "MULTI_GROUPS": 3, "CANCEL": 5, "SPREAD_SEC": 30 },
+      "heavy": { "NORMAL": 200, "FAST": 20, "RETRY": 20, "MULTI_GROUPS": 10, "CANCEL": 20, "SPREAD_SEC": 60 },
+      "boundary": { "BOUNDARY": 1, "SPREAD_SEC": 30 }
+    },
+    "keyMetrics": [
+      "bot_flow_ok",
+      "fast_clicks",
+      "retry_409",
+      "cancel_after_pay"
+    ]
   }
 ]

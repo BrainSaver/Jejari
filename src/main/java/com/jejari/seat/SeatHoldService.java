@@ -153,7 +153,7 @@ public class SeatHoldService {
 		// 5. 이긴 요청만 DB 트랜잭션 (§2.2)
 		HoldPlan plan = new HoldPlan(r, memberId, ciHash, run, cmd.fromStationId(), cmd.toStationId(), seats,
 				seats.stream().mapToLong(SeatLine::amount).sum(), cmd.idempotencyKey(), channel, now, deadline,
-				purchaseDay, lim);
+				purchaseDay, lim, HoldPlan.NORMAL);
 		List<Preempted> preempted;
 		try {
 			preempted = tx.execute(st -> holdTx.write(plan));
@@ -193,6 +193,88 @@ public class SeatHoldService {
 		}
 		return new HoldResult(r, "HOLD", deadline, plan.totalAmount(),
 				seats.stream().map(SeatLine::seatId).toList(), false);
+	}
+
+	// ------------------------------------------------ §9 취소표 제안 (WL-03이 부른다)
+
+	/** 대기자에게 좌석을 대신 잡아 준 결과. 실패하면 null이 아니라 예외가 아니라 {@code null} 좌석으로 알린다 */
+	public record OfferResult(long reservationId, LocalDateTime payDeadlineAt, long totalAmount,
+			List<Long> seatIds, LimitBlocked blocked) {
+
+		public boolean ok() {
+			return blocked == null;
+		}
+	}
+
+	/** 제안이 막힌 이유. SEATS_TAKEN은 다음 대기자가 아니라 이번 이벤트를 끝낸다 */
+	public enum LimitBlocked {
+		/** 매수 한도에 걸림 → 그 대기자는 SKIPPED, 다음 대기자로 (§9.1-5) */
+		LIMIT,
+		/** REOFFER가 만료돼 일반 사용자가 먼저 잡음 → 이번 이벤트 종료 (§9.1-6) */
+		SEATS_TAKEN
+	}
+
+	/**
+	 * §9.1-6 취소표 대기자 명의로 좌석을 잡는다. <b>호출한 쪽 트랜잭션 안에서</b> DB를 쓴다 —
+	 * 소비자는 {@code processed_event}·waitlist 갱신·알림을 같은 트랜잭션 T에 넣어야 하기 때문이다(§9.1).
+	 *
+	 * <p>일반 선점(§2)과 다른 점:
+	 * <ul>
+	 *   <li>입장 토큰을 보지 않는다 (매진 화면에서 신청했으므로 줄을 서지 않았다)</li>
+	 *   <li>{@code idempotency_key = 'wl:{waitlistId}'}, {@code source = WAITLIST}, 이력 주체 SYSTEM</li>
+	 *   <li>{@code hold.lua}에 인계 값 {@code REOFFER:{이전예약}}을 넘겨 <b>대기자 몫으로 막아 둔 좌석</b>을 덮어쓴다</li>
+	 *   <li>1회 한도(PER_RESERVATION)는 신청 때 봤으므로 다시 보지 않는다 (§9.1-5)</li>
+	 * </ul>
+	 *
+	 * <p>Redis(한도·좌석 키)는 트랜잭션 밖이라, 호출한 쪽이 롤백하면 {@link #compensateOffer}로 되돌려야 한다.
+	 *
+	 * @param prevReservationId 좌석을 비운 이전 예약 (REOFFER 값). null이면 인계 없이 빈 좌석을 잡는다
+	 */
+	public OfferResult offerInCurrentTx(long waitlistId, long memberId, long runId, String fromStationId,
+			String toStationId, List<Long> seatIds, long prevReservationId) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		RunInfo run = runs.find(runId)
+				.orElseThrow(() -> new BusinessException(QueueErrorCode.RUN_NOT_ON_SALE));
+		String ciHash = memberCiHash(memberId);
+		List<SeatRequest> requests = seatIds.stream().map(id -> new SeatRequest(id, "ADULT")).toList();
+		List<SeatLine> seats = priceSeats(run, new HoldCommand(runId, fromStationId, toStationId, requests, "WEB", null));
+
+		Limits lim = limits.read(run, now);
+		int n = seats.size();
+		long r = jdbc.queryForObject("SELECT reservation_seq.NEXTVAL FROM dual", Long.class);
+		long purchaseDay = SeatHoldTx.yyyymmdd(now);
+		LimitKeys limitKeys = limitKeys(run, ciHash, purchaseDay, lim);
+		LocalDateTime deadline = now.plusMinutes(policy.getLong(AppPolicy.PAY_DEADLINE_MIN));
+		List<String> seatKeys = seats.stream()
+				.map(s -> SeatKeys.hold(run.runId(), s.seatId(), HoldPlan.SEGMENT_NO)).toList();
+
+		// 매수 한도 1차. 걸리면 그 대기자는 건너뛴다 (§9.1-5)
+		try {
+			limitIncr(limitKeys, n, ciHash);
+		} catch (BusinessException e) {
+			return new OfferResult(r, null, 0, List.of(), LimitBlocked.LIMIT);
+		}
+
+		// 좌석. 대기자 몫으로 막아 둔 REOFFER 키를 인계받는다
+		String takeover = prevReservationId > 0 ? SeatKeys.reoffer(prevReservationId) : "";
+		Long won = redis.execute(scripts.hold, seatKeys, Long.toString(r), Long.toString(epochMs(deadline)), takeover);
+		if (won == null || won != 1L) {
+			limitDecr(r, limitKeys.keys, n, limitKeys.markExpiry);
+			return new OfferResult(r, null, 0, List.of(), LimitBlocked.SEATS_TAKEN);
+		}
+
+		HoldPlan plan = new HoldPlan(r, memberId, ciHash, run, fromStationId, toStationId, seats,
+				seats.stream().mapToLong(SeatLine::amount).sum(), "wl:" + waitlistId, "WEB", now, deadline,
+				purchaseDay, lim, HoldPlan.WAITLIST);
+		holdTx.write(plan);   // 호출한 쪽 트랜잭션에 그대로 쓴다
+
+		return new OfferResult(r, deadline, plan.totalAmount(), seats.stream().map(SeatLine::seatId).toList(), null);
+	}
+
+	/** 제안 트랜잭션이 롤백됐을 때 Redis를 되돌린다 (§2.3과 같은 보상). 두 번 불러도 결과가 같다 */
+	public void compensateOffer(long reservationId, long runId, List<Long> seatIds) {
+		List<String> keys = seatIds.stream().map(id -> SeatKeys.hold(runId, id, HoldPlan.SEGMENT_NO)).toList();
+		release(keys, reservationId);
 	}
 
 	// ---------------------------------------------------------------- 검증 도우미

@@ -45,11 +45,11 @@ public class PaymentSaga {
 		CONFIRMED,
 		/** 이미 확정돼 있음 (중복 수신) */
 		ALREADY_CONFIRMED,
-		/** 승인됐지만 좌석을 잃어 확정하지 못함 → 결제는 APPROVED로 기록, 늦은 승인 환불 필요 (PAY-05) */
+		/** 승인됐지만 좌석을 잃어 확정하지 못함 → 예약 만료, 전액 환불 (PAY-05, {@link LateApprovalRefund}) */
 		CONFIRM_FAILED,
-		/** 실패로 정리한 뒤 승인이 옴 → 결제는 APPROVED로 기록, 예약은 되살리지 않음, 환불 필요 (PAY-05) */
+		/** 실패로 정리한 뒤 승인이 옴 → 예약은 되살리지 않고 전액 환불 (PAY-05) */
 		LATE_APPROVAL,
-		/** 이미 늦은 승인 환불 중 */
+		/** 결제는 승인됐고 환불이 아직 안 끝남 (환불 실패 → 재시도 배치 대상) */
 		REFUND_IN_PROGRESS,
 		REFUNDED,
 		NOT_FOUND
@@ -60,18 +60,21 @@ public class PaymentSaga {
 	private final SeatPaymentService seats;
 	private final SeatReleaseService release;
 	private final OutboxRecorder outbox;
+	private final LateApprovalRefund refunds;
 
 	public PaymentSaga(JdbcTemplate jdbc, TransactionTemplate tx, SeatPaymentService seats, SeatReleaseService release,
-			OutboxRecorder outbox) {
+			OutboxRecorder outbox, LateApprovalRefund refunds) {
 		this.jdbc = jdbc;
 		this.tx = tx;
 		this.seats = seats;
 		this.release = release;
 		this.outbox = outbox;
+		this.refunds = refunds;
 	}
 
 	/** §5.1 승인 */
 	public Approval approve(long reservationId, long paymentId, String pgTxId) {
+		long[] lateCancel = {0};
 		Approval result = tx.execute(st -> {
 			Locked rv = lock(reservationId);
 			String ps = paymentStatus(paymentId);
@@ -95,16 +98,24 @@ public class PaymentSaga {
 					return Approval.REFUNDED;
 				}
 				default -> { // FAILED: 늦은 승인. 돈은 빠졌는데 예약은 이미 풀림. 좌석은 남에게 갔을 수 있어 되살리지 않는다
-					jdbc.update("""
+					int n = jdbc.update("""
 							UPDATE payment SET status = 'APPROVED', pg_tx_id = ?, approved_at = SYSTIMESTAMP, updated_at = SYSTIMESTAMP
 							 WHERE payment_id = ? AND status = 'FAILED'""", pgTxId, paymentId);
-					log.error("늦은 승인: 결제 {} (예약 {}) 실패 정리 뒤 승인됨. 환불 필요 (PAY-05)", paymentId, reservationId);
+					if (n == 1) {
+						// 같은 트랜잭션에 "돌려줘야 함"을 남기고, 커밋 뒤 환불 (PAY-05, §7.3)
+						lateCancel[0] = refunds.request(reservationId, paymentId);
+						log.warn("늦은 승인: 결제 {} (예약 {}) 실패 정리 뒤 승인됨 → 전액 환불 시작 (취소 {})", paymentId,
+								reservationId, lateCancel[0]);
+					}
 					return Approval.LATE_APPROVAL;
 				}
 			}
 		});
 		if (result == Approval.CONFIRM_FAILED) {
-			confirmFailed(reservationId, paymentId, pgTxId);
+			lateCancel[0] = confirmFailed(reservationId, paymentId, pgTxId);
+		}
+		if (lateCancel[0] != 0) {
+			refunds.refund(lateCancel[0]);
 		}
 		return result;
 	}
@@ -170,21 +181,28 @@ public class PaymentSaga {
 
 	/**
 	 * 확정 실패 (§5.1 끝): 돈은 승인됐는데 좌석을 잃었거나 예약이 이미 풀림. 결제를 APPROVED로 남기고(돈의 사실),
-	 * 예약이 아직 결제 중이면 만료·좌석 반환까지 한 트랜잭션에서 합니다. 환불(PAY-05, P2)은 아직 자동이 아니라 로그로 알립니다.
+	 * 예약이 아직 결제 중이면 만료·좌석 반환까지 한 트랜잭션에서 합니다. 같은 트랜잭션에 늦은 승인 환불(PAY-05)을 남기고
+	 * 커밋 뒤 환불합니다.
+	 *
+	 * @return 이번에 남긴 환불의 cancel_id. 다른 경로가 이미 처리했으면 0
 	 */
-	private void confirmFailed(long r, long p, String pgTxId) {
-		tx.executeWithoutResult(st -> {
+	private long confirmFailed(long r, long p, String pgTxId) {
+		Long cancelId = tx.execute(st -> {
 			Locked rv = lock(r);
 			int n = jdbc.update("""
 					UPDATE payment SET status = 'APPROVED', pg_tx_id = ?, approved_at = SYSTIMESTAMP, updated_at = SYSTIMESTAMP
 					 WHERE payment_id = ? AND status = 'REQUESTED'""", pgTxId, p);
-			if (n == 1 && rv != null && "PAYMENT_PENDING".equals(rv.status())) {
+			if (n != 1) {
+				return 0L;
+			}
+			if (rv != null && "PAYMENT_PENDING".equals(rv.status())) {
 				release.releaseInCurrentTx(r, ReleaseReason.PAY_FAILED);
 			}
-			if (n == 1) {
-				log.error("확정 실패: 결제 {} (예약 {}) 승인됐지만 좌석을 잃음. 환불 필요 (PAY-05)", p, r);
-			}
+			long c = refunds.request(r, p);
+			log.warn("확정 실패: 결제 {} (예약 {}) 승인됐지만 좌석을 잃음 → 전액 환불 시작 (취소 {})", p, r, c);
+			return c;
 		});
+		return cancelId == null ? 0 : cancelId;
 	}
 
 	private record Locked(String status, String source) {

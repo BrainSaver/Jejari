@@ -32,6 +32,11 @@ import com.jejari.common.error.ErrorResponseWriter;
 @EnableMethodSecurity
 public class SecurityConfig {
 
+	/** 프론트엔드 화면 경로와 빌드 결과물. API(/api/**)는 여기에 없다 */
+	static final String[] SPA_PAGES = { "/", "/index.html", "/assets/**", "/favicon.svg", "/admin", "/admin/**",
+			"/queue/**", "/reservations", "/reservations/**", "/waitlist", "/notifications", "/me", "/login", "/signup",
+			"/runs/**", "/pay/**" };
+
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http, ErrorResponseWriter errorWriter,
 			JwtAuthenticationEntryPoint entryPoint) throws Exception {
@@ -47,6 +52,8 @@ public class SecurityConfig {
 						// 메트릭은 내부망 Prometheus만 접근하도록 배포 때 포트·네트워크로 막습니다
 						.requestMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
 						.requestMatchers("/error").permitAll()
+						// 프론트엔드 화면·정적 파일 (SpaForwardController). 화면 안의 데이터는 API가 따로 막는다
+						.requestMatchers(HttpMethod.GET, SPA_PAGES).permitAll()
 						// 열차 조회(TRN-01~03)는 비회원도 (기능설계서 2장). 좌석 배치도 /runs/{runId}/seats는 여전히 로그인 + 입장 토큰
 						.requestMatchers(HttpMethod.GET, "/api/v1/stations", "/api/v1/runs", "/api/v1/runs/{runId}").permitAll()
 						// 관리자 로그인(AUTH-05)만 토큰 없이. 나머지 관리자 API는 ADMIN, 세부 권한은 @PreAuthorize("hasAuthority('ADMIN_REVIEWER')") 등

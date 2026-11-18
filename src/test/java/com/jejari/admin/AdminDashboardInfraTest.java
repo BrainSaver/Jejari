@@ -13,6 +13,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -24,9 +25,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.jejari.auth.ActorType;
 import com.jejari.auth.AdminRole;
 import com.jejari.auth.jwt.AccessTokenIssuer;
-import com.jejari.seat.SeatHoldService;
 import com.jejari.seat.SeatHoldService.HoldCommand;
 import com.jejari.seat.SeatHoldService.SeatRequest;
+import com.jejari.seat.SeatHoldService;
+import com.jejari.support.NoRunningApp;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -36,6 +38,7 @@ import tools.jackson.databind.json.JsonMapper;
  * 운행 9001: 열차 1 (1호차 특실 30석 + 2~10호차 일반 55석씩), 서울(3900023) → 부산(3900114).
  */
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 @SpringBootTest(properties = {
 		"spring.data.redis.database=15",
 		"jejari.queue.scheduler-enabled=false",
@@ -67,6 +70,8 @@ class AdminDashboardInfraTest {
 	SeatHoldService hold;
 
 	int totalSeats;
+	/** 시드 DDL 예시 행(예약 301)처럼 테스트 전부터 팔려 있는 좌석. 새 볼륨이면 1, 다른 테스트가 지웠으면 0 */
+	int soldBefore;
 
 	@BeforeEach
 	void setUp() {
@@ -78,6 +83,8 @@ class AdminDashboardInfraTest {
 		jdbc.update("INSERT INTO member (member_id, email, ci_hash, name, status) VALUES (?, ?, ?, ?, 'ACTIVE')",
 				MEMBER, "dash@infra-test.jejari.dev", CI, "테스트");
 		totalSeats = jdbc.queryForObject("SELECT COUNT(*) FROM seat WHERE train_id = 1", Integer.class);
+		soldBefore = jdbc.queryForObject(
+				"SELECT COUNT(DISTINCT seat_id) FROM seat_inventory WHERE run_id = ? AND status = 'SOLD'", Integer.class, RUN);
 	}
 
 	@AfterEach
@@ -132,9 +139,9 @@ class AdminDashboardInfraTest {
 		assertThat(d.get("status").asString()).isEqualTo("ON_SALE");
 		assertThat(d.get("windowSec").asInt()).isEqualTo(60);
 		assertThat(d.get("seats").get("total").asInt()).isEqualTo(totalSeats);
-		assertThat(d.get("seats").get("sold").asInt()).isZero();
+		assertThat(d.get("seats").get("sold").asInt()).isEqualTo(soldBefore);
 		assertThat(d.get("seats").get("held").asInt()).isZero();
-		assertThat(d.get("seats").get("remaining").asInt()).isEqualTo(totalSeats);
+		assertThat(d.get("seats").get("remaining").asInt()).isEqualTo(totalSeats - soldBefore);
 	}
 
 	@Test
@@ -143,8 +150,8 @@ class AdminDashboardInfraTest {
 
 		JsonNode seats = dashboard().get("seats");
 		assertThat(seats.get("held").asInt()).isEqualTo(2);
-		assertThat(seats.get("sold").asInt()).isZero();
-		assertThat(seats.get("remaining").asInt()).isEqualTo(totalSeats - 2);
+		assertThat(seats.get("sold").asInt()).isEqualTo(soldBefore);
+		assertThat(seats.get("remaining").asInt()).isEqualTo(totalSeats - soldBefore - 2);
 		// 합이 전체와 맞아야 한다 (화면이 비율을 그린다)
 		assertThat(seats.get("sold").asInt() + seats.get("held").asInt() + seats.get("remaining").asInt())
 				.isEqualTo(totalSeats);
@@ -155,8 +162,8 @@ class AdminDashboardInfraTest {
 		redis.opsForValue().set(com.jejari.seat.SeatKeys.hold(RUN, seat(2), 0), "SOLD:123");
 
 		JsonNode seats = dashboard().get("seats");
-		assertThat(seats.get("sold").asInt()).isEqualTo(1);
-		assertThat(seats.get("remaining").asInt()).isEqualTo(totalSeats - 1);
+		assertThat(seats.get("sold").asInt()).isEqualTo(soldBefore + 1);
+		assertThat(seats.get("remaining").asInt()).isEqualTo(totalSeats - soldBefore - 1);
 	}
 
 	// ------------------------------------------------------------ 분당 건수
@@ -221,6 +228,66 @@ class AdminDashboardInfraTest {
 		assertThat(dashboard().get("payments").get("unknown").asInt()).isEqualTo(before + 1);
 	}
 
+	// ------------------------------------------------------------ 분당 이력
+
+	@Test
+	void 분당_이력은_기본_30칸이고_빈_분도_0으로_채운다() throws Exception {
+		JsonNode h = minutes("");
+
+		JsonNode rows = h.get("minutes");
+		assertThat(rows.size()).isEqualTo(30);
+		// 마지막 칸 = 진행 중인 분 = asOf
+		assertThat(rows.get(29).get("minute").asString()).isEqualTo(h.get("asOf").asString());
+		for (JsonNode m : rows) {
+			assertThat(m.get("reservations").asInt()).isZero();
+		}
+	}
+
+	@Test
+	void 분당_이력은_분_경계로_나눠_세고_창_밖은_뺀다() throws Exception {
+		long now = hold.hold(MEMBER, cmd(seat(7))).reservationId();
+		long old = hold.hold(MEMBER, cmd(seat(8))).reservationId();
+		long tooOld = hold.hold(MEMBER, cmd(seat(9))).reservationId();
+		// 지금 분에서 3분 전 칸의 30초 지점
+		jdbc.update("""
+				UPDATE reservation SET created_at = CAST(TRUNC(SYSTIMESTAMP, 'MI') AS TIMESTAMP)
+				       - INTERVAL '3' MINUTE + INTERVAL '30' SECOND WHERE reservation_id = ?""", old);
+		// 5분 창 밖
+		jdbc.update("UPDATE reservation SET created_at = SYSTIMESTAMP - INTERVAL '10' MINUTE WHERE reservation_id = ?",
+				tooOld);
+		jdbc.update("INSERT INTO payment_method (method_id, member_id, method_type) VALUES (?, ?, 'CARD')", METHOD, MEMBER);
+		jdbc.update("""
+				INSERT INTO payment (payment_id, reservation_id, method_id, amount, status, idempotency_key, requested_at, approved_at)
+				VALUES (?, ?, ?, 1000, 'APPROVED', ?, SYSTIMESTAMP, SYSTIMESTAMP)""", 960705L, now, METHOD, "idem-hist");
+
+		JsonNode h = minutes("?minutes=5");
+		JsonNode rows = h.get("minutes");
+
+		assertThat(rows.size()).isEqualTo(5);
+		int total = 0;
+		for (JsonNode m : rows) {
+			total += m.get("reservations").asInt();
+		}
+		assertThat(total).as("창 밖 예약은 빠진다").isEqualTo(2);
+		// 업데이트와 조회 사이에 분이 바뀌었을 수 있어 "3분 전 칸"은 1번 또는 0번 자리다
+		assertThat(rows.get(1).get("reservations").asInt() + rows.get(0).get("reservations").asInt())
+				.as("3분 전 칸").isEqualTo(1);
+		assertThat(rows.get(4).get("reservations").asInt() + rows.get(3).get("reservations").asInt()).isEqualTo(1);
+		assertThat(rows.get(4).get("payments").asInt() + rows.get(3).get("payments").asInt()).isEqualTo(1);
+	}
+
+	@Test
+	void 분당_이력_길이는_1에서_60분으로_자른다() throws Exception {
+		assertThat(minutes("?minutes=500").get("minutes").size()).isEqualTo(60);
+		assertThat(minutes("?minutes=0").get("minutes").size()).isEqualTo(1);
+	}
+
+	@Test
+	void 없는_운행의_분당_이력은_404() throws Exception {
+		mvc.perform(get("/api/v1/admin/dashboard/runs/999999/minutes").header("Authorization", adminBearer()))
+				.andExpect(status().isNotFound());
+	}
+
 	// ------------------------------------------------------------ 대기열
 
 	@Test
@@ -266,6 +333,11 @@ class AdminDashboardInfraTest {
 
 	private JsonNode dashboard() throws Exception {
 		return json(mvc.perform(get(url()).header("Authorization", adminBearer()))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+	}
+
+	private JsonNode minutes(String query) throws Exception {
+		return json(mvc.perform(get(url() + "/minutes" + query).header("Authorization", adminBearer()))
 				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
 	}
 

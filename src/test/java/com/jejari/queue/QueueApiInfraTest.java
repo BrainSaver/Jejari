@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -33,6 +34,7 @@ import com.jejari.queue.api.QueueSeatTokenInterceptor;
 import com.jejari.queue.config.QueueConfig;
 import com.jejari.queue.dev.DevOnSaleRunProvider;
 import com.jejari.queue.domain.QueueAdmitter;
+import com.jejari.support.NoRunningApp;
 import com.jejari.support.WebSecurityTestConfig;
 
 /**
@@ -40,6 +42,7 @@ import com.jejari.support.WebSecurityTestConfig;
  * ({@code ./gradlew infraTest}).
  */
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 @WebMvcTest(controllers = {QueueController.class, QueueApiInfraTest.SeatsProbe.class})
 @WebSecurityTestConfig
 @ImportAutoConfiguration(DataRedisAutoConfiguration.class)
