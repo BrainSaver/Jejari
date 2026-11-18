@@ -39,6 +39,11 @@ for unit in jejari@.service jejari-autodeploy.service jejari-autodeploy.timer; d
 done
 sudo systemctl daemon-reload
 sudo systemctl enable jejari@8080 jejari@8081 >/dev/null
+
+# 앱 주인이 제자리 서비스만 비밀번호 없이 켜고 끌 수 있게 (OS Login을 켜면 기존 계정의 sudo가 사라져 자동 배포가 멈춤)
+sed "s#__USER__#${USER}#g" deploy/sudoers-jejari > /tmp/jejari.sudoers
+sudo visudo -cf /tmp/jejari.sudoers >/dev/null && sudo install -o root -g root -m 440 /tmp/jejari.sudoers /etc/sudoers.d/jejari
+rm -f /tmp/jejari.sudoers
 # 자동 배포 (10분마다 main 확인, CI 성공·DB 변경 없음일 때만). 끄기: sudo systemctl disable --now jejari-autodeploy.timer
 sudo systemctl enable --now jejari-autodeploy.timer >/dev/null
 
