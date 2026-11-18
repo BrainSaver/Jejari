@@ -16,6 +16,8 @@ public class PolicyProvider {
 
 	public static final String ADMIT_PER_SEC = "queue.admit_per_sec";
 	public static final String PASS_TTL_SEC = "queue.pass_ttl_sec";
+	/** [제안] app_policy에 없는 새 키. 입장 토큰을 1회 연장할 때 더해 주는 시간 */
+	public static final String PASS_EXTEND_SEC = "queue.pass_extend_sec";
 	/** [제안] app_policy에 없는 새 키. 대기 기록(queue:member)이 남는 최대 시간 */
 	public static final String ENTRY_TTL_SEC = "queue.entry_ttl_sec";
 	public static final String PENALTY_MS_PER_POINT = "risk.penalty_ms_per_point";
@@ -24,6 +26,7 @@ public class PolicyProvider {
 	private static final Map<String, String> DEFAULTS = Map.of(
 			ADMIT_PER_SEC, "200",
 			PASS_TTL_SEC, "300",
+			PASS_EXTEND_SEC, "300",
 			ENTRY_TTL_SEC, "3600",
 			PENALTY_MS_PER_POINT, "1000",
 			MEMBER_PENALTY_RULE, "MAX");

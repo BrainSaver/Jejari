@@ -39,10 +39,11 @@ export default function UserLayout() {
             ))}
           </nav>
           {member ? (
-            <button type="button" className="me" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }}
-              onClick={() => logout().then(() => navigate('/'))}>
-              <i><Icon name="person" /></i>회원 #{member.sub} · 로그아웃
-            </button>
+            <span className="row" style={{ gap: 14 }}>
+              <Link className="me" to="/me"><i><Icon name="person" /></i>회원 #{member.sub}</Link>
+              <button type="button" className="me" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }}
+                onClick={() => logout().then(() => navigate('/'))}>로그아웃</button>
+            </span>
           ) : (
             <Link className="me" to={`/login?next=${encodeURIComponent(pathname)}`}><i><Icon name="person" /></i>로그인</Link>
           )}

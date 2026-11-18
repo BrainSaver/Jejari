@@ -179,7 +179,37 @@ class WaitlistOfferInfraTest {
 				.isEqualTo("WAITING");
 	}
 
+	/** T16 (§9.1-5): 앞 대기자가 열차당 한도에 이미 차 있으면 SKIPPED, 좌석은 다음 대기자에게 */
+	@Test
+	void T16_앞_대기자가_매수_한도를_넘으면_SKIPPED가_되고_다음_대기자가_받는다() {
+		long full = newMember();
+		long next = newMember();
+		// full은 이 열차에서 이미 10매(열차당 한도)를 잡고 있다: 9매 + 1매
+		hold.hold(full, new HoldCommand(RUN, SEOUL, BUSAN, seatsOf(340, 9), "WEB", UUID.randomUUID().toString()));
+		hold.hold(full, new HoldCommand(RUN, SEOUL, BUSAN, seatsOf(349, 1), "WEB", UUID.randomUUID().toString()));
+		long wFull = insertWaiting(full, SEOUL, BUSAN, "GENERAL", 1, 0);
+		long wNext = insertWaiting(next, SEOUL, BUSAN, "GENERAL", 1, 60_000L);   // 뒤 순번
+		long seat = seatIds.get(360);
+		long freed = freeSeat(seat);
+
+		List<WaitlistOfferTx.Offered> offered = tx.execute(st ->
+				offerTx.offer(RUN, SEOUL, BUSAN, List.of(seat), freed));
+
+		assertThat(jdbc.queryForObject("SELECT status FROM waitlist WHERE waitlist_id = ?", String.class, wFull))
+				.isEqualTo("SKIPPED");
+		assertThat(offered).hasSize(1);
+		assertThat(offered.get(0).waitlistId()).isEqualTo(wNext);
+		assertThat(jdbc.queryForObject("SELECT status FROM waitlist WHERE waitlist_id = ?", String.class, wNext))
+				.isEqualTo("OFFERED");
+		assertThat(count("SELECT COUNT(*) FROM notification WHERE member_id = ? AND type = 'WAITLIST_SKIPPED'", full))
+				.isEqualTo(1);
+	}
+
 	// ─────────────────────────────── 도우미 ───────────────────────────────
+
+	private List<SeatRequest> seatsOf(int from, int n) {
+		return seatIds.subList(from, from + n).stream().map(s -> new SeatRequest(s, "ADULT")).toList();
+	}
 
 	private long newMember() {
 		long id = NEXT_MEMBER.getAndIncrement();

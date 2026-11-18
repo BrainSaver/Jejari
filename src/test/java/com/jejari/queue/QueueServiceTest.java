@@ -30,6 +30,58 @@ class QueueServiceTest extends QueueRedisSupport {
         redis.opsForHash().put("policy:cache", key, value);
     }
 
+    // ---------- 입장 토큰 연장 (1회) ----------
+
+    @Test
+    void 입장_토큰은_한_번만_연장되고_남은_시간에_연장분이_더해진다() {
+        setPolicy("queue.pass_ttl_sec", "60");
+        setPolicy("queue.pass_extend_sec", "300");
+        queue.enter(1, RUN);
+        admitter.admit(RUN);
+        QueueStatus before = queue.status(1, RUN);
+        assertThat(before.state()).isEqualTo(QueueStatus.State.ADMITTED);
+
+        QueueStatus after = queue.extend(1, RUN);
+
+        assertThat(after.passToken()).isEqualTo(before.passToken()); // 토큰은 그대로, 시간만 늘어난다
+        assertThat(after.passExpiresAt()).isAfter(before.passExpiresAt().plusSeconds(290));
+        assertThat(redis.getExpire("queue:pass:" + RUN + ":1", java.util.concurrent.TimeUnit.SECONDS)).isGreaterThan(300);
+        // 두 번째는 거절
+        assertThatThrownBy(() -> queue.extend(1, RUN))
+                .isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getErrorCode()).isEqualTo(QueueErrorCode.QUEUE_EXTEND_USED));
+    }
+
+    @Test
+    void 입장하지_않았거나_토큰이_없으면_연장할_수_없다() {
+        queue.enter(1, RUN); // 대기 중 (토큰 없음)
+        assertThatThrownBy(() -> queue.extend(1, RUN))
+                .isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getErrorCode()).isEqualTo(QueueErrorCode.QUEUE_TOKEN_INVALID));
+    }
+
+    @Test
+    void 동시에_여러_번_눌러도_연장은_한_번이다() throws Exception {
+        queue.enter(1, RUN);
+        admitter.admit(RUN);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+        var ok = new java.util.concurrent.atomic.AtomicInteger();
+        var used = new java.util.concurrent.atomic.AtomicInteger();
+        List<java.util.concurrent.Future<?>> fs = new java.util.ArrayList<>();
+        for (int i = 0; i < 16; i++) {
+            fs.add(pool.submit(() -> {
+                try {
+                    queue.extend(1, RUN);
+                    ok.incrementAndGet();
+                } catch (BusinessException e) {
+                    if (e.getErrorCode() == QueueErrorCode.QUEUE_EXTEND_USED) used.incrementAndGet();
+                }
+            }));
+        }
+        for (var f : fs) f.get();
+        pool.shutdown();
+        assertThat(ok.get()).isEqualTo(1);
+        assertThat(used.get()).isEqualTo(15);
+    }
+
     // ---------- 진입 ----------
 
     @Test

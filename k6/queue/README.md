@@ -88,5 +88,10 @@ k6가 PATH에 없으면 `-K6 'C:\경로\k6.exe'`를 붙입니다. Redis를 다�
 ## 한계
 
 - 앱이 로컬 한 대, Redis도 한 대입니다. 숫자는 이 환경에서 잰 값이라 배포 환경과 다릅니다.
-- 좌석 API는 개발용 대용품(`DevSeatsController`)이라 좌석 선점 비용은 들어가지 않습니다. 좌석 동시성 부하는 B 파트 시나리오에서 잽니다.
+- **좌석 배치도(`GET /api/v1/runs/{id}/seats`)는 이제 실제 API**(`SeatMapController`)입니다. 개발용 대용품(`DevSeatsController`)은 없어졌습니다. 그래서
+  - 정상 토큰으로 부르는 호출(`flow.js`의 좌석 API 단계, `token-guard.js`의 "정상 토큰은 열린다" 판정)은 **Oracle의 운행·좌석 시드를 읽습니다.** 운행(`RUN_ID`, 기본 9001)이 시드에 있어야 하고, 응답이 커서(열차의 모든 객차·좌석) 대기열만 재던 때보다 느려집니다.
+  - 토큰이 없거나 틀린 요청(403)은 컨트롤러 앞 인터셉터에서 막히므로 Oracle을 읽지 않습니다. 차단 판정은 영향이 없습니다.
+  - `flow.js`와 `token-guard.js`는 시작 전에 좌석 배치도를 한 번 불러 보고(`preflightSeatMap`), 실패하면 원인(운행이 시드에 없음 404, Oracle 문제 500 등)을 알려 줍니다.
+  - 대기열 비용만 재려면 `-e SEAT_CALL=no`(좌석 배치도 호출을 뺌, `flow.js`). 이 README의 이전 수치 중 `flow.js` 결과는 대용품으로 잰 값이라 같은 조건이 아닙니다 (`entry-burst.js`는 좌석 배치도를 부르지 않아 영향 없음).
+  - 좌석 선점(`POST /api/v1/reservations`)은 입장 토큰을 `QueuePassService.verify`로 직접 확인합니다. 선점 동시성 부하는 B 파트 시나리오에서 잽니다.
 - 개발 모드는 인증을 헤더로 대신하므로 로그인(Argon2) 부하는 포함하지 않습니다.

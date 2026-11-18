@@ -644,6 +644,7 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | `queue:member:{memberId}`, `queue:ci:{ciHash}` | 회원당·CI당 동시 대기 1개. `queue:member` 값은 `{runId}\|{queue member}\|{ciHash}` | `queue.entry_ttl_sec` / 멤버별 score |
 | `queue:active:{runId}`, `queue:throughput:{runId}` | 입장한 회원 (score = 토큰 만료 시각), 초당 입장 수 | |
 | `queue:pass:{runId}:{memberId}` | 입장 토큰 | `queue.pass_ttl_sec` |
+| `queue:passext:{runId}:{memberId}` | 입장 토큰을 이미 한 번 연장했다는 표시 (`POST /runs/{runId}/queue/me/extend`, `extend.lua`가 PTTL 확인·표시·`PEXPIRE`를 원자적으로 처리. 연장분은 `queue.pass_extend_sec`, 기본 300초, 회원·운행당 1회) | 토큰과 함께 |
 | `seat:hold:{runId}:{seatId}:{segNo}` | `R`(HOLD), `SOLD:R`(확정), `REOFFER:R`(대기자 제안 대기) | `pay_deadline_at` / 운행 출발 시각 / `waitlist.reoffer_hold_sec` |
 | `limit:{runId}:{ciHash}`, `limit:event:{saleEventId}:{ciHash}` | 보유 매수 | 운행 출발·행사 종료 |
 | `limit:day:{yyyymmdd}:{ciHash}` | 그 날 구매한 매수 | 그 날 24:00 + 1시간 |

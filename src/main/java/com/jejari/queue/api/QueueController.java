@@ -52,6 +52,12 @@ public class QueueController {
 		return queue.status(me.memberId(), runId);
 	}
 
+	/** 좌석 고르는 시간 연장 (입장 토큰 1회, 5분). 새 만료 시각이 담긴 번호표를 돌려준다. */
+	@PostMapping("/me/extend")
+	public QueueStatus extend(@PathVariable long runId, @AuthenticationPrincipal AuthPrincipal me) {
+		return queue.extend(me.memberId(), runId);
+	}
+
 	/** 대기열 이탈 (QUE-05) */
 	@DeleteMapping("/me")
 	public ResponseEntity<Void> leave(@PathVariable long runId, @AuthenticationPrincipal AuthPrincipal me) {
