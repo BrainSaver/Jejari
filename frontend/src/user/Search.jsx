@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { get } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
-import { seoulToday } from '../lib/time.js';
+import { seoulHm, seoulNowLocal, seoulToday } from '../lib/time.js';
 import { MiniTrain } from './RouteLine.jsx';
 
 /**
@@ -19,7 +19,7 @@ const LOW = 5; // 이만큼 이하면 "얼마 안 남음" 색
 export default function Search() {
   const [params, setParams] = useSearchParams();
   const [stations, setStations] = useState([]);
-  const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday() });
+  const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday(), time: params.get('time') || defaultTime(params.get('date') || seoulToday()) });
   const [state, setState] = useState({ runs: null, loading: false, error: null });
   const [sort, setSort] = useState('dep');
   const [spun, setSpun] = useState(false); // 바꾸기 버튼이 반 바퀴씩 돈다
@@ -40,6 +40,7 @@ export default function Search() {
 
   // 주소의 조건이 바뀌면 검색
   const q = { from: params.get('from'), to: params.get('to'), date: params.get('date') };
+  const qTime = params.get('time') || defaultTime(q.date);
   useEffect(() => {
     if (!q.from || !q.to || !q.date) return;
     let alive = true;
@@ -58,17 +59,24 @@ export default function Search() {
       setState({ runs: null, loading: false, error: { message: '출발역과 도착역이 같아요. 다른 역을 골라 주세요.' } });
       return;
     }
-    setParams({ from: form.from, to: form.to, date: form.date });
+    setParams({ from: form.from, to: form.to, date: form.date, time: form.time });
   };
 
   const name = (id) => stations.find((s) => s.stationId === id)?.stationName || id;
   const sorted = useMemo(() => {
     if (!state.runs) return null;
-    const list = [...state.runs];
+    // 고른 날짜·시각 이후에 출발하고, 지금 기준으로 이미 떠났거나 예매가 끝난 열차는 뺀다
+    const since = `${q.date}T${qTime}`;
+    const now = seoulNowLocal();
+    const list = state.runs.filter((r) => {
+      const dep = r.departureAt || '';
+      if (dep && (dep < since || dep <= now)) return false;
+      return r.bookable || r.saleStatus === 'SCHEDULED';
+    });
     return sort === 'dep'
       ? list.sort((a, b) => (a.departureAt || '').localeCompare(b.departureAt || ''))
       : list.sort((a, b) => a.durationMin - b.durationMin);
-  }, [state.runs, sort]);
+  }, [state.runs, sort, q.date, qTime]);
 
   return (
     <>
@@ -103,20 +111,37 @@ export default function Search() {
                 </select>
               </label>
             </div>
-            <label className="row dt" style={{ position: 'relative' }}>
-              <Icon name="calendar" />
-              <span className="grow">
-                <span className="mut" style={{ fontSize: 12.5, display: 'block' }}>운행일</span>
-                <b>{longDate(form.date)}</b>
-              </span>
-              {form.date === seoulToday() && <span className="st amber">오늘</span>}
-              {/* 날짜 칸은 보이지 않게 덮어 두고, 누르면 브라우저 달력이 열린다 */}
-              <input
-                type="date" aria-label="운행일" value={form.date} min={seoulToday()} required
-                onChange={(e) => e.target.value && setForm({ ...form, date: e.target.value })}
-                style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', minHeight: 0 }}
-              />
-            </label>
+            <div className="dtime" style={{ display: 'flex', gap: 16 }}>
+              <label className="row dt" style={{ position: 'relative', flex: 1.4, minWidth: 0 }}>
+                <Icon name="calendar" />
+                <span className="grow">
+                  <span className="mut" style={{ fontSize: 12.5, display: 'block' }}>운행일</span>
+                  <b>{longDate(form.date)}</b>
+                </span>
+                {form.date === seoulToday() && <span className="st amber">오늘</span>}
+                {/* 날짜 칸은 보이지 않게 덮어 두고, 어디를 눌러도 브라우저 달력이 열린다 */}
+                <input
+                  type="date" aria-label="운행일" value={form.date} min={seoulToday()} required
+                  onClick={openPicker}
+                  onChange={(e) => e.target.value && setForm({ ...form, date: e.target.value, time: e.target.value === seoulToday() ? maxTime(form.time, seoulHm()) : form.time })}
+                  style={overlay}
+                />
+              </label>
+              <label className="row dt" style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                <Icon name="clock" />
+                <span className="grow">
+                  <span className="mut" style={{ fontSize: 12.5, display: 'block' }}>출발 시각 이후</span>
+                  <b>{timeText(form.time)}</b>
+                </span>
+                <input
+                  type="time" aria-label="출발 시각" value={form.time} required
+                  min={form.date === seoulToday() ? seoulHm() : undefined}
+                  onClick={openPicker}
+                  onChange={(e) => e.target.value && setForm({ ...form, time: e.target.value })}
+                  style={overlay}
+                />
+              </label>
+            </div>
             <button className="btn ink" type="submit" disabled={!stations.length}>열차 찾기</button>
           </form>
         </div>
@@ -138,7 +163,7 @@ export default function Search() {
           <>
             <div className="row" style={{ margin: '10px 2px 0' }}>
               <b className="grow" style={{ fontSize: 16 }}>
-                {shortDate(q.date)} {name(q.from)}에서 {name(q.to)}까지 열차 {sorted.length}개
+                {shortDate(q.date)} {timeText(qTime)} 이후 {name(q.from)}에서 {name(q.to)}까지 열차 {sorted.length}개
               </b>
               <div className="sort">
                 <button type="button" className={sort === 'dep' ? 'on' : ''} onClick={() => setSort('dep')}>출발 빠른 순</button>
@@ -151,8 +176,8 @@ export default function Search() {
             </div>
             {!sorted.length && (
               <div className="card" style={{ textAlign: 'center' }}>
-                <b>이 날짜에는 다니는 열차가 없어요.</b>
-                <p className="mut" style={{ margin: '6px 0 0' }}>날짜나 역을 바꿔 다시 찾아보세요.</p>
+                <b>이 날짜·시각 이후에 탈 수 있는 열차가 없어요.</b>
+                <p className="mut" style={{ margin: '6px 0 0' }}>시각을 앞당기거나 날짜·역을 바꿔 다시 찾아보세요.</p>
               </div>
             )}
             {sorted.length > 0 && <p className="faint" style={{ fontSize: 12.5, textAlign: 'center', margin: 0 }}>남은 좌석은 몇 초 늦게 바뀔 수 있어요.</p>}
@@ -162,6 +187,23 @@ export default function Search() {
     </>
   );
 }
+
+const overlay = { position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', minHeight: 0, width: '100%' };
+/** 글자 영역을 눌러도 달력·시각 선택창이 열리게 한다 (브라우저는 보통 작은 아이콘만 연다) */
+const openPicker = (e) => {
+  try {
+    e.currentTarget.showPicker?.();
+  } catch {
+    /* 이미 열려 있거나 지원하지 않으면 브라우저 기본 동작 */
+  }
+};
+/** 오늘이면 지금 시각, 다른 날이면 0시 */
+const defaultTime = (date) => (date === seoulToday() ? seoulHm() : '00:00');
+const maxTime = (a, b) => (a > b ? a : b);
+const timeText = (t) => {
+  const [h, m] = (t || '00:00').split(':').map(Number);
+  return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}시${m ? ` ${m}분` : ''}`;
+};
 
 // ------------------------------------------------------------ 운행 카드
 
