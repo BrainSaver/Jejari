@@ -47,11 +47,18 @@ torch.set_num_threads(max(1, os.cpu_count() or 1))
 
 # ---------------------------------------------------------------- 모델
 
+# 크기 프리셋: (이벤트 한 칸을 넓히는 칸 수, GRU 칸 수, GRU 층 수)
+SIZES = {"small": (32, 48, 1), "large": (64, 96, 1)}
+
+
 class SeqNet(nn.Module):
-    def __init__(self, n_tab: int = 0, hid: int = 48):
+    """이벤트 22칸 → 선형(emb) → 양방향 GRU(hid × 2방향, layers층) → 평균·최대 풀링 → 32 → 1 (봇일 확률)"""
+
+    def __init__(self, n_tab: int = 0, emb: int = 32, hid: int = 48, layers: int = 1):
         super().__init__()
-        self.inp = nn.Sequential(nn.Linear(STEP_DIM, 32), nn.ReLU())
-        self.gru = nn.GRU(32, hid, batch_first=True, bidirectional=True)
+        self.inp = nn.Sequential(nn.Linear(STEP_DIM, emb), nn.ReLU())
+        self.gru = nn.GRU(emb, hid, num_layers=layers, batch_first=True, bidirectional=True,
+                          dropout=0.2 if layers > 1 else 0.0)
         self.tab = nn.Sequential(nn.Linear(n_tab, 32), nn.ReLU()) if n_tab else None
         self.head = nn.Sequential(nn.Linear(4 * hid + (32 if n_tab else 0), 32), nn.ReLU(),
                                   nn.Dropout(0.2), nn.Linear(32, 1))
@@ -81,8 +88,8 @@ def pad(seqs):
 class Deep:
     """sklearn 모양(fit · predict_proba)으로 감싼 학습기. tab=None이면 시퀀스만"""
 
-    def __init__(self, hybrid: bool, epochs: int = 14, seed: int = SEED):
-        self.hybrid, self.epochs, self.seed = hybrid, epochs, seed
+    def __init__(self, hybrid: bool, epochs: int = 14, seed: int = SEED, size: str = "small"):
+        self.hybrid, self.epochs, self.seed, self.size = hybrid, epochs, seed, size
 
     def _tab(self, T, fit=False):
         if fit:
@@ -94,7 +101,8 @@ class Deep:
         rng = np.random.default_rng(self.seed)
         x, mask = X
         tab = self._tab(T, fit=True) if self.hybrid else None
-        self.net = SeqNet(n_tab=tab.shape[1] if self.hybrid else 0)
+        emb, hid, layers = SIZES[self.size]
+        self.net = SeqNet(n_tab=tab.shape[1] if self.hybrid else 0, emb=emb, hid=hid, layers=layers)
         opt = torch.optim.Adam(self.net.parameters(), lr=2e-3, weight_decay=1e-4)
         yt = torch.from_numpy(y.astype(np.float32))
         pos = float(y.sum())
@@ -111,20 +119,51 @@ class Deep:
                 opt.step()
         return self
 
-    @classmethod
-    def load(cls, path: str):
-        """train.py가 저장한 gru.pt (시퀀스만 쓰는 GRU) 불러오기"""
-        d = cls(hybrid=False)
-        d.net = SeqNet(n_tab=0)
-        d.net.load_state_dict(torch.load(path, weights_only=True))
-        return d
-
     @torch.no_grad()
     def predict(self, X, T=None):
         self.net.eval()
         x, mask = X
         tab = self._tab(T) if self.hybrid else None
         return torch.sigmoid(self.net(x, mask, tab)).numpy()
+
+
+class Ensemble:
+    """시드만 다른 GRU n개의 평균. 한 번 학습한 GRU는 운에 따라 크게 흔들려서(다계정 61~94%) 평균으로 줄인다.
+    시드는 base × 1000 + k (k = 0…n-1)로 서로 멀리 떨어뜨린다"""
+
+    def __init__(self, n: int = 5, base: int = SEED, size: str = "small", epochs: int = 14):
+        self.n, self.base, self.size, self.epochs = n, base, size, epochs
+        self.members = []
+
+    def fit(self, X, y):
+        self.members = [Deep(hybrid=False, epochs=self.epochs, seed=self.base * 1000 + k, size=self.size).fit(X, None, y)
+                        for k in range(self.n)]
+        return self
+
+    def predict(self, X):
+        return np.mean([m.predict(X) for m in self.members], axis=0)
+
+    def save(self, path: str):
+        torch.save({"size": self.size, "states": [m.net.state_dict() for m in self.members]}, path)
+
+    @classmethod
+    def load(cls, path: str):
+        """train.py가 저장한 gru.pt 불러오기 (예전 파일: state_dict 하나 = small 1개)"""
+        obj = torch.load(path, weights_only=True)
+        states, size = (obj["states"], obj["size"]) if "states" in obj else ([obj], "small")
+        e = cls(n=len(states), size=size)
+        for st in states:
+            d = Deep(hybrid=False, size=size)
+            emb, hid, layers = SIZES[size]
+            d.net = SeqNet(emb=emb, hid=hid, layers=layers)
+            d.net.load_state_dict(st)
+            e.members.append(d)
+        return e
+
+
+def n_params(size: str) -> int:
+    emb, hid, layers = SIZES[size]
+    return sum(p.numel() for p in SeqNet(emb=emb, hid=hid, layers=layers).parameters())
 
 
 # ---------------------------------------------------------------- 평가
@@ -139,7 +178,7 @@ def pct_of(ref, s):
     return 100.0 * np.searchsorted(ref, s, side="right") / len(ref)
 
 
-def evaluate(folder: str, epochs: int, mseed: int = SEED):
+def evaluate(folder: str, epochs: int, mseed: int = SEED, ens: int = 5):
     """mseed: 모델 초기값만 바꾸는 시드. 사람·봇 나누기는 SEED로 고정 (데이터 운과 학습 운을 따로 보려고)"""
     rows, Xall = load(os.path.join(folder, "features.csv"))
     T = Xall[:, COLS]
@@ -155,9 +194,12 @@ def evaluate(folder: str, epochs: int, mseed: int = SEED):
     ref_i, thr_i = val[: len(val) // 2], val[len(val) // 2:]   # 백분위 기준 / 문턱 (train.py와 같게 반씩)
     te_h = hs == "test"
     print(f"계정 {len(rows)} (사람 {int((~is_bot).sum())} · 봇 {int(is_bot.sum())}) · 이벤트 칸 {STEP_DIM} · "
-          f"요약 특징 {T.shape[1]} · 문턱 = 사람 오탐 {FP_TARGET:.0%} · 에폭 {epochs}\n")
+          f"요약 특징 {T.shape[1]} · 문턱 = 사람 오탐 {FP_TARGET:.0%} · 에폭 {epochs} · "
+          f"GRU 연결 수 small {n_params('small'):,} / large {n_params('large'):,}\n")
 
-    names = ["부스팅", "부스팅+IF (지금 모델)", "GRU (시퀀스만)", "GRU 하이브리드", "부스팅+IF+GRU", "부스팅+IF+하이브리드"]
+    E = ens
+    names = ["부스팅+IF (지금 모델)", "GRU 1개", f"GRU {E}개 평균", f"큰 GRU {E}개 평균",
+             f"지금+GRU {E}개", f"지금+큰 GRU {E}개"]
     res = {n: {} for n in names}
     for f in families:
         tr = (hs == "train") | (is_bot & (fam != f))
@@ -167,14 +209,16 @@ def evaluate(folder: str, epochs: int, mseed: int = SEED):
                             IsolationForest(n_estimators=300, random_state=mseed)).fit(T[hs == "train"])
         g = gbm.predict_proba(T)[:, 1]
         i = -iso.score_samples(T)
-        seq = Deep(hybrid=False, epochs=epochs, seed=mseed).fit(take(S, tr), T[tr], y).predict(S, T)
-        hyb = Deep(hybrid=True, epochs=epochs, seed=mseed).fit(take(S, tr), T[tr], y).predict(S, T)
-        P = {k: pct_of(v[ref_i], v) for k, v in {"g": g, "i": i, "s": seq, "h": hyb}.items()}
+        Str = take(S, tr)
+        small = Ensemble(E, mseed, "small", epochs).fit(Str, y)
+        one = small.members[0].predict(S)
+        sm = small.predict(S)
+        lg = Ensemble(E, mseed + 500, "large", epochs).fit(Str, y).predict(S)
+        P = {k: pct_of(v[ref_i], v) for k, v in {"g": g, "i": i, "s": sm, "l": lg}.items()}
+        base = np.maximum(P["g"], P["i"])
         scores = {
-            names[0]: g, names[1]: np.maximum(P["g"], P["i"]),
-            names[2]: seq, names[3]: hyb,
-            names[4]: np.maximum.reduce([P["g"], P["i"], P["s"]]),
-            names[5]: np.maximum.reduce([P["g"], P["i"], P["h"]]),
+            names[0]: base, names[1]: one, names[2]: sm, names[3]: lg,
+            names[4]: np.maximum(base, P["s"]), names[5]: np.maximum(base, P["l"]),
         }
         tgt = is_bot & (fam == f)
         for n, s in scores.items():
@@ -200,8 +244,12 @@ def main():
     p.add_argument("folder", help="생성 데이터 폴더 (events.jsonl · members.jsonl · features.csv)")
     p.add_argument("--epochs", type=int, default=14)
     p.add_argument("--seed", type=int, default=SEED, help="모델 초기값 시드 (나누기는 고정)")
+    p.add_argument("--ens", type=int, default=5, help="평균 낼 GRU 개수")
+    p.add_argument("--threads", type=int, default=0, help="torch 스레드 수 (여러 개를 동시에 돌릴 때 1)")
     a = p.parse_args()
-    evaluate(a.folder, a.epochs, a.seed)
+    if a.threads:
+        torch.set_num_threads(a.threads)
+    evaluate(a.folder, a.epochs, a.seed, a.ens)
 
 
 if __name__ == "__main__":
