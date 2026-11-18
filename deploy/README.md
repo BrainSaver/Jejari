@@ -16,8 +16,9 @@ VM 1대(e2-standard-4, 서울)에 로컬과 같은 `compose.yaml`을 올리고, 
 | `prometheus.server.yml` | 앱 2대(app-1·app-2) 수집 |
 | `jejari@.service` | 앱 systemd 템플릿 (인스턴스 이름 = 포트) |
 | `make-server-env.sh` | **내 PC에서** 서버용 `.env` 생성 (HMAC 키만 팀 공용, 나머지 새로) |
-| `setup-server.sh` | **서버에서 한 번**: 패키지·docker 그룹·도메인·systemd |
-| `deploy.sh` | **서버에서 배포할 때마다**: main 빌드 → 한 대씩 재시작 |
+| `setup-server.sh` | **서버에서 한 번**: 패키지·docker 그룹·도메인·systemd (앱 2대 + 자동 배포 타이머) |
+| `deploy.sh` | 배포: main(또는 `DEPLOY_SHA`) 빌드 → 한 대씩 재시작 → 배포한 커밋 기록 |
+| `auto-deploy.sh` · `jejari-autodeploy.{service,timer}` | **자동 배포**: 10분마다, CI 성공 + DB·인프라 변경 없음일 때만 `deploy.sh` |
 
 ## 강동균 님 문서와 다른 점 (이유)
 
@@ -66,14 +67,27 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
 
 ## 운영 규칙
 
-- **재배포**: 서버에서 `bash deploy/deploy.sh` (main 기준, 한 대씩 재시작, 데이터 유지). 서버는 main을 자동으로 따라가지 않음 (자동 배포는 아직 없음. CI는 11-18부터 동작)
+- **자동 배포** (11-18~): 서버의 `jejari-autodeploy.timer`가 **10분마다** main을 확인해 `auto-deploy.sh`를 실행. 서버에 비밀값을 더 두지 않음 (공개 저장소를 받고, CI 결과는 공개 GitHub API로 봄)
 
-  | 언제 | 무엇 |
+  | main의 새 커밋이 | 자동 배포는 |
   |---|---|
-  | ERD 버전이 오름 (스키마 변경) | **DB 맞추기 + 재배포**: `db/patch/v*.sql`(데이터 유지) 또는 아래 "데이터 재생성". 코드만 재배포하면 DB는 그대로라 새 코드가 제약에 걸릴 수 있음 |
-  | 통합 확인·시연 전, 팀원이 서버 확인을 요청 | 재배포만 |
-  | 시연 전날 | 데이터 재생성 + 재배포 |
-  | 그 밖의 커밋 | 하지 않음 (각자 로컬에서 확인) |
+  | CI(빌드·테스트·ERD 검사) **진행 중** | 다음 차례에 다시 봄 (`WAITING_CI`) |
+  | CI **실패** | 배포 안 함 (`CI_FAILED`), 다음 커밋을 기다림 |
+  | 문서·테스트만 바뀜 | 빌드 없이 "반영됨"으로 기록 (`OK`) |
+  | 코드·화면·빌드 설정이 바뀜 | **그 커밋으로 고정해 배포** (한 대씩 재시작, 끊김 없음) (`OK`) |
+  | **ERD·DB 패치·시드·compose·Caddy가 바뀜** | **멈추고 사람을 기다림** (`BLOCKED`) → DB 패치·`docker compose up -d` 뒤 `bash deploy/deploy.sh`를 직접 실행하면 기준이 앞으로 가서 풀림 |
+  | 배포 실패 (앱이 안 뜸) | 같은 커밋을 반복하지 않음 (`FAILED`), 살아 있는 한 대가 응답. 로그 확인 후 고쳐서 다음 커밋으로 |
+
+  ```bash
+  cat ~/jejari-app/autodeploy.state        # 마지막 판단 (예: OK abc1234 자동 배포 완료)
+  journalctl -u jejari-autodeploy -n 50    # 자세한 로그
+  systemctl list-timers jejari-autodeploy  # 다음 실행 시각
+  sudo systemctl start jejari-autodeploy   # 지금 한 번 실행
+  sudo systemctl disable --now jejari-autodeploy.timer   # 자동 배포 끄기 (시연 중 등)
+  ```
+
+- **직접 배포**: `bash deploy/deploy.sh` (main 기준) 또는 `DEPLOY_SHA=<커밋> bash deploy/deploy.sh`. DB를 맞춘 뒤, 또는 자동 배포를 끈 동안
+- **시연 중에는 자동 배포를 끔** (시연 도중 재시작 방지). 끝나면 다시 켬
 
 - **데이터 재생성** (테스트 데이터 삭제): Oracle만 지우면 회원·예약 번호가 1부터 다시 시작해 Redis(매수 카운터·대기열·좌석 키)·Mongo(행동 로그)에 남은 옛 번호 데이터를 새 회원이 물려받음 → **셋을 함께**. Caddy(인증서)·Grafana·Prometheus·Kafka는 남김
   ```bash

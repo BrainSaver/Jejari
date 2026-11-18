@@ -1,0 +1,12 @@
+# 10분마다 main을 확인해 자동 배포 (deploy/auto-deploy.sh). 멈추기: sudo systemctl disable --now jejari-autodeploy.timer
+[Unit]
+Description=Jejari auto deploy every 10 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+RandomizedDelaySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

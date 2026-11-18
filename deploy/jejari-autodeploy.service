@@ -1,0 +1,15 @@
+# 자동 배포 한 번 실행 (jejari-autodeploy.timer가 부름). setup-server.sh가 __USER__·__HOME__을 채워 설치
+[Unit]
+Description=Jejari auto deploy (main, CI 성공한 커밋만)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__HOME__/Jejari
+Environment=LANG=C.UTF-8
+Environment=TZ=Asia/Seoul
+ExecStart=/bin/bash __HOME__/Jejari/deploy/auto-deploy.sh
+# 빌드(화면 + jar) + 앱 두 대 재시작이 넉넉히 끝나는 시간
+TimeoutStartSec=20min
