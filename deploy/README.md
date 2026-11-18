@@ -70,3 +70,13 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
 - **로컬 테스트를 서버 DB에 붙이지 않기**: 서버 앱의 스케줄러가 테스트의 HOLD·outbox를 먼저 가져감
 - **서버 `.env`**: 저장소·메신저에 올리지 않음. 관리자·Grafana 비밀번호는 내 PC의 `~/jejari-server.env`에서 확인
 - **Grafana**: 3000은 127.0.0.1에만. `gcloud compute ssh jejari -- -L 3000:localhost:3000` 후 `http://localhost:3000`
+
+## Windows(Git Bash)에서 gcloud
+
+`gcloud`(bash 스크립트)는 Windows Store의 가짜 `python`을 잡아 실패하고, `gcloud.cmd`는 `cmd`가 쉼표를 인자 구분자로 잘라 `--allow=tcp:80,tcp:443` 같은 인자가 깨집니다. SDK 내장 파이썬으로 직접 부르면 둘 다 피합니다.
+
+```bash
+B="$LOCALAPPDATA/Google/Cloud SDK/google-cloud-sdk"
+gcloud() { "$B/platform/bundledpython/python.exe" "$B/lib/gcloud.py" "$@"; }
+gcloud compute ssh jejari --zone=asia-northeast3-a --tunnel-through-iap
+```
