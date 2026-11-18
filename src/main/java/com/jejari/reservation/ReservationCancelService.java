@@ -23,6 +23,7 @@ import com.jejari.payment.pg.PgClient;
 import com.jejari.payment.pg.PgClient.RefundResult;
 import com.jejari.reservation.ReservationQueryService.CancelInfo;
 import com.jejari.reservation.ReservationQueryService.Detail;
+import com.jejari.risk.admin.CaseActionService;
 import com.jejari.seat.SeatErrorCode;
 import com.jejari.seat.SeatReleaseService;
 import com.jejari.seat.SeatReleaseService.ReturnedSeats;
@@ -46,6 +47,7 @@ import com.jejari.seat.SeatReleaseService.ReturnedSeats;
  * <ul>
  *   <li><b>수수료를 잠근 뒤 다시 계산</b>: 미리보기 값을 클라이언트에서 받지 않는다. 남이 보낸 수수료를 믿으면 0원으로 바꿔 보낼 수 있다.</li>
  *   <li><b>환불은 트랜잭션 밖</b> (§0.6): PG 호출 중에 DB 락을 잡고 있지 않는다. 환불 키 {@code cancel:<cancel_id>}로 재시도해도 한 번만 환불된다.</li>
+ *   <li>관리자 강제 취소(ADM-07, {@link #cancelByAdmin})도 같은 트랜잭션을 actor ADMIN으로 쓴다: 수수료 0·전액 환불·admin_action 기록.</li>
  *   <li>사용자 취소(USER)만 위험 점수 신호다. 이 취소는 예약 이벤트로 risk-signal이 받아 다음 1분 배치에 반영한다.</li>
  * </ul>
  */
@@ -139,10 +141,45 @@ public class ReservationCancelService {
 	// ------------------------------------------------------------ CNL-02
 
 	private record Done(long cancelId, long paymentId, String pgTxId, long refund, long runId, int seatCount,
-			long fee) {
+			long fee, long actionId) {
 	}
 
 	CancelResponse cancelConfirmed(long memberId, long reservationId) {
+		return cancelConfirmed(memberId, reservationId, null).cancel();
+	}
+
+	// ------------------------------------------------------------ ADM-07
+
+	/** 취소 결과. actionId = 관리자 강제 취소를 남긴 admin_action 행 (사용자 취소면 0) */
+	public record AdminCancelResponse(CancelResponse cancel, long actionId) {
+	}
+
+	/** 관리자 정보 (§8.1 ADMIN). admin_action에 누가·왜를 남긴다 */
+	private record AdminActor(long adminId, String memo) {
+	}
+
+	/**
+	 * ADM-07 예약 강제 취소 (§8.1 actor ADMIN). 사용자 확정 취소와 같은 트랜잭션이고 다른 점은 셋:
+	 * 남의 예약이어도 되고, 수수료 0·결제 금액 전액 환불(출발 뒤여도), admin_action(CANCEL_RESERVATION)에 관리자·사유를 남긴다.
+	 * cancel_type ADMIN은 위험 점수에서 세지 않는다 ({@code RiskInputReader}·{@code SuspiciousCaseOpener}가 USER만 셈).
+	 * 확정 예약만 받는다. 결제 전 예약은 기한이 지나면 스스로 풀리므로 강제 취소할 일이 없다.
+	 *
+	 * @param memo 사유 (5~500자, 필수)
+	 */
+	public AdminCancelResponse cancelByAdmin(long adminId, long reservationId, String memo) {
+		String reason = CaseActionService.memo(memo);
+		List<Long> owner = jdbc.queryForList("SELECT member_id FROM reservation WHERE reservation_id = ?", Long.class,
+				reservationId);
+		if (owner.isEmpty()) {
+			throw new BusinessException(SeatErrorCode.RESERVATION_NOT_FOUND);
+		}
+		AdminActor actor = new AdminActor(adminId, reason);
+		return cancelConfirmed(owner.get(0), reservationId, actor);
+	}
+
+	/** @param admin null이면 사용자 취소(USER), 아니면 관리자 강제 취소(ADMIN) */
+	private AdminCancelResponse cancelConfirmed(long memberId, long reservationId, AdminActor admin) {
+		String actorType = admin == null ? "USER" : "ADMIN";
 		Done done = tx.execute(st -> {
 			List<Timestamp> locked = jdbc.queryForList("""
 					SELECT confirmed_at FROM reservation
@@ -153,8 +190,8 @@ public class ReservationCancelService {
 				throw new BusinessException(ReservationErrorCode.RESERVATION_NOT_CONFIRMED);
 			}
 			Detail detail = queries.detail(memberId, reservationId);
-			Quote q = toQuote(detail);
-			Long policyId = detail.cancel().policyId();
+			Quote q = admin == null ? toQuote(detail) : adminQuote(detail);
+			Long policyId = admin == null ? detail.cancel().policyId() : null;
 
 			int n = jdbc.update("""
 					UPDATE reservation SET status = 'CANCELED', canceled_at = SYSTIMESTAMP, updated_at = SYSTIMESTAMP,
@@ -166,6 +203,7 @@ public class ReservationCancelService {
 			ReturnedSeats returned = seats.returnSoldSeatsInCurrentTx(reservationId);
 
 			Instant now = clock.instant();
+			long actionId = admin == null ? 0 : adminAction(admin, memberId, reservationId, now);
 			Timestamp confirmedAt = locked.get(0);
 			long minutesAfterPurchase = confirmedAt == null ? 0
 					: Math.max(0, Duration.between(confirmedAt.toInstant(), now).toMinutes());
@@ -173,13 +211,13 @@ public class ReservationCancelService {
 			jdbc.update("""
 					INSERT INTO cancellation (cancel_id, reservation_id, cancel_type, canceled_at, minutes_after_purchase,
 					  minutes_before_departure, refund_amount, cancel_fee, fee_policy_id, refund_status, resold_yn)
-					VALUES (?, ?, 'USER', ?, ?, ?, ?, ?, ?, 'REQUESTED', 'N')""",
-					cancelId, reservationId, Timestamp.from(now), minutesAfterPurchase, q.minutesBeforeDeparture(),
-					q.refund(), q.fee(), policyId);
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'REQUESTED', 'N')""",
+					cancelId, reservationId, actorType, Timestamp.from(now), minutesAfterPurchase,
+					q.minutesBeforeDeparture(), q.refund(), q.fee(), policyId);
 
 			Map<String, Object> payload = returned != null ? returned.eventPayload()
 					: new LinkedHashMap<>(Map.of("reservationId", (Object) reservationId));
-			payload.put("reason", "USER");
+			payload.put("reason", actorType);
 			payload.put("cancelFee", q.fee());
 			payload.put("refundAmount", q.refund());
 			payload.put("minutesAfterPurchase", minutesAfterPurchase);
@@ -187,8 +225,8 @@ public class ReservationCancelService {
 			String eventId = outbox.recordReservation(reservationId, EventType.RESERVATION_CANCELED, payload);
 			jdbc.update("""
 					INSERT INTO reservation_history (history_id, reservation_id, from_status, to_status, event_id, actor_type, changed_at)
-					VALUES (reservation_history_seq.NEXTVAL, ?, 'CONFIRMED', 'CANCELED', ?, 'USER', SYSTIMESTAMP)""",
-					reservationId, eventId);
+					VALUES (reservation_history_seq.NEXTVAL, ?, 'CONFIRMED', 'CANCELED', ?, ?, SYSTIMESTAMP)""",
+					reservationId, eventId, actorType);
 
 			List<Map<String, Object>> pay = jdbc.queryForList("""
 					SELECT payment_id, pg_tx_id FROM payment WHERE reservation_id = ? AND status = 'APPROVED'""",
@@ -196,12 +234,38 @@ public class ReservationCancelService {
 			long paymentId = pay.isEmpty() ? 0 : ((Number) pay.get(0).get("PAYMENT_ID")).longValue();
 			String pgTxId = pay.isEmpty() ? null : (String) pay.get(0).get("PG_TX_ID");
 			return new Done(cancelId, paymentId, pgTxId, q.refund(),
-					returned == null ? 0 : returned.runId(), returned == null ? 0 : returned.seatCount(), q.fee());
+					returned == null ? 0 : returned.runId(), returned == null ? 0 : returned.seatCount(), q.fee(),
+					actionId);
 		});
 
 		String refundStatus = refund(reservationId, done);
-		return new CancelResponse(reservationId, "CANCELED", "CONFIRMED", done.runId() == 0 ? null : done.runId(),
-				done.seatCount(), done.fee(), done.refund(), refundStatus);
+		return new AdminCancelResponse(new CancelResponse(reservationId, "CANCELED", "CONFIRMED",
+				done.runId() == 0 ? null : done.runId(), done.seatCount(), done.fee(), done.refund(), refundStatus),
+				done.actionId());
+	}
+
+	/** §8.1-4 ADMIN: 운영 사유 취소라 수수료 0, 결제 금액 전액. 출발 뒤여도 된다 (사용자 취소 규칙과 무관) */
+	private static Quote adminQuote(Detail d) {
+		long paid = d.payment() != null && "APPROVED".equals(d.payment().status()) ? d.payment().amount()
+				: d.summary().totalAmount();
+		Instant departure = d.summary().from().time();
+		Long before = d.cancel() == null ? null : d.cancel().minutesBeforeDeparture();
+		return new Quote(d.summary().reservationId(), paid, departure, before == null ? 0 : before, BigDecimal.ZERO, 0,
+				paid);
+	}
+
+	/**
+	 * 강제 취소 기록. 예약 대상 조치는 그 예약 회원의 CI를 subject로, reservation_id를 채운다 (ERD admin_action).
+	 * 취소와 같은 트랜잭션이라 기록 없이 취소만 되는 일은 없다.
+	 */
+	private long adminAction(AdminActor admin, long memberId, long reservationId, Instant at) {
+		String ciHash = jdbc.queryForObject("SELECT ci_hash FROM member WHERE member_id = ?", String.class, memberId);
+		long id = jdbc.queryForObject("SELECT admin_action_seq.NEXTVAL FROM dual", Long.class);
+		jdbc.update("""
+				INSERT INTO admin_action (action_id, admin_id, subject_type, subject_hash, action_type, memo, reservation_id, acted_at)
+				VALUES (?, ?, 'CI', ?, 'CANCEL_RESERVATION', ?, ?, ?)""",
+				id, admin.adminId(), ciHash, admin.memo(), reservationId, Timestamp.from(at));
+		return id;
 	}
 
 	/**
