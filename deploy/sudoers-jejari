@@ -8,5 +8,6 @@ Cmnd_Alias JEJARI_UNITS = \
   /usr/bin/systemctl restart jejari@8080, /usr/bin/systemctl restart jejari@8081, \
   /usr/bin/systemctl stop jejari@8080 jejari@8081, \
   /usr/bin/systemctl start jejari-autodeploy, /usr/bin/systemctl start jejari-autodeploy.service, \
-  /usr/bin/systemctl enable --now jejari-autodeploy.timer, /usr/bin/systemctl disable --now jejari-autodeploy.timer
+  /usr/bin/systemctl enable --now jejari-autodeploy.timer, /usr/bin/systemctl disable --now jejari-autodeploy.timer, \
+  /usr/bin/systemctl start jejari-tago, /usr/bin/systemctl start jejari-tago.service
 __USER__ ALL=(root) NOPASSWD: JEJARI_UNITS

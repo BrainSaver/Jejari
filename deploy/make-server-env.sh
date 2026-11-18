@@ -69,6 +69,8 @@ GRAFANA_ADMIN_PASSWORD=$(alnum 20)
 GRAFANA_TEAM_PASSWORD=$(alnum 20)
 # 경보를 보낼 Discord 웹훅 주소 (채널 설정 → 연동 → 웹후크). 비어 있으면 compose가 기동을 거부함
 DISCORD_WEBHOOK_URL=
+# 공공데이터포털 서비스 키 (디코딩 값). 실제 KTX 시간표 매일 갱신(deploy/tago-refresh.sh)이 씀
+DATA_GO_KR_KEY_DEC=
 
 # Caddy 주소. 서버에서 deploy/setup-server.sh가 외부 IP로 채움 (예: 34-64-12-34.sslip.io)
 JEJARI_DOMAIN=
