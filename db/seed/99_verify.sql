@@ -48,7 +48,9 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
   UNION ALL
   SELECT '11. 운행 11건 (명절 8 + 평시 3)',    CASE WHEN COUNT(*) = 11  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_run
   UNION ALL
-  SELECT '12. ON_SALE 운행 2건 (9001·9002)',   CASE WHEN COUNT(*) = 2   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
+  -- 몇 건인지는 시간이 지나면 늘어난다 (오픈 시각이 지난 운행을 판매 오픈 스케줄러가 연다).
+  -- 그래서 "최소 1건"만 본다. 상태가 시각과 맞는지는 23번이 확인한다
+  SELECT '12. 지금 판매 중인 운행 있음',        CASE WHEN COUNT(*) >= 1  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
     FROM train_run WHERE status = 'ON_SALE'
   UNION ALL
   SELECT '13. 정차 55건 (운행 11 × 역 5)',     CASE WHEN COUNT(*) = 55  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_stop
@@ -104,7 +106,7 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
       OR (status = 'SCHEDULED' AND sale_open_at <= SYSTIMESTAMP)
 ) ORDER BY TO_NUMBER(REGEXP_SUBSTR(item, '^[0-9]+'));
 
--- 참고: 매수 제한 정책, 서울~부산 운임, 하행 101 정차 시각
+-- 참고: 매수 제한 정책, 서울~부산 운임, 하행 정차 시각 (TAGO 실제 시각표)
 SELECT NVL(TO_CHAR(sale_event_id), '상시') AS 행사, scope, max_seats AS 한도
   FROM purchase_limit_policy WHERE policy_id >= 4 ORDER BY sale_event_id NULLS LAST, scope;
 
