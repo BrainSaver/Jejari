@@ -68,7 +68,7 @@ public class QueueService {
 		List<?> r = redis.execute(enterScript,
 				List.of(QueueKeys.queue(runId), QueueKeys.seq(runId),
 						QueueKeys.member(memberId), QueueKeys.ci(identity.ciHash()),
-						QueueKeys.throughput(runId)),
+						QueueKeys.throughput(runId), QueueKeys.RUNS),
 				String.valueOf(runId), String.valueOf(memberId), identity.ciHash(),
 				String.valueOf(penaltyMs), String.valueOf(entryTtlMs), String.valueOf(closeAtMs));
 

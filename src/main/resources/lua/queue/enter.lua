@@ -1,6 +1,6 @@
 -- QUE-01 대기열 진입 (기능설계서 4.3). 중복 확인과 ZADD를 한 번에 원자적으로 처리한다.
 -- KEYS[1] queue:{runId}   KEYS[2] queue:seq:{runId}   KEYS[3] queue:member:{memberId}   KEYS[4] queue:ci:{ciHash}
---      KEYS[5] queue:throughput:{runId}
+--      KEYS[5] queue:throughput:{runId}   KEYS[6] queue:runs
 -- ARGV[1] runId  ARGV[2] memberId  ARGV[3] ciHash  ARGV[4] penaltyMs
 --      ARGV[5] entryTtlMs  ARGV[6] 판매 마감 epoch ms (0이면 만료 없음)
 -- 진입 시각은 앱이 아니라 이 스크립트 안에서 Redis TIME으로 읽는다. 그래야 번호표(seq) 순서와 시각 순서가
@@ -35,6 +35,8 @@ local initial = redis.call('ZCOUNT', KEYS[1], '-inf', now) + 1
 local seq = redis.call('INCR', KEYS[2])
 local qm = string.format('%012d:%s', seq, ARGV[2])
 redis.call('ZADD', KEYS[1], now + tonumber(ARGV[4]), qm)
+-- 활성 운행 목록에 넣는다: 입장 스케줄러는 이 목록의 운행만 돌린다
+redis.call('SADD', KEYS[6], ARGV[1])
 -- value = {runId}|{queue member}|{ciHash}  (ciHash는 입장·이탈 때 queue:ci를 찾기 위한 덧붙임)
 redis.call('SET', KEYS[3], ARGV[1] .. '|' .. qm .. '|' .. ARGV[3], 'PX', ARGV[5])
 redis.call('ZADD', KEYS[4], now + tonumber(ARGV[5]), ARGV[2])
