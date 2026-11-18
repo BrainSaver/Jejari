@@ -105,6 +105,16 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
 - **로컬 테스트를 서버 DB에 붙이지 않기**: 서버 앱의 스케줄러가 테스트의 HOLD·outbox를 먼저 가져감
 - **서버 `.env`**: 저장소·메신저에 올리지 않음. 관리자·Grafana 비밀번호는 내 PC의 `~/jejari-server.env`에서 확인
 - **Grafana**: `https://{도메인}/grafana/` (11-18~). 팀원은 보기 전용 계정 `team`(비밀번호 `GRAFANA_TEAM_PASSWORD`, `bash deploy/grafana-team-user.sh`로 만들기·맞추기), 관리자는 `GRAFANA_ADMIN_*`. 익명 보기는 꺼 둠. 3000 포트 자체는 여전히 127.0.0.1에만
+- **경보 → Discord** (11-18~, `deploy/grafana-alerting/`): 자동 배포가 실행마다 상태를 Pushgateway(127.0.0.1:9091)에 보고 → Prometheus 수집 → Grafana 경보 → `.env`의 `DISCORD_WEBHOOK_URL`
+
+  | 경보 | 언제 | 할 일 |
+  |---|---|---|
+  | 자동 배포 실패 또는 사람이 처리해야 함 | 상태가 `FAILED`·`BLOCKED` | 위 "운영자 안내" 표 |
+  | 자동 배포가 30분 넘게 돌지 않음 | 타이머·Pushgateway 고장 (5분 지속) | `systemctl list-timers jejari-autodeploy`. 시연 때문에 껐다면 무시 |
+  | CI 대기가 1시간 넘게 이어짐 | main 새 커밋이 CI를 못 통과 | GitHub Actions 확인 |
+  | 앱 한 대가 응답하지 않음 | `up{job="jejari-app"}`이 2분 넘게 0 | `journalctl -u jejari@8080` |
+
+  같은 경보는 4시간마다만 다시 오고, 해결되면 "해결됨"이 옴. 웹훅 주소를 바꾸면 `.env` 수정 뒤 `docker compose -f compose.yaml -f deploy/compose.server.yaml up -d grafana`
 - **Caddyfile·`prometheus.server.yml`을 바꾼 뒤에는 그 컨테이너를 재시작** (`docker compose -f compose.yaml -f deploy/compose.server.yaml restart caddy`). 파일 하나를 bind mount한 것이라 git이 파일을 새로 쓰면 실행 중인 컨테이너는 옛 파일을 계속 봄. compose 환경 변수를 바꿨으면 `up -d grafana`처럼 다시 만듦
 - **`docker/mongo/mongo-init.js`가 바뀌면** (새 컬렉션·인덱스, 자동 배포가 BLOCKED로 멈춤): 기존 Mongo에 직접 반영. 같은 이유로 컨테이너 안 파일은 옛것이라 **저장소 파일을 표준 입력으로** 넣음 (createIndex는 여러 번 돌려도 안전)
   ```bash

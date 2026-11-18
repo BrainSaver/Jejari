@@ -15,6 +15,12 @@ scrape_configs:
         labels:
           instance: app-2
 
+  # 자동 배포 상태 (auto-deploy.sh → Pushgateway). honor_labels: 보낸 쪽의 job 라벨을 그대로
+  - job_name: pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: ["pushgateway:9091"]
+
   - job_name: redis
     static_configs:
       - targets: ["redis-exporter:9121"]
