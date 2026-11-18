@@ -72,7 +72,7 @@ def split(items, rng, frac=0.2):
     return [items[i] for i in idx[k:]], [items[i] for i in idx[:k]]
 
 
-def fit_and_threshold(humans, bots, args, seed):
+def fit_and_threshold(humans, bots, args, seed, calib=None):
     rng = np.random.default_rng(seed)
     h_tr, h_va = split(humans, rng)
     b_tr, b_va = split(bots, rng)
@@ -83,7 +83,7 @@ def fit_and_threshold(humans, bots, args, seed):
     src = args.thr_source
     if src == "auto":
         src = "human_synth" if any(s.family == "human_synth" for s in h_va) else "csv_human"
-    pool = [s for s in h_va if s.family == src] or h_va
+    pool = calib or [s for s in h_va if s.family == src] or h_va     # 보정 전용 사람이 있으면 그걸로 (표본이 많아 안정적)
     thr = training.pick_threshold(training.predict(model, pool), args.max_fpr)
     return model, thr, cfg
 
@@ -97,6 +97,8 @@ def main(argv=None):
     ap.add_argument("--n-human", type=int, default=5000, help="직접 만든 CSV 어휘 사람 수 (CSV에 사람이 있으면 0으로)")
     ap.add_argument("--n-sim-human", type=int, default=5000, help="기존 가상 사람 수 (0이면 빼기)")
     ap.add_argument("--extra-train-seeds", default="", help="생성기를 이 시드들로 더 돌려 학습 데이터를 늘린다 (시험 시드와 겹치면 안 됨)")
+    ap.add_argument("--calib-seeds", default="", help="문턱 보정 전용 사람을 만들 생성기 시드들. 학습·시험에 안 쓴다. 검증 사람 수백 명으로 "
+                    "문턱을 고르면 모델 시드마다 크게 흔들려서 따로 많이 만든다")
     ap.add_argument("--gen-humans", type=int, default=0, help="생성기가 합성 사람을 같이 만들게 한다(v2). 학습·시험 모두 적용")
     ap.add_argument("--n-sim-bot", type=int, default=1200, help="0이면 기존 가상 봇은 빼고 CSV 봇만 쓴다")
     ap.add_argument("--csv-repeat", type=int, default=4)
@@ -117,6 +119,13 @@ def main(argv=None):
         if str(seed) in a.test_seeds.split(","):
             sys.exit(f"시드 {seed}는 시험 시드와 겹칩니다")
         everything += fresh_attack(a.gen, seed, humans=a.gen_humans)
+    calib = []
+    for seed in [int(x) for x in a.calib_seeds.split(",") if x.strip()]:
+        if not a.gen:
+            sys.exit("--calib-seeds 는 --gen 이 필요합니다")
+        if str(seed) in a.test_seeds.split(",") or str(seed) in a.extra_train_seeds.split(","):
+            sys.exit(f"시드 {seed}는 시험·학습 시드와 겹칩니다")
+        calib += [s for s in fresh_attack(a.gen, seed, humans=a.gen_humans) if s.label == 0]
     bots_csv = [s for s in everything if s.label == 1]
     humans_given = [s for s in everything if s.label == 0]
     if not bots_csv:
@@ -162,7 +171,9 @@ def main(argv=None):
     humans, bots = build_train(bots_csv, humans_given, a, a.seed, use_sim_bots=a.n_sim_bot > 0)
     print(f"학습 풀: 사람 {len(humans)} · 봇 {len(bots)} (공격 {len(bots_csv)}×{a.csv_repeat}"
           f"{' + 가상 봇 ' + str(a.n_sim_bot) if a.n_sim_bot > 0 else ''})")
-    model, thr, cfg = fit_and_threshold(humans, bots, a, a.seed)
+    if calib:
+        print(f"문턱 보정 전용 사람 {len(calib)}명 (학습·시험에 안 씀)")
+    model, thr, cfg = fit_and_threshold(humans, bots, a, a.seed, calib)
     training.save(model, Path(a.out), thr, cfg, {"data": "attack csv (+simulated humans)", "max_fpr": a.max_fpr})
     print(f"저장: {a.out}")
     if a.gen:
