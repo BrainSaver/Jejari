@@ -148,7 +148,7 @@ rect.b:hover{opacity:.82}
 <body>
 <header><div class="wrap">
   <h1>강동균 · 산출물</h1>
-  <p class="sub">제자리(Jejari) · 팀원 B · 좌석 선점 동시성 · 열차 도메인 · ERD 반영 &nbsp;|&nbsp; 2026-11-16 기준 · 락 비교는 2026-11-17 재측정</p>
+  <p class="sub">제자리(Jejari) · 팀원 B · 좌석 선점 동시성 · 열차 도메인 · ERD 반영 &nbsp;|&nbsp; 진행 현황 2026-11-18 기준 · 기능별 절은 2026-11-16 기준 · 락 비교는 2026-11-17 재측정</p>
   <nav>
     <a href="#overview">진행 현황</a>
     <a href="#DATA-01">DATA-01 기준 데이터</a>
@@ -162,61 +162,79 @@ rect.b:hover{opacity:.82}
 
 <!-- ───────────────────────────── 진행 현황 -->
 <section id="overview">
-  <h2>담당 기능 진행 현황</h2>
+  <h2>담당 기능 진행 현황 <span class="tag ok">2026-11-18 기준</span></h2>
   <div class="grid">
-    <div class="kpi"><b>9 / 12</b><span>완료한 P1·P2 기능</span></div>
-    <div class="kpi"><b>100%</b><span>기한 초과 반환율 (20/20)</span></div>
+    <div class="kpi"><b>12 / 12</b><span>담당 기능 완료 (P1 9 · P2 2 · 공동 1)</span></div>
     <div class="kpi"><b>0</b><span>중복 예약 (목표 0)</span></div>
-    <div class="kpi"><b>99</b><span>통과한 검증·테스트 항목</span></div>
+    <div class="kpi"><b>100%</b><span>기한 초과 반환율 (20/20)</span></div>
+    <div class="kpi"><b>−99%</b><span>DB 왕복 · 1석에 100명 (108 → 1)</span></div>
   </div>
 
-  <table>
-    <tr><th>ID</th><th>기능</th><th>우선</th><th>상태</th><th>남은 것</th></tr>
+  <div class="tw"><table>
+    <tr><th>ID</th><th>기능</th><th>우선</th><th>상태</th><th>화면</th><th>남은 것</th></tr>
     <tr><td><code>DATA-01</code></td><td>공공데이터 적재</td><td>P1</td>
-        <td><span class="tag ok">완료</span></td><td>—</td></tr>
-    <tr><td><code>ADM-01</code></td><td>기준 데이터 등록</td><td>P2</td>
-        <td><span class="tag ok">대체 완료</span></td><td>적재 스크립트로 대체 (기능설계서 1.1)</td></tr>
+        <td><span class="tag ok">완료</span></td><td>—</td><td>—</td></tr>
+    <tr><td><code>TRN-01</code></td><td>역 목록</td><td>P1</td><td><span class="tag ok">완료</span></td><td>U-03</td><td>—</td></tr>
+    <tr><td><code>TRN-02</code></td><td>운행 검색</td><td>P1</td><td><span class="tag ok">완료</span></td><td>U-03</td><td>—</td></tr>
+    <tr><td><code>TRN-03</code></td><td>운임 조회</td><td>P1</td><td><span class="tag ok">완료</span></td><td>U-03</td><td>승객 유형 할인 운임 (지금은 어른 운임만)</td></tr>
+    <tr><td><code>RSV-01</code></td><td>좌석 배치도</td><td>P1</td><td><span class="tag ok">완료</span></td><td>U-05</td><td>배치도 자동 새로고침 주기</td></tr>
     <tr><td><code>RSV-02</code></td><td>좌석 선점 (매수 제한 포함)</td><td>P1</td>
-        <td><span class="tag ok">완료</span></td><td>화면(U-05) · 할인 운임 [가정]</td></tr>
-    <tr><td><code>ADM-02</code></td><td>운행·행사 등록, 판매 오픈</td><td>P2</td>
-        <td><span class="tag warn">일부</span></td><td>시드는 됨. 오픈 스케줄러 미착수</td></tr>
-    <tr><td><code>TRN-01</code></td><td>역 목록</td><td>P1</td><td><span class="tag ok">완료</span></td><td>—</td></tr>
-    <tr><td><code>TRN-02</code></td><td>운행 검색</td><td>P1</td><td><span class="tag ok">완료</span></td><td>화면(U-03)</td></tr>
-    <tr><td><code>TRN-03</code></td><td>운임 조회</td><td>P1</td><td><span class="tag ok">완료</span></td><td>—</td></tr>
-    <tr><td><code>RSV-01</code></td><td>좌석 배치도</td><td>P1</td><td><span class="tag ok">완료</span></td><td>화면(U-05)</td></tr>
-    <tr><td><code>RSV-03</code></td><td>결제 기한 초과 자동 반환</td><td>P1</td><td><span class="tag ok">완료</span></td><td>— (보장 경로 seat-release는 C·D)</td></tr>
-    <tr><td><code>RSV-05</code></td><td>결제 전 취소</td><td>P1</td><td><span class="tag ok">완료</span></td><td>화면(U-06 버튼)</td></tr>
-    <tr><td><code>ADM-03</code></td><td>실시간 예매 현황</td><td>P1</td><td><span class="tag bad">미착수</span></td><td>전부</td></tr>
-    <tr><td><code>EVT-04</code></td><td>요청 멱등 처리 (C와 공동)</td><td>P1</td><td><span class="tag bad">미착수</span></td><td>전부</td></tr>
-  </table>
+        <td><span class="tag ok">완료</span></td><td>U-05</td><td>—</td></tr>
+    <tr><td><code>RSV-03</code></td><td>결제 기한 초과 자동 반환</td><td>P1</td><td><span class="tag ok">완료</span></td><td>—</td><td>—</td></tr>
+    <tr><td><code>RSV-05</code></td><td>결제 전 취소 (선점 해제)</td><td>P1</td><td><span class="tag ok">완료</span></td><td>U-06</td><td>—</td></tr>
+    <tr><td><code>ADM-03</code></td><td>실시간 예매 현황</td><td>P1</td>
+        <td><span class="tag ok">완료</span></td><td>A-04</td><td>결과 모름 목록 칸 (ADM-09 길동현 API 대기)</td></tr>
+    <tr><td><code>EVT-04</code></td><td>요청 멱등 처리 (C와 공동)</td><td>P1</td>
+        <td><span class="tag ok">완료</span></td><td>—</td><td>— (좌석 선점 쪽. 결제 쪽은 길동현)</td></tr>
+    <tr><td><code>ADM-01</code></td><td>노선·역·열차·좌석 등록</td><td>P2</td>
+        <td><span class="tag ok">완료</span></td><td>A-02</td><td>새 노선의 운임 자동 생성</td></tr>
+    <tr><td><code>ADM-02</code></td><td>운행·명절 행사 등록, 판매 오픈</td><td>P2</td>
+        <td><span class="tag ok">완료</span></td><td>A-03</td><td>행사 매수 제한·판매 마감 시각 수정 칸</td></tr>
+  </table></div>
+  <p class="muted">"남은 것"은 기능이 돌아가는 상태에서 더 다듬을 곳입니다. 전체 목록은 <code>docs/강동균/보완할-일.md</code>.</p>
+
+  <h3>11-17 이후 더해진 것</h3>
+  <ul>
+    <li><b>ADM-03</b> — 분당 이력 API(지난 30분 그래프), 결제 기한 초과 만료 건수, A-04에 강제 취소 칸(ADM-07, 강다인 API)</li>
+    <li><b>ADM-02</b> — 판매 오픈 스케줄러가 <code>DEPARTED</code>(출발)까지 상태를 넘김. 운행·행사 관리 화면 A-03</li>
+    <li><b>ADM-01</b> — 적재 스크립트로 대체하기로 했던 기능을 실제 API·화면(A-02)으로 만듦</li>
+    <li><b>§17.1 락 비교</b> — k6 HTTP 재측정 → CPU 분리 + 10회 재측정, 순위합 검정까지 (<a href="#LOCK">아래</a>)</li>
+  </ul>
 
   <h3>기능 ID가 없는 담당 업무</h3>
-  <table>
+  <div class="tw"><table>
     <tr><th>업무</th><th>상태</th><th>내용</th></tr>
     <tr><td>ERD 반영 담당</td><td><span class="tag ok">유지 중</span></td>
-        <td>스키마 v15까지 반영 (v12 위험 점수 캐시, v13 김성원·강다인 요청, v14 취소표 패널티 확정, v15 회원가입·로그인). 검사 FAIL 0 · WARN 0, 반영 대기 JSON 없음</td></tr>
-    <tr><td>§17.1 락 방식 비교</td><td><span class="tag ok">실측 완료</span></td>
-        <td>A·B·C 3전략 × 3시나리오. Python(11-16) → k6 HTTP(11-17) → CPU 분리 10회 재측정(11-17)까지 완료</td></tr>
-  </table>
-
-  <div class="note">
-    <b>왜 기능 완성이 2개뿐인가</b> — Spring 뼈대가 2026-11-16 오후에야 main에 올라왔습니다.
-    그전까지 API·화면을 만들 곳이 없어서, 뼈대 없이 되는 것(스키마·기준 데이터·Redis 스크립트·
-    락 비교 수치)을 먼저 깔았습니다. 지금은 뼈대·인프라·기준 데이터·Lua가 모두 준비돼
-    <code>seat</code> 모듈 구현에 바로 들어갈 수 있습니다.
-  </div>
+        <td>스키마 <b>v24</b>까지 반영 (v19 결제·케이스 시퀀스, v21 상시 취소 수수료, v22 취소표 행동 로그, v23 DEPARTED 전이, v24 일정 간격 매크로 마커). 검사 FAIL 0 · WARN 0, 반영 대기 JSON 없음. 이미 데이터가 있는 DB용 패치 SQL(<code>db/patch/</code>)도 같이</td></tr>
+    <tr><td>§17.1 락 방식 비교</td><td><span class="tag ok">재측정 완료</span></td>
+        <td>A·B·C 3전략 × 3시나리오. Python(11-16) → k6 HTTP(11-17) → CPU 분리 10회 재측정(11-17)</td></tr>
+    <tr><td>프론트엔드 틀과 화면</td><td><span class="tag warn">담당 검토 중</span></td>
+        <td>React + Vite 틀, 내 화면(U-03·05, A-02·03·04)과 다른 팀원 담당 화면까지 시안대로 만듦. 각 담당이 문구·규칙을 검토 중 (강다인 님 검토 반영 11-18)</td></tr>
+    <tr><td>WL-03 취소표 제안</td><td><span class="tag ok">완료</span></td>
+        <td>담당 표는 D·C지만 코드가 없어 만듦. WL-01·02는 겹쳐서 강다인 님 것을 쓰고 내 것은 버림</td></tr>
+    <tr><td>배포 조사</td><td><span class="tag ok">넘김</span></td>
+        <td>구글 클라우드 선택지 비교·절차 정리 → 조영준 님이 공용 서버 배포 완료 (11-18)</td></tr>
+    <tr><td>봇 대회 제안</td><td><span class="tag warn">확인 대기</span></td>
+        <td>규칙을 모르는 팀원이 봇을 하나씩 만들어 탐지를 시험하자는 제안 (<code>docs/강동균/봇-대회-제안.md</code>). 길동현·강다인 확인 대기</td></tr>
+  </table></div>
 
   <h3>핵심 수치 (기획서 역할 분배)</h3>
-  <table>
+  <div class="tw"><table>
     <tr><th>지표</th><th>목표</th><th>현재</th><th>측정</th></tr>
     <tr><td>중복 예약</td><td class="n">0건</td><td class="n">0건</td>
-        <td>Lua 47항목 · 락 비교 3시나리오 전부. DB 포함 측정은 구현 후</td></tr>
+        <td>같은 좌석 100명 동시 → 성공 1 (<code>SeatHoldInfraTest</code>, 실제 Oracle·Redis) · Lua 47항목 · 락 비교 9칸</td></tr>
     <tr><td>락 방식별 TPS</td><td>비교 확보</td><td class="n">A 893 / B 2,248 / C 2,044</td>
         <td>같은 좌석 100명, k6 10회 중앙값. B·C는 편차 안(차이 없음)</td></tr>
     <tr><td>락 방식별 DB 왕복</td><td>비교 확보</td><td class="n">A 101 / B 108 / <b>C 1</b></td>
         <td>같은 좌석 100명. C를 고른 근거</td></tr>
-    <tr><td>기한 초과 반환율</td><td class="n">100%</td><td class="muted">미측정</td><td>RSV-03 구현 후</td></tr>
-  </table>
+    <tr><td>기한 초과 반환율</td><td class="n">100%</td><td class="n">100%</td>
+        <td>기한 지난 선점 20건 → 20건 만료, 좌석 행·카운터·Redis 한도 전부 반환 (<code>SeatReleaseInfraTest</code>)</td></tr>
+  </table></div>
+
+  <div class="note">
+    <b>남은 큰 일</b> — 공용 서버(11-18 배포)에서 같은 조건으로 다시 재기: 전체 예매 흐름(시나리오 11)의 개선 전후,
+    부하를 건 상태에서 중복 예약 0건, 앱 1대 vs 2대. 지금 수치는 모두 한 머신 안에서 잰 것입니다.
+  </div>
 </section>
 
 <!-- ───────────────────────────── DATA-01 -->
