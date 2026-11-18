@@ -13,6 +13,7 @@ import java.util.function.Predicate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.jdbc.test.autoconfigure.JdbcTest;
@@ -30,8 +31,9 @@ import com.jejari.event.inbox.InboxGuard;
 import com.jejari.event.inbox.InboxProcessor;
 import com.jejari.event.outbox.OutboxRecorder;
 import com.jejari.event.relay.EventPublisher;
-import com.jejari.event.relay.OutboxRelay;
 import com.jejari.event.relay.OutboxRelay.Stop;
+import com.jejari.event.relay.OutboxRelay;
+import com.jejari.support.NoRunningApp;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -40,6 +42,7 @@ import tools.jackson.databind.json.JsonMapper;
  * Kafka 대신 실패를 마음대로 만들 수 있는 가짜 출구를 씁니다. 각 테스트는 끝나면 롤백됩니다.
  */
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 @JdbcTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(OutboxInboxInfraTest.Beans.class)

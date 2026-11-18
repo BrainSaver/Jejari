@@ -1,0 +1,24 @@
+# 공용 서버용 Prometheus 설정 (deploy/compose.server.yaml이 docker/prometheus/prometheus.yml 대신 씀)
+# 로컬과 다른 점: 앱이 2대(8080·8081)
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: jejari-app
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+        labels:
+          instance: app-1
+      - targets: ["host.docker.internal:8081"]
+        labels:
+          instance: app-2
+
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

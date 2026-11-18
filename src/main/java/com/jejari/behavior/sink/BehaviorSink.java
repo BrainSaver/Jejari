@@ -21,6 +21,9 @@ import org.springframework.kafka.annotation.KafkaListener;
 
 import com.jejari.behavior.BehaviorEvent;
 import com.jejari.behavior.sink.BehaviorDocuments.Parsed;
+import com.jejari.risk.SubjectType;
+import com.jejari.risk.batch.RiskDirtyQueue;
+import com.jejari.risk.batch.RiskSubject;
 import com.mongodb.MongoBulkWriteException;
 import com.mongodb.MongoCommandException;
 import com.mongodb.MongoWriteException;
@@ -38,7 +41,8 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <pre>
  * poll(최대 behavior.batch_size건) → 형식 검사(깨진 메시지는 건너뜀) → ci_hash 붙이기 → interval_ms 계산
- *   → insertMany(ordered:false) → 성공하면 오프셋 커밋
+ *   → 회원↔기기 연결(member_device) → insertMany(ordered:false) → CI·기기를 위험 점수 재계산 대상(risk:dirty)으로 표시
+ *   → 성공하면 오프셋 커밋
  * </pre>
  * <ul>
  *   <li><b>중복</b>: 재전달된 이벤트는 event_id 유니크 인덱스에 걸린다. 중복 키 오류(11000)만 있으면 성공으로 본다.</li>
@@ -55,15 +59,18 @@ public class BehaviorSink {
 	private final JdbcTemplate jdbc;
 	private final JsonMapper json;
 	private final BehaviorPolicy policy;
+	private final RiskDirtyQueue riskDirty;
 	private final IntervalTracker intervals = new IntervalTracker(200_000);
 	private final Map<Long, String> ciCache = new ConcurrentHashMap<>();
 	private volatile boolean indexesReady;
 
-	public BehaviorSink(MongoTemplate mongo, JdbcTemplate jdbc, JsonMapper json, BehaviorPolicy policy) {
+	public BehaviorSink(MongoTemplate mongo, JdbcTemplate jdbc, JsonMapper json, BehaviorPolicy policy,
+			RiskDirtyQueue riskDirty) {
 		this.mongo = mongo;
 		this.jdbc = jdbc;
 		this.json = json;
 		this.policy = policy;
+		this.riskDirty = riskDirty;
 	}
 
 	@KafkaListener(id = "behavior-sink", topics = BehaviorEvent.TOPIC,
@@ -98,7 +105,9 @@ public class BehaviorSink {
 			docs.add(BehaviorDocuments.toDocument(p, e.memberId() == null ? null : ci.get(e.memberId()),
 					batch.next(sessionKey, p.ts()), retention));
 		}
+		recordDevices(docs); // Mongo 저장보다 먼저: 이벤트가 보일 때는 연결도 이미 있게 (MERGE라 재시도해도 같음)
 		insert(docs);
+		markRiskSubjects(docs);
 		batch.commit(); // 저장에 성공한 뒤에만 (재시도 때 간격이 0으로 바뀌지 않게)
 	}
 
@@ -138,6 +147,78 @@ public class BehaviorSink {
 			return false;
 		}
 	}
+
+	/**
+	 * 저장한 이벤트의 CI·기기를 위험 점수 재계산 대상으로 표시한다 (RISK-02 1분 배치가 읽음).
+	 * 실패하면 예외 → 이 묶음을 다시 처리한다 (저장은 event_id 중복으로 무시됨). 표시를 잃으면 그 대상의 점수가
+	 * 다음 활동 전까지 안 바뀌므로, 로그를 남기고 넘어가지 않는다.
+	 */
+	private void markRiskSubjects(List<Document> docs) {
+		Set<RiskSubject> subjects = new LinkedHashSet<>();
+		for (Document d : docs) {
+			RiskSubject ci = RiskSubject.ofNullable(SubjectType.CI, d.getString("ci_hash"));
+			RiskSubject device = RiskSubject.ofNullable(SubjectType.DEVICE, d.getString("device_hash"));
+			if (ci != null) {
+				subjects.add(ci);
+			}
+			if (device != null) {
+				subjects.add(device);
+			}
+		}
+		riskDirty.markAll(subjects);
+	}
+
+	/** 회원당 기록하는 기기 수 상한 (대기열 회원 조회 상한 100보다 훨씬 아래) */
+	static final int MAX_DEVICES_PER_MEMBER = 20;
+
+	/**
+	 * 회원 ↔ 기기 연결(member_device)을 기록한다. 기기 단위 위험 점수의 "연결 계정 수"와, 대기열이 회원의 기기 점수를
+	 * 읽는 경로(OracleMemberIdentityPort)가 이 표를 본다. 비어 있으면 기기 점수가 대기열 패널티에 반영되지 않는다.
+	 *
+	 * <ul>
+	 *   <li>없는 회원 ID(토픽에 누가 넣은 값)는 원천 쿼리가 비어 아무 일도 하지 않는다 (FK 오류로 적재가 멈추지 않게).</li>
+	 *   <li>회원당 {@value #MAX_DEVICES_PER_MEMBER}개까지만 새로 넣는다 (기기 ID를 바꿔 가며 표를 부풀리는 것 방지).
+	 *       이미 있는 쌍은 last_seen_at만 늘린다.</li>
+	 *   <li>실패하면 예외 → 이 묶음을 다시 처리 (MERGE라 두 번 해도 같다).</li>
+	 * </ul>
+	 */
+	private void recordDevices(List<Document> docs) {
+		Map<String, Object[]> pairs = new HashMap<>(); // "member|device" → {device, member, firstTs, lastTs}
+		for (Document d : docs) {
+			Object m = d.get("member_id");
+			String device = d.getString("device_hash");
+			java.util.Date ts = d.getDate("ts");
+			if (!(m instanceof Number) || device == null || ts == null) {
+				continue;
+			}
+			long memberId = ((Number) m).longValue();
+			Object[] cur = pairs.computeIfAbsent(memberId + "|" + device, k -> new Object[] {device, memberId, ts, ts});
+			if (ts.before((java.util.Date) cur[2])) cur[2] = ts;
+			if (ts.after((java.util.Date) cur[3])) cur[3] = ts;
+		}
+		if (pairs.isEmpty()) {
+			return;
+		}
+		List<Object[]> args = new ArrayList<>();
+		for (Object[] p : pairs.values()) {
+			java.sql.Timestamp first = new java.sql.Timestamp(((java.util.Date) p[2]).getTime());
+			java.sql.Timestamp last = new java.sql.Timestamp(((java.util.Date) p[3]).getTime());
+			args.add(new Object[] {p[0], first, last, p[1], p[1], MAX_DEVICES_PER_MEMBER, p[0]}); // SQL 자리표시자 순서
+		}
+		jdbc.batchUpdate("""
+				MERGE INTO member_device t
+				USING (SELECT ? device_hash, m.member_id, ? first_ts, ? last_ts FROM member m
+				        WHERE m.member_id = ?
+				          AND ((SELECT COUNT(*) FROM member_device x WHERE x.member_id = ?) < ?
+				               OR EXISTS (SELECT 1 FROM member_device y WHERE y.member_id = m.member_id AND y.device_hash = ?))) s
+				   ON (t.device_hash = s.device_hash AND t.member_id = s.member_id)
+				 WHEN MATCHED THEN UPDATE SET t.last_seen_at = GREATEST(NVL(t.last_seen_at, s.last_ts), s.last_ts),
+				                              t.updated_at = SYSTIMESTAMP
+				 WHEN NOT MATCHED THEN INSERT (device_hash, member_id, first_seen_at, last_seen_at)
+				      VALUES (s.device_hash, s.member_id, s.first_ts, s.last_ts)""",
+				args);
+	}
+
 
 	void insert(List<Document> docs) {
 		try {

@@ -18,5 +18,7 @@ public enum Purpose {
 	/** 기기 지문 → member_device.device_hash, auth_session.device_hash */
 	DEVICE,
 	/** IP 주소 → auth_session.ip_hash, login_attempt.ip_hash, rate:login:{ipHash} */
-	IP
+	IP,
+	/** 관리자 로그인 ID → login_attempt.email_hash(관리자 시도), login:fail:{hash} (AUTH-05) */
+	ADMIN_LOGIN
 }

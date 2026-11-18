@@ -12,6 +12,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import com.jejari.common.config.AppPolicy;
 import com.jejari.train.TrainLayoutReader;
 import com.jejari.train.TrainLayoutReader.SeatInfo;
 
@@ -38,9 +39,9 @@ public class SeatMapService {
 	private final TrainLayoutReader layouts;
 	private final StringRedisTemplate redis;
 	private final JdbcTemplate jdbc;
-	private final SeatPolicy policy;
+	private final AppPolicy policy;
 
-	public SeatMapService(TrainLayoutReader layouts, StringRedisTemplate redis, JdbcTemplate jdbc, SeatPolicy policy) {
+	public SeatMapService(TrainLayoutReader layouts, StringRedisTemplate redis, JdbcTemplate jdbc, AppPolicy policy) {
 		this.layouts = layouts;
 		this.redis = redis;
 		this.jdbc = jdbc;
@@ -99,7 +100,7 @@ public class SeatMapService {
 			cache.forEach((f, v) -> fields.put(f.getBytes(StandardCharsets.UTF_8),
 					v.getBytes(StandardCharsets.UTF_8)));
 			c.hashCommands().hMSet(k, fields);
-			c.keyCommands().pExpire(k, policy.getLong(SeatPolicy.SEATMAP_CACHE_MS));
+			c.keyCommands().pExpire(k, policy.getLong(AppPolicy.SEATMAP_CACHE_MS));
 			return null;
 		});
 		return out;

@@ -47,6 +47,16 @@ public class TrainLayoutReader {
 		return cache.computeIfAbsent(trainId, this::load);
 	}
 
+	/** 관리자 화면(ADM-01)이 편성을 바꾼 뒤 부른다. 이 앱 한 대의 캐시만 비운다 (다른 대는 재기동 전까지 옛 값) */
+	public void evict(long trainId) {
+		cache.remove(trainId);
+	}
+
+	/** 차량 유형 이름처럼 여러 열차에 걸친 값이 바뀌었을 때 */
+	public void evictAll() {
+		cache.clear();
+	}
+
 	private Layout load(long trainId) {
 		record CarRow(int carNo, String code, String name, String grade, String columns) {
 		}

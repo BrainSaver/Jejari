@@ -17,6 +17,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.RedisCallback;
@@ -24,20 +25,25 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.jejari.common.config.AppPolicy;
 import com.jejari.common.error.BusinessException;
 import com.jejari.seat.SeatHoldService.HoldCommand;
 import com.jejari.seat.SeatHoldService.SeatRequest;
+import com.jejari.support.NoRunningApp;
 
 /**
  * 좌석 해제: RSV-03 만료 스캐너(§6.1·§7), RSV-05 결제 전 취소(§7.4), 결제 실패 해제(§5.2 → §7.1)를
  * 실제 Oracle·Redis로 확인한다. 스캐너 스케줄은 끄고 {@link HoldExpiryScanner#scanOnce()}를 직접 부른다.
  */
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 @SpringBootTest(properties = {
 		"spring.data.redis.database=15",
 		"jejari.queue.scheduler-enabled=false",
 		"jejari.risk.cache-resync-enabled=false",
-		"jejari.seat.expiry-scanner-enabled=false"})
+		"jejari.risk.batch-enabled=false",
+		"jejari.seat.expiry-scanner-enabled=false",
+		"jejari.train.sale-open-scheduler-enabled=false"})
 class SeatReleaseInfraTest {
 
 	static final long RUN = 9001;
@@ -51,7 +57,7 @@ class SeatReleaseInfraTest {
 	@Autowired
 	SeatReleaseService release;
 	@Autowired
-	SeatPolicy policy;
+	AppPolicy policy;
 	@Autowired
 	JdbcTemplate jdbc;
 	@Autowired
@@ -125,11 +131,18 @@ class SeatReleaseInfraTest {
 			ids.add(r);
 		}
 
+		// 스캐너를 부르기 전에 20건이 모두 "기한 지난 HOLD"인지 먼저 본다. 여기서 깨지면 원인은
+		// 스캐너가 아니라 그 앞이다 — 앱(bootRun)이 떠 있으면 그쪽 스캐너가 먼저 만료시킨다 (NoRunningApp)
+		String in = String.join(",", ids.stream().map(String::valueOf).toList());
+		assertThat(count("SELECT COUNT(*) FROM reservation WHERE reservation_id IN (" + in
+				+ ") AND status = 'HOLD' AND pay_deadline_at < SYSTIMESTAMP"))
+				.as("스캔 전 기한 지난 HOLD 건수")
+				.isEqualTo(20);
+
 		int expired = scanner.scanOnce();
 
 		assertThat(expired).isEqualTo(20);
-		long stillHeld = count("SELECT COUNT(*) FROM seat_inventory WHERE reservation_id IN ("
-				+ String.join(",", ids.stream().map(String::valueOf).toList()) + ")");
+		long stillHeld = count("SELECT COUNT(*) FROM seat_inventory WHERE reservation_id IN (" + in + ")");
 		assertThat(stillHeld).isZero(); // 좌석 행 20/20 반환
 		assertThat(count("SELECT COALESCE(SUM(seat_count), 0) FROM purchase_counter WHERE ci_hash LIKE 'rel-ci-%'")).isZero();
 	}

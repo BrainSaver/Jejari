@@ -73,9 +73,9 @@ class SeatHoldTx {
 		jdbc.update("""
 				INSERT INTO reservation (reservation_id, member_id, ci_hash, run_id, from_station_id, to_station_id,
 				       seat_count, total_amount, status, channel, source, held_at, pay_deadline_at, idempotency_key, version)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'HOLD', ?, 'NORMAL', ?, ?, ?, 0)""",
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'HOLD', ?, ?, ?, ?, ?, 0)""",
 				r, p.memberId(), p.ciHash(), p.run().runId(), p.fromStationId(), p.toStationId(),
-				p.seatCount(), p.totalAmount(), p.channel(), p.now(), p.deadline(), p.idempotencyKey());
+				p.seatCount(), p.totalAmount(), p.channel(), p.source(), p.now(), p.deadline(), p.idempotencyKey());
 
 		// 4. 좌석 재고: (run_id, seat_id, segment_no) 오름차순 INSERT (§0.4-3). PK 충돌이면 롤백 → 거절
 		for (SeatLine s : p.seats()) {
@@ -99,7 +99,7 @@ class SeatHoldTx {
 
 		// 7~9. 이벤트, 이력, Saga. outbox는 reservation INSERT 뒤 (§0.5)
 		String eventId = outbox.append(r, "SEAT_HELD", seatHeldPayload(p));
-		history(r, null, "HOLD", eventId, "USER");
+		history(r, null, "HOLD", eventId, p.actorType());
 		jdbc.update("""
 				INSERT INTO saga_instance (saga_id, reservation_id, current_step, status, timeout_at)
 				VALUES (?, ?, 'SEAT_HELD', 'RUNNING', ?)""", UUID.randomUUID().toString(), r, p.deadline());
@@ -196,7 +196,7 @@ class SeatHoldTx {
 		m.put("seatCount", p.seatCount());
 		m.put("amount", p.totalAmount());
 		m.put("payDeadlineAt", p.deadline().atZone(java.time.ZoneId.of("Asia/Seoul")).toOffsetDateTime().toString());
-		m.put("source", "NORMAL");
+		m.put("source", p.source());
 		return m;
 	}
 

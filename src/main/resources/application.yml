@@ -83,6 +83,19 @@ jejari:
     # 위험 점수 캐시(risk:*) 재동기화: Oracle risk_score → Redis. 앱 시작 직후 한 번, 그 뒤 이 간격마다 (RiskCacheResync)
     cache-resync-enabled: true
     cache-resync-interval: 10m
+    # 위험 점수 배치 (RISK-02, RiskScoreBatch): 새 신호가 생긴 대상(risk:dirty)만 이 간격마다 다시 계산
+    batch-enabled: true
+    batch-interval: 1m
+    batch-max-run: 40s          # 한 번 실행 한도. 남은 대상은 다음 주기에
+    behavior-window: 1d         # 행동 로그 집계 기간 (지난 증거는 이전 점수의 반감기로 남음)
+    purchase-window: 30d        # 구매·취소 집계 기간
+    decay-refresh-after: 1d     # 새 신호가 없어도 이만큼 지난 점수는 감쇠를 반영해 다시 계산
+    signal-listener-enabled: true  # 예약 확정·취소 이벤트 소비 (risk-signal)
+  # 첫 관리자 계정 (AUTH-05, AdminBootstrap). admin_user가 비어 있을 때만 SUPERVISOR 1명을 만듭니다
+  admin:
+    bootstrap:
+      login-id: ${JEJARI_ADMIN_BOOTSTRAP_ID:}
+      password: ${JEJARI_ADMIN_BOOTSTRAP_PASSWORD:}
   jwt:
     issuer: jejari
     access-ttl: 15m
@@ -100,12 +113,23 @@ jejari:
       send-timeout: 10s       # Kafka 확인(acks=all) 대기 한도
     cleanup-enabled: true     # 발행 끝난 outbox·오래된 processed_event 정리 (매일 04:10)
     policy-cache-ms: 10000    # app_policy 값을 앱에서 들고 있는 시간
+  # 알림 (EVT-06·WL-04). 실제 푸시·메일 없이 알림함(IN_APP) + 로그
+  notification:
+    consumer-enabled: true      # 예약 이벤트 → 알림 행 (소비 그룹 notification: 만료·환불)
+    reminder-enabled: true      # 결제 기한 임박 PAY_REMINDER (기한 notification.pay_reminder_sec 전)
+    reminder-interval-ms: 10000
+    dispatcher-enabled: true    # 안 보낸 알림을 가상 채널로 발송(로그)하고 sent_at 기록
+    dispatch-interval-ms: 1000
 
 server:
   error:
     # 실패 응답은 GlobalExceptionHandler가 { code, message, traceId }로 만듭니다
     include-message: never
     include-stacktrace: never
+  tomcat:
+    # Tomcat 요청 스레드 사용량 메트릭(tomcat_threads_busy_threads) — 스레드가 다 찼는지 보려고 (Grafana)
+    mbeanregistry:
+      enabled: true
 
 management:
   endpoints:
@@ -119,6 +143,18 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    # p95·p99 응답 시간을 Prometheus에서 계산하려면 히스토그램 버킷이 필요합니다 (k6 개선 전후 비교, Grafana)
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        lettuce: true
+        hikaricp.connections.acquire: true
+      minimum-expected-value:
+        http.server.requests: 1ms
+        lettuce: 100us
+      maximum-expected-value:
+        http.server.requests: 10s
+        lettuce: 1s
 
 logging:
   pattern:

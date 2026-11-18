@@ -27,6 +27,7 @@ ensure('behavior_log', [
   [{ ci_hash: 1, ts: -1 }, { name: 'ix_ci_ts' }],
   [{ run_id: 1, ts: 1 }, { name: 'ix_run_ts' }],
   [{ member_id: 1, ts: 1 }, { name: 'ix_member_ts' }], // 타임라인 ADM-05
+  [{ device_hash: 1, ts: 1 }, { name: 'ix_device_ts' }], // 기기 단위 위험 점수 집계 (ERD v19)
   // Kafka 재전달 중복 방지 (ERD v16). event_id가 있는 문서만 유니크 — 없는 옛 문서끼리는 충돌하지 않게
   [{ event_id: 1 }, { name: 'ux_event_id', unique: true, partialFilterExpression: { event_id: { $type: 'string' } } }],
   [{ expire_at: 1 }, Object.assign({ name: 'ttl_expire_at' }, TTL)],

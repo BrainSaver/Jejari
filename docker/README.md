@@ -10,7 +10,7 @@ Oracle · MongoDB · Redis · Kafka · Prometheus · Grafana를 한 번에 띄�
    - `JWT_SECRET_K1`: `openssl rand -base64 32`
 3. `docker compose up -d`
 
-첫 기동은 이미지 내려받기 + Oracle DDL 실행으로 몇 분 걸립니다. `docker compose ps`에서 oracle·mongo·redis·kafka가 `healthy`, kafka-init이 `Exited (0)`이면 준비 완료입니다.
+첫 기동은 이미지 내려받기 + Oracle DDL 실행으로 몇 분 걸립니다. `docker compose ps`에서 oracle·mongo·redis·kafka가 `healthy`, kafka-init이 `Exited (0)`이면 준비 완료입니다. Oracle의 `healthy`는 앱 계정으로 `FREEPDB1`에 실제 접속까지 확인한 뒤라, 재시작 직후에도 `healthy`가 뜨면 바로 테스트를 돌려도 됩니다.
 
 ## 확인
 
@@ -21,8 +21,9 @@ Oracle · MongoDB · Redis · Kafka · Prometheus · Grafana를 한 번에 띄�
 | Mongo 인덱스 | `docker compose logs mongo \| grep "mongo init done"` | 한 줄 나옴 |
 | Kafka 토픽 | `docker compose logs kafka-init` | 토픽 4개 목록 |
 | 앱 | IDE에서 `JejariApplication` 실행 → `curl localhost:8080/actuator/health` | `"status":"UP"`, 로그에 `시간대 점검 통과` |
-| Prometheus | http://localhost:9090/targets | jejari-app `UP` (앱 실행 중일 때) |
-| Grafana | http://localhost:3000 (`.env`의 GRAFANA_ADMIN_*) | Prometheus 데이터소스 있음 |
+| Prometheus | http://localhost:9090/targets | jejari-app(앱 실행 중일 때)·redis `UP` |
+| Grafana | http://localhost:3000 (`.env`의 GRAFANA_ADMIN_*) | Jejari 폴더에 **제자리 · 앱 개요** 대시보드 (보는 법: `docs/조영준/features/모니터링-대시보드.md`) |
+| 첫 관리자 | `.env`의 `JEJARI_ADMIN_BOOTSTRAP_*` 넣고 앱 기동 | 로그에 `첫 관리자 계정을 만들었습니다` (admin_user가 비어 있을 때 한 번) |
 
 ## 자주 쓰는 명령
 

@@ -1,0 +1,81 @@
+import { useRef, useState } from 'react';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
+import { memberLogin } from '../api/client.js';
+import Icon, { Seal } from '../admin/Icon.jsx';
+import { useMember } from './useMember.js';
+
+/**
+ * U-01 로그인 (AUTH-03). POST /api/v1/auth/login → 액세스 토큰(메모리) + 리프레시 토큰(httpOnly 쿠키)
+ * ?next= 로 로그인 뒤 돌아갈 곳(예: 줄 서기)을 받는다. 가입 직후에는 ?joined=1 로 와서 안내를 띄운다.
+ * 실패하면 비밀번호 칸만 비운다. 어느 쪽이 틀렸는지는 말하지 않는다 (계정 존재 여부를 흘리지 않게).
+ */
+const MESSAGES = {
+  AUTH_INVALID_CREDENTIALS: '이메일 또는 비밀번호가 맞지 않아요. 다시 입력해 주세요.',
+  AUTH_LOCKED: '여러 번 틀려서 잠시 잠겼어요. 15분 뒤에 다시 시도해 주세요.',
+  AUTH_RATE_LIMITED: '시도가 너무 많아요. 잠시 후 다시 시도해 주세요.',
+  AUTH_BANNED: '이용이 정지된 계정이에요. 1588-0000으로 문의해 주세요.',
+};
+
+export default function Login() {
+  const [params] = useSearchParams();
+  const next = safeNext(params.get('next'));
+  const { member, checking } = useMember();
+  const navigate = useNavigate();
+  const [email, setEmail] = useState(params.get('email') || '');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const pwRef = useRef(null);
+
+  if (!checking && member) return <Navigate to={next} replace />;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await memberLogin(email.trim(), password);
+      navigate(next, { replace: true });
+    } catch (err) {
+      setError(MESSAGES[err.code] || err.message);
+      setPassword('');
+      pwRef.current?.focus();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <main className="body" style={{ paddingTop: 56 }}>
+      <p className="guide"><Icon name="info" /><span>이메일과 비밀번호를 넣고 [로그인]을 누르세요. 처음이면 아래 [회원가입]을 누르세요.</span></p>
+      <div className="m-only" style={{ padding: '0 4px 18px' }}>
+        <Seal size={40} />
+        <h1 style={{ fontSize: 30, lineHeight: 1.3, margin: '18px 0 6px', fontWeight: 800, fontFamily: 'var(--serif)' }}>명절 열차,<br />줄 선 순서대로.</h1>
+        <p className="mut" style={{ margin: 0 }}>제자리에 로그인하고 예매를 이어가세요.</p>
+      </div>
+      <h1 className="d-only" style={{ fontSize: 26, margin: '0 0 4px' }}>로그인</h1>
+      {params.get('joined') && !error && (
+        <div className="alert go"><Icon name="info" /><span>가입했어요. 방금 정한 비밀번호로 로그인해 주세요.</span></div>
+      )}
+      {error && <div className="alert stop" role="alert"><Icon name="info" /><span>{error}</span></div>}
+      <form onSubmit={submit} className="stack" style={{ gap: 0 }}>
+        <div className="field">
+          <label htmlFor="em">이메일</label>
+          <input id="em" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label htmlFor="pw">비밀번호</label>
+          <input id="pw" ref={pwRef} type="password" autoComplete="current-password" placeholder="비밀번호" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        </div>
+        <button className="btn" type="submit" disabled={busy}>{busy ? '확인하는 중…' : '로그인'}</button>
+      </form>
+      <p className="mut" style={{ textAlign: 'center', margin: '6px 0 0', fontSize: 14 }}>
+        처음이신가요? <Link className="link" to={`/signup?next=${encodeURIComponent(next)}`}>회원가입</Link>
+      </p>
+      <p style={{ textAlign: 'center', margin: 0 }}><Link className="link" to="/" style={{ fontSize: 14 }}>로그인 없이 열차 찾기</Link></p>
+    </main>
+  );
+}
+
+/** 다른 사이트로 보내는 주소(//evil.com 등)는 받지 않는다 */
+export const safeNext = (n) => (n && n.startsWith('/') && !n.startsWith('//') ? n : '/');

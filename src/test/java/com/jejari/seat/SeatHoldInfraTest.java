@@ -20,6 +20,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -35,6 +36,7 @@ import com.jejari.common.error.BusinessException;
 import com.jejari.seat.SeatHoldService.HoldCommand;
 import com.jejari.seat.SeatHoldService.HoldResult;
 import com.jejari.seat.SeatHoldService.SeatRequest;
+import com.jejari.support.NoRunningApp;
 
 /**
  * 좌석 선점 RSV-02를 실제 Oracle·Redis로 확인한다 (concurrency.md §16 T1·T2·T3·T5, 매수 한도).
@@ -44,11 +46,14 @@ import com.jejari.seat.SeatHoldService.SeatRequest;
  * <p>운행 9001(시드의 상시 ON_SALE 운행): 상시 정책 1회 9매 · 열차당 10매 · 1일 20매.
  */
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 @SpringBootTest(properties = {
 		"spring.data.redis.database=15",
 		"jejari.queue.scheduler-enabled=false",
 		"jejari.risk.cache-resync-enabled=false",
-		"jejari.seat.expiry-scanner-enabled=false"})
+		"jejari.risk.batch-enabled=false",
+		"jejari.seat.expiry-scanner-enabled=false",
+		"jejari.train.sale-open-scheduler-enabled=false"})
 @AutoConfigureMockMvc
 class SeatHoldInfraTest {
 

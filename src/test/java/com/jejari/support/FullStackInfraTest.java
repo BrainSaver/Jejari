@@ -6,6 +6,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
@@ -20,16 +21,19 @@ import org.springframework.context.annotation.Import;
  *
  * <ul>
  *   <li>Redis는 15번 DB만 쓴다 (각 테스트가 시작할 때 비움)</li>
- *   <li>대기열 입장 스케줄러·위험 점수 재동기화는 끈다 (테스트가 직접 부름)</li>
+ *   <li>대기열 입장 스케줄러·위험 점수 재동기화·위험 점수 배치 주기 실행은 끈다 (테스트가 직접 부름)</li>
  * </ul>
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 @SpringBootTest(properties = {
 		"spring.data.redis.database=15",
 		"jejari.queue.scheduler-enabled=false",
-		"jejari.risk.cache-resync-enabled=false"})
+		"jejari.risk.cache-resync-enabled=false",
+		"jejari.risk.batch-enabled=false",
+		"jejari.train.sale-open-scheduler-enabled=false"})
 @AutoConfigureMockMvc
 @Import(BehaviorProbeController.class) // 행동 로그 통합 테스트용 엔드포인트 (테스트에만 있음)
 public @interface FullStackInfraTest {

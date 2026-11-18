@@ -1,6 +1,37 @@
 # 좌석 선점 락 방식 비교 (동시성 §17.1)
 
-담당 B 강동균 · 핵심 수치 "락 방식별 TPS" · 측정일 2026-11-16
+담당 B 강동균 · 핵심 수치 "락 방식별 TPS" · 측정일 2026-11-16 (DB 수준, Python)
+
+> **k6 HTTP 수준 재측정(2026-11-17)** 이 따로 있습니다.
+> 결과만 보려면 설치 없이 [`락비교-결과.html`](../docs/강동균/features/락비교-결과.html) (문서 사이트에도 뜹니다),
+> 자세한 설명은 [`락비교-k6-재측정.md`](../docs/강동균/features/락비교-k6-재측정.md).
+
+## 폴더 안내
+
+| 경로 | 내용 |
+|---|---|
+| `lock_compare.py` · `schema.sql` | 2026-11-16 Python 측정 (DB 직결). 이 문서의 수치 |
+| `k6/lock-compare.js` | 2026-11-17 k6 재측정 스크립트 (HTTP 수준) |
+| `web/` | 버튼 누르면 k6를 돌리는 측정 러너 (Node 기본 모듈만, 의존성 없음) |
+| `reference/` | 기준 측정 결과 (커밋됨) |
+| `results/` | 실행할 때마다 쌓이는 결과 (gitignore) |
+
+### 웹 러너 돌리는 법
+
+```bash
+winget install --id GrafanaLabs.k6 -e   # 한 번만. Grafana.k6 가 아니라 GrafanaLabs.k6
+docker compose up -d
+
+# 앱 (개발 모드여야 벤치 API가 생긴다)
+set -a && . <(grep -E "^JEJARI_(ENC|PEPPER|HMAC)" .env) && set +a
+LC_ALL=C.UTF-8 TZ=Asia/Seoul ./gradlew bootRun   --args="--jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=9001"
+
+# 다른 터미널
+node bench/web/server.js                # → http://localhost:8099
+```
+
+사전 점검 4개가 초록이면 `▶ 측정 시작`. 내 PC에서만 돌립니다 — 벤치 API는 인증이 없어
+서버에 올리지 않습니다.
 
 ## 무엇을 비교하나
 
@@ -82,8 +113,11 @@ C가 A의 2.9배. 다만 **꼬리 지연(p95·p99)은 B가 더 좋다.** C는 �
 ## 이 수치의 한계 (발표 때 같이 말할 것)
 
 - **로컬 단일 머신**이다. 앱·Oracle·Redis가 한 PC에서 돌아 네트워크 지연이 없다.
-- **Python 스레드**로 부하를 준다. GIL 때문에 클라이언트 쪽 병목이 섞인다.
-  뼈대가 올라오면 k6로 HTTP 레벨에서 다시 재야 한다 (조영준 E 담당).
+- ~~**Python 스레드**로 부하를 준다. GIL 때문에 클라이언트 쪽 병목이 섞인다.
+  뼈대가 올라오면 k6로 HTTP 레벨에서 다시 재야 한다.~~
+  → **2026-11-17에 k6로 다시 쟀다**: [락비교-k6-재측정](../docs/강동균/features/락비교-k6-재측정.md).
+  결론(C안 채택)은 그대로이고 **근거가 TPS에서 DB 왕복으로 더 분명해졌다**. 다만 HTTP에서는
+  시나리오 1의 TPS가 B > C로 뒤집힌다 (Redis 왕복 한 번의 이점이 HTTP 왕복에 묻힌다).
 - **커넥션 풀 64 고정.** 풀 크기가 A안 결과에 크게 영향을 준다.
 - A와 C의 **회차 간 편차가 크다** (A 98~930, C 113~1,223). 중앙값을 써도 아직 거칠다.
   ROUNDS를 늘리거나 조용한 상태에서 다시 재는 게 좋다.

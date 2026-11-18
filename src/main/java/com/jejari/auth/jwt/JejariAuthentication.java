@@ -1,8 +1,10 @@
 package com.jejari.auth.jwt;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 
@@ -15,7 +17,7 @@ public class JejariAuthentication extends AbstractAuthenticationToken {
 	private final Jwt jwt;
 
 	public JejariAuthentication(AuthPrincipal principal, Jwt jwt) {
-		super(List.of(new SimpleGrantedAuthority(principal.actorType().authority())));
+		super(authoritiesOf(principal));
 		this.principal = principal;
 		this.jwt = jwt;
 		setAuthenticated(true);
@@ -35,5 +37,15 @@ public class JejariAuthentication extends AbstractAuthenticationToken {
 	@Override
 	public String getName() {
 		return principal.actorType() + ":" + principal.actorId();
+	}
+
+	/** ROLE_MEMBER 또는 ROLE_ADMIN + 세부 권한(ADMIN_VIEWER 등, 상위 권한은 하위를 포함) */
+	static List<GrantedAuthority> authoritiesOf(AuthPrincipal principal) {
+		List<GrantedAuthority> list = new ArrayList<>();
+		list.add(new SimpleGrantedAuthority(principal.actorType().authority()));
+		if (principal.adminRole() != null) {
+			principal.adminRole().authorities().forEach(a -> list.add(new SimpleGrantedAuthority(a)));
+		}
+		return list;
 	}
 }

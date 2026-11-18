@@ -16,6 +16,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.RedisCallback;
@@ -27,17 +28,21 @@ import com.jejari.common.error.BusinessException;
 import com.jejari.seat.SeatHoldService.HoldCommand;
 import com.jejari.seat.SeatHoldService.SeatRequest;
 import com.jejari.seat.SeatReleaseService.ReturnedSeats;
+import com.jejari.support.NoRunningApp;
 
 /**
  * 결제·취소 쪽이 부르는 좌석 단계를 실제 Oracle·Redis로 확인한다.
  * 결제 쪽(§4 결제 시작, §5.1 승인)과 취소 쪽(§8 확정 취소)의 트랜잭션은 이 테스트가 SQL 몇 줄로 흉내 낸다.
  */
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 @SpringBootTest(properties = {
 		"spring.data.redis.database=15",
 		"jejari.queue.scheduler-enabled=false",
 		"jejari.risk.cache-resync-enabled=false",
-		"jejari.seat.expiry-scanner-enabled=false"})
+		"jejari.risk.batch-enabled=false",
+		"jejari.seat.expiry-scanner-enabled=false",
+		"jejari.train.sale-open-scheduler-enabled=false"})
 class SeatPaymentInfraTest {
 
 	static final long RUN = 9001;

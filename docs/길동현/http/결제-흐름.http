@@ -1,0 +1,120 @@
+### 결제 흐름 직접 확인 (IntelliJ HTTP Client)
+# 준비: docker compose up -d → .\gradlew bootRun (또는 IntelliJ에서 JejariApplication 실행)
+# 사용: 위에서부터 ▶ 를 차례로 누른다. 앞 단계 응답의 토큰·ID는 자동으로 다음 단계에 들어간다.
+# 카드번호 끝자리: 0 거절 · 9 응답 없음(결제 중으로 남음) · 8 늦은 승인 · 나머지 승인
+
+@host = http://localhost:8080
+
+### 1. 모의 본인인증 → verificationToken
+POST {{host}}/api/v1/auth/verify
+Content-Type: application/json
+
+{"name": "홍길동", "phone": "010{{$random.integer(10000000, 99999999)}}", "provider": "MOCK_PASS"}
+
+> {%
+    client.global.set("verificationToken", response.body.verificationToken);
+    client.global.set("email", "pay" + Date.now() + "@test.jejari.dev");
+%}
+
+### 2. 회원가입 (201)
+POST {{host}}/api/v1/auth/signup
+Content-Type: application/json
+
+{"verificationToken": "{{verificationToken}}", "email": "{{email}}", "password": "Blue-Whale-42"}
+
+### 3. 로그인 → accessToken
+POST {{host}}/api/v1/auth/login
+Content-Type: application/json
+
+{"email": "{{email}}", "password": "Blue-Whale-42"}
+
+> {% client.global.set("accessToken", response.body.accessToken); %}
+
+### 4. 대기열 진입 (운행 9001 = 시드의 상시 판매 운행)
+POST {{host}}/api/v1/runs/9001/queue
+Authorization: Bearer {{accessToken}}
+
+### 5. 내 번호표 → passToken. state가 WAITING이면 1~2초 뒤 다시 누른다 (ADMITTED가 될 때까지)
+GET {{host}}/api/v1/runs/9001/queue/me
+Authorization: Bearer {{accessToken}}
+
+> {% if (response.body.passToken) client.global.set("passToken", response.body.passToken); %}
+
+### 6. 좌석 배치도 → 빈 좌석 하나를 골라 둠
+GET {{host}}/api/v1/runs/9001/seats?from=3900023&to=3900114
+Authorization: Bearer {{accessToken}}
+X-Queue-Token: {{passToken}}
+
+> {%
+    let seat = null;
+    for (const car of response.body.cars) {
+        for (const s of car.seats) {
+            if (s.state === "EMPTY") { seat = s.seatId; break; }
+        }
+        if (seat) break;
+    }
+    client.global.set("seatId", seat);
+%}
+
+### 7. 좌석 선점 (201, 상태 HOLD) → reservationId
+POST {{host}}/api/v1/reservations
+Authorization: Bearer {{accessToken}}
+X-Queue-Token: {{passToken}}
+Idempotency-Key: {{$random.uuid}}
+Content-Type: application/json
+
+{"runId": 9001, "fromStationId": "3900023", "toStationId": "3900114",
+ "seats": [{"seatId": {{seatId}}, "passengerType": "ADULT"}], "channel": "WEB"}
+
+> {%
+    client.global.set("reservationId", response.body.reservationId);
+    client.global.set("payKey", "pay-" + Date.now());
+%}
+
+### 8. 결제 시작 (201) → 승인 카드라 바로 APPROVED / CONFIRMED
+POST {{host}}/api/v1/reservations/{{reservationId}}/payments
+Authorization: Bearer {{accessToken}}
+Idempotency-Key: {{payKey}}
+Content-Type: application/json
+
+{"cardNumber": "4111111111111111"}
+
+### 9. 같은 멱등 키로 다시 (200, replay=true, 같은 paymentId) → 결제는 한 번만
+POST {{host}}/api/v1/reservations/{{reservationId}}/payments
+Authorization: Bearer {{accessToken}}
+Idempotency-Key: {{payKey}}
+Content-Type: application/json
+
+{"cardNumber": "4111111111111111"}
+
+### 10. 다른 키로 다시 (409 PAYMENT_DUPLICATED) → 버튼을 새로 눌러도 중복 결제 안 됨
+POST {{host}}/api/v1/reservations/{{reservationId}}/payments
+Authorization: Bearer {{accessToken}}
+Idempotency-Key: {{$random.uuid}}
+Content-Type: application/json
+
+{"cardNumber": "4111111111111111"}
+
+### 11. 로그인 없이 (401)
+POST {{host}}/api/v1/reservations/{{reservationId}}/payments
+Idempotency-Key: {{$random.uuid}}
+Content-Type: application/json
+
+{"cardNumber": "4111111111111111"}
+
+### 거절·응답 없음을 보려면: 6 → 7 → 8을 다시 하되, 8의 카드번호 끝자리를 0 또는 9로 바꾼다
+# 0: paymentStatus FAILED, reservationStatus EXPIRED (좌석 반환)
+# 9: paymentStatus REQUESTED, reservationStatus PAYMENT_PENDING (마감이 지나면 스캐너가 PG에 조회)
+
+### 12. 알림함 (EVT-06). 거절(끝자리 0)로 결제했다면 1초쯤 뒤 EXPIRED 알림이 보인다
+# 좌석을 잡고(7) 결제하지 않고 두면, 기한 2분 전에 PAY_REMINDER가 생긴다 (스캐너 10초 주기)
+GET {{host}}/api/v1/notifications?size=20
+Authorization: Bearer {{accessToken}}
+
+> {%
+    if (response.body.items.length > 0) client.global.set("notificationId", response.body.items[0].notificationId);
+%}
+
+### 13. 읽음 표시 (204, 다시 보내도 204). 12를 다시 보면 unreadCount가 1 줄어 있다
+PATCH {{host}}/api/v1/notifications/{{notificationId}}/read
+Authorization: Bearer {{accessToken}}

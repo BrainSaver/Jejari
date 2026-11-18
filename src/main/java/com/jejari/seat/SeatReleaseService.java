@@ -14,6 +14,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.jejari.common.config.AppPolicy;
 import com.jejari.common.error.BusinessException;
 import com.jejari.seat.SeatReleaseTx.Released;
 import com.jejari.seat.SeatReleaseTx.ReturnedSold;
@@ -64,14 +65,14 @@ public class SeatReleaseService {
 	private final SeatReleaseTx releaseTx;
 	private final TrainRunReader runs;
 	private final SeatScripts scripts;
-	private final SeatPolicy policy;
+	private final AppPolicy policy;
 	private final StringRedisTemplate redis;
 	private final JdbcTemplate jdbc;
 	private final TransactionTemplate tx;
 	private final MeterRegistry meters;
 	private final SeatMapService seatMap;
 
-	public SeatReleaseService(SeatReleaseTx releaseTx, TrainRunReader runs, SeatScripts scripts, SeatPolicy policy,
+	public SeatReleaseService(SeatReleaseTx releaseTx, TrainRunReader runs, SeatScripts scripts, AppPolicy policy,
 			StringRedisTemplate redis, JdbcTemplate jdbc, TransactionTemplate tx, MeterRegistry meters,
 			SeatMapService seatMap) {
 		this.releaseTx = releaseTx;
@@ -184,6 +185,40 @@ public class SeatReleaseService {
 	}
 
 	/**
+	 * §14.3 <b>보장 경로</b>. 해제한 쪽이 커밋 직후 바로 하는 빠른 경로가 앱이 죽어 유실될 수 있어,
+	 * {@code seat-release} 소비자가 빈 좌석 이벤트를 받아 같은 두 스크립트를 다시 돌린다.
+	 * 두 번 돌려도 결과가 같다 ({@code reoffer.lua}는 이미 REOFFER면 TTL을 늘리지 않고,
+	 * {@code limit_decr.lua}는 예약당 한 번만 감소한다).
+	 *
+	 * <p>값은 이벤트에서 믿지 않고 Oracle에서 다시 읽는다. 이벤트는 누가 넣었는지 모르고,
+	 * 그 사이 상태가 바뀌었을 수도 있다.
+	 *
+	 * <p>예약을 못 읽으면 아무 일도 하지 않는다 (지워졌거나 아직 안 보이는 것이라 다음 전달에 다시 한다).
+	 */
+	public void compensateAfterRelease(long reservationId) {
+		record Row(long runId, String ciHash, int seatCount, LocalDateTime createdAt, Long saleEventId) {
+		}
+		List<Row> rows = jdbc.query("""
+				SELECT r.run_id, r.ci_hash, r.seat_count, r.created_at,
+				       (SELECT tr.sale_event_id FROM train_run tr WHERE tr.run_id = r.run_id) AS sale_event_id
+				  FROM reservation r WHERE r.reservation_id = ?""", (rs, i) -> {
+			long se = rs.getLong("sale_event_id");
+			return new Row(rs.getLong("run_id"), rs.getString("ci_hash"), rs.getInt("seat_count"),
+					rs.getObject("created_at", LocalDateTime.class), rs.wasNull() ? null : se);
+		}, reservationId);
+		if (rows.isEmpty()) {
+			return;
+		}
+		Row row = rows.get(0);
+		List<Long> seatIds = jdbc.queryForList(
+				"SELECT seat_id FROM reservation_seat WHERE reservation_id = ? ORDER BY seat_id",
+				Long.class, reservationId);
+		// 감소는 "지금"이 아니라 그 예약을 만든 날짜다 (자정 넘김 버그 방지, §10.2 · T37)
+		compensate(reservationId, row.runId(), row.ciHash(), row.seatCount(),
+				SeatHoldTx.yyyymmdd(row.createdAt()), row.saleEventId(), seatIds, "GUARANTEE");
+	}
+
+	/**
 	 * 커밋 후 Redis 보상 (§14.3 빠른 경로): 내 값(R 또는 SOLD:R)인 좌석 키를 REOFFER:R로, 한도는 예약당 한 번만 감소.
 	 * 실패해도 예외를 던지지 않는다: DB는 이미 커밋됐고 seat-release 소비자(보장 경로)가 같은 두 스크립트를 다시 돌린다.
 	 */
@@ -195,7 +230,7 @@ public class SeatReleaseService {
 			if (!seatKeys.isEmpty()) {
 				// HOLD 만료라 TTL로 이미 사라졌으면 아무 일 없음
 				redis.execute(scripts.reoffer, seatKeys, Long.toString(reservationId),
-						Long.toString(policy.getLong(SeatPolicy.REOFFER_HOLD_SEC) * 1000));
+						Long.toString(policy.getLong(AppPolicy.REOFFER_HOLD_SEC) * 1000));
 			}
 			RunInfo run = runs.find(runId).orElse(null);
 			List<String> keys = new ArrayList<>();

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>락 비교 측정</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1d2129; --line: #2a2f3a;
+    --fg: #e6e9ef; --dim: #9aa3b2; --faint: #6b7483;
+    --ok: #3ecf8e; --bad: #ff6b6b; --warn: #ffc857; --accent: #5b8cff;
+    --a: #ff9f68; --b: #7fd1ff; --c: #3ecf8e;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f7f9; --panel: #fff; --panel2: #f0f2f6; --line: #e2e6ed;
+      --fg: #1a1d24; --dim: #5a6474; --faint: #8b94a3;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.6 "Segoe UI", system-ui, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { font-size: 21px; margin: 0 0 4px; letter-spacing: -.01em; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 22px; }
+  .sub code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 13px; margin: 0 0 12px; color: var(--dim); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+
+  .pf { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { display: flex; align-items: center; gap: 7px; background: var(--panel2); border: 1px solid var(--line);
+          border-radius: 999px; padding: 5px 12px; font-size: 12.5px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
+  .chip .why { color: var(--bad); font-size: 12px; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+  .group { min-width: 150px; }
+  .group > span { display: block; font-size: 11.5px; color: var(--faint); margin-bottom: 6px; letter-spacing: .03em; }
+  label.opt { display: flex; align-items: center; gap: 7px; font-size: 13px; padding: 2px 0; cursor: pointer; }
+  input[type=number] { width: 68px; background: var(--panel2); color: var(--fg); border: 1px solid var(--line);
+                       border-radius: 6px; padding: 5px 8px; font: inherit; }
+  .spacer { flex: 1; }
+  button { font: inherit; font-weight: 600; border-radius: 7px; padding: 9px 18px; cursor: pointer; border: 1px solid transparent; }
+  #go { background: var(--accent); color: #fff; }
+  #go:disabled { opacity: .45; cursor: not-allowed; }
+  #stop { background: transparent; color: var(--bad); border-color: var(--bad); }
+  #stop[hidden] { display: none !important; }
+
+  .bar { height: 4px; background: var(--panel2); border-radius: 2px; overflow: hidden; margin-top: 14px; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--faint); font-size: 11.5px; font-weight: 600; letter-spacing: .03em; }
+  tr.sc th { background: var(--panel2); color: var(--fg); font-size: 13px; text-align: left; padding: 10px 8px; }
+  tr.sc th small { color: var(--dim); font-weight: 400; margin-left: 8px; }
+  td.strat { font-weight: 600; }
+  td.strat small { display: block; font-weight: 400; color: var(--faint); font-size: 11.5px; }
+  .A { color: var(--a); } .B { color: var(--b); } .C { color: var(--c); }
+  .num { font-variant-numeric: tabular-nums; }
+  .best { color: var(--ok); font-weight: 700; }
+  .was { color: var(--faint); font-size: 11px; display: block; }
+  .pending { color: var(--faint); }
+  .spin { display: inline-block; width: 9px; height: 9px; border: 2px solid var(--line);
+          border-top-color: var(--accent); border-radius: 50%; animation: s .7s linear infinite; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  .verdict { font-size: 11.5px; }
+  .verdict .y { color: var(--ok); } .verdict .n { color: var(--bad); }
+
+  #log { background: #0a0c10; color: #c9d1d9; border: 1px solid var(--line); border-radius: 8px;
+         padding: 11px 13px; height: 190px; overflow-y: auto; font: 12px/1.65 ui-monospace, Consolas, monospace;
+         white-space: pre-wrap; }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) #log { background: #11141a; }
+  }
+  #log .error { color: #ff8a8a; } #log .warn { color: #ffd479; } #log .done { color: #6ee7a8; }
+  .foot { color: var(--faint); font-size: 12px; margin-top: 14px; }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>좌석 선점 락 방식 비교 — k6 HTTP 수준 재측정</h1>
+  <div class="sub">
+    실험 테이블(<code>exp_seat</code> · <code>exp_seat_inv</code>) 기준이라 2026-11-16 Python 측정과 같은 조건입니다.
+    바뀐 것은 부하 생성기(Python 스레드 → k6)뿐입니다.
+  </div>
+
+  <div class="card">
+    <h2>사전 점검</h2>
+    <div class="pf" id="pf"><span class="pending">확인 중…</span></div>
+  </div>
+
+  <div class="card">
+    <h2>측정 설정</h2>
+    <div class="controls">
+      <div class="group"><span>시나리오</span><div id="scs"></div></div>
+      <div class="group"><span>전략</span><div id="sts"></div></div>
+      <div class="group">
+        <span>회차 (중앙값)</span>
+        <input type="number" id="rounds" value="10" min="1" max="15">
+        <span style="margin-top:8px">좌석 배정 시드</span>
+        <input type="number" id="seed" value="42">
+      </div>
+      <div class="spacer"></div>
+      <div>
+        <button id="go">▶ 측정 시작</button>
+        <button id="stop" hidden>■ 중지</button>
+      </div>
+    </div>
+    <div class="bar"><i id="barfill"></i></div>
+  </div>
+
+  <div class="card">
+    <h2>결과 <span id="meta" style="text-transform:none;letter-spacing:0"></span></h2>
+    <div class="scroll"><table id="tbl"><tbody></tbody></table></div>
+    <div class="foot">
+      작은 글씨는 2026-11-16 Python 측정값입니다. <b>DB 왕복</b>이 C안을 고른 실제 이유이고,
+      TPS는 같은 PC·같은 순간의 상태에 따라 흔들립니다.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>실행 기록</h2>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+const S = { config: null, cells: {}, running: false }
+const $ = (s) => document.querySelector(s)
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+const STRAT_CLS = { PESSIMISTIC: 'A', OPTIMISTIC: 'B', REDIS: 'C' }
+
+function logLine(text, kind) {
+  const el = $('#log')
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30
+  const d = document.createElement('div')
+  if (kind && kind !== 'info') d.className = kind
+  d.textContent = text
+  el.appendChild(d)
+  if (atBottom) el.scrollTop = el.scrollHeight
+}
+
+async function loadConfig() {
+  S.config = await (await fetch('/api/config')).json()
+  $('#scs').innerHTML = S.config.scenarios.map((s) =>
+    `<label class="opt"><input type="checkbox" value="${s.id}" checked> ${esc(s.title.replace(/^시나리오 \d+ · /, ''))}</label>`).join('')
+  $('#sts').innerHTML = S.config.strategies.map((s) =>
+    `<label class="opt"><input type="checkbox" value="${s.id}" checked> <span class="${STRAT_CLS[s.id]}">${esc(s.label)}</span></label>`).join('')
+  renderTable()
+}
+
+async function preflight() {
+  $('#pf').innerHTML = '<span class="pending">확인 중…</span>'
+  const { checks } = await (await fetch('/api/preflight')).json()
+  $('#pf').innerHTML = checks.map((c) =>
+    `<span class="chip"><i class="dot ${c.ok ? 'ok' : 'bad'}"></i>${esc(c.name)}` +
+    (c.ok ? '' : ` <span class="why">${esc(c.detail)}</span>`) + '</span>').join('')
+  const allOk = checks.every((c) => c.ok)
+  $('#go').disabled = !allOk || S.running
+  return allOk
+}
+
+function fmt(v, digits) {
+  if (v === null || v === undefined) return '—'
+  return digits ? v.toFixed(digits) : Math.round(v).toLocaleString()
+}
+
+function cellHtml(sc, st) {
+  const c = S.cells[sc.id + '|' + st.id]
+  if (!c) return '<td colspan="8" class="pending">—</td>'
+  if (c.loading) return '<td colspan="8" class="pending"><span class="spin"></span> 측정 중…</td>'
+  if (c.error) return `<td colspan="8" class="verdict"><span class="n">실패</span> ${esc(c.error)}</td>`
+
+  const py = c.python || {}
+  const was = (v, d) => (v === undefined ? '' : `<span class="was">was ${fmt(v, d)}</span>`)
+  // 그 시나리오에서 가장 좋은 값을 굵게 (DB 왕복은 적을수록, TPS는 많을수록)
+  const row = S.config.strategies
+    .map((s) => S.cells[sc.id + '|' + s.id]).filter((x) => x && !x.error && !x.loading)
+  const bestTps = Math.max(...row.map((x) => x.tps || 0))
+  const bestDb = Math.min(...row.map((x) => x.dbCalls === null ? Infinity : x.dbCalls))
+
+  return `
+    <td class="num ${c.tps === bestTps ? 'best' : ''}">${fmt(c.tps)}${was(py.tps)}</td>
+    <td class="num">${fmt(c.avgMs, 1)}${was(py.avgMs, 1)}</td>
+    <td class="num">${fmt(c.p95Ms, 1)}</td>
+    <td class="num">${fmt(c.p99Ms, 1)}${was(py.p99Ms, 1)}</td>
+    <td class="num ${c.dbCalls === bestDb ? 'best' : ''}">${fmt(c.dbCalls)}${was(py.dbCalls)}</td>
+    <td class="num">${fmt(c.ok)}</td>
+    <td class="num">${c.lockWaitP99Ms ? fmt(c.lockWaitP99Ms, 1) : c.retries ? fmt(c.retries) + '회 재시도' : '—'}</td>
+    <td class="verdict">${(c.checks || []).map((k) =>
+      `<span class="${k.ok ? 'y' : 'n'}">${k.ok ? '✓' : '✗'} ${esc(k.label)}</span>`).join('<br>')}</td>`
+}
+
+function renderTable() {
+  if (!S.config) return
+  const head = `<tr>
+      <th>전략</th><th>TPS</th><th>평균ms</th><th>p95</th><th>p99</th>
+      <th>DB 왕복</th><th>성공</th><th>락대기 p99 / 재시도</th><th>판정</th></tr>`
+  let html = head
+  for (const sc of S.config.scenarios) {
+    html += `<tr class="sc"><th colspan="9">${esc(sc.title)}` +
+      (sc.note ? ` <small>${esc(sc.note)}</small>` : '') +
+      ` <small>좌석 ${sc.seatCount} · 동시 ${sc.users} · VU ${sc.vus}</small></th></tr>`
+    for (const st of S.config.strategies) {
+      html += `<tr><td class="strat ${STRAT_CLS[st.id]}">${esc(st.label)}<small>${esc(st.hint)}</small></td>` +
+        cellHtml(sc, st) + '</tr>'
+    }
+  }
+  $('#tbl').querySelector('tbody').innerHTML = html
+}
+
+function checked(sel) {
+  return [...document.querySelectorAll(sel + ' input:checked')].map((i) => i.value)
+}
+
+$('#go').addEventListener('click', async () => {
+  const scenarios = checked('#scs'), strategies = checked('#sts')
+  if (!scenarios.length || !strategies.length) return logLine('시나리오와 전략을 하나 이상 고르세요.', 'warn')
+  if (!(await preflight())) return logLine('사전 점검을 통과하지 못해 시작하지 않았습니다.', 'error')
+
+  S.cells = {}
+  renderTable()
+  $('#barfill').style.width = '0'
+  $('#meta').textContent = ''
+
+  const res = await fetch('/api/run', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scenarios, strategies, rounds: +$('#rounds').value, seed: +$('#seed').value }),
+  })
+  const body = await res.json()
+  if (!res.ok) {
+    logLine('시작 실패: ' + (body.error || res.status), 'error')
+    if (body.checks) body.checks.forEach((c) => logLine('  · ' + c.name + ' — ' + c.detail, 'error'))
+    return
+  }
+  S.running = true
+  $('#go').disabled = true
+  $('#stop').hidden = false
+})
+
+$('#stop').addEventListener('click', async () => {
+  await fetch('/api/stop', { method: 'POST' })
+  logLine('중지를 요청했습니다 (지금 회차가 끝나면 멈춥니다).', 'warn')
+})
+
+const ev = new EventSource('/api/events')
+ev.addEventListener('log', (e) => { const d = JSON.parse(e.data); logLine(d.text, d.kind) })
+ev.addEventListener('cell-start', (e) => {
+  const d = JSON.parse(e.data)
+  S.cells[d.scenario + '|' + d.strategy] = { loading: true }
+  renderTable()
+})
+ev.addEventListener('cell', (e) => {
+  const d = JSON.parse(e.data)
+  S.cells[d.scenario + '|' + d.strategy] = d
+  renderTable()
+})
+ev.addEventListener('progress', (e) => {
+  const d = JSON.parse(e.data)
+  $('#barfill').style.width = (d.done / d.total * 100) + '%'
+})
+ev.addEventListener('finished', (e) => {
+  const d = JSON.parse(e.data)
+  S.running = false
+  $('#go').disabled = false
+  $('#stop').hidden = true
+  $('#barfill').style.width = '100%'
+  const bad = (d.results || []).filter((r) => !r.pass).length
+  $('#meta').innerHTML = bad
+    ? `<span style="color:var(--bad)">판정 미달 ${bad}건</span>`
+    : `<span style="color:var(--ok)">전부 통과</span>` + (d.file ? ` · ${esc(d.file)}` : '')
+})
+ev.onerror = () => logLine('러너와의 연결이 끊어졌습니다. 서버가 살아 있는지 확인하세요.', 'warn')
+
+loadConfig().then(preflight)
+setInterval(() => { if (!S.running) preflight() }, 15000)
+</script>
+</body>
+</html>

@@ -21,6 +21,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.jdbc.test.autoconfigure.JdbcTest;
@@ -37,8 +38,9 @@ import com.jejari.event.inbox.InboxGuard;
 import com.jejari.event.inbox.InboxProcessor;
 import com.jejari.event.outbox.OutboxRecorder;
 import com.jejari.event.relay.EventPublisher;
-import com.jejari.event.relay.OutboxRelay;
 import com.jejari.event.relay.OutboxRelay.Stop;
+import com.jejari.event.relay.OutboxRelay;
+import com.jejari.support.NoRunningApp;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -51,6 +53,7 @@ import tools.jackson.databind.json.JsonMapper;
  * <b>앱(bootRun)을 켜 둔 채로 돌리지 마세요.</b> 앱의 릴레이가 이 테스트의 행을 먼저 가져갑니다.
  */
 @Tag("infra")
+@ExtendWith(NoRunningApp.class)
 @JdbcTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)

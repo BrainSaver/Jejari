@@ -168,7 +168,7 @@ CI(`.github/workflows/ci.yml`)가 매 push마다 검사 모드로 돌려서, 시
 | 상대 | 내용 |
 |---|---|
 | C 길동현 | 결제 금액은 `fare`에서 읽습니다. 선점 시점 운임으로 고정(`reservation.total_amount`, 기능설계서 RSV-02) |
-| D 강다인 | `cancel_fee_policy`는 DDL 예시 5건이 모두 `sale_event_id = 1`(지난 행사)입니다. 시연 행사 2나 평시 운행에서 수수료를 계산하려면 상시 정책(`sale_event_id` NULL) 세트가 필요합니다 — CNL-01·02 담당이 정해 주세요 |
+| D 강다인 | ~~`cancel_fee_policy` 상시 정책이 없습니다~~ → **해결 (ERD v21, 2026-11-17).** 강다인 씨가 비율을 정해 주셔서 `sale_event_id` NULL 세트 5건을 예시 행으로 넣었습니다: 3일 전 0% · 1~3일 5% · 3시간~1일 10% · 3시간 이내 20% · 출발 후 40%. 이미 쓰고 있는 Oracle은 `db/patch/v19-v21.sql`을 돌리세요 |
 | D 강다인 | 취소표 제안(§9.5)의 대기자 한도 검사에 **`PER_DAY`가 추가**됐습니다. `PER_RUN`·`PER_HOLIDAY`만 보면 1일 한도를 넘겨 제안됩니다 |
 | C 길동현 | `PER_DAY` scope를 `concurrency.md` §10에 넣었습니다 (구매일 기준). 절차 문서를 고쳤으니 봐 주세요 |
 | E 조영준 | Docker Compose에서 Oracle 컨테이너에 `TZ=Asia/Seoul`이 필요합니다 (동시성 §0.7, 검증 20번) |

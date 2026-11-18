@@ -130,6 +130,11 @@ footer{color:var(--mut);font-size:12.5px;border-top:1px solid var(--line);paddin
 .bar-l.best{fill:var(--fg);font-weight:700}
 .ax{font-size:11.5px;fill:var(--mut)}
 .gl{stroke:var(--grid);stroke-width:1}
+.wk line{stroke:var(--fg);stroke-width:1.5;opacity:.7}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tw table{min-width:520px}
+details{margin:14px 0 0}
+summary{cursor:pointer;color:var(--mut);font-size:14px}
 rect.b{transition:height .7s cubic-bezier(.22,1,.36,1),y .7s cubic-bezier(.22,1,.36,1)}
 rect.b:hover{opacity:.82}
 
@@ -143,7 +148,7 @@ rect.b:hover{opacity:.82}
 <body>
 <header><div class="wrap">
   <h1>강동균 · 산출물</h1>
-  <p class="sub">제자리(Jejari) · 팀원 B · 좌석 선점 동시성 · 열차 도메인 · ERD 반영 &nbsp;|&nbsp; 2026-11-16 기준</p>
+  <p class="sub">제자리(Jejari) · 팀원 B · 좌석 선점 동시성 · 열차 도메인 · ERD 반영 &nbsp;|&nbsp; 2026-11-16 기준 · 락 비교는 2026-11-17 재측정</p>
   <nav>
     <a href="#overview">진행 현황</a>
     <a href="#DATA-01">DATA-01 기준 데이터</a>
@@ -191,7 +196,7 @@ rect.b:hover{opacity:.82}
     <tr><td>ERD 반영 담당</td><td><span class="tag ok">유지 중</span></td>
         <td>스키마 v15까지 반영 (v12 위험 점수 캐시, v13 김성원·강다인 요청, v14 취소표 패널티 확정, v15 회원가입·로그인). 검사 FAIL 0 · WARN 0, 반영 대기 JSON 없음</td></tr>
     <tr><td>§17.1 락 방식 비교</td><td><span class="tag ok">실측 완료</span></td>
-        <td>A·B·C 3전략 × 3시나리오. 뼈대 올라온 뒤 k6로 재측정 필요</td></tr>
+        <td>A·B·C 3전략 × 3시나리오. Python(11-16) → k6 HTTP(11-17) → CPU 분리 10회 재측정(11-17)까지 완료</td></tr>
   </table>
 
   <div class="note">
@@ -206,8 +211,10 @@ rect.b:hover{opacity:.82}
     <tr><th>지표</th><th>목표</th><th>현재</th><th>측정</th></tr>
     <tr><td>중복 예약</td><td class="n">0건</td><td class="n">0건</td>
         <td>Lua 47항목 · 락 비교 3시나리오 전부. DB 포함 측정은 구현 후</td></tr>
-    <tr><td>락 방식별 TPS</td><td>비교 확보</td><td class="n">A 255 / B 1,457 / <b>C 2,732</b></td>
-        <td>같은 좌석 100명, 5회 중앙값</td></tr>
+    <tr><td>락 방식별 TPS</td><td>비교 확보</td><td class="n">A 893 / B 2,248 / C 2,044</td>
+        <td>같은 좌석 100명, k6 10회 중앙값. B·C는 편차 안(차이 없음)</td></tr>
+    <tr><td>락 방식별 DB 왕복</td><td>비교 확보</td><td class="n">A 101 / B 108 / <b>C 1</b></td>
+        <td>같은 좌석 100명. C를 고른 근거</td></tr>
     <tr><td>기한 초과 반환율</td><td class="n">100%</td><td class="muted">미측정</td><td>RSV-03 구현 후</td></tr>
   </table>
 </section>
@@ -383,19 +390,27 @@ rect.b:hover{opacity:.82}
 
 <!-- ───────────────────────────── 락 비교 -->
 <section id="LOCK">
-  <h2>§17.1 · 좌석 선점 락 방식 비교 <span class="tag ok">실측 완료</span></h2>
-  <p>세 방법을 <b>같은 조건·같은 입력</b>으로 재서 무엇을 왜 고를지 정했습니다. 워밍업 1회를 버리고 5회 측정한 중앙값입니다.</p>
+  <h2>§17.1 · 좌석 선점 락 방식 비교 <span class="tag ok">재측정 완료</span></h2>
+  <p>세 방법을 <b>같은 조건·같은 입력</b>으로 세 번에 걸쳐 쟀습니다. 아래 수치는 마지막 측정(2026-11-17 재측정 2)입니다 —
+     k6로 HTTP 요청을 보내고, 앱·DB·k6의 CPU를 나눠, 칸마다 <b>10회 중앙값</b>을 냈습니다.</p>
 
   <pre>A 비관적   SELECT ... FOR UPDATE  →  줄 서서 하나씩  →  UPDATE
 B 낙관적   SELECT version         →  UPDATE ... WHERE version=?  →  0행이면 다시
 C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사람만 INSERT(PK가 최종)</pre>
 
+  <div class="grid">
+    <div class="kpi"><b>1회</b><span>C의 DB 왕복 · 1석에 100명 (B 108회)</span></div>
+    <div class="kpi"><b>40ms</b><span>C의 p99 · 20석에 300명 (B 55ms)</span></div>
+    <div class="kpi"><b>차이 없음</b><span>B·C의 TPS (10회 편차 안)</span></div>
+    <div class="kpi"><b>0</b><span>중복 예약 · 9칸 전부</span></div>
+  </div>
+
   <div class="ctl"><button class="btn go" id="runChart">▶ 그래프 다시 그리기</button></div>
 
   <div class="chart">
-    <h4>처리량 (TPS) — 높을수록 좋음</h4>
-    <p class="cap">5회 측정 중앙값. 세 전략이 같은 좌석 배정을 받았습니다. 라벨은 그룹마다 가장 좋은 값에만 답니다 — 나머지는 막대에 커서를 올리거나 아래 표를 보세요.</p>
-    <svg id="chTps" viewBox="0 0 640 230" role="img" aria-label="시나리오별 전략 TPS 막대 그래프. 표가 아래에 있습니다"></svg>
+    <h4>처리량 (TPS) — 막대는 중앙값, 가는 선은 10회의 최소~최대</h4>
+    <p class="cap"><b>선이 겹치면 차이가 없다고 읽습니다.</b> B와 C는 세 시나리오 모두 겹칩니다. 그래서 이 그래프에는 "가장 좋은 값" 라벨을 달지 않았습니다 — 숫자는 막대에 커서를 올리거나 아래 표를 보세요.</p>
+    <svg id="chTps" viewBox="0 0 640 230" role="img" aria-label="시나리오별 전략 TPS 중앙값과 최소·최대 범위. B와 C의 범위가 겹칩니다. 표가 아래에 있습니다"></svg>
     <div class="legend">
       <span><i style="background:var(--s1)"></i>A 비관적 락</span>
       <span><i style="background:var(--s2)"></i>B 낙관적 락</span>
@@ -405,8 +420,8 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
 
   <div class="chart">
     <h4>DB 왕복 횟수 — 낮을수록 좋음</h4>
-    <p class="cap">C를 고른 진짜 이유입니다. 극한 경쟁에서 201회 → 2회로 100배 줄어듭니다. 여기서는 <b>낮을수록 좋아서</b> 가장 작은 값에 라벨을 답니다.</p>
-    <svg id="chDb" viewBox="0 0 640 230" role="img" aria-label="시나리오별 전략 DB 왕복 횟수 막대 그래프. 표가 아래에 있습니다"></svg>
+    <p class="cap">C를 고른 진짜 이유입니다. 회차마다 <b>같은 값</b>이 나오는 결정적인 숫자라 편차가 없습니다. 낮을수록 좋아서 가장 작은 값에 라벨을 답니다.</p>
+    <svg id="chDb" viewBox="0 0 640 230" role="img" aria-label="시나리오별 전략 DB 왕복 횟수. C가 1, 20, 319회로 가장 적습니다. 표가 아래에 있습니다"></svg>
     <div class="legend">
       <span><i style="background:var(--s1)"></i>A 비관적 락</span>
       <span><i style="background:var(--s2)"></i>B 낙관적 락</span>
@@ -414,58 +429,91 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
     </div>
   </div>
 
-  <h3>전체 수치</h3>
-  <table>
-    <tr><th>시나리오</th><th>전략</th><th class="n">TPS</th><th class="n">평균</th><th class="n">p95</th><th class="n">p99</th><th class="n">DB 왕복</th></tr>
+  <h3>전체 수치 (재측정 2 · 10회 중앙값)</h3>
+  <div class="tw"><table>
+    <tr><th>시나리오</th><th>전략</th><th class="n">TPS</th><th class="n">TPS 범위</th><th class="n">변동</th><th class="n">평균</th><th class="n">p99</th><th class="n">DB 왕복</th></tr>
     <tr><td rowspan="3">같은 좌석 1개<br><span class="muted">100명</span></td>
-        <td>A 비관적</td><td class="n">255</td><td class="n">146.9ms</td><td class="n">227.6</td><td class="n">286.7</td><td class="n">201</td></tr>
-    <tr><td>B 낙관적</td><td class="n">1,457</td><td class="n">11.4ms</td><td class="n">15.8</td><td class="n">16.3</td><td class="n">210</td></tr>
-    <tr class="best"><td><b>C 현재</b></td><td class="n"><b>2,732</b></td><td class="n"><b>3.2ms</b></td><td class="n"><b>6.6</b></td><td class="n"><b>8.2</b></td><td class="n"><b>2</b></td></tr>
+        <td>A 비관적</td><td class="n">893</td><td class="n">690~1,176</td><td class="n">15%</td><td class="n">38.5ms</td><td class="n">83.7</td><td class="n">101</td></tr>
+    <tr><td>B 낙관적</td><td class="n">2,248</td><td class="n">1,282~3,704</td><td class="n">33%</td><td class="n">9.6ms</td><td class="n">21.1</td><td class="n">108</td></tr>
+    <tr class="best"><td><b>C 현재</b></td><td class="n">2,044</td><td class="n">1,515~3,030</td><td class="n">23%</td><td class="n">12.5ms</td><td class="n">21.7</td><td class="n"><b>1</b></td></tr>
     <tr><td rowspan="3">좌석 20개<br><span class="muted">300명</span></td>
-        <td>A 비관적</td><td class="n">707</td><td class="n">58.7ms</td><td class="n">106.1</td><td class="n">125.0</td><td class="n">620</td></tr>
-    <tr><td>B 낙관적</td><td class="n">1,825</td><td class="n">15.8ms</td><td class="n"><b>37.7</b></td><td class="n"><b>43.5</b></td><td class="n">626</td></tr>
-    <tr class="best"><td><b>C 현재</b></td><td class="n"><b>2,083</b></td><td class="n"><b>10.5ms</b></td><td class="n">56.6</td><td class="n">74.3</td><td class="n"><b>40</b></td></tr>
+        <td>A 비관적</td><td class="n">2,120</td><td class="n">958~2,400</td><td class="n">21%</td><td class="n">22.1ms</td><td class="n">61.8</td><td class="n">320</td></tr>
+    <tr><td>B 낙관적</td><td class="n">2,565</td><td class="n">1,604~3,488</td><td class="n">21%</td><td class="n">16.6ms</td><td class="n">55.3</td><td class="n">333</td></tr>
+    <tr class="best"><td><b>C 현재</b></td><td class="n">3,015</td><td class="n">2,143~3,409</td><td class="n">15%</td><td class="n"><b>14.6ms</b></td><td class="n"><b>40.4</b></td><td class="n"><b>20</b></td></tr>
     <tr><td rowspan="3">좌석 500개<br><span class="muted">500명 · 경쟁 적음</span></td>
-        <td>A 비관적</td><td class="n">787</td><td class="n">66.3ms</td><td class="n">170.7</td><td class="n">180.7</td><td class="n">1,312</td></tr>
-    <tr class="best"><td><b>B 낙관적</b></td><td class="n"><b>1,256</b></td><td class="n"><b>35.5ms</b></td><td class="n"><b>74.4</b></td><td class="n"><b>99.5</b></td><td class="n">1,321</td></tr>
-    <tr><td>C 현재</td><td class="n">756</td><td class="n">65.7ms</td><td class="n">150.1</td><td class="n">180.8</td><td class="n"><b>624</b></td></tr>
-  </table>
+        <td>A 비관적</td><td class="n">1,553</td><td class="n">873~2,041</td><td class="n">27%</td><td class="n">33.0ms</td><td class="n">90.0</td><td class="n">819</td></tr>
+    <tr><td>B 낙관적</td><td class="n">2,128</td><td class="n">1,147~2,793</td><td class="n">28%</td><td class="n">23.3ms</td><td class="n">84.9</td><td class="n">829</td></tr>
+    <tr class="best"><td><b>C 현재</b></td><td class="n">2,598</td><td class="n">1,214~3,106</td><td class="n">30%</td><td class="n"><b>19.2ms</b></td><td class="n"><b>61.6</b></td><td class="n"><b>319</b></td></tr>
+  </table></div>
+  <p><b>중복 예약·HTTP 오류는 9칸 전부 0건</b>, 성공 수도 1 / 20 / 319로 세 전략이 같습니다(같은 좌석 배정을 받았다는 증거).
+     정확성은 셋 다 만족해서 변별력이 없고, 차이는 전부 비용입니다.</p>
 
-  <p><b>중복 예약은 세 방식 × 세 시나리오 전부 0건.</b> 정확성은 셋 다 만족해서 변별력이 없었고, 차이는 전부 비용이었습니다.</p>
-
-  <div class="note">
-    <b>C를 고른 이유는 TPS가 아니라 DB 왕복</b> — 극한 경쟁에서 <b>201회 → 2회</b>로 100배 줄어듭니다.
-    패배자 99명이 Redis에서 걸러져 DB에 아예 안 갑니다(§2.1-4). 명절 예매는 인기 열차 한 편에
-    수만 명이 몰리는 상황이라 "DB가 버티느냐"가 먼저입니다.
-  </div>
-
-  <h3>예상과 달랐던 것 — 그대로 남깁니다</h3>
-  <ul>
-    <li><b>경쟁이 적으면 C가 B보다 느립니다</b> (756 vs 1,256 TPS). 좌석이 안 겹치면 Redis 왕복이
-        순수 오버헤드가 됩니다. "Redis를 끼우면 항상 빠르다"가 틀렸습니다.</li>
-    <li><b>꼬리 지연은 B가 낫습니다</b> (시나리오 2에서 p99 43.5ms vs 74.3ms). C는 패배자가 빨리 끝나
-        평균을 끌어내리는 대신 승자들의 INSERT가 몰려 꼬리가 길어집니다.</li>
-    <li>그래도 1차는 C로 통일합니다. 운영 중에 경쟁 정도를 미리 알 수 없고, 코드가 두 갈래가 되면
-        버그 자리가 늘어납니다. 대신 <code>SeatHoldStrategy</code>로 바꿔 끼울 수 있게 설계했습니다.</li>
-    <li><b>A는 쓸 이유가 없습니다.</b> 전 구간 최하위에 변동이 가장 크고(TPS 98~930),
-        경쟁이 적은 시나리오 3에서 오히려 락 대기가 p99 <b>2,646ms</b>까지 튀었습니다.</li>
-  </ul>
-
-  <h3>측정 중에 고친 것</h3>
-  <ul>
-    <li><b>공정성 버그</b> — 전략마다 좌석 배정을 다시 뽑아 분포가 달랐습니다 (성공 수가 318/327/315로 갈림).
-        같은 입력을 쓰도록 고쳤습니다.</li>
-    <li><b>1회 측정은 못 믿습니다</b> — 같은 조건에서 TPS가 2~4배 흔들렸습니다 (B 시나리오3이 227 → 905).
-        워밍업 1회를 버리고 5회 중앙값으로 바꿨습니다.</li>
-  </ul>
-  <p class="muted">둘 다 고치기 전 수치를 그대로 보고했으면 틀린 결론을 낼 뻔했습니다.</p>
+  <h3>차이가 진짜인가 — 10회 대 10회 순위합 검정</h3>
+  <p class="muted">중앙값 하나로는 순서가 매번 바뀔 수 있어서, 두 전략의 회차 값 10개씩을 Mann-Whitney 검정으로 비교했습니다. p &lt; 0.05면 "우연으로 보기 어렵다".</p>
+  <div class="tw"><table>
+    <tr><th>비교</th><th>1석 · 100명</th><th>20석 · 300명</th><th>500석 · 500명</th></tr>
+    <tr><td>B·C가 A보다 TPS 높음</td><td>둘 다 p &lt; 0.001</td><td>B 0.01 · C 0.001</td><td>B 0.04 · C 0.02</td></tr>
+    <tr><td>C vs B — TPS</td><td class="muted">0.57 차이 없음</td><td class="muted">0.21 차이 없음</td><td class="muted">0.15 차이 없음</td></tr>
+    <tr><td>C vs B — p99</td><td class="muted">0.88 차이 없음</td><td><b>C가 낮음 0.005</b></td><td class="muted">C가 낮은 쪽 0.08</td></tr>
+  </table></div>
 
   <div class="note">
-    <b>이 수치의 한계 (발표 때 같이 말할 것)</b> — 로컬 단일 머신이라 네트워크 지연이 없고,
-    Python 스레드(GIL) 때문에 클라이언트 병목이 섞여 있습니다. 커넥션 풀 64 고정이고,
-    A·C는 회차 간 편차가 큽니다(A 98~930, C 113~1,223 TPS).
-    실제 §2.2 트랜잭션은 더 무겁습니다. <b>뼈대가 올라왔으니 k6로 HTTP 레벨에서 다시 재야 합니다</b>(조영준 E).
+    <b>C를 고른 이유는 TPS가 아니라 DB 왕복</b> — 극한 경쟁에서 <b>108회 → 1회</b>. 패배자 99명이 Redis에서 걸러져
+    DB에 아예 안 갑니다(§2.1-4). 명절 예매는 인기 열차 한 편에 수만 명이 몰리는 상황이라 "DB가 버티느냐"가 먼저이고,
+    앱 서버는 늘릴 수 있어도 Oracle은 못 늘립니다. 경쟁이 있을 때 <b>꼬리 지연</b>도 C가 낮습니다(p99 40 vs 55ms).
+    <b>"C가 더 빠르다"는 말은 하지 않습니다</b> — TPS는 B와 구별되지 않습니다.
   </div>
+
+  <h3>측정할 때마다 뒤집힌 해석 — 그대로 남깁니다</h3>
+  <div class="tw"><table>
+    <tr><th>해석</th><th>11-16 Python</th><th>11-17 k6 1차 (3회)</th><th>11-17 재측정 2 (10회)</th></tr>
+    <tr><td>극한 경쟁에서 C가 가장 빠르다</td><td>그렇다 (2,732 vs 1,457)</td><td>B가 이김 (2,128 vs 1,724)</td><td><b>구별 안 됨</b> (p=0.57)</td></tr>
+    <tr><td>경쟁이 적으면 B가 빠르다</td><td>그렇다 (1,256 vs 756)</td><td>그렇다 (286 vs 242)</td><td><b>구별 안 됨</b> (p=0.15)</td></tr>
+    <tr><td>꼬리 지연(p99)은 B가 낫다 · 20석</td><td>그렇다 (43.5 vs 74.3)</td><td>C가 나음 (104.5 vs 130.0)</td><td><b>C가 나음</b> (40 vs 55, p=0.005)</td></tr>
+    <tr><td>A는 시나리오와 무관하게 ~150 TPS</td><td>—</td><td>그렇다 (167 / 148 / 156)</td><td><b>틀림</b> (893 / 2,120 / 1,553). CPU 경합 탓</td></tr>
+    <tr><td>A는 쓸 이유가 없다</td><td>그렇다</td><td>그렇다</td><td><b>그렇다</b> (세 시나리오 모두 p &lt; 0.05)</td></tr>
+    <tr><td>C는 DB 왕복이 가장 적다</td><td>그렇다 (2 / 40 / 624)</td><td>그렇다 (1 / 20 / 319)</td><td><b>그렇다</b> (1 / 20 / 319)</td></tr>
+  </table></div>
+  <p>세 번 내내 흔들리지 않은 것은 <b>DB 왕복</b>과 <b>"A는 쓰지 않는다"</b> 두 가지뿐입니다. 결론(1차는 C)은 그 두 가지에 기대고 있어서 바뀌지 않았습니다.
+     코드는 <code>SeatHoldStrategy</code>로 바꿔 끼울 수 있게 해 뒀습니다.</p>
+
+  <h3>측정 방법에서 고친 것</h3>
+  <ul>
+    <li><b>공정성 버그</b> (11-16) — 전략마다 좌석 배정을 다시 뽑아 성공 수가 318 / 327 / 315로 갈렸습니다. 같은 입력을 쓰도록 고쳤습니다.</li>
+    <li><b>부하기 병목</b> (11-17) — Python 스레드(GIL)가 클라이언트 쪽 병목을 섞었습니다. k6로 HTTP 요청을 보내도록 바꿨습니다.</li>
+    <li><b>CPU 경합</b> (11-17) — 앱·DB·k6가 한 CPU를 나눠 써서 A가 ~150 TPS로 눌려 보였습니다. CPU 묶음을 나눴습니다 (앱 0-1 · DB 2 · k6 3).</li>
+    <li><b>덜 데워진 JVM</b> (11-17) — 앱을 막 띄우고 처음 잰 칸은 회차마다 TPS가 올랐습니다(A 355 → 568). 측정 전에 모든 칸을 한 번씩 돌리는 전체 예열을 넣었습니다.</li>
+    <li><b>3회는 적습니다</b> — 10회로 늘리고, 중앙값만이 아니라 범위·변동계수와 검정을 함께 봅니다.</li>
+  </ul>
+
+  <div class="note">
+    <b>이 수치의 한계 (발표 때 같이 말할 것)</b>
+    <ul style="margin:6px 0 0">
+      <li><b>TPS 편차가 아직 큽니다 (변동 15~33%).</b> CPU를 나눠도 거의 안 줄었습니다. 경쟁 구간이 50~200ms로 짧아
+          요청 하나가 10ms만 늦어도 TPS가 20% 흔들립니다. 그래서 TPS는 범위와 함께 말하고, 순서는 DB 왕복과 p99로 말합니다.</li>
+      <li><b>한 머신 안에서 CPU만 나눴습니다</b> (클라우드 4코어). 머신이 앞 측정과 달라 <b>절대 수치는 비교하지 않고</b> 전략 간 순서만 봅니다.
+          PC 두 대로 나눠 재는 방법은 기능 문서에 적어 뒀습니다.</li>
+      <li><b>실제 §2.2 트랜잭션은 더 무겁습니다</b> (예약·이력·사가·outbox까지 한 트랜잭션). 세 방식에 공통으로 붙는 비용이라 비교에는
+          영향이 없지만, 실제 API 전 구간 수치는 <code>loadtest/</code>에서 봐야 합니다.</li>
+    </ul>
+  </div>
+
+  <details>
+    <summary>이전 측정 수치 (11-16 Python · 11-17 k6 1차)</summary>
+    <div class="tw"><table>
+      <tr><th>시나리오</th><th>전략</th><th class="n">TPS<br><span class="muted">Python 5회</span></th><th class="n">p99</th><th class="n">DB 왕복</th><th class="n">TPS<br><span class="muted">k6 1차 3회</span></th><th class="n">p99</th><th class="n">DB 왕복</th></tr>
+      <tr><td rowspan="3">1석 · 100명</td><td>A</td><td class="n">255</td><td class="n">286.7</td><td class="n">201</td><td class="n">167</td><td class="n">345.0</td><td class="n">101</td></tr>
+      <tr><td>B</td><td class="n">1,457</td><td class="n">16.3</td><td class="n">210</td><td class="n">2,128</td><td class="n">37.3</td><td class="n">119</td></tr>
+      <tr><td>C</td><td class="n">2,732</td><td class="n">8.2</td><td class="n">2</td><td class="n">1,724</td><td class="n">32.7</td><td class="n">1</td></tr>
+      <tr><td rowspan="3">20석 · 300명</td><td>A</td><td class="n">707</td><td class="n">125.0</td><td class="n">620</td><td class="n">148</td><td class="n">563.8</td><td class="n">320</td></tr>
+      <tr><td>B</td><td class="n">1,825</td><td class="n">43.5</td><td class="n">626</td><td class="n">1,493</td><td class="n">130.0</td><td class="n">332</td></tr>
+      <tr><td>C</td><td class="n">2,083</td><td class="n">74.3</td><td class="n">40</td><td class="n">2,500</td><td class="n">104.5</td><td class="n">20</td></tr>
+      <tr><td rowspan="3">500석 · 500명</td><td>A</td><td class="n">787</td><td class="n">180.7</td><td class="n">1,312</td><td class="n">156</td><td class="n">619.4</td><td class="n">819</td></tr>
+      <tr><td>B</td><td class="n">1,256</td><td class="n">99.5</td><td class="n">1,321</td><td class="n">286</td><td class="n">584.0</td><td class="n">825</td></tr>
+      <tr><td>C</td><td class="n">756</td><td class="n">180.8</td><td class="n">624</td><td class="n">242</td><td class="n">579.7</td><td class="n">319</td></tr>
+    </table></div>
+    <p class="muted">Python 측정의 DB 왕복은 커밋·롤백까지 따로 세어 k6 측정의 약 2배입니다. 원본: <code>bench/README.md</code>, <code>bench/reference/</code>.</p>
+  </details>
 </section>
 
 <!-- ───────────────────────────── ERD -->
@@ -761,8 +809,12 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
   var SC = ['같은 좌석 1개 · 100명', '좌석 20개 · 300명', '좌석 500개 · 500명'];
   var SR = ['A 비관적 락', 'B 낙관적 락', 'C 현재 설계'];
   var COL = ['var(--s1)', 'var(--s2)', 'var(--s3)'];
-  var TPS = [[255, 1457, 2732], [707, 1825, 2083], [787, 1256, 756]];
-  var DBR = [[201, 210, 2], [620, 626, 40], [1312, 1321, 624]];
+  // 2026-11-17 재측정 2 (k6 · CPU 분리 · 10회). bench/reference/lock-compare-2026-11-17-pinned.json
+  var TPS = [[893, 2248, 2044], [2120, 2565, 3015], [1553, 2128, 2598]];
+  var TPS_RANGE = [[[690, 1176], [1282, 3704], [1515, 3030]],
+                   [[958, 2400], [1604, 3488], [2143, 3409]],
+                   [[873, 2041], [1147, 2793], [1214, 3106]]];
+  var DBR = [[101, 108, 1], [320, 333, 20], [819, 829, 319]];
 
   // 값 라벨은 그룹마다 하나만 단다 (전부 달면 읽히지 않는다).
   // TPS는 가장 큰 값, DB 왕복은 가장 작은 값이 "가장 좋은 값"이다.
@@ -774,7 +826,9 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
     return bi;
   }
 
-  function drawBars(svg, data, max, fmt, animate, lowerIsBetter) {
+  // lowerIsBetter: true = 가장 작은 값에 라벨, false = 가장 큰 값, null = 라벨 없음 (차이가 편차 안일 때)
+  // ranges: [그룹][전략] = [최소, 최대] 를 주면 막대 위에 가는 범위 선을 그린다
+  function drawBars(svg, data, max, fmt, animate, lowerIsBetter, ranges) {
     svg.innerHTML = '';
     var W = 640, H = 230, L = 46, R = 12, T = 14, B = 44;
     var pw = W - L - R, ph = H - T - B;
@@ -790,14 +844,25 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
     data.forEach(function (grp, gi) {
       var inner = gw * 0.74, bw = (inner - 4) / 3;     // 막대 사이 2px 간격
       var x0 = L + gw * gi + (gw - inner) / 2;
-      var best = bestIndex(grp, lowerIsBetter);
+      var best = lowerIsBetter === null ? -1 : bestIndex(grp, lowerIsBetter);
       grp.forEach(function (v, si) {
         var h = Math.max(2, ph * (v / max));
         var x = x0 + si * (bw + 2);
         var r = el('rect', { x: x, width: bw, rx: 4, fill: COL[si], class: 'b',
           y: animate ? T + ph : T + ph - h, height: animate ? 0 : h });
-        r.appendChild(el('title')).textContent = SC[gi] + ' · ' + SR[si] + ' · ' + fmt(v);
+        var rg = ranges && ranges[gi][si];
+        r.appendChild(el('title')).textContent = SC[gi] + ' · ' + SR[si] + ' · ' + fmt(v) +
+          (rg ? ' (10회 ' + fmt(rg[0]) + '~' + fmt(rg[1]) + ')' : '');
         svg.appendChild(r);
+        if (rg) {                                      // 최소~최대 범위 선 (막대보다 앞에)
+          var cx = x + bw / 2, y1 = T + ph - ph * (rg[0] / max), y2 = T + ph - ph * (rg[1] / max);
+          var wk = el('g', { class: 'wk', opacity: animate ? '0' : '1' });
+          wk.appendChild(el('line', { x1: cx, x2: cx, y1: y1, y2: y2 }));
+          wk.appendChild(el('line', { x1: cx - 4, x2: cx + 4, y1: y1, y2: y1 }));
+          wk.appendChild(el('line', { x1: cx - 4, x2: cx + 4, y1: y2, y2: y2 }));
+          svg.appendChild(wk);
+          if (animate) { setTimeout(function () { wk.setAttribute('opacity', '1'); }, 520 + (gi * 3 + si) * 70); }
+        }
         if (animate) {
           setTimeout(function () {
             r.setAttribute('y', T + ph - h); r.setAttribute('height', h);
@@ -819,8 +884,8 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
   }
   var num = function (v) { return Math.round(v).toLocaleString('ko-KR'); };
   function drawCharts(animate) {
-    drawBars($('#chTps'), TPS, 3000, num, animate && !RM, false);
-    drawBars($('#chDb'), DBR, 1400, num, animate && !RM, true);
+    drawBars($('#chTps'), TPS, 4000, num, animate && !RM, null, TPS_RANGE);
+    drawBars($('#chDb'), DBR, 1000, num, animate && !RM, true);
   }
   $('#runChart').addEventListener('click', function () { drawCharts(true); });
   drawCharts(false);

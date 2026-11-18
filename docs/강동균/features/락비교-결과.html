@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>락 방식 비교 결과</title>
+<style>
+:root{
+  --bg:#f4f5f7;--card:#fff;--fg:#1d1f24;--mut:#6b7079;--line:#e4e5e8;
+  --pri:#2f5bd3;--pri2:#e8eefc;--ok:#1d6b33;--okb:#e3f4e6;--bad:#a12c2c;--badb:#fbe9e9;
+  --warn:#7a5600;--warnb:#fff5db;--code:#f0f1f4;
+  --a:#b4432a;--ab:#fcebe6;   /* A 비관적 */
+  --b:#2f5bd3;--bb:#e8eefc;   /* B 낙관적 */
+  --c:#1d6b33;--cb:#e3f4e6;   /* C 현재 설계 */
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#15171b;--card:#1d2026;--fg:#e7e9ee;--mut:#9aa0ab;--line:#2c3038;
+    --pri:#7ea2f5;--pri2:#20283c;--ok:#7bd194;--okb:#17301d;--bad:#f09a9a;--badb:#331a1a;
+    --warn:#e8c06a;--warnb:#32280f;--code:#24272e;
+    --a:#f2a089;--ab:#3a211b;--b:#7ea2f5;--bb:#20283c;--c:#7bd194;--cb:#17301d;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15171b;--card:#1d2026;--fg:#e7e9ee;--mut:#9aa0ab;--line:#2c3038;
+  --pri:#7ea2f5;--pri2:#20283c;--ok:#7bd194;--okb:#17301d;--bad:#f09a9a;--badb:#331a1a;
+  --warn:#e8c06a;--warnb:#32280f;--code:#24272e;
+  --a:#f2a089;--ab:#3a211b;--b:#7ea2f5;--bb:#20283c;--c:#7bd194;--cb:#17301d;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:15px/1.65 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px 64px}
+header{border-bottom:1px solid var(--line);background:var(--card)}
+header .wrap{padding-top:22px;padding-bottom:0}
+h1{font-size:21px;margin:0 0 4px;letter-spacing:-.2px}
+.sub{color:var(--mut);font-size:13.5px;margin:0 0 14px}
+nav{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav a{flex:0 0 auto;padding:9px 13px;border-radius:9px 9px 0 0;text-decoration:none;color:var(--mut);
+  font-size:14px;font-weight:600;border-bottom:2px solid transparent;white-space:nowrap;cursor:pointer}
+nav a:hover{color:var(--fg)}
+nav a.on{color:var(--pri);border-bottom-color:var(--pri);background:var(--pri2)}
+main{padding-top:22px}
+section{display:none}
+section.on{display:block}
+h2{font-size:18px;margin:26px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+h2:first-child{margin-top:4px}
+h3{font-size:15px;margin:22px 0 8px}
+p{margin:0 0 10px}
+.muted{color:var(--mut)}
+.small{font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 16px;margin:0 0 14px}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em}
+code{background:var(--code);padding:1px 5px;border-radius:5px}
+pre{background:var(--code);border-radius:10px;padding:12px 14px;overflow-x:auto;margin:0 0 12px;font-size:13px;line-height:1.55}
+pre code{background:none;padding:0}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin:0 0 6px}
+th,td{text-align:right;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--mut);font-size:12px;font-weight:600}
+td.st{font-weight:700}
+td.st small{display:block;font-weight:400;color:var(--mut);font-size:11.5px}
+.A{color:var(--a)}.B{color:var(--b)}.C{color:var(--c)}
+.num{font-variant-numeric:tabular-nums}
+.win{font-weight:700;color:var(--ok)}
+.was{display:block;font-size:11px;color:var(--mut)}
+.bars{margin:10px 0 4px}
+.row{display:flex;align-items:center;gap:9px;margin:0 0 6px}
+.row .lab{flex:0 0 108px;font-size:12.5px;font-weight:600}
+.row .track{flex:1;background:var(--code);border-radius:5px;height:19px;position:relative;overflow:hidden}
+.row .fill{height:100%;border-radius:5px}
+.row .val{flex:0 0 96px;font-size:12.5px;text-align:right;font-variant-numeric:tabular-nums}
+.fa{background:var(--a)}.fb{background:var(--b)}.fc{background:var(--c)}
+.note{border-left:3px solid var(--pri);background:var(--pri2);border-radius:0 8px 8px 0;padding:10px 13px;margin:0 0 12px;font-size:13.5px}
+.note.ok{border-color:var(--ok);background:var(--okb)}
+.note.warn{border-color:var(--warn);background:var(--warnb)}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:700}
+.pill.ok{background:var(--okb);color:var(--ok)}
+ul{margin:0 0 10px;padding-left:19px}li{margin:0 0 5px}
+.toggle{position:absolute;right:16px;top:18px;background:var(--card);border:1px solid var(--line);
+  color:var(--mut);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer}
+header{position:relative}
+</style>
+</head>
+<body>
+<header>
+  <button class="toggle" id="theme">◐ 테마</button>
+  <div class="wrap">
+    <h1>좌석 선점 락 방식 비교 — k6 HTTP 수준 재측정</h1>
+    <p class="sub">강동균 · 2026-11-17 · 3회차 중앙값 · 동시성 §17.1 · <span class="pill ok">중복 예약 0건</span></p>
+    <nav>
+      <a data-s="sum" class="on">한눈에</a>
+      <a data-s="num">수치</a>
+      <a data-s="why">무엇이 달라졌나</a>
+      <a data-s="run">직접 돌려보기</a>
+      <a data-s="lim">한계</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ───────────────────────── 한눈에 ───────────────────────── -->
+<section id="sum" class="on">
+  <h2>한 줄 결론</h2>
+  <div class="note ok">
+    <b>C(Redis 1차 + DB PK)로 간다. 이유는 속도가 아니라 DB 보호다.</b><br>
+    같은 좌석에 100명이 몰릴 때 C는 DB를 <b>1번</b> 두드린다. A는 101번, B는 119번이다.
+  </div>
+
+  <h3>같은 좌석 1개에 100명 — DB 왕복 횟수</h3>
+  <div class="bars">
+    <div class="row"><span class="lab A">A 비관적</span><span class="track"><span class="fill fa" style="width:84.9%"></span></span><span class="val">101회</span></div>
+    <div class="row"><span class="lab B">B 낙관적</span><span class="track"><span class="fill fb" style="width:100%"></span></span><span class="val">119회</span></div>
+    <div class="row"><span class="lab C">C 현재</span><span class="track"><span class="fill fc" style="width:0.84%"></span></span><span class="val win">1회</span></div>
+  </div>
+  <p class="small muted">진 요청 99명이 Redis에서 걸러져 DB에 아예 가지 않는다 (concurrency.md §2.1-4).</p>
+
+  <h3>같은 구간 — 초당 처리(TPS)</h3>
+  <div class="bars">
+    <div class="row"><span class="lab A">A 비관적</span><span class="track"><span class="fill fa" style="width:7.8%"></span></span><span class="val">167</span></div>
+    <div class="row"><span class="lab B">B 낙관적</span><span class="track"><span class="fill fb" style="width:100%"></span></span><span class="val win">2,128</span></div>
+    <div class="row"><span class="lab C">C 현재</span><span class="track"><span class="fill fc" style="width:81%"></span></span><span class="val">1,724</span></div>
+  </div>
+
+  <div class="note warn">
+    <b>TPS만 보면 C가 B에 진다.</b> 이전 Python 측정에서는 C가 1.9배 앞섰는데 HTTP로 재니 뒤집혔다.
+    요청마다 HTTP·Spring 왕복이 10~15ms 붙으면서 C가 아끼던 "Redis 왕복 한 번"의 비중이 작아졌기 때문이다.<br>
+    그래도 결론은 그대로다 — <b>앱은 늘릴 수 있고 Oracle은 못 늘린다.</b> 명절 예매에서 먼저 터지는 쪽은 DB다.
+  </div>
+
+  <h3>정확성은 셋 다 같다</h3>
+  <p>3 시나리오 × 3 전략 <b>9칸 전부 중복 예약 0건, HTTP 오류 0건.</b>
+    세 전략의 성공 수가 <b>1 / 20 / 319로 정확히 같다</b> — 좌석 배정이 공정했다는 증거다.
+    차이는 정확성이 아니라 <b>비용</b>이다.</p>
+</section>
+
+<!-- ───────────────────────── 수치 ───────────────────────── -->
+<section id="num">
+  <h2>측정값</h2>
+  <p class="small muted">괄호 안은 2026-11-16 Python(DB 직결) 측정값. 초록 굵은 글씨가 그 시나리오의 최고값.</p>
+
+  <h3>시나리오 1 · 같은 좌석 1개에 100명 <span class="muted small">(극한 경쟁)</span></h3>
+  <div class="card">
+  <table>
+    <tr><th>전략</th><th>성공</th><th>TPS</th><th>평균ms</th><th>p95</th><th>p99</th><th>DB 왕복</th></tr>
+    <tr><td class="st A">A 비관적<small>SELECT … FOR UPDATE</small></td><td class="num">1</td>
+      <td class="num">167<span class="was">was 255</span></td><td class="num">245.8<span class="was">was 146.9</span></td>
+      <td class="num">340.4</td><td class="num">345.0<span class="was">was 286.7</span></td><td class="num">101<span class="was">was 201</span></td></tr>
+    <tr><td class="st B">B 낙관적<small>version 조건부 UPDATE</small></td><td class="num">1</td>
+      <td class="num win">2,128<span class="was">was 1,457</span></td><td class="num">16.1<span class="was">was 11.4</span></td>
+      <td class="num">32.6</td><td class="num">37.3<span class="was">was 16.3</span></td><td class="num">119<span class="was">was 210</span></td></tr>
+    <tr><td class="st C">C 현재<small>Redis hold.lua + DB PK</small></td><td class="num">1</td>
+      <td class="num">1,724<span class="was">was 2,732</span></td><td class="num">13.1<span class="was">was 3.2</span></td>
+      <td class="num win">27.3</td><td class="num win">32.7<span class="was">was 8.2</span></td><td class="num win">1<span class="was">was 2</span></td></tr>
+  </table>
+  </div>
+
+  <h3>시나리오 2 · 인기 운행 좌석 20개에 300명</h3>
+  <div class="card">
+  <table>
+    <tr><th>전략</th><th>성공</th><th>TPS</th><th>평균ms</th><th>p95</th><th>p99</th><th>DB 왕복</th></tr>
+    <tr><td class="st A">A 비관적</td><td class="num">20</td><td class="num">148<span class="was">was 707</span></td>
+      <td class="num">351.2<span class="was">was 58.7</span></td><td class="num">538.3</td>
+      <td class="num">563.8<span class="was">was 125.0</span></td><td class="num">320<span class="was">was 620</span></td></tr>
+    <tr><td class="st B">B 낙관적</td><td class="num">20</td><td class="num">1,493<span class="was">was 1,825</span></td>
+      <td class="num">36.6<span class="was">was 15.8</span></td><td class="num">109.9</td>
+      <td class="num">130.0<span class="was">was 43.5</span></td><td class="num">332<span class="was">was 626</span></td></tr>
+    <tr><td class="st C">C 현재</td><td class="num">20</td><td class="num win">2,500<span class="was">was 2,083</span></td>
+      <td class="num win">17.6<span class="was">was 10.5</span></td><td class="num win">68.4</td>
+      <td class="num win">104.5<span class="was">was 74.3</span></td><td class="num win">20<span class="was">was 40</span></td></tr>
+  </table>
+  </div>
+  <p class="small">이 구간은 C가 <b>전부 이긴다.</b> 꼬리 지연(p99)까지 B를 앞질렀다 — Python 측정에서는 B가 나았던 곳이다.</p>
+
+  <h3>시나리오 3 · 좌석 500개에 500명 <span class="muted small">(경쟁 적음 — 예상과 달랐던 구간)</span></h3>
+  <div class="card">
+  <table>
+    <tr><th>전략</th><th>성공</th><th>TPS</th><th>평균ms</th><th>p95</th><th>p99</th><th>DB 왕복</th></tr>
+    <tr><td class="st A">A 비관적</td><td class="num">319</td><td class="num">156<span class="was">was 787</span></td>
+      <td class="num">365.0<span class="was">was 66.3</span></td><td class="num">587.5</td>
+      <td class="num">619.4<span class="was">was 180.7</span></td><td class="num">819<span class="was">was 1,312</span></td></tr>
+    <tr><td class="st B">B 낙관적</td><td class="num">319</td><td class="num win">286<span class="was">was 1,256</span></td>
+      <td class="num win">201.2<span class="was">was 35.5</span></td><td class="num win">472.9</td>
+      <td class="num win">584.0<span class="was">was 99.5</span></td><td class="num">825<span class="was">was 1,321</span></td></tr>
+    <tr><td class="st C">C 현재</td><td class="num">319</td><td class="num">242<span class="was">was 756</span></td>
+      <td class="num">235.1<span class="was">was 65.7</span></td><td class="num">522.6</td>
+      <td class="num">579.7<span class="was">was 180.8</span></td><td class="num win">319<span class="was">was 624</span></td></tr>
+  </table>
+  </div>
+  <p class="small">좌석이 겹치지 않으면 Redis 왕복이 <b>순수 오버헤드</b>가 된다. Python 측정과 같은 방향이다.</p>
+</section>
+
+<!-- ───────────────────────── 무엇이 달라졌나 ───────────────────────── -->
+<section id="why">
+  <h2>왜 다시 쟀나</h2>
+  <p><code>bench/README.md</code>의 "이 수치의 한계"에 이렇게 적어 뒀었다.</p>
+  <div class="note">
+    Python 스레드로 부하를 준다. GIL 때문에 <b>클라이언트 쪽 병목</b>이 섞인다.
+    뼈대가 올라오면 k6로 HTTP 레벨에서 다시 재야 한다.
+  </div>
+  <p>고쳐야 할 것은 <b>부하 생성기</b>다. 그래서 재는 대상(실험 테이블 <code>exp_seat</code>·<code>exp_seat_inv</code>,
+    같은 세 전략, 같은 세 시나리오)은 그대로 두고 부하만 Python 스레드 → k6로 바꿨다.
+    그래야 두 측정이 사과 대 사과로 비교된다.</p>
+
+  <h3>프로덕션 선점 경로는 건드리지 않았다</h3>
+  <p><code>SeatHoldService</code>에 전략 스위치를 넣는 방법도 생각했지만 안 했다.
+    A·B안에서는 Redis <code>seat:hold</code> 키가 비는데, 그 키가 <b>좌석 배치도·해제·결제 확정의 원천</b>이다.
+    측정을 위해 운영 경로를 반쯤 거짓으로 만들 수는 없다.
+    대신 측정용 입구(<code>com.jejari.bench</code>)를 따로 뒀고 <b>개발 모드에서만 존재한다.</b></p>
+
+  <h2>HTTP로 재서 달라진 것</h2>
+
+  <h3>1. C의 근거가 TPS에서 DB 왕복으로 옮겨 갔다</h3>
+  <p>시나리오 1에서 C가 B에 TPS로 졌다(1,724 vs 2,128). 그런데 DB 왕복은 119 → 1이다.
+    명절 예매에서 중요한 것은 "이 서버가 초당 몇 건 처리하나"가 아니라 <b>"Oracle이 버티나"</b>다.</p>
+
+  <h3>2. A 비관적 락은 더 나빠졌고, 기다리는 곳이 바뀌었다</h3>
+  <p>TPS가 시나리오와 거의 무관하게 붙어 버린다 — <b>167 / 148 / 156.</b>
+    Python에서는 경쟁이 줄면 A도 빨라졌는데(255 → 787) HTTP에서는 그렇지 않다.</p>
+  <p>락 대기 p99는 오히려 작다(28.7 / 10.6 / 7.5ms). 그런데 전체 응답은 245~365ms다.
+    <b>기다리는 곳이 DB 락이 아니라 커넥션 풀로 옮겨 간 것이다.</b>
+    락을 쥔 채 커밋까지 가는 구간에 HTTP 왕복이 더해져 락 보유 시간이 길어지고, 풀의 커넥션이 그만큼 오래 묶인다.</p>
+
+  <h3>3. 경쟁이 적으면 B가 가장 빠르다 — 이건 그대로다</h3>
+  <p>시나리오 3에서 B 286 &gt; C 242. 그래도 C는 DB 왕복을 825 → 319로 줄인다.</p>
+
+  <h3>결론은 바뀌지 않는다</h3>
+  <p>1차 구현은 <b>C</b>로 간다. 다만 <b>"C가 항상 가장 빠르다"는 말은 이제 하지 않는다</b> —
+    경쟁이 적으면 B가 빠르고, 극한 경쟁에서도 TPS만 보면 B가 앞선다.</p>
+</section>
+
+<!-- ───────────────────────── 직접 돌려보기 ───────────────────────── -->
+<section id="run">
+  <h2>직접 돌려보기</h2>
+  <p>버튼을 누르면 <b>실제 k6가 돈다.</b> 이 페이지처럼 숫자가 박혀 있는 게 아니라, 그 자리에서 다시 잰다.</p>
+
+  <div class="note warn">
+    이 러너는 <b>내 PC에서만</b> 돌린다. 서버에 올리지 않는다 — 벤치 API는 개발 모드에서만 열리고
+    <b>인증이 없어서</b>, 공인 IP에 노출하면 누구나 실험 테이블을 건드릴 수 있다.
+    수치도 "앱·DB·k6가 한 PC"를 전제로 한 값이라 서버에 올리면 비교가 깨진다.
+  </div>
+
+  <h3>준비 — k6 한 번만 설치</h3>
+  <pre><code>winget install --id GrafanaLabs.k6 -e
+# 패키지 ID가 Grafana.k6 가 아니라 GrafanaLabs.k6 다 (v2.4.0)
+# mac: brew install k6   /   linux: https://grafana.com/docs/k6/latest/set-up/install-k6/</code></pre>
+
+  <h3>1. 인프라</h3>
+  <pre><code>cd /f/jejari/Jejari
+docker compose up -d</code></pre>
+
+  <h3>2. 앱 — 개발 모드여야 벤치 API가 생긴다</h3>
+  <pre><code>set -a &amp;&amp; . &lt;(grep -E "^JEJARI_(ENC|PEPPER|HMAC)" .env) &amp;&amp; set +a
+LC_ALL=C.UTF-8 TZ=Asia/Seoul ./gradlew bootRun \
+  --args="--jejari.dev-mode=true --jejari.queue.dev-on-sale-runs=9001"</code></pre>
+
+  <h3>3. 러너 — 다른 터미널에서</h3>
+  <pre><code>node bench/web/server.js     # → http://localhost:8099</code></pre>
+  <p class="small muted">의존성이 없다 (Node 기본 모듈만). <code>npm install</code>이 필요 없다.
+    포트가 겹치면 <code>PORT=9099</code>, 앱 주소가 다르면 <code>BASE_URL=http://...</code>을 앞에 붙인다.</p>
+
+  <h3>화면에서</h3>
+  <ul>
+    <li>사전 점검 4개(k6 · 앱 · 개발 모드 · 스크립트)가 <b>전부 초록</b>이어야 시작 버튼이 열린다.
+      빨간 칩 옆에 원인이 한 줄로 뜬다</li>
+    <li>시나리오·전략·회차·시드를 고르고 <b>▶ 측정 시작</b></li>
+    <li>칸마다 차오르면서 Python 측정값이 작은 글씨로 함께 나오고, 판정(중복 0 · 오류 0 · 성공 수)이 ✓/✗로 붙는다</li>
+    <li>전체 3×3×3회차는 <b>3~4분</b>. 빨리 보려면 시나리오 1개 · 회차 1로 줄이면 20초쯤</li>
+    <li>결과는 <code>bench/results/</code>에 JSON으로 쌓인다 (gitignore)</li>
+  </ul>
+
+  <h3>k6만 직접</h3>
+  <pre><code>k6 run -e STRATEGY=REDIS -e SEAT_FROM=5001 -e SEAT_COUNT=1 -e USERS=100 -e VUS=50 \
+       bench/k6/lock-compare.js</code></pre>
+
+  <h3>이 페이지의 수치는 어디에</h3>
+  <p><code>bench/reference/lock-compare-2026-11-17.json</code>에 커밋돼 있다. 자세한 설명은
+    <code>docs/강동균/features/락비교-k6-재측정.md</code>.</p>
+</section>
+
+<!-- ───────────────────────── 한계 ───────────────────────── -->
+<section id="lim">
+  <h2>이 수치의 한계 <span class="muted small">(발표 때 같이 말할 것)</span></h2>
+  <ul>
+    <li><b>앱·Oracle·Redis·k6가 모두 한 PC다.</b> k6가 CPU를 나눠 쓰므로 절대 수치는 낮게 나온다.
+      특히 시나리오 3에서 세 전략 모두 Python보다 3~5배 낮은 것은 여기서 온다.</li>
+    <li><b>커넥션 풀 기본값</b>을 그대로 썼다. A안 결과는 풀 크기에 크게 좌우된다.</li>
+    <li><b>회차 편차가 아직 크다</b> (C 시나리오 1: 893~1,754 TPS). 회차를 늘리거나 조용한 상태에서
+      다시 재는 것이 좋다. 시나리오 2의 p99 뒤집힘은 한 번 더 재서 확인할 값이다.</li>
+    <li><b>실제 §2.2 트랜잭션은 이것보다 무겁다</b> (reservation·reservation_seat·purchase_counter·
+      history·saga·outbox까지 한 트랜잭션). 세 방식에 공통으로 붙는 비용이라 비교에는 영향이 없지만
+      절대 수치는 더 낮아진다. <b>실제 API 전 구간 수치는 <code>SeatHoldInfraTest</code>와
+      <code>loadtest/</code> 시나리오 2에서 봐야 한다.</b></li>
+    <li>좌석 배정 난수가 Python(<code>random.Random(42)</code>)과 <b>다른 생성기</b>라 시나리오 3의 성공 수가
+      319(Python 312)로 조금 다르다. 한 번의 k6 측정 안에서는 세 전략이 같은 배정을 받으므로
+      전략 간 비교에는 영향이 없다.</li>
+  </ul>
+
+  <h2>측정 공정성을 위해 한 것</h2>
+  <ul>
+    <li><b>세 전략이 같은 좌석 배정을 받는다.</b> 시드(기본 42)로 돌리는 난수가 요청 i의 좌석을 정한다.
+      전략마다 다시 뽑으면 성공 건수부터 어긋난다 (Python 측정에서 실제로 한 번 틀렸다).</li>
+    <li><b>워밍업 1회를 버리고 3회 중앙값</b>을 쓴다.</li>
+    <li><b>TPS는 경쟁 구간만으로 계산한다.</b> k6의 <code>iterations.rate</code>는 <code>setup()</code>까지
+      포함한 전체 시간으로 나누는데, 시나리오 1의 경쟁은 ~110ms라 왜곡이 너무 크다.
+      요청 시각의 최솟값·최댓값을 모아 그 창으로 나눈다.</li>
+    <li><b>중복 예약은 앱 응답이 아니라 DB가 증명한다.</b> k6가 끝난 뒤 러너가 직접
+      <code>GROUP BY … HAVING COUNT(*) &gt; 1</code>로 센다.</li>
+  </ul>
+</section>
+
+</main>
+
+<script>
+(function () {
+  var nav = document.querySelectorAll('nav a');
+  var secs = document.querySelectorAll('section');
+  function show(id) {
+    nav.forEach(function (a) { a.classList.toggle('on', a.dataset.s === id); });
+    secs.forEach(function (s) { s.classList.toggle('on', s.id === id); });
+    try { location.hash = id; } catch (e) {}
+  }
+  nav.forEach(function (a) {
+    a.addEventListener('click', function (e) { e.preventDefault(); show(a.dataset.s); });
+  });
+  var h = (location.hash || '').replace('#', '');
+  if (h && document.getElementById(h)) show(h);
+
+  var KEY = 'jejari-lock-theme';
+  var btn = document.getElementById('theme');
+  try {
+    var saved = localStorage.getItem(KEY);
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+  } catch (e) {}
+  btn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>

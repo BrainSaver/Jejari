@@ -18,8 +18,11 @@ services:
       - ./docker/oracle/init:/container-entrypoint-initdb.d:ro   # 첫 기동 때만 실행
       - ./docs/erd/jejari-erd.ddl.sql:/schema/jejari-erd.ddl.sql:ro
       - ./db/seed:/seed:ro                                       # 기준 데이터 (DATA-01)
+    # healthy = 앱이 실제로 쓸 수 있음. 이미지 기본 점검(초기화 스크립트 끝 + PDB READ WRITE)에 더해,
+    # 앱과 같은 경로(앱 계정 → 리스너 → FREEPDB1)로 접속해 쿼리한다. 재시작 직후 PDB·서비스 등록이 늦을 때
+    # healthy가 먼저 뜨는 것을 막음 (docs/길동현/troubleshooting/20261116-oracle-재시작-직후-테스트-실패.md)
     healthcheck:
-      test: ["CMD", "healthcheck.sh"]
+      test: ["CMD-SHELL", "healthcheck.sh && echo \"select 'PDB'||'_OK' from dual;\" | sqlplus -s -L \"$$APP_USER/$$APP_USER_PASSWORD@localhost:1521/FREEPDB1\" | grep -q PDB_OK"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -104,6 +107,16 @@ services:
       - ./docker/kafka/create-topics.sh:/create-topics.sh:ro
     entrypoint: ["/bin/bash", "/create-topics.sh"]
     restart: "no"
+
+  # Redis 서버 지표 (메모리 사용량·한도, 밀려난 키 수, 초당 명령 수). 앱 쪽 메트릭은 명령 지연만 보여서 따로 둠
+  # noeviction 한도(maxmemory)에 얼마나 가까운지를 Grafana에서 봅니다 (concurrency.md §14.5)
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      redis: { condition: service_healthy }
 
   prometheus:
     image: prom/prometheus:v3.5.0

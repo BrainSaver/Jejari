@@ -11,6 +11,11 @@ scrape_configs:
         labels:
           instance: app-1
 
+  # Redis 서버 (redis_exporter): 메모리 사용량·한도, 밀려난 키, 초당 명령 수
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]

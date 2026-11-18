@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -15,6 +16,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+
+import jakarta.servlet.http.HttpServletRequest;
+
+import com.jejari.auth.AuthErrorCode;
 
 /**
  * 컨트롤러에서 나온 예외를 { code, message, traceId }로 바꿉니다.
@@ -83,6 +88,17 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(HttpMediaTypeNotSupportedException.class)
 	public ResponseEntity<ErrorResponse> handleMediaType(HttpMediaTypeNotSupportedException e) {
 		return respond(CommonErrorCode.UNSUPPORTED_MEDIA_TYPE, CommonErrorCode.UNSUPPORTED_MEDIA_TYPE.message());
+	}
+
+	/**
+	 * @PreAuthorize 등 메서드 보안 거부 (예: VIEWER가 REVIEWER 전용 API 호출). URL 규칙 거부와 같은 코드로 응답합니다.
+	 */
+	@ExceptionHandler(AccessDeniedException.class)
+	public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException e, HttpServletRequest request) {
+		ErrorCode code = request.getRequestURI().startsWith("/api/v1/admin/")
+				? AuthErrorCode.ADMIN_FORBIDDEN
+				: CommonErrorCode.ACCESS_DENIED;
+		return respond(code, code.message());
 	}
 
 	/** 예상하지 못한 오류. 내부 메시지는 응답에 넣지 않고 로그에만 남깁니다 (traceId로 찾음). */
