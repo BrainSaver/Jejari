@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import score as score_cli  # noqa: E402
-from jejari_dl import metrics, model as model_mod, realdata, schema, sim, training  # noqa: E402
+from jejari_dl import botcsv, metrics, model as model_mod, realdata, schema, sim, training  # noqa: E402
 
 
 class SchemaTest(unittest.TestCase):
@@ -64,6 +64,34 @@ class SimTest(unittest.TestCase):
         self.assertLess(np.median(cv), 0.1)                       # 일정한 간격
         multi = sim.gen_bot(rng, "multi_account")
         self.assertGreaterEqual(multi.sync, 2)                    # 공유 신호
+
+
+class BotCsvTest(unittest.TestCase):
+    HEADER = "session_id,email,label,bot_type,step_idx,event,ts_ms,dt_ms,seat,n_seats,ip_hash,ua_hash\n"
+
+    def csv_text(self):
+        rows = [("s1", "login", 1000), ("s1", "search", 1100), ("s1", "reserve_click", 1150),
+                ("s1", "queue_join", 1300), ("s1", "queue_pass", 2300), ("s1", "seat_select", 2400),
+                ("s1", "payment", 2500)]
+        # email·ip·ua에 이상한 값을 넣어도 모델 입력이 같아야 한다
+        return self.HEADER + "".join(f"{sid},evil@loadtest.example.com,1,naive,0,{e},{t},0,,1,ipX,uaX\n"
+                                     for sid, e, t in rows)
+
+    def test_mapping_drops_unmapped_and_recomputes_gaps(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "a.csv"
+            f.write_text(self.csv_text(), encoding="utf-8")
+            (s,) = botcsv.read_csv(f)
+        names = [schema.EVENT_TYPES[t] for t in s.types]
+        self.assertEqual(names, ["VIEW_TRAIN", "QUEUE_ENTER", "VIEW_SEAT", "SEAT_HOLD", "PAY"])
+        self.assertEqual(s.dt_ms, [0.0, 200.0, 1000.0, 100.0, 100.0])   # login·reserve_click을 버려도 시각 차이 유지
+        self.assertEqual((s.label, s.family, s.linked, s.sync), (1, "naive", 1, 0))   # ip를 신호로 쓰지 않음
+
+    def test_human_sessions_are_valid_and_label_zero(self):
+        hs = botcsv.make_humans(200, seed=3)
+        self.assertTrue(all(h.label == 0 and h.family == "csv_human" for h in hs))
+        self.assertTrue(all(1 <= len(h.types) <= schema.MAX_LEN and min(h.dt_ms[1:] or [1]) > 0 for h in hs))
+        self.assertEqual([h.types for h in hs[:5]], [h.types for h in botcsv.make_humans(5, seed=3)])
 
 
 class ModelTest(unittest.TestCase):

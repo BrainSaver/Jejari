@@ -33,7 +33,7 @@ pip install -r requirements.txt
 python train.py                              # 가상 데이터로 학습 → out/model.pt (CPU 1~2분)
 python evaluate.py --loo                     # 처음 보는 봇 유형에도 통하는지 (몇 분)
 python score.py --model out/model.pt --input events.jsonl --top 20
-python -m unittest discover -s tests         # 14개, 몇 초
+python -m unittest discover -s tests         # 16개, 몇 초
 ```
 
 `events.jsonl`은 `behavior_log`를 한 줄에 이벤트 하나(JSON)로 내보낸 파일입니다 (`eventType`·`ts`·`memberId`·`deviceHash`·`responseStatus`. 스네이크 표기도 읽습니다). 출력은 대상마다 `key, score, flag, reasons, events`입니다.
@@ -64,6 +64,42 @@ python -m unittest discover -s tests         # 14개, 몇 초
 - **multi_account**: 한 명의 행동은 사람과 같고 "기기 하나에 명의 여러 개"로만 구별되는 유형입니다. 이 신호가 봇이라고 한 번도 배우지 못하면 모델이 못 잡습니다. 그래서 `score.py`는 **모델과 별개로** 동시 선점 계정 ≥ 2이면 `shared_device` 사유로 표시합니다.
 - **규칙 기준선은 근사**입니다 (`RiskPolicy.defaults()` 문턱을 가상 데이터에 옮김). 가상 시퀀스가 짧아 "간격 30개 이상" 조건을 못 채우는 등 시뮬레이터 한계가 섞여 있으므로 **"딥러닝이 규칙보다 낫다"는 근거로 쓰지 마세요.**
 - 기본 학습 직후 시험(가상) 사람 오탐은 3.0%로, 목표 2%보다 높았습니다. 사람 점수가 0에 몰려 문턱이 매우 낮아진 탓에 표본 차이가 크게 보입니다.
+
+## 공격 생성기 CSV로 학습 (`train_csv.py`)
+
+공격 생성기(`gen_bot_data.py`)가 만든 이벤트 CSV(`bot_events.csv`)로 학습합니다. CSV에는 봇(`label=1`)만 있어서 **사람은 같은 어휘로 시뮬레이션**해 음성으로 넣었습니다(`jejari_dl/botcsv.py`, 가정입니다). CSV 이벤트는 `CSV_TO_TYPE`로 모델 어휘에 옮기고(`login`·`reserve_click`은 API 로그에 없어 버림), email·UA·IP 해시·좌석은 읽지 않습니다. CSV와 생성기 파일은 저장소에 올리지 않았습니다(경로를 인자로 줍니다).
+
+```bash
+python train_csv.py --csv bot_events.csv --gen gen_bot_data.py          # 학습 + 새 시드(11, 12)로 다시 만든 공격으로 시험
+python train_csv.py --csv bot_events.csv --gen gen_bot_data.py --loo    # 처음 보는 공격 유형 평가
+```
+
+새 시드로 생성기를 다시 돌려 시험 데이터를 만듭니다(replay 템플릿도 시드마다 달라짐). 결과(시드 0 한 번):
+
+| | 시드 11 | 시드 12 |
+|---|---|---|
+| AUC | 0.999 | 0.998 |
+| 봇 탐지율 | 98.8% | 99.2% |
+| mimic 탐지율 | 92.5% | 95.0% |
+| 사람 오탐 (CSV 어휘 사람) | 4.6% | 5.6% |
+| 사람 오탐 (기존 가상 사람) | 0.0% | 0.0% |
+
+처음 보는 공격 유형(`--loo`: CSV 봇에서 그 유형을 빼고, 기존 가상 봇도 쓰지 않음):
+
+| 처음 본 유형 | 탐지율 | 사람 오탐(CSV 어휘) |
+|---|---|---|
+| jitter | 100.0% | 4.0% |
+| **mimic** | **10.0%** | 4.0% |
+| multi | 100.0% | 3.4% |
+| naive | 100.0% | 3.8% |
+| replay | 100.0% | 3.0% |
+| sniper | 100.0% | 3.8% |
+| 평균 | 85.0% | 3.7% |
+
+- **mimic이 약점**입니다. 사람처럼 분산이 크고 느린 봇은 학습에 없으면 거의 못 잡고(10%), 학습에 넣어도 92~95%입니다.
+- **사람 오탐이 목표(2%)를 넘습니다**(3~6%). CSV 어휘의 사람 세션은 6~9개로 짧고 경로가 봇과 같아서 겹치는 구간이 큽니다. 문턱을 높이면 mimic 탐지율이 떨어집니다. 어느 쪽을 택할지는 팀 결정입니다.
+- **사람은 제가 만든 가정입니다.** 간격 분포·검색 반복·긴 결제 입력·줄 대기 길이를 사람답다고 정했을 뿐입니다. mimic 탐지율은 이 가정에 크게 좌우됩니다 (낮은 부하에서 줄 대기가 짧은 실제 사람이 많으면 오탐이 늘 수 있음). 대회 사람 로그로 반드시 다시 확인해야 합니다.
+- 규칙 기준선은 이 데이터(세션 6~9개)에서 의미가 없어 비교하지 않았습니다.
 
 ## 한계와 다음 단계
 
