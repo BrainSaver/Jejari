@@ -131,7 +131,8 @@ def pct_of(ref, s):
     return 100.0 * np.searchsorted(ref, s, side="right") / len(ref)
 
 
-def evaluate(folder: str, epochs: int):
+def evaluate(folder: str, epochs: int, mseed: int = SEED):
+    """mseed: 모델 초기값만 바꾸는 시드. 사람·봇 나누기는 SEED로 고정 (데이터 운과 학습 운을 따로 보려고)"""
     rows, Xall = load(os.path.join(folder, "features.csv"))
     T = Xall[:, COLS]
     seqs = load_sequences(folder)
@@ -153,13 +154,13 @@ def evaluate(folder: str, epochs: int):
     for f in families:
         tr = (hs == "train") | (is_bot & (fam != f))
         y = is_bot[tr].astype(int)
-        gbm = HistGradientBoostingClassifier(max_iter=300, random_state=SEED).fit(T[tr], y)
+        gbm = HistGradientBoostingClassifier(max_iter=300, random_state=mseed).fit(T[tr], y)
         iso = make_pipeline(SimpleImputer(strategy="median"), StandardScaler(),
-                            IsolationForest(n_estimators=300, random_state=SEED)).fit(T[hs == "train"])
+                            IsolationForest(n_estimators=300, random_state=mseed)).fit(T[hs == "train"])
         g = gbm.predict_proba(T)[:, 1]
         i = -iso.score_samples(T)
-        seq = Deep(hybrid=False, epochs=epochs).fit(take(S, tr), T[tr], y).predict(S, T)
-        hyb = Deep(hybrid=True, epochs=epochs).fit(take(S, tr), T[tr], y).predict(S, T)
+        seq = Deep(hybrid=False, epochs=epochs, seed=mseed).fit(take(S, tr), T[tr], y).predict(S, T)
+        hyb = Deep(hybrid=True, epochs=epochs, seed=mseed).fit(take(S, tr), T[tr], y).predict(S, T)
         P = {k: pct_of(v[ref_i], v) for k, v in {"g": g, "i": i, "s": seq, "h": hyb}.items()}
         scores = {
             names[0]: g, names[1]: np.maximum(P["g"], P["i"]),
@@ -190,8 +191,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("folder", help="생성 데이터 폴더 (events.jsonl · members.jsonl · features.csv)")
     p.add_argument("--epochs", type=int, default=14)
+    p.add_argument("--seed", type=int, default=SEED, help="모델 초기값 시드 (나누기는 고정)")
     a = p.parse_args()
-    evaluate(a.folder, a.epochs)
+    evaluate(a.folder, a.epochs, a.seed)
 
 
 if __name__ == "__main__":
