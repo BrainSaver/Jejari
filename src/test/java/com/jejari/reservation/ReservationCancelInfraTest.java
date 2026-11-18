@@ -151,7 +151,7 @@ class ReservationCancelInfraTest {
 	// ------------------------------------------------------------ CNL-02
 
 	@Test
-	void 확정_취소는_좌석을_돌려주고_수수료를_기록하고_환불한다() throws Exception {
+	void T15_확정_취소는_좌석을_돌려주고_수수료를_기록하고_환불한다() throws Exception {
 		long m = member();
 		long s1 = seatIds.get(10);
 		long s2 = seatIds.get(11);
