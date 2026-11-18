@@ -39,6 +39,7 @@ public final class SignalCollector {
     // 같은 좌석 반복
     private final Map<Long, Long> seatFailures = new HashMap<>();
     private long maxSameSeatFailures;
+    private long seatRetryFailures;
 
     // 구매·취소
     private long purchaseCount;
@@ -97,6 +98,9 @@ public final class SignalCollector {
         long next = cur + 1;
         seatFailures.put(seatId, next);
         maxSameSeatFailures = Math.max(maxSameSeatFailures, next);
+        if (next >= 2) {
+            seatRetryFailures++; // 같은 좌석을 다시 눌러 또 실패 (첫 실패는 "이미 잡힌 좌석"이라 사람도 흔함)
+        }
         return this;
     }
 
@@ -165,6 +169,6 @@ public final class SignalCollector {
                 maxSameSeatFailures,
                 purchaseCount, totalSeats, maxSingle,
                 userCancels, fastCancels, lastMinuteCancels, avgCancel,
-                linkedAccounts, maxSync, accountAgeDays);
+                linkedAccounts, maxSync, accountAgeDays, seatRetryFailures);
     }
 }

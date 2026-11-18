@@ -336,12 +336,15 @@ class RiskScoreBatchInfraTest {
 		assertThat(from).isBetween(t.minusSeconds(61), t.minusSeconds(59));
 		assertThat(to).isBetween(t.plusSeconds(59), t.plusSeconds(64));
 
-		var markers = jdbc.queryForList("SELECT rule_code, marker_type, severity, session_id, label FROM case_marker WHERE case_id = ?",
+		var markers = jdbc.queryForList("SELECT rule_code, marker_type, severity, session_id, label FROM case_marker WHERE case_id = ? ORDER BY rule_code",
 				c.get("CASE_ID"));
-		assertThat(markers).hasSize(1);
-		assertThat(markers.get(0).get("RULE_CODE")).isEqualTo("FAST_CLICK");
-		assertThat(markers.get(0).get("MARKER_TYPE")).isEqualTo("AUTO");
-		assertThat(markers.get(0).get("SESSION_ID")).isNull();
+		// 같은 100ms 간격 30회라 FAST_CLICK과 REGULAR_INTERVAL(v24부터 마커) 둘 다. ERD v24 CHECK가 받아 줘야 저장된다
+		assertThat(markers).extracting(mk -> mk.get("RULE_CODE")).containsExactly("FAST_CLICK", "REGULAR_INTERVAL");
+		assertThat(markers).allSatisfy(mk -> {
+			assertThat(mk.get("MARKER_TYPE")).isEqualTo("AUTO");
+			assertThat(mk.get("SESSION_ID")).isNull();
+		});
+		assertThat(markers.get(1).get("LABEL")).asString().startsWith("요청 간격이 기계처럼 일정함 (변동계수 ");
 		assertThat(jdbc.queryForObject("SELECT review_status FROM risk_score WHERE subject_hash = ?", String.class, ci))
 				.isEqualTo("PENDING");
 	}
