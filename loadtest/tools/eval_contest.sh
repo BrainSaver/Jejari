@@ -148,7 +148,7 @@ SELECT kind, members, ids "명의", paid "결제한 좌석", held "잡고 안 �
        CASE WHEN kind = 'human' THEN CASE WHEN det > 0 THEN '오탐 ' || det || '명' ELSE '오탐 없음' END
             ELSE NVL(RTRIM(CASE WHEN lim > 0 THEN '매수제한 · ' END
                           || CASE WHEN det > 0 THEN '규칙(케이스) · ' END
-                          || CASE WHEN pen_sec > 0 THEN '순번조정 · ' END
+                          || CASE WHEN pen_sec > 0 THEN '순번조정 ' || pen_sec || '초 · ' END
                           || CASE WHEN judged > 0 THEN '관리자판정 · ' END, ' · '), '뚫림') END AS layers
   FROM agg ORDER BY DECODE(kind, 'human', 1, 0), kind;
 
@@ -173,4 +173,5 @@ SELECT l.kind, c.subject_type subject, NVL(cm.rule_code, c.trigger_type) rule_co
 PROMPT
 PROMPT 읽는 법: "명의" = 서로 다른 본인인증(CI) 수 (대회 규칙: 봇당 최대 6). 명의당 열차 4매가 매수 제한의 바닥.
 PROMPT          "순번 -초" = 다음 판매에서 이 봇이 대기열에서 밀리는 시간. 탐지는 케이스 기준이라 점수만 오른 건 탐지가 아니다.
+PROMPT          새 계정은 누구나 작은 기본 점수가 붙는다(사람도). 순번조정이 몇 초뿐이면 사실상 막힌 게 아니다 — 사람 줄과 비교해 읽는다.
 EOF
