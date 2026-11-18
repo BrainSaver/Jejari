@@ -104,6 +104,15 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
     FROM train_run
    WHERE (status = 'ON_SALE'   AND sale_open_at >  SYSTIMESTAMP)
       OR (status = 'SCHEDULED' AND sale_open_at <= SYSTIMESTAMP)
+  UNION ALL
+  -- 시연 운행이 묵었는지 본다. 평시 운행 9001~9003은 "시드를 돌린 날" 기준 상대값이라
+  -- 오래된 DB에서는 이미 출발해 있다. 출발하면 DEPARTED가 되어 예매가 막히고
+  -- 좌석 선점 테스트가 통째로 깨진다 (원인이 시각이라 메시지만 봐서는 알 수 없다).
+  -- 걸리면 DB를 지우지 말고 04 → 05 시드만 다시 돌린다 (날짜가 앞으로 밀린다).
+  SELECT '24. 평시 운행이 7일 넘게 남음',       CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,
+         '곧 출발/출발함 ' || COUNT(*) || '건 → 04·05 다시 돌리세요'
+    FROM train_run
+   WHERE sale_event_id IS NULL AND run_date < TRUNC(SYSDATE) + 7
 ) ORDER BY TO_NUMBER(REGEXP_SUBSTR(item, '^[0-9]+'));
 
 -- 참고: 매수 제한 정책, 서울~부산 운임, 하행 정차 시각 (TAGO 실제 시각표)
@@ -114,8 +123,11 @@ SELECT run_id, train_id, TO_CHAR(run_date, 'YYYY-MM-DD') AS 운행일,
        TO_CHAR(sale_open_at, 'YYYY-MM-DD HH24:MI') AS 예매오픈, status
   FROM train_run ORDER BY run_id;
 
-SELECT seat_grade, amount FROM fare
- WHERE from_station_id = '0001' AND to_station_id = '0020' ORDER BY seat_grade;
+SELECT a.station_name AS 출발, b.station_name AS 도착, f.seat_grade, f.amount
+  FROM fare f
+  JOIN station a ON a.station_id = f.from_station_id
+  JOIN station b ON b.station_id = f.to_station_id
+ WHERE a.station_name = '서울' AND b.station_name = '부산' ORDER BY f.seat_grade;
 
 SELECT s.stop_order, st.station_name,
        TO_CHAR(s.arrival_time, 'HH24:MI')   AS 도착,
