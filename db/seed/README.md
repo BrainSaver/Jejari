@@ -135,6 +135,25 @@ node tools/load-public-data.js --write    # SQL의 값 블록을 다시 생성
 CI(`.github/workflows/ci.yml`)가 매 push마다 검사 모드로 돌려서, 시드가 CSV와 어긋나면
 빌드가 실패합니다.
 
+## 스키마가 바뀌면 각자 DB에도 넣어야 합니다
+
+**DDL은 Oracle 볼륨을 처음 만들 때만 돕니다.** 그래서 ERD가 올라가도 이미 띄워 둔 DB는
+예전 스키마 그대로입니다. 테이블은 다 있어서 겉으로는 멀쩡해 보이는데, CHECK 제약이나
+시퀀스가 없어 **통합 테스트가 엉뚱한 곳에서 깨집니다.**
+
+실제로 2026-11-18에 `RiskScoreBatchInfraTest` 2개가 "expected 1 but was 0"으로 실패했는데,
+원인은 `case_marker.rule_code` CHECK에 `REGULAR_INTERVAL`이 없어서(ERD v24) 마커가 저장되지
+않은 것이었습니다. 테스트 메시지만 봐서는 알 수 없습니다.
+
+```bash
+# 이미 데이터가 있어 볼륨을 지우고 싶지 않을 때 — 델타만 (다시 실행해도 안전)
+PW=$(grep '^ORACLE_APP_PASSWORD=' .env | cut -d= -f2)
+docker compose exec -T -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 oracle   bash -lc "sqlplus -S -L jejari/$PW@localhost:1521/FREEPDB1" < db/patch/v24.sql
+
+# 아니면 처음부터 (데이터 삭제됨)
+docker compose rm -sf oracle && docker volume rm jejari_oracle-data && docker compose up -d oracle
+```
+
 ## 오픈 API 적용 (2026-11-18)
 
 역·노선·거리·차량유형은 **파일데이터(CSV)** 로 받아 쓰고 있었지만, **정차 시각과 운임은
