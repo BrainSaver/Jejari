@@ -23,7 +23,7 @@ const LOW = 5; // 이만큼 이하면 "얼마 안 남음" 색
 export default function Search() {
   const [params, setParams] = useSearchParams();
   const [stations, setStations] = useState([]);
-  const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday(), time: params.get('time') || defaultTime(params.get('date') || seoulToday()), ...peopleOf(params), grade: GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '' });
+  const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday(), time: params.get('time') || defaultTime(params.get('date') || seoulToday()), timeSet: false, ...peopleOf(params), grade: GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '' });
   const [state, setState] = useState({ runs: null, loading: false, error: null });
   const [sort, setSort] = useState('dep');
   const [spun, setSpun] = useState(false); // 바꾸기 버튼이 반 바퀴씩 돈다
@@ -67,7 +67,10 @@ export default function Search() {
       setState({ runs: null, loading: false, error: { message: '출발역과 도착역이 같아요. 다른 역을 골라 주세요.' } });
       return;
     }
-    setParams({ from: form.from, to: form.to, date: form.date, time: form.time, adult: String(form.adult), child: String(form.child), senior: String(form.senior), ...(form.grade ? { grade: form.grade } : {}) });
+    // 주소에서 온 시각은 같은 날짜를 다시 찾을 때만 유지한다 (예전 주소엔 검색 순간의 지금 시각이 자동으로 들어 있었음)
+    const keepTime = form.timeSet || (params.get('time') === form.time && params.get('date') === form.date);
+    // 시각을 직접 고르지 않았으면 주소에 넣지 않는다. 넣으면 "검색한 순간의 지금 시각"이 굳어, 나중에 날짜만 바꾸거나 링크를 다시 열 때 열차가 걸러진다
+    setParams({ from: form.from, to: form.to, date: form.date, ...(keepTime ? { time: form.time } : {}), adult: String(form.adult), child: String(form.child), senior: String(form.senior), ...(form.grade ? { grade: form.grade } : {}) });
   };
 
   const name = (id) => stations.find((s) => s.stationId === id)?.stationName || id;
@@ -128,7 +131,7 @@ export default function Search() {
                 <input
                   type="date" aria-label="운행일" value={form.date} min={seoulToday()} required
                   onClick={openPicker}
-                  onChange={(e) => e.target.value && setForm({ ...form, date: e.target.value, time: e.target.value === seoulToday() ? maxTime(form.time, seoulHm()) : form.time })}
+                  onChange={(e) => e.target.value && setForm({ ...form, date: e.target.value, time: timeForDate(form, e.target.value) })}
                   style={overlay}
                 />
               </label>
@@ -139,7 +142,7 @@ export default function Search() {
                   type="time" aria-label="출발 시각" value={form.time} required
                   min={form.date === seoulToday() ? seoulHm() : undefined}
                   onClick={openPicker}
-                  onChange={(e) => e.target.value && setForm({ ...form, time: e.target.value })}
+                  onChange={(e) => e.target.value && setForm({ ...form, time: e.target.value, timeSet: true })}
                   style={overlay}
                 />
               </label>
@@ -235,6 +238,11 @@ function partyText(p) {
   return parts.length === 1 ? `${parts[0]}명` : parts.join(' · ');
 }
 const maxTime = (a, b) => (a > b ? a : b);
+/** 날짜를 바꿨을 때의 시각. 이 화면에서 직접 고른 시각은 지키고(오늘이면 지금 이후로만), 아니면 그 날짜의 기본값(오늘 = 지금, 다른 날 = 0시) */
+const timeForDate = (form, date) => {
+  if (!form.timeSet) return defaultTime(date);
+  return date === seoulToday() ? maxTime(form.time, seoulHm()) : form.time;
+};
 /** "13:30" → "오후 1:30" (칸이 좁아 "시·분"을 줄여 쓴다) */
 const timeShort = (t) => {
   const [h, m] = (t || '00:00').split(':').map(Number);
