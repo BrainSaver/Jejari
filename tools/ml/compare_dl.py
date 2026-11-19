@@ -154,8 +154,13 @@ def main():
                     help="새 모델 (없으면 건너뜀)")
     ap.add_argument("--dl-dir", help="tools/dl-defense 폴더 (없으면 --dl-ref에서 꺼냄)")
     ap.add_argument("--dl-ref", default="origin/SeongWon")
+    ap.add_argument("--bots", help="기준 2에 쓸 봇 종류 (쉼표). 기본 bota,botb (대회 블라인드 봇). "
+                                   "대회가 아닌 시험(예: 시나리오 12)에서는 fast,retry,multi,cancel,steady처럼 준다")
     a = ap.parse_args()
 
+    global BLIND_BOTS
+    if a.bots:
+        BLIND_BOTS = {k.strip() for k in a.bots.split(",") if k.strip()}
     mem = load_members(a.folder)
     with tempfile.TemporaryDirectory() as tmp:
         ours = score_ours(a.folder, a.model, tmp, "ours")
@@ -220,7 +225,7 @@ def main():
     if len(humans) < MIN_HUMANS:
         lines.append(f"- **보류**: 사람 {len(humans)}명 (< {MIN_HUMANS}). 오탐률이 한두 명에 크게 흔들린다. 2차 대회 데이터를 더해 다시 돌린다. 아래는 참고")
     if any(v[2] == 0 for v in judged.values()):
-        lines.append("- **기준 2를 쓸 수 없음**: 좌석을 가져간 남의 블라인드 봇(bota·botb)이 없는 모델이 있다. 블라인드 봇이 좌석을 산 대회 데이터로 다시 돌린다 (모두 못 샀다면 모델이 막을 피해가 없었다는 뜻)")
+        lines.append(f"- **기준 2를 쓸 수 없음**: 좌석을 가져간 남의 블라인드 봇({'·'.join(sorted(BLIND_BOTS))})이 없는 모델이 있다. 블라인드 봇이 좌석을 산 대회 데이터로 다시 돌린다 (모두 못 샀다면 모델이 막을 피해가 없었다는 뜻)")
     else:
         ok = {n: v for n, v in judged.items() if v[0] is not None and v[0] <= 100 * MAX_HUMAN_FP}
         if not ok:
