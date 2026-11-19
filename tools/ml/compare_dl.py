@@ -39,8 +39,10 @@ JUDGE = f"""\
 ## 판정 기준 (2026-11-19, 결과를 보기 전에 정함)
 
 1. **실제 사람(human) 오탐 {MAX_HUMAN_FP:.0%} 이하**인 모델만 후보. 사람이 {MIN_HUMANS}명보다 적으면 판정을 미루고 2차 대회 데이터를 더한다
-2. 후보 중 **남의 블라인드 봇**(bota·botb에서 그 모델을 만든 사람의 봇을 뺀 것) 탐지율이 높은 쪽
-3. 두 모델을 OR로 합쳐도 사람 오탐이 {MAX_HUMAN_FP:.0%} 이하이고 2번 탐지율이 더 높으면 합친 쪽
+2. 후보 중 **좌석을 가져간 남의 블라인드 봇**(bota·botb에서 그 모델을 만든 사람의 봇을 뺀 것)이 가져간 좌석을
+   더 많이 막는 쪽 (막은 좌석 비율). 좌석을 못 가져간 봇은 세지 않는다 — 명절 예매는 몇 분 안에 매진이라
+   늦게 와서 아무것도 못 산 느린 봇은 피해가 없다 (2026-11-19 강동균 결정)
+3. 두 모델을 OR로 합쳐도 사람 오탐이 {MAX_HUMAN_FP:.0%} 이하이고 2번 막은 좌석 비율이 더 높으면 합친 쪽
    (김성원 모델은 "같은 타이밍 템플릿" 봇을 잡는 보조 점수로 넣는다. ERD model_score.by에 DL 추가 필요)
 4. 동률이면 지금 연결 준비가 된 tools/ml
 5. 김성원 모델은 **s0**(README의 기본 예시)으로 판정한다. s1·s2는 흔들림을 보는 참고값 (결과를 보고 좋은 시드를 고르지 않는다)
@@ -101,6 +103,26 @@ def score_dl(folder, dl_dir, tmp):
     return out, dropped
 
 
+def paid_seats(folder):
+    """계정마다 결제까지 간 좌석 수. 성공한 선점의 reservationId·seatCount → 승인된 PAY"""
+    seats, paid = {}, defaultdict(int)
+    with open(os.path.join(folder, "events.jsonl"), encoding="utf-8") as f:
+        evs = [json.loads(l) for l in f if l.strip()]
+    for e in evs:
+        meta = e.get("meta") or {}
+        if e.get("event_type") == "SEAT_HOLD" and (e.get("response_status") or 0) < 300 and meta.get("reservationId"):
+            seats[meta["reservationId"]] = meta.get("seatCount") or len(meta.get("seatIds") or []) or 1
+    done = set()
+    for e in evs:
+        meta = e.get("meta") or {}
+        r = meta.get("reservationId")
+        if (e.get("event_type") == "PAY" and (e.get("response_status") or 0) < 300
+                and meta.get("paymentStatus", "APPROVED") == "APPROVED" and r in seats and r not in done):
+            done.add(r)
+            paid[e.get("member_id")] += seats[r]
+    return paid
+
+
 def pct(xs):
     return (100 * sum(xs) / len(xs), len(xs)) if xs else (None, 0)
 
@@ -134,22 +156,30 @@ def main():
     humans = [m for m, d in mem.items() if d["label"] == "NORMAL"]
     bots = [m for m, d in mem.items() if d["label"] != "NORMAL"]
     kind = {m: d.get("strategy", "") for m, d in mem.items()}
+    paid = paid_seats(a.folder)
 
     def others_blind(owner):
         own = OWN_BOTS.get(owner, set()) if owner != "both" else OWN_BOTS["tools/ml"] | OWN_BOTS["dl-defense"]
-        return [m for m in bots if kind[m] in BLIND_BOTS and kind[m] not in own]
+        return [m for m in bots if kind[m] in BLIND_BOTS and kind[m] not in own and paid.get(m, 0) > 0]
+
+    def blocked(f, ms):
+        """(막은 좌석 %, 그 봇들이 가져간 좌석 수)"""
+        total = sum(paid.get(m, 0) for m in ms)
+        return (100 * sum(paid.get(m, 0) for m in ms if f(m)) / total if total else None), total
 
     lines = [f"# 모델 비교 · {os.path.basename(os.path.abspath(a.folder))}", "",
              f"사람 {len(humans)} · 봇 {len(bots)} · 김성원 모델에 넣기 전 뺀 자동 조회 {dropped}건", "",
-             "| 모델 | 사람 오탐 | 봇 전체 | 남의 블라인드 봇 | 블라인드 봇 전체 |", "|---|---|---|---|---|"]
+             "| 모델 | 사람 오탐 | 봇 전체 (계정) | **좌석 가져간 남의 블라인드 봇: 막은 좌석** | 그 봇 계정 | 블라인드 봇 전체 (계정) |",
+             "|---|---|---|---|---|---|"]
     stat = {}
     for name, (owner, f) in models.items():
         fp, nh = pct([f(m) for m in humans])
         db, nb = pct([f(m) for m in bots])
-        ob, no = pct([f(m) for m in others_blind(owner)])
+        ob, nseat = blocked(f, others_blind(owner))
+        oa, na = pct([f(m) for m in others_blind(owner)])
         bb, nbb = pct([f(m) for m in bots if kind[m] in BLIND_BOTS])
-        stat[name] = (fp, ob, no)
-        lines.append(f"| {name} | {show(fp, nh)} | {show(db, nb)} | {show(ob, no)} | {show(bb, nbb)} |")
+        stat[name] = (fp, ob, nseat)
+        lines.append(f"| {name} | {show(fp, nh)} | {show(db, nb)} | {show(ob)} (좌석 {nseat}) | {show(oa, na)} | {show(bb, nbb)} |")
 
     lines += ["", "### 종류별 탐지 (사람은 오탐)", "", "| 종류 | 수 | " + " | ".join(models) + " |",
               "|---|---|" + "---|" * len(models)]
@@ -166,7 +196,7 @@ def main():
     if len(humans) < MIN_HUMANS:
         lines.append(f"- **보류**: 사람 {len(humans)}명 (< {MIN_HUMANS}). 오탐률이 한두 명에 크게 흔들린다. 2차 대회 데이터를 더해 다시 돌린다. 아래는 참고")
     if any(v[2] == 0 for v in judged.values()):
-        lines.append("- **기준 2를 쓸 수 없음**: 남의 블라인드 봇(bota·botb)이 없는 모델이 있다. 블라인드 봇이 든 대회 데이터로 다시 돌린다")
+        lines.append("- **기준 2를 쓸 수 없음**: 좌석을 가져간 남의 블라인드 봇(bota·botb)이 없는 모델이 있다. 블라인드 봇이 좌석을 산 대회 데이터로 다시 돌린다 (모두 못 샀다면 모델이 막을 피해가 없었다는 뜻)")
     else:
         ok = {n: v for n, v in judged.items() if v[0] is not None and v[0] <= 100 * MAX_HUMAN_FP}
         if not ok:
@@ -174,12 +204,12 @@ def main():
         else:
             best = max(ok, key=lambda n: (ok[n][1], n == "tools/ml"))
             lines.append(f"- 기준 1 통과: {', '.join(ok)}")
-            lines.append(f"- 기준 2: **{best}** (남의 블라인드 봇 {show(ok[best][1], ok[best][2])})")
+            lines.append(f"- 기준 2: **{best}** (막은 좌석 {show(ok[best][1])}, 그 봇들이 가져간 좌석 {ok[best][2]})")
             fp, ob, _ = stat[orn]
-            if fp is not None and fp <= 100 * MAX_HUMAN_FP and ob > ok[best][1]:
-                lines.append(f"- 기준 3: **OR이 낫다** (사람 오탐 {show(fp)}, 탐지 {show(ob)}) → 두 모델을 합쳐 연결")
+            if fp is not None and ob is not None and fp <= 100 * MAX_HUMAN_FP and ob > ok[best][1]:
+                lines.append(f"- 기준 3: **OR이 낫다** (사람 오탐 {show(fp)}, 막은 좌석 {show(ob)}) → 두 모델을 합쳐 연결")
             else:
-                lines.append(f"- 기준 3: OR은 채택 안 함 (사람 오탐 {show(fp)}, 탐지 {show(ob)})")
+                lines.append(f"- 기준 3: OR은 채택 안 함 (사람 오탐 {show(fp)}, 막은 좌석 {show(ob)})")
 
     report = "\n".join(lines) + "\n"
     with open(os.path.join(a.folder, "compare.md"), "w", encoding="utf-8") as f:
