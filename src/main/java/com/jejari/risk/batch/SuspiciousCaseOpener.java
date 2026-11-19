@@ -1,5 +1,8 @@
 package com.jejari.risk.batch;
 
+import org.bson.BsonType;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -68,10 +71,17 @@ public class SuspiciousCaseOpener {
 	public record Marker(RiskRule rule, Instant at, String sessionId, String label, String severity) {
 	}
 
-	/** 열 케이스 (suspicious_case 행 + 마커) */
-	public record Plan(RiskSubject subject, String triggerType, String triggerDetail, BigDecimal scoreAtOpen,
-			Instant windowFrom, Instant windowTo, Instant openedAt, List<Marker> markers) {
+	/** 의심 구간 안에서 활동한 연결 계정의 로그인 세션 (case_session 후보) */
+	public record LinkedSession(String sessionId, long memberId) {
 	}
+
+	/** 열 케이스 (suspicious_case 행 + 마커 + 묶인 세션) */
+	public record Plan(RiskSubject subject, String triggerType, String triggerDetail, BigDecimal scoreAtOpen,
+			Instant windowFrom, Instant windowTo, Instant openedAt, List<Marker> markers, List<LinkedSession> sessions) {
+	}
+
+	/** 케이스 하나에 묶어 두는 세션 상한 (매크로가 세션을 수천 개 만들어도 케이스 열기가 무거워지지 않게) */
+	static final int MAX_CASE_SESSIONS = 200;
 
 	/** 케이스 종류. 새 증거가 아니거나 조건을 못 넘으면 null */
 	static String triggerOf(RiskResult r, RiskPolicy policy) {
@@ -119,8 +129,37 @@ public class SuspiciousCaseOpener {
 			parts.add("위험 점수 " + r.finalScore().stripTrailingZeros().toPlainString() + "점");
 		}
 		markers.forEach(m -> parts.add(m.label()));
-		return new Plan(s, trigger, cut(String.join(" · ", parts)), r.finalScore(), first.minus(PAD), last.plus(PAD), now,
-				markers);
+		Instant wf = first.minus(PAD);
+		Instant wt = last.plus(PAD);
+		return new Plan(s, trigger, cut(String.join(" · ", parts)), r.finalScore(), wf, wt, now, markers,
+				linkedSessions(s, wf, wt));
+	}
+
+	/**
+	 * 대상에 연결된 계정(위험 점수와 같은 기준, {@link RiskInputReader#membersOf})이 의심 구간 안에서 쓴 로그인 세션.
+	 * 케이스를 열 때 {@code case_session}에 박아 두어, 나중에 기기 연결이 바뀌어도 "조사 시점에 누가 왜 묶였나"가 남는다.
+	 */
+	List<LinkedSession> linkedSessions(RiskSubject s, Instant from, Instant to) {
+		List<Long> members = jdbc.queryForList(RiskInputReader.membersOf(s.type()), Long.class, s.hash());
+		if (members.isEmpty()) {
+			return List.of();
+		}
+		Map<String, Long> out = new LinkedHashMap<>();
+		Bson filter = Filters.and(Filters.in("member_id", members), Filters.gte("ts", Date.from(from)),
+				Filters.lte("ts", Date.from(to)), Filters.type("session_id", BsonType.STRING));
+		for (Document d : mongo.getCollection("behavior_log").find(filter)
+				.projection(Projections.include("session_id", "member_id")).sort(Sorts.ascending("ts"))) {
+			if (out.size() >= MAX_CASE_SESSIONS) {
+				break;
+			}
+			Object m = d.get("member_id");
+			if (m instanceof Number n) {
+				out.putIfAbsent(d.getString("session_id"), n.longValue());
+			}
+		}
+		List<LinkedSession> list = new ArrayList<>();
+		out.forEach((sid, mid) -> list.add(new LinkedSession(sid, mid)));
+		return list;
 	}
 
 	/**
@@ -158,12 +197,54 @@ public class SuspiciousCaseOpener {
 					caseId, existingSession(m.sessionId()), Timestamp.from(m.at()), m.rule().name(), m.label(),
 					m.severity());
 		}
+		int linked = linkSessions(caseId, p);
 		jdbc.update("""
 				UPDATE risk_score SET review_status = 'PENDING', updated_at = SYSTIMESTAMP
 				 WHERE subject_type = ? AND subject_hash = ? AND review_status = 'NONE'""",
 				s.type().name(), s.hash());
-		log.info("의심 케이스 {} 열림 ({}, {}, 마커 {}개)", caseId, s.type(), p.triggerType(), p.markers().size());
+		log.info("의심 케이스 {} 열림 ({}, {}, 마커 {}개, 묶인 세션 {}개)", caseId, s.type(), p.triggerType(),
+				p.markers().size(), linked);
 		return caseId;
+	}
+
+	/**
+	 * case_session: 마커 근거가 된 세션은 TRIGGER, 나머지는 대상 종류대로 SAME_CI / SAME_DEVICE / SAME_PAYMENT.
+	 * auth_session에 없는 세션(가상 데이터·옛 로그)은 FK 때문에 넣지 않는다. 케이스와 같은 트랜잭션.
+	 */
+	int linkSessions(long caseId, Plan p) {
+		if (p.sessions() == null || p.sessions().isEmpty()) {
+			return 0;
+		}
+		java.util.Set<String> trigger = new java.util.HashSet<>();
+		p.markers().forEach(m -> {
+			if (m.sessionId() != null) {
+				trigger.add(m.sessionId());
+			}
+		});
+		String same = switch (p.subject().type()) {
+			case CI -> "SAME_CI";
+			case DEVICE -> "SAME_DEVICE";
+			case PAYMENT -> "SAME_PAYMENT";
+		};
+		List<String> ids = p.sessions().stream().map(LinkedSession::sessionId).toList();
+		java.util.Set<String> existing = new java.util.HashSet<>();
+		for (int i = 0; i < ids.size(); i += 500) {
+			List<String> chunk = ids.subList(i, Math.min(ids.size(), i + 500));
+			existing.addAll(jdbc.queryForList("SELECT session_id FROM auth_session WHERE session_id IN ("
+					+ String.join(",", java.util.Collections.nCopies(chunk.size(), "?")) + ")", String.class,
+					chunk.toArray()));
+		}
+		int n = 0;
+		for (LinkedSession ls : p.sessions()) {
+			if (!existing.contains(ls.sessionId())) {
+				continue;
+			}
+			jdbc.update("""
+					INSERT INTO case_session (case_id, session_id, member_id, link_reason) VALUES (?, ?, ?, ?)""",
+					caseId, ls.sessionId(), ls.memberId(), trigger.contains(ls.sessionId()) ? "TRIGGER" : same);
+			n++;
+		}
+		return n;
 	}
 
 	private String existingSession(String sessionId) {

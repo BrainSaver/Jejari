@@ -65,10 +65,21 @@ class RiskScoreBatchInfraTest {
 		});
 	}
 
+	final List<String> authSessions = new ArrayList<>();
+
 	@AfterEach
 	void tearDown() {
+		// 로그인 세션을 가리키는 case_session·case_marker를 먼저, 그다음 세션 (회원보다 먼저 지워야 FK에 안 걸린다)
+		for (String h : hashes) {
+			jdbc.update("DELETE FROM case_session WHERE case_id IN (SELECT case_id FROM suspicious_case WHERE subject_hash = ?)", h);
+			jdbc.update("DELETE FROM case_marker WHERE case_id IN (SELECT case_id FROM suspicious_case WHERE subject_hash = ?)", h);
+		}
+		for (String sid : authSessions) {
+			jdbc.update("DELETE FROM auth_session WHERE session_id = ?", sid);
+		}
 		for (String h : hashes) {
 			jdbc.update("DELETE FROM case_marker WHERE case_id IN (SELECT case_id FROM suspicious_case WHERE subject_hash = ?)", h);
+			jdbc.update("DELETE FROM case_session WHERE case_id IN (SELECT case_id FROM suspicious_case WHERE subject_hash = ?)", h);
 			jdbc.update("DELETE FROM suspicious_case WHERE subject_hash = ?", h);
 			jdbc.update("DELETE FROM risk_score_history WHERE subject_hash = ?", h);
 			jdbc.update("DELETE FROM risk_score WHERE subject_hash = ?", h);
@@ -347,6 +358,47 @@ class RiskScoreBatchInfraTest {
 		assertThat(markers.get(1).get("LABEL")).asString().startsWith("요청 간격이 기계처럼 일정함 (변동계수 ");
 		assertThat(jdbc.queryForObject("SELECT review_status FROM risk_score WHERE subject_hash = ?", String.class, ci))
 				.isEqualTo("PENDING");
+	}
+
+	@Test
+	void 케이스를_열_때_묶인_세션과_이유를_남긴다_탐지_세션과_같은_명의_다른_계정() {
+		String ci = hash();
+		long bot = member(ci, Instant.now().minus(30, ChronoUnit.DAYS));
+		long twin = member(ci, Instant.now().minus(30, ChronoUnit.DAYS)); // 같은 명의의 다른 계정
+		long stranger = member(hash(), Instant.now().minus(30, ChronoUnit.DAYS));
+		String s1 = authSession(bot);
+		String s2 = authSession(twin);
+		String s3 = authSession(stranger);
+		Instant t = Instant.now().minusSeconds(600);
+		mongo.getCollection("behavior_log").insertMany(fastClicks(bot, ci, t, 30, s1));
+		mongo.getCollection("behavior_log").insertOne(event("VIEW_TRAIN", twin, ci, null, t.plusSeconds(1), 5000, 200, null)
+				.append("session_id", s2));
+		mongo.getCollection("behavior_log").insertOne(event("VIEW_TRAIN", stranger, null, null, t, 5000, 200, null)
+				.append("session_id", s3));
+		mongo.getCollection("behavior_log").insertOne(event("VIEW_TRAIN", bot, ci, null, t, 5000, 200, null)
+				.append("session_id", "not-in-auth-session")); // auth_session에 없는 세션은 FK 때문에 안 넣음
+		dirty.mark(new RiskSubject(SubjectType.CI, ci));
+
+		batch.run();
+
+		long caseId = jdbc.queryForObject("SELECT case_id FROM suspicious_case WHERE subject_hash = ?", Long.class, ci);
+		var rows = jdbc.queryForList("SELECT session_id, member_id, link_reason FROM case_session WHERE case_id = ? ORDER BY link_reason",
+				caseId);
+		assertThat(rows).hasSize(2);
+		assertThat(rows.get(0).get("SESSION_ID")).isEqualTo(s2);
+		assertThat(rows.get(0).get("LINK_REASON")).isEqualTo("SAME_CI");
+		assertThat(rows.get(1).get("SESSION_ID")).isEqualTo(s1);
+		assertThat(rows.get(1).get("LINK_REASON")).isEqualTo("TRIGGER"); // 마커 근거 세션
+	}
+
+	String authSession(long memberId) {
+		String sid = java.util.UUID.randomUUID().toString();
+		jdbc.update("""
+				INSERT INTO auth_session (session_id, token_family_id, actor_type, member_id, refresh_token_hash, expires_at)
+				VALUES (?, ?, 'MEMBER', ?, ?, SYSTIMESTAMP + INTERVAL '1' HOUR)""",
+				sid, java.util.UUID.randomUUID().toString(), memberId, "h-" + sid.substring(0, 8));
+		authSessions.add(sid);
+		return sid;
 	}
 
 	@Test

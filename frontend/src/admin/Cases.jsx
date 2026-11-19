@@ -1,3 +1,4 @@
+import ModelOpinion from './ModelOpinion.jsx';
 import ReplayPlayer from './ReplayPlayer.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router';
@@ -66,6 +67,9 @@ export function CaseList() {
   );
 }
 
+/** 왜 이 계정이 묶였나 (case_session.link_reason, 케이스를 열 때 박아 둔 값) */
+const LINK = { TRIGGER: '탐지된 세션', SAME_CI: '같은 명의', SAME_DEVICE: '같은 기기', SAME_PAYMENT: '같은 카드', SAME_IP: '같은 IP', AFTER_OPEN: '연 뒤 연결' };
+
 export default function CaseDetail() {
   const claims = useOutletContext();
   const { caseId } = useParams();
@@ -113,7 +117,7 @@ export default function CaseDetail() {
           <div className="kpi">
             <div className="l">같은 키로 묶인 계정</div>
             <div className="n">{d.accounts.length}</div>
-            <div className="d">{d.accounts.map((a) => `${a.label} ${a.maskedName}`).join(' · ')}</div>
+            <div className="d">{d.accounts.map((a) => `${a.label} ${a.maskedName}${LINK[a.linkReason] ? ` (${LINK[a.linkReason]})` : ''}`).join(' · ')}</div>
           </div>
           <div className="kpi">
             <div className="l">발동 규칙</div>
@@ -132,6 +136,8 @@ export default function CaseDetail() {
         <Timeline tl={tl} color={color} range={range} />
         {s && (
           <section className="panel">
+            <ModelOpinion caseId={caseId} />
+            <hr className="sep" />
             <Judge caseId={caseId} summary={s} claims={claims} onDone={load} />
             <hr className="sep" />
             <Unmask caseId={caseId} claims={claims} />

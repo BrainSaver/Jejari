@@ -106,8 +106,14 @@ public class CaseAdminService {
 			Instant at, String sessionId) {
 	}
 
-	/** 연결 계정. label은 화면 표시용 "계정 1"…, 이름은 마스킹 */
-	public record Account(String label, long memberId, String maskedName, String status, Instant createdAt) {
+	/**
+	 * 연결 계정. label은 화면 표시용 "계정 1"…, 이름은 마스킹.
+	 *
+	 * @param linkReason 왜 묶였나: 케이스를 열 때 박아 둔 {@code case_session.link_reason} 중 가장 강한 것
+	 *                   (TRIGGER &gt; SAME_CI·SAME_DEVICE·SAME_PAYMENT). 열 때는 없었고 지금 연결돼 있으면 {@code AFTER_OPEN}
+	 */
+	public record Account(String label, long memberId, String maskedName, String status, Instant createdAt,
+			String linkReason) {
 	}
 
 	public record ScorePoint(Instant at, BigDecimal score) {
@@ -143,20 +149,36 @@ public class CaseAdminService {
 				 ORDER BY calculated_at""".formatted(MAX_HISTORY),
 				(rs, i) -> new ScorePoint(instant(rs.getTimestamp(1)), rs.getBigDecimal(2)), type.name(), hash);
 		return new CaseDetail(c.summary(), c.windowFrom(), c.windowTo(), reasons.isEmpty() ? null : reasons.get(0),
-				markers, accounts(type, hash), history);
+				markers, accounts(caseId, type, hash), history);
 	}
 
-	/** 대상에 연결된 계정 (가입 순). 위험 점수 배치와 같은 "연결" 기준 (RiskInputReader.membersOf) */
-	List<Account> accounts(SubjectType type, String hash) {
+	/**
+	 * 케이스의 연결 계정 (가입 순) = 열 때 묶어 둔 계정(case_session, 조사 시점 보존) ∪ 지금 연결된 계정
+	 * (위험 점수 배치와 같은 기준 RiskInputReader.membersOf — 연 뒤에 추가된 계정도 보이게).
+	 */
+	/** 케이스의 연결 계정 (없는 케이스면 CASE_NOT_FOUND). 모델 보조 의견이 같은 계정·같은 번호(계정 1…)를 쓰게 */
+	public List<Account> caseAccounts(long caseId) {
+		CaseRow c = load(caseId);
+		return accounts(caseId, SubjectType.valueOf(c.summary().subjectType()), c.summary().subjectHash());
+	}
+
+	List<Account> accounts(long caseId, SubjectType type, String hash) {
+		Map<Long, String> reasonOf = new java.util.HashMap<>();
+		jdbc.query("SELECT member_id, link_reason FROM case_session WHERE case_id = ?", rs -> {
+			reasonOf.merge(rs.getLong(1), rs.getString(2), (a, b) -> "TRIGGER".equals(a) ? a : b);
+		}, caseId);
 		List<Account> out = new ArrayList<>();
+		String snapshot = reasonOf.isEmpty() ? "" : " OR member_id IN (SELECT member_id FROM case_session WHERE case_id = ?)";
+		Object[] args = reasonOf.isEmpty() ? new Object[] { hash } : new Object[] { hash, caseId };
 		jdbc.query("""
 				SELECT member_id, name, status, created_at FROM member
-				 WHERE member_id IN (""" + RiskInputReader.membersOf(type) + """
-				 ) ORDER BY created_at, member_id FETCH FIRST %d ROWS ONLY""".formatted(MAX_ACCOUNTS),
+				 WHERE member_id IN (""" + RiskInputReader.membersOf(type) + ")" + snapshot + """
+				 ORDER BY created_at, member_id FETCH FIRST %d ROWS ONLY""".formatted(MAX_ACCOUNTS),
 				rs -> {
-					out.add(new Account("계정 " + (out.size() + 1), rs.getLong(1), PiiMasker.name(rs.getString(2)),
-							rs.getString(3), instant(rs.getTimestamp(4))));
-				}, hash);
+					long id = rs.getLong(1);
+					out.add(new Account("계정 " + (out.size() + 1), id, PiiMasker.name(rs.getString(2)),
+							rs.getString(3), instant(rs.getTimestamp(4)), reasonOf.getOrDefault(id, "AFTER_OPEN")));
+				}, args);
 		return out;
 	}
 
@@ -185,7 +207,7 @@ public class CaseAdminService {
 			throw new BusinessException(CommonErrorCode.INVALID_REQUEST, "조회 범위는 " + MAX_SPAN_HOURS + "시간 이내여야 합니다.");
 		}
 
-		List<Account> accounts = accounts(type, c.summary().subjectHash());
+		List<Account> accounts = accounts(caseId, type, c.summary().subjectHash());
 		Map<Long, String> labelOf = new HashMap<>();
 		accounts.forEach(a -> labelOf.put(a.memberId(), a.label()));
 

@@ -151,6 +151,20 @@ python3 tools/ml/compare_dl.py data/ml/contest-<태그>      # → data/ml/conte
 쇼핑몰과 예매는 도메인이 달라 절대값은 쓰지 않고 **사람 사이의 퍼짐**만 생성기에 입혔다:
 사람마다 속도 차이(로그 표준편차 0.53), 둘러보는 양의 차이(0.99). 원본 CSV는 저장소에 넣지 않는다.
 
+## 새 모델(next)을 내 PC에서 학습하기 (`train_next.py`)
+
+```bash
+pip install torch scikit-learn numpy                   # 처음 한 번 (Windows·Mac은 이대로 CPU판)
+python tools/ml/train_next.py                           # → data/ml/model-next-local/ (CPU 4코어에서 30분~1시간)
+python tools/ml/train_next.py --quick                   # GRU 없이 약 1분, 흐름만 확인 (비교에는 쓰지 말 것)
+```
+
+- 아래 두 스위치를 켠 생성 데이터(시드 7·8·9) → 단계 특징 → 부스팅 + Isolation Forest + GRU 5개 학습 → 시드 99와 (있으면) 리허설 로그로 **지금 모델과 비교**해 `compare.txt`에 적는다
+- 지금 모델(`data/ml/model`)은 덮어쓰지 않는다. 폴더 이름은 `--out`으로 바꿀 수 있고, `data/ml/model-next*/`는 저장소에 올라간다 (학습 데이터 `data/ml/next/`는 안 올라감)
+- 같은 시드라 데이터·특징·부스팅은 PC마다 같고 GRU만 조금 다를 수 있다. 두 PC에서 학습한 모델은 학습이 얼마나 흔들리는지 보는 데 쓴다:
+  `python tools/ml/compare_dl.py data/ml/contest-<태그> --next data/ml/model-next-local/model.pkl`
+- 리허설 로그(`data/ml/contest-r1118*`)는 저장소에 없어서 다른 PC에서는 생성 데이터로만 시험한다
+
 ## 실험 스위치 (기본 꺼짐)
 
 | 환경 변수 | 무엇 | 왜 꺼 두나 |
