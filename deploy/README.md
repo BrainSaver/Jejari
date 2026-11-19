@@ -3,21 +3,21 @@
 담당: 조영준 · 바탕: 강동균 님 조사 [`docs/강동균/features/배포-구글클라우드.md`](../docs/강동균/features/배포-구글클라우드.md) (선택지 비교·비용·막혔을 때 표)
 
 ```
-인터넷 ──443──> Caddy (HTTPS, 인증서 자동) ──┬─> 앱 jejari@8080 ─┐
-                /actuator/* 는 health만 밖으로  └─> 앱 jejari@8081 ─┴─> Oracle·Mongo·Redis·Kafka (127.0.0.1에만)
+인터넷 ──443──> Caddy (HTTPS, 인증서 자동) ──> 앱 jejari@8080 ──> Oracle·Mongo·Redis·Kafka (127.0.0.1에만)
+                /actuator/* 는 health만 밖으로      (11-19부터 1대. jejari@8081은 꺼 둠)
 ```
 
 VM 1대(e2-standard-4, 서울)에 로컬과 같은 `compose.yaml`을 올리고, 이 폴더의 파일만 더합니다.
 
 | 파일 | 하는 일 |
 |---|---|
-| `compose.server.yaml` | Caddy 추가, Prometheus를 앱 2대 수집 설정으로 교체 (`-f`로 겹쳐 씀) |
-| `Caddyfile` | HTTPS · 앱 2대에 나눠 보내기 · 지표 숨기기 |
-| `prometheus.server.yml` | 앱 2대(app-1·app-2) 수집 |
+| `compose.server.yaml` | Caddy 추가, Prometheus를 서버 앱 수집 설정으로 교체 (`-f`로 겹쳐 씀) |
+| `Caddyfile` | HTTPS · 앱으로 보내기(재시작 중엔 최대 45초 기다림) · 지표 숨기기 |
+| `prometheus.server.yml` | 앱(app-1) 수집. app-2 줄은 주석으로 남김 |
 | `jejari@.service` | 앱 systemd 템플릿 (인스턴스 이름 = 포트) |
 | `make-server-env.sh` | **내 PC에서** 서버용 `.env` 생성 (HMAC 키만 팀 공용, 나머지 새로) |
-| `setup-server.sh` | **서버에서 한 번**: 패키지·docker 그룹·도메인·systemd (앱 2대 + 자동 배포 타이머) + 시간표 타이머 · 서비스 명령 sudo 허용) |
-| `deploy.sh` | 배포: main(또는 `DEPLOY_SHA`) 빌드 → 한 대씩 재시작 → 배포한 커밋 기록 |
+| `setup-server.sh` | **서버에서 한 번**: 패키지·docker 그룹·도메인·systemd (앱 1대 + 자동 배포 타이머) + 시간표 타이머 · 서비스 명령 sudo 허용) |
+| `deploy.sh` | 배포: main(또는 `DEPLOY_SHA`) 빌드 → 켜 둔 앱만 재시작 → 배포한 커밋 기록 |
 | `auto-deploy.sh` · `jejari-autodeploy.{service,timer}` | **자동 배포**: 20분마다 (관리자 화면 "배포" 버튼으로 바로도), CI 성공 + DB·인프라 변경 없음일 때만 `deploy.sh` |
 | `tago-refresh.sh` · `jejari-tago.{service,timer}` | 실제 KTX 시간표(앞뒤 7일) 매일 갱신 |
 | `grafana-alerting/` · `grafana-team-user.sh` · `sudoers-jejari` | Discord 경보 · Grafana 팀 계정 · 앱 주인의 좁은 sudo |
@@ -27,7 +27,7 @@ VM 1대(e2-standard-4, 서울)에 로컬과 같은 `compose.yaml`을 올리고, 
 | 문서 | 여기 | 이유 |
 |---|---|---|
 | `http://IP:8080` 직접 공개 | Caddy로 **HTTPS**, 80·443만 엶 | 리프레시 쿠키가 Secure라 http에서는 브라우저가 저장·전송하지 않아 재발급이 전부 실패. 8080을 열면 `/actuator/prometheus`(내부 지표)도 공개됨 |
-| 앱 1대 | **2대** (8080·8081) | 멀티 인스턴스 규칙을 실제로 확인 (`docs/조영준/features/멀티인스턴스-코딩-규칙.md`). 배포 때 한 대씩 재시작해 끊김 없음 |
+| 앱 1대 | 2대로 시작 → **11-19부터 1대** | 2대로 멀티 인스턴스 규칙을 확인했고(`docs/조영준/features/멀티인스턴스-코딩-규칙.md`, 대기열 입장 2배 문제를 실제로 찾음), PERF-01에서 CPU 4개 VM에서는 2대가 더 느려 1대로 (예매 p95 1대+해시4 4.9초 vs 2대 10~18초). 대가: **배포 때 약 40초~1분 느려짐**(Caddy가 최대 45초 기다렸다 보냄) |
 | `User=ubuntu` | 실제 사용자로 채움 | GCP Ubuntu에는 `ubuntu` 계정이 없음 (`gcloud compute ssh`가 내 PC 사용자 이름으로 만듦) |
 | 내 PC `.env`를 복사 | **새로 생성** | 로컬 비밀번호·임시 키가 서버로 가지 않게. HMAC 키만 팀 공용 |
 
@@ -79,7 +79,7 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
   | CI(빌드·테스트·ERD 검사) **진행 중** | 그보다 앞선 커밋 중 CI가 성공한 가장 최근 커밋을 배포 (최대 5개 거슬러 봄). 없으면 다음 차례에 (`WAITING_CI`) |
   | CI **실패** | 배포 안 함 (`CI_FAILED`), 다음 커밋을 기다림 |
   | 문서·테스트만 바뀜 | 빌드 없이 "반영됨"으로 기록 (`OK`) |
-  | 코드·화면·빌드 설정이 바뀜 | **그 커밋으로 고정해 배포** (한 대씩 재시작, 끊김 없음) (`OK`) |
+  | 코드·화면·빌드 설정이 바뀜 | **그 커밋으로 고정해 배포** (앱 재시작, 약 40초~1분 느려짐) (`OK`) |
   | **ERD·DB 패치·시드·compose·Caddy가 바뀜** | **멈추고 사람을 기다림** (`BLOCKED`) → DB 패치·`docker compose up -d` 뒤 `bash deploy/deploy.sh`를 직접 실행하면 기준이 앞으로 가서 풀림 |
   | 배포 실패 (앱이 안 뜸) | 같은 커밋을 반복하지 않음 (`FAILED`), 살아 있는 한 대가 응답. 로그 확인 후 고쳐서 다음 커밋으로 |
 
@@ -95,12 +95,13 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
 - **직접 배포**: `bash deploy/deploy.sh` (main 기준) 또는 `DEPLOY_SHA=<커밋> bash deploy/deploy.sh`. DB를 맞춘 뒤, 또는 자동 배포를 끈 동안
 
 - **BLOCKED 풀기**: 아래 "운영자 안내 → BLOCKED 풀기 (한 단계씩)" (ERD가 바뀌면 거의 항상 멈춤. 11-19 v25~v28 모두 이렇게 풂)
-- **시연 중에는 자동 배포를 끔** (시연 도중 재시작 방지). 끝나면 다시 켬
+- **시연 중에는 자동 배포를 끔** (시연 도중 재시작 방지). 끝나면 다시 켬. **11-19부터 앱 1대라 더 중요** (재시작하는 40초~1분 느려짐)
+- **앱 1대 ↔ 2대 전환** (11-19 1대로, PERF-01): 2대로 되돌리려면 ① `sudo systemctl enable --now jejari@8081` ② `Caddyfile`의 `reverse_proxy`에 `127.0.0.1:8081` 추가·`lb_try_duration 10s` ③ `prometheus.server.yml`의 app-2 주석 풀기 ④ 커밋 → BLOCKED 풀기에서 caddy·prometheus 재시작 ⑤ `auth.max_concurrent_hash`를 앱 수에 맞게 (1대 4, 2대면 2대+해시4에서 로그인 503이 났으니 다시 재기). `deploy.sh`는 켜 둔(enabled) 앱만 재시작해서 고칠 것 없음
 
 - **데이터 재생성** (테스트 데이터 삭제): Oracle만 지우면 회원·예약 번호가 1부터 다시 시작해 Redis(매수 카운터·대기열·좌석 키)·Mongo(행동 로그)에 남은 옛 번호 데이터를 새 회원이 물려받음 → **셋을 함께**. Caddy(인증서)·Grafana·Prometheus·Kafka는 남김
   ```bash
   C='docker compose -f compose.yaml -f deploy/compose.server.yaml'
-  sudo systemctl stop jejari@8080 jejari@8081
+  sudo systemctl stop jejari@8080
   $C rm -sf oracle mongo redis && docker volume rm jejari_oracle-data jejari_mongo-data jejari_redis-data
   $C up -d oracle mongo redis      # Oracle healthy까지 약 5분, 관리자 계정은 같은 .env 비밀번호로 다시 생김
   bash deploy/deploy.sh
@@ -173,9 +174,9 @@ cd ~/Jejari              # 서버의 저장소 (지금 배포된 커밋으로 �
 
 ```bash
 cat ~/jejari-app/autodeploy.state                    # 자동 배포 마지막 판단 (OK / WAITING_CI / BLOCKED / FAILED)
-curl -s localhost:8080/actuator/health; curl -s localhost:8081/actuator/health
+curl -s localhost:8080/actuator/health
 docker compose -f compose.yaml -f deploy/compose.server.yaml ps
-journalctl -u jejari@8080 -n 100 --no-pager          # 앱 로그 (8081도 같음)
+journalctl -u jejari@8080 -n 100 --no-pager          # 앱 로그
 journalctl -u jejari-autodeploy -n 50 --no-pager     # 자동 배포 로그
 ```
 
@@ -186,7 +187,7 @@ journalctl -u jejari-autodeploy -n 50 --no-pager     # 자동 배포 로그
 | 지금 main으로 배포 | 관리자 화면 → **배포** → "지금 배포" (허용된 관리자만), 또는 `sudo systemctl start jejari-autodeploy` |
 | 자동 배포 한 번 지금 실행 | `sudo systemctl start jejari-autodeploy` |
 | **시연 중 자동 배포 끄기** / 다시 켜기 | `sudo systemctl disable --now jejari-autodeploy.timer` / `sudo systemctl enable --now jejari-autodeploy.timer` |
-| 앱 한 대가 이상함 | `sudo systemctl restart jejari@8080` (한 대씩. Caddy가 다른 대로 보냄) |
+| 앱이 이상함 | `sudo systemctl restart jejari@8080` (1대라 재시작하는 40초쯤 느려짐) |
 | `BLOCKED` (DB·인프라 변경) | 아래 "BLOCKED 풀기 (한 단계씩)" |
 | `FAILED` (앱이 안 뜸) | `journalctl -u jejari@8080 -n 200` (TZ·`.env` 키 누락이 흔함). 고친 커밋이 main에 오면 자동으로 다시 시도 |
 | 실제 시간표 지금 다시 넣기 | `sudo systemctl start jejari-tago` → `journalctl -u jejari-tago -n 20` |
@@ -205,7 +206,7 @@ journalctl -u jejari-autodeploy -n 50 --no-pager     # 자동 배포 로그
 | 4 | `git show $T:db/patch/v28.sql \| less` (번호는 3의 목록대로, 여러 개면 낮은 번호부터) | 패치 설명. **"Oracle은 바뀌는 것이 없습니다"면 5는 건너뜀**. `DROP`·`DELETE`가 있으면 무엇이 지워지는지 읽고, 모르겠으면 멈추고 묻기. `q`로 나옴 |
 | 5 | `PW=$(grep '^ORACLE_APP_PASSWORD=' .env \| cut -d= -f2)` 다음 줄 `git show $T:db/patch/v28.sql \| docker compose exec -T -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 oracle bash -lc "sqlplus -S -L jejari/$PW@localhost:1521/FREEPDB1"` | 패치 끝의 확인 결과 (예: 시퀀스 이름). `ORA-`로 시작하는 오류가 없어야 함. 패치는 다시 돌려도 안전하게 짜여 있음 |
 | 6 | (`docker/mongo/mongo-init.js`가 목록에 있으면) `git show $T:docker/mongo/mongo-init.js \| docker compose -f compose.yaml -f deploy/compose.server.yaml exec -T mongo bash -c 'mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin'` | 끝에 `jejari mongo init done` |
-| 7 | `DEPLOY_SHA=$T bash deploy/deploy.sh` | 2~4분 뒤 `배포 완료: …` (앱 한 대씩 재시작, 사이트는 안 멈춤) |
+| 7 | `DEPLOY_SHA=$T bash deploy/deploy.sh` | 2~4분 뒤 `배포 완료: …` (앱 재시작 동안 40초쯤 느려짐) |
 | 8 | `sudo systemctl start jejari-autodeploy && cat ~/jejari-app/autodeploy.state` | `OK …` → 끝. Discord에 "해결됨"이 옴. 또 `BLOCKED`면 그 뒤 커밋에도 DB 변경이 있는 것 → 1부터 다시 |
 | 9 | `exit` 두 번 | 내 PC로 돌아옴 |
 
