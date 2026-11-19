@@ -17,6 +17,13 @@ import os
 import pickle
 import sys
 
+# Windows(Git Bash) 기본 인코딩이 CP949라 한글·기호 출력에서 멈추지 않게 UTF-8로 내보낸다
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np  # noqa: E402
 
@@ -106,7 +113,7 @@ def main():
     by = [max(P, key=lambda k: P[k][j]) for j in range(len(rows))]   # 어느 모델이 가장 높게 봤나
     thr = model["threshold"] if seq is not None else model.get("threshold_base", model["threshold"])
     out = os.path.join(os.path.dirname(sys.argv[2]), "scores.csv")
-    with open(out, "w", newline="") as f:
+    with open(out, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["member_id", "label", "strategy", "score", "flag", "by", *[f"score_{k}" for k in P], "reasons"])
         for j, (r, v, x) in enumerate(zip(rows, s, X)):

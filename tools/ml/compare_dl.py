@@ -24,6 +24,13 @@ import os
 import shutil
 import subprocess
 import sys
+
+# Windows(Git Bash) 기본 인코딩이 CP949라 한글·기호 출력에서 멈추지 않게 UTF-8로 내보낸다
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 import tempfile
 from collections import defaultdict
 
@@ -53,7 +60,9 @@ JUDGE = f"""\
 
 
 def run(cmd, cwd=None, env=None):
-    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env)
+    # Windows 기본 인코딩(CP949)에 휘둘리지 않게: 자식 파이썬은 UTF-8 모드, 출력도 UTF-8로 읽는다
+    env = {**(env or os.environ), "PYTHONUTF8": "1"}
+    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
     if r.returncode != 0:
         sys.exit(f"실패: {' '.join(cmd)}\n{r.stderr[-2000:]}")
     return r.stdout

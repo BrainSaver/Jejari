@@ -26,6 +26,13 @@ import os
 import pickle
 import random
 import sys
+
+# Windows(Git Bash) 기본 인코딩이 CP949라 한글·기호 출력에서 멈추지 않게 UTF-8로 내보낸다
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -152,7 +159,7 @@ def main():
         f"뺀 특징: {', '.join(EXCLUDE)}",
         f"GRU: {f'큰 GRU {GRU_N}개 평균' + ' (gru.pt) · 부스팅+IF만일 때 문턱 ' + format(model['threshold_base'], '.1f') + '점' if gru else '없음 (torch 없음 또는 ML_GRU=0)'}",
     ]
-    with open(os.path.join(out, "report.txt"), "w") as f:
+    with open(os.path.join(out, "report.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     print("\n".join(lines))
     print(f"→ {os.path.join(out, 'model.pkl')}")

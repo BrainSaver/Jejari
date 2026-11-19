@@ -22,6 +22,14 @@ import json
 import math
 import os
 import random
+import sys
+
+# Windows(Git Bash) 기본 인코딩이 CP949라 한글·기호 출력에서 멈추지 않게 UTF-8로 내보낸다
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -580,17 +588,17 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     w.events.sort(key=lambda e: (e["member_id"], e["ts"]))
     last: dict[int, str] = {}
-    with open(os.path.join(a.out, "events.jsonl"), "w") as f:
+    with open(os.path.join(a.out, "events.jsonl"), "w", encoding="utf-8") as f:
         for e in w.events:   # interval_ms = 같은 회원의 앞 이벤트와의 간격 (실제 로그와 같은 정의)
             prev = last.get(e["member_id"])
             e["interval_ms"] = None if prev is None else int(
                 (datetime.fromisoformat(e["ts"]) - datetime.fromisoformat(prev)).total_seconds() * 1000)
             last[e["member_id"]] = e["ts"]
             f.write(json.dumps(e, ensure_ascii=False) + "\n")
-    with open(os.path.join(a.out, "runs.jsonl"), "w") as f:   # 판매 오픈 시각 (실제 데이터의 runs.jsonl과 같은 모양)
+    with open(os.path.join(a.out, "runs.jsonl"), "w", encoding="utf-8") as f:   # 판매 오픈 시각 (실제 데이터의 runs.jsonl과 같은 모양)
         for rid, t0 in w.runs:
             f.write(json.dumps({"run_id": rid, "open_ts": t0.isoformat(timespec="milliseconds")}) + "\n")
-    with open(os.path.join(a.out, "members.jsonl"), "w") as f:
+    with open(os.path.join(a.out, "members.jsonl"), "w", encoding="utf-8") as f:
         for acc in w.accounts:
             d = {k: v for k, v in acc.__dict__.items() if k not in ("device_pool", "ip_pool")}
             d["device_pool"] = acc.device_pool if acc.device_pool in (None, "rotate") else len(acc.device_pool)

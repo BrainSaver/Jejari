@@ -26,6 +26,13 @@ import math
 import random
 import sys
 
+# Windows(Git Bash) 기본 인코딩이 CP949라 한글·기호 출력에서 멈추지 않게 UTF-8로 내보낸다
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 try:
     import numpy as np
     from sklearn.ensemble import HistGradientBoostingClassifier, IsolationForest
@@ -44,7 +51,7 @@ SEED = 7
 
 
 def load(path):
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     X = np.array([[float(r[c]) if r[c] not in ("", "nan") else np.nan for c in FEATURES] for r in rows])
     return rows, X

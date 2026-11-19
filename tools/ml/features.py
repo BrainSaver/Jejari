@@ -21,6 +21,13 @@ import math
 import os
 import statistics
 import sys
+
+# Windows(Git Bash) 기본 인코딩이 CP949라 한글·기호 출력에서 멈추지 않게 UTF-8로 내보낸다
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 from collections import defaultdict
 from datetime import datetime
 
@@ -70,7 +77,7 @@ def ts(s: str) -> datetime:
 
 def load(folder: str):
     events = defaultdict(list)
-    with open(os.path.join(folder, "events.jsonl")) as f:
+    with open(os.path.join(folder, "events.jsonl"), encoding="utf-8") as f:
         for line in f:
             e = json.loads(line)
             # 첫 화면 자동 검색(meta.auto)은 사람이 한 행동이 아니라 화면이 스스로 부른 것이라 뺀다
@@ -80,7 +87,7 @@ def load(folder: str):
             if e.get("member_id") is not None:
                 events[e["member_id"]].append(e)
     members = {}
-    with open(os.path.join(folder, "members.jsonl")) as f:
+    with open(os.path.join(folder, "members.jsonl"), encoding="utf-8") as f:
         for line in f:
             m = json.loads(line)
             members[m["member_id"]] = m
@@ -137,7 +144,7 @@ def build(folder: str) -> list[dict]:
     run_open = {}
     rp = os.path.join(folder, "runs.jsonl")
     if os.path.exists(rp):
-        with open(rp) as f:
+        with open(rp, encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     r = json.loads(line)
@@ -288,7 +295,7 @@ def main():
     folder = sys.argv[1]
     rows = build(folder)
     out = os.path.join(folder, "features.csv")
-    with open(out, "w", newline="") as f:
+    with open(out, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["member_id", "label", "strategy", "family", "group", "source"] + FEATURES)
         w.writeheader()
         for r in rows:

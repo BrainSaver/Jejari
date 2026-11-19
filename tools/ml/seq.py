@@ -47,7 +47,7 @@ def _open_times(folder: str) -> dict:
     p = os.path.join(folder, "runs.jsonl")
     out = {}
     if os.path.exists(p):
-        with open(p) as f:
+        with open(p, encoding="utf-8") as f:
             for line in f:
                 r = json.loads(line)
                 out[r["run_id"]] = _ts(r["open_ts"])
