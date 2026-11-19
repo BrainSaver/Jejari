@@ -190,7 +190,7 @@ export default function Seats() {
   return (
     <>
       <header className="top">
-        <Link className="back wl" to={`/?from=${from}&to=${to}&date=${run?.runDate || ''}`}><span>열차 다시 고르기</span></Link>
+        <Link className="back wl" to="/" state={{ q: { from, to, date: run?.runDate || '' } }}><span>열차 다시 고르기</span></Link>
         <h1>좌석 선택</h1>
       </header>
       <main className="body">

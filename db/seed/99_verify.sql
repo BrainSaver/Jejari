@@ -17,11 +17,13 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
   UNION ALL
   SELECT '4. 차량 유형 2개',                   CASE WHEN COUNT(*) = 2   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM car_type
   UNION ALL
-  SELECT '5. 열차 2편',                        CASE WHEN COUNT(*) = 2   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train
+  -- 5~7은 시드 열차(1·2)만 셉니다. 실제 시간표 열차(train_id 10000~, tools/load-tago-schedule.js)와
+  -- 관리자 화면에서 만든 열차는 편성·좌석을 각자 넣습니다 (13·14와 같은 범위)
+  SELECT '5. 시드 열차 2편',                   CASE WHEN COUNT(*) = 2   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train WHERE train_id IN (1, 2)
   UNION ALL
-  SELECT '6. 편성 20호차',                     CASE WHEN COUNT(*) = 20  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_car
+  SELECT '6. 시드 편성 20호차',                CASE WHEN COUNT(*) = 20  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_car WHERE train_id IN (1, 2)
   UNION ALL
-  SELECT '7. 좌석 1050석 (525 × 2)',           CASE WHEN COUNT(*) = 1050 THEN 1 ELSE 0 END,     '실제 ' || COUNT(*) FROM seat
+  SELECT '7. 시드 좌석 1050석 (525 × 2)',      CASE WHEN COUNT(*) = 1050 THEN 1 ELSE 0 END,     '실제 ' || COUNT(*) FROM seat WHERE train_id IN (1, 2)
   UNION ALL
   SELECT '8. 호차 좌석수 = car_type.seat_count', CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END,
          '어긋난 호차 ' || COUNT(*) || '건'
@@ -55,15 +57,19 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
   SELECT '12. 지금 판매 중인 운행 있음',        CASE WHEN COUNT(*) >= 1  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
     FROM train_run WHERE status = 'ON_SALE'
   UNION ALL
-  SELECT '13. 운행마다 정차 5건',               CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,
+  -- 시드 열차(1·2)만 봅니다. 실제 시간표 열차는 편마다 정차역이 2~5개로 달라서 5건이 아니고,
+  -- 그 정차는 tools/load-tago-schedule.js가 넣습니다 (시드 05의 대상도 열차 1·2뿐)
+  SELECT '13. 시드 운행마다 정차 5건',          CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,
          '정차가 5건이 아닌 운행 ' || COUNT(*) || '건'
     FROM train_run r JOIN train t ON t.train_id = r.train_id
-   WHERE t.route_id = 1
+   WHERE t.train_id IN (1, 2)
      AND (SELECT COUNT(*) FROM train_stop s WHERE s.run_id = r.run_id) <> 5
   UNION ALL
-  SELECT '14. 운행마다 stop_order 1~5',        CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,      '어긋난 운행 ' || COUNT(*) || '건'
-    FROM (SELECT run_id FROM train_stop GROUP BY run_id
-           HAVING MIN(stop_order) <> 1 OR MAX(stop_order) <> 5 OR COUNT(DISTINCT stop_order) <> 5)
+  SELECT '14. 시드 운행마다 stop_order 1~5',   CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,      '어긋난 운행 ' || COUNT(*) || '건'
+    FROM (SELECT s.run_id FROM train_stop s JOIN train_run r ON r.run_id = s.run_id
+           WHERE r.train_id IN (1, 2)
+           GROUP BY s.run_id
+          HAVING MIN(s.stop_order) <> 1 OR MAX(s.stop_order) <> 5 OR COUNT(DISTINCT s.stop_order) <> 5)
   UNION ALL
   SELECT '15. 정차 시각이 순번대로 증가',      CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,      '역전 ' || COUNT(*) || '건'
     FROM (SELECT run_id FROM (
@@ -133,9 +139,11 @@ SELECT status, COUNT(*) AS 건수,
        TO_CHAR(MAX(run_date), 'YYYY-MM-DD') AS 가장늦은운행일
   FROM train_run GROUP BY status ORDER BY status;
 
+-- 시퀀스(100000~)가 아닌 고정 번호 운행만. 꼬리 주석을 붙이면 SQLBLANKLINES ON 때문에
+-- sqlplus가 다음 문에 이어 붙여 ORA-03405를 냅니다 (02-seed.sh의 SET 꼬리 주석과 같은 함정)
 SELECT run_id, train_id, TO_CHAR(run_date, 'YYYY-MM-DD') AS 운행일,
        TO_CHAR(sale_open_at, 'YYYY-MM-DD HH24:MI') AS 예매오픈, status
-  FROM train_run WHERE run_id < 100000 ORDER BY run_id;   -- 시퀀스(100000~)가 아닌 고정 번호만
+  FROM train_run WHERE run_id < 100000 ORDER BY run_id;
 
 SELECT a.station_name AS 출발, b.station_name AS 도착, f.seat_grade, f.amount
   FROM fare f

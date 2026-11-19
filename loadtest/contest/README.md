@@ -32,8 +32,7 @@ ADMIN_ID=… ADMIN_PW=… loadtest/contest/setup.sh https://<서버>
 # 3) 평가 (서버의 저장소 폴더에서, docker compose가 떠 있는 곳)
 loadtest/tools/eval_contest.sh <태그> <대회 운행 ID>          # 규칙 엔진: 막힌 층
 tools/ml/export_live.sh <태그> data/ml/contest-<태그>           # 모델: 같은 데이터를 꺼내
-python3 -I tools/ml/features.py data/ml/contest-<태그>
-python3 tools/ml/score.py data/ml/model/model.pkl data/ml/contest-<태그>/features.csv
+python3 tools/ml/compare_dl.py data/ml/contest-<태그>           # 집계자만. 사용법은 그 파일 머리말
 ```
 
 봇과 사람이 **같은 태그**를 쓰면 한 번에 평가됩니다 (사람 이메일 `lt{태그}.human.g{번호}.{번호}@…`).

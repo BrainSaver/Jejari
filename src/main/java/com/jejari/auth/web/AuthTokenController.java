@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.jejari.auth.ActorType;
 import com.jejari.auth.AuthErrorCode;
 import com.jejari.auth.AuthPrincipal;
 import com.jejari.auth.session.AuthTokenService;
@@ -34,15 +35,15 @@ public class AuthTokenController {
 		if (refreshToken == null || refreshToken.isBlank()) {
 			throw new BusinessException(AuthErrorCode.AUTH_REFRESH_INVALID);
 		}
-		return tokenResponses.ok(authTokenService.refresh(refreshToken));
+		return tokenResponses.ok(authTokenService.refresh(refreshToken, ActorType.MEMBER)); // 회원 세션만
 	}
 
-	/** 현재 세션 로그아웃 + 쿠키 삭제. */
+	/** 현재 세션 로그아웃 + 그 종류(회원·관리자)의 쿠키 삭제. */
 	@PostMapping("/logout")
 	public ResponseEntity<Void> logout(@AuthenticationPrincipal AuthPrincipal principal) {
 		authTokenService.logout(principal);
 		return ResponseEntity.noContent()
-				.header(HttpHeaders.SET_COOKIE, tokenResponses.clearCookie())
+				.header(HttpHeaders.SET_COOKIE, tokenResponses.clearCookie(principal.actorType()))
 				.build();
 	}
 }

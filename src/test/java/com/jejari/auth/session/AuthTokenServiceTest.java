@@ -68,7 +68,59 @@ class AuthTokenServiceTest {
 		assertThat(refresh.sessionId()).isEqualTo(tokens.sessionId()).isEqualTo(saved.getValue().getSessionId());
 		assertThat(saved.getValue()).extracting("refreshTokenHash").isEqualTo(refresh.hash());
 		assertThat(saved.getValue()).extracting("refreshTokenHash").isNotEqualTo(refresh.secret());
+		// "로그인 상태 유지"를 고르지 않으면 12시간 + 브라우저를 닫으면 사라지는 쿠키
+		assertThat(tokens.refreshExpiresAt()).isEqualTo(clock.instant().plus(Duration.ofHours(12)));
+		assertThat(tokens.persistent()).isFalse();
+		assertThat(tokens.actorType()).isEqualTo(ActorType.MEMBER);
+	}
+
+	@Test
+	void 로그인_상태_유지를_고른_회원만_14일_유지_쿠키() {
+		when(issuer.issue(eq(ActorType.MEMBER), eq(1001L), anyString(), isNull()))
+				.thenReturn(new IssuedAccessToken("access", Instant.now()));
+		IssuedTokens tokens = service.issue(ActorType.MEMBER, 1001L, ClientInfo.none(), true);
 		assertThat(tokens.refreshExpiresAt()).isEqualTo(clock.instant().plus(Duration.ofDays(14)));
+		assertThat(tokens.persistent()).isTrue();
+	}
+
+	@Test
+	void 관리자는_유지를_골라도_8시간_세션_쿠키() {
+		activeAdmins.put(7L, AdminRole.SUPERVISOR);
+		when(issuer.issue(eq(ActorType.ADMIN), eq(7L), anyString(), eq(AdminRole.SUPERVISOR)))
+				.thenReturn(new IssuedAccessToken("admin-access", Instant.now()));
+		IssuedTokens tokens = service.issue(ActorType.ADMIN, 7L, ClientInfo.none(), true);
+		assertThat(tokens.refreshExpiresAt()).isEqualTo(clock.instant().plus(Duration.ofHours(8)));
+		assertThat(tokens.persistent()).isFalse();
+		assertThat(tokens.actorType()).isEqualTo(ActorType.ADMIN);
+	}
+
+	@Test
+	void 회원_입구에_관리자_세션_토큰이_오면_회전도_폐기도_하지_않고_거절() {
+		RefreshToken current = RefreshToken.generate(SID);
+		AuthSession admin = AuthSession.open(SID, "family-1", ActorType.ADMIN, 7L, current.hash(), ClientInfo.none(),
+				now(), now().plusHours(8));
+		when(repository.findById(SID)).thenReturn(Optional.of(admin));
+
+		assertThatThrownBy(() -> service.refresh(current.value(), ActorType.MEMBER))
+				.isInstanceOf(BusinessException.class)
+				.extracting("errorCode").isEqualTo(AuthErrorCode.AUTH_REFRESH_INVALID);
+		verify(repository, never()).rotate(anyString(), anyString(), anyString()); // 관리자 세션은 그대로 살아 있음
+		verify(repository, never()).revokeFamily(anyString(), anyString());
+	}
+
+	@Test
+	void 재발급해도_유지_여부는_로그인_때_그대로() {
+		RefreshToken current = RefreshToken.generate(SID);
+		when(repository.rotate(eq(SID), eq(current.hash()), anyString())).thenReturn(1);
+		when(issuer.issue(ActorType.MEMBER, 1001L, SID, null)).thenReturn(new IssuedAccessToken("a", Instant.now()));
+
+		when(repository.findById(SID)).thenReturn(Optional.of(activeSession(current))); // 14일 세션
+		assertThat(service.refresh(current.value(), ActorType.MEMBER).persistent()).isTrue();
+
+		AuthSession shortOne = AuthSession.open(SID, "family-1", ActorType.MEMBER, 1001L, current.hash(),
+				ClientInfo.none(), now(), now().plusHours(12));
+		when(repository.findById(SID)).thenReturn(Optional.of(shortOne));
+		assertThat(service.refresh(current.value(), ActorType.MEMBER).persistent()).isFalse();
 	}
 
 	@Test

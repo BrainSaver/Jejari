@@ -24,6 +24,7 @@ export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState(params.get('email') || '');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(false); // 공용 PC를 생각해 기본은 끔
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const pwRef = useRef(null);
@@ -35,7 +36,7 @@ export default function Login() {
     setBusy(true);
     setError(null);
     try {
-      await memberLogin(email.trim(), password);
+      await memberLogin(email.trim(), password, remember);
       navigate(next, { replace: true });
     } catch (err) {
       if (isBusy(err)) {
@@ -72,6 +73,10 @@ export default function Login() {
           <label htmlFor="pw">비밀번호</label>
           <input id="pw" ref={pwRef} type="password" autoComplete="current-password" placeholder="비밀번호" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </div>
+        <label className="row" style={{ gap: 8, fontSize: 14, margin: '0 0 12px', cursor: 'pointer' }}>
+          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} style={{ width: 18, minHeight: 18 }} />
+          <span>로그인 상태 유지 <span className="mut" style={{ fontSize: 13 }}>(내 기기에서만. 끄면 브라우저를 닫을 때 로그아웃)</span></span>
+        </label>
         <button className="btn" type="submit" disabled={busy}>{busy ? '확인하는 중…' : '로그인'}</button>
       </form>
       <p className="mut" style={{ textAlign: 'center', margin: '6px 0 0', fontSize: 14 }}>

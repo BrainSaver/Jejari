@@ -136,6 +136,10 @@ public class AuthSession implements Persistable<String> {
 		return tokenFamilyId;
 	}
 
+	public LocalDateTime getCreatedAt() {
+		return createdAt;
+	}
+
 	public LocalDateTime getExpiresAt() {
 		return expiresAt;
 	}

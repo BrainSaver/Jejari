@@ -34,13 +34,13 @@ class ReplayBatchTest {
 	}
 
 	@Test
-	void SAMPLED면_마우스_궤적을_버리고_FULL이면_점_수를_자른다() {
+	void 마우스_궤적은_FULL은_정책값까지_SAMPLED는_그_3분의_1까지() {
 		List<List<Number>> path = new ArrayList<>();
 		for (int i = 0; i < 80; i++) {
 			path.add(List.of(i * 10, i * 100, -5));
 		}
 		ReplayBatch.In mouse = new ReplayBatch.In(1L, T, "MOUSE_PATH", "home", null, null, null, path, null, null);
-		assertThat(ReplayBatch.sanitize(List.of(mouse), "SAMPLED", 50, NOW)).isEmpty();
+		assertThat(ReplayBatch.sanitize(List.of(mouse), "SAMPLED", 50, NOW).get(0).path()).hasSize(16); // 성기게
 		ReplayBatch.Event e = ReplayBatch.sanitize(List.of(mouse), "FULL", 50, NOW).get(0);
 		assertThat(e.path()).hasSize(50);
 		assertThat(e.path().get(20)).containsExactly(200, 1000, 0); // 좌표 0~1000으로
