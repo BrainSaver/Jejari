@@ -11,7 +11,9 @@
 // API: https://www.data.go.kr/data/15098552/openapi.do (출/도착지기반열차정보 조회)
 //
 // 넣는 범위 (기존 시드·관리자 화면과 겹치지 않게)
-//   train      train_id = 10000 + 열차번호, train_kind 'KTX'(운임표와 같게), 좌석 배치는 열차 1을 복사
+//   train      train_id = 10000 + 열차번호, train_no는 시드와 같은 5자리('00103'), train_kind 'KTX'(운임표와 같게), 좌석 배치는 열차 1을 복사
+//              시드(train_id < 10000)에 같은 열차 번호가 있으면 그 편은 넣지 않는다 (시드가 이미 매일 운행을 깔아 둠).
+//              예전에 넣어 둔 같은 편의 운행은 예약·대기·좌석 행이 없으면 지운다 (검색에 같은 열차가 두 번 나오던 것)
 //   train_run  run_id = 400000 + 연중일 × 1000 + 열차번호 (시드 1001~9003, 관리자 1,000,000~ 와 안 겹침)
 //              지난 날은 DEPARTED, 나머지는 ON_SALE. 판매 마감 = 출발 시각
 //   train_stop 서울·광명·대전·동대구·부산 중 실제로 서는 역만. stop_order는 진행 방향 노선 순서 (건너뛴 역은 빈 번호)
@@ -34,6 +36,7 @@ const STATIONS = [
   { id: '3900114', tago: 'NAT014445', name: '부산' },
 ];
 const TEMPLATE_TRAIN = 1; // 좌석 배치를 복사할 시드 열차
+const trainNo = (no) => String(no).padStart(5, '0'); // 시드와 같은 표기 ('00103')
 
 function serviceKey() {
   if (process.env.DATA_GO_KR_KEY_DEC) return process.env.DATA_GO_KR_KEY_DEC.trim();
@@ -163,7 +166,7 @@ async function main() {
         const runId = 400000 + dayOfYear(ymd) * 1000 + r.no;
         const departure = r.stops[0].dep;
         runRows.push({ runId, trainId, ymd, departure, status: ymd < today ? 'DEPARTED' : 'ON_SALE' });
-        for (const s of r.stops) stopRows.push({ runId, ...s });
+        for (const s of r.stops) stopRows.push({ runId, trainId, ...s });
       }
       process.stdout.write(`${ymd} ${direction} ${runs.filter((r) => r.no < 1000).length}편\n`);
     }
@@ -178,10 +181,28 @@ async function main() {
   sql.push('ALTER SESSION SET CURRENT_SCHEMA = jejari;');
   sql.push('');
 
-  // 열차
+  // 시드에 같은 번호의 열차가 있으면 그 편은 시드 몫이다 (같은 열차가 검색에 두 번 나오지 않게)
+  const TAGO_IDS = 'BETWEEN 10000 AND 10999';
+  const notSeed = (no) =>
+    `NOT EXISTS (SELECT 1 FROM train o WHERE o.train_id NOT ${TAGO_IDS} AND LPAD(o.train_no, 5, '0') = '${trainNo(no)}')`;
+
+  // 예전에 넣은 운행 중 시드와 겹치는 편: 아무도 안 쓰면 지운다
+  const shadowRuns = `SELECT r.run_id FROM train_run r JOIN train t ON t.train_id = r.train_id
+   WHERE t.train_id ${TAGO_IDS}
+     AND EXISTS (SELECT 1 FROM train o WHERE o.train_id NOT ${TAGO_IDS} AND LPAD(o.train_no, 5, '0') = LPAD(t.train_no, 5, '0'))
+     AND NOT EXISTS (SELECT 1 FROM reservation x WHERE x.run_id = r.run_id)
+     AND NOT EXISTS (SELECT 1 FROM waitlist x WHERE x.run_id = r.run_id)
+     AND NOT EXISTS (SELECT 1 FROM seat_inventory x WHERE x.run_id = r.run_id)`;
+  sql.push(`DELETE FROM train_stop WHERE run_id IN (${shadowRuns});`);
+  sql.push(`DELETE FROM train_run WHERE run_id IN (${shadowRuns});`);
+  sql.push('');
+
+  // 열차 (번호 표기는 시드와 같은 5자리로 맞춘다)
   for (const [trainId, t] of trainsSeen) {
-    sql.push(`MERGE INTO train t USING (SELECT ${trainId} AS train_id, '${String(t.no).padStart(3, '0')}' AS train_no, 'KTX' AS train_kind, 1 AS route_id, '${t.direction}' AS direction FROM dual) s
+    sql.push(`MERGE INTO train t USING (SELECT ${trainId} AS train_id, '${trainNo(t.no)}' AS train_no, 'KTX' AS train_kind, 1 AS route_id, '${t.direction}' AS direction FROM dual
+   WHERE ${notSeed(t.no)}) s
   ON (t.train_id = s.train_id)
+  WHEN MATCHED THEN UPDATE SET t.train_no = s.train_no, t.updated_at = SYSTIMESTAMP
   WHEN NOT MATCHED THEN INSERT (train_id, train_no, train_kind, route_id, direction) VALUES (s.train_id, s.train_no, s.train_kind, s.route_id, s.direction);`);
   }
   const ids = [...trainsSeen.keys()].join(',');
@@ -198,10 +219,13 @@ async function main() {
   sql.push('');
 
   // 운행: 판매 오픈은 코레일 규칙(2개월 전 07:00), 마감은 출발 시각
+  // 우리 열차(train 행이 있는 것)만. 같은 run_id를 다른 열차가 쓰고 있으면 건드리지 않는다 (시드 700000번대와 번호가 겹칠 수 있음)
   for (const r of runRows) {
-    sql.push(`MERGE INTO train_run t USING (SELECT ${r.runId} AS run_id, ${r.trainId} AS train_id, DATE '${r.ymd.slice(0, 4)}-${r.ymd.slice(4, 6)}-${r.ymd.slice(6, 8)}' AS run_date, ${ts(r.departure)} AS close_at, '${r.status}' AS status FROM dual) s
+    sql.push(`MERGE INTO train_run t USING (SELECT ${r.runId} AS run_id, ${r.trainId} AS train_id, DATE '${r.ymd.slice(0, 4)}-${r.ymd.slice(4, 6)}-${r.ymd.slice(6, 8)}' AS run_date, ${ts(r.departure)} AS close_at, '${r.status}' AS status FROM dual
+   WHERE EXISTS (SELECT 1 FROM train x WHERE x.train_id = ${r.trainId}) AND ${notSeed(r.trainId - 10000)}) s
   ON (t.run_id = s.run_id)
   WHEN MATCHED THEN UPDATE SET t.sale_close_at = s.close_at, t.status = CASE WHEN t.status = 'CLOSED' THEN t.status ELSE s.status END, t.updated_at = SYSTIMESTAMP
+    WHERE t.train_id = s.train_id
   WHEN NOT MATCHED THEN INSERT (run_id, train_id, sale_event_id, run_date, sale_open_at, sale_close_at, status)
     VALUES (s.run_id, s.train_id, NULL, s.run_date, CAST(ADD_MONTHS(s.run_date, -2) AS TIMESTAMP) + INTERVAL '7' HOUR, s.close_at, s.status);`);
   }
@@ -209,16 +233,19 @@ async function main() {
 
   // 정차 시각
   for (const s of stopRows) {
-    sql.push(`MERGE INTO train_stop t USING (SELECT ${s.runId} AS run_id, '${s.id}' AS station_id, ${s.order} AS stop_order, ${s.arr ? ts(s.arr) : 'CAST(NULL AS TIMESTAMP)'} AS a, ${s.dep ? ts(s.dep) : 'CAST(NULL AS TIMESTAMP)'} AS d FROM dual) s
+    sql.push(`MERGE INTO train_stop t USING (SELECT ${s.runId} AS run_id, '${s.id}' AS station_id, ${s.order} AS stop_order, ${s.arr ? ts(s.arr) : 'CAST(NULL AS TIMESTAMP)'} AS a, ${s.dep ? ts(s.dep) : 'CAST(NULL AS TIMESTAMP)'} AS d FROM dual
+   WHERE EXISTS (SELECT 1 FROM train_run x WHERE x.run_id = ${s.runId} AND x.train_id = ${s.trainId})) s
   ON (t.run_id = s.run_id AND t.station_id = s.station_id)
   WHEN MATCHED THEN UPDATE SET t.stop_order = s.stop_order, t.arrival_time = s.a, t.departure_time = s.d, t.updated_at = SYSTIMESTAMP
   WHEN NOT MATCHED THEN INSERT (run_id, station_id, stop_order, arrival_time, departure_time) VALUES (s.run_id, s.station_id, s.stop_order, s.a, s.d);`);
   }
   sql.push('');
   sql.push('COMMIT;');
-  sql.push(`SELECT 'tago loaded: train ' || (SELECT COUNT(*) FROM train WHERE train_id BETWEEN 10000 AND 10999)
-    || ', run ' || (SELECT COUNT(*) FROM train_run WHERE run_id BETWEEN 400000 AND 799999)
-    || ', stop ' || (SELECT COUNT(*) FROM train_stop WHERE run_id BETWEEN 400000 AND 799999) AS result FROM dual;`);
+  sql.push(`SELECT 'tago loaded: train ' || (SELECT COUNT(*) FROM train WHERE train_id ${TAGO_IDS})
+    || ', run ' || (SELECT COUNT(*) FROM train_run WHERE train_id ${TAGO_IDS})
+    || ', stop ' || (SELECT COUNT(*) FROM train_stop s JOIN train_run r ON r.run_id = s.run_id WHERE r.train_id ${TAGO_IDS})
+    || ', seed와 겹쳐 남은 운행(예약 있음) ' || (SELECT COUNT(*) FROM train_run r JOIN train t ON t.train_id = r.train_id
+         WHERE t.train_id ${TAGO_IDS} AND EXISTS (SELECT 1 FROM train o WHERE o.train_id NOT ${TAGO_IDS} AND LPAD(o.train_no, 5, '0') = LPAD(t.train_no, 5, '0'))) AS result FROM dual;`);
   sql.push('EXIT');
 
   const file = path.join(OUT, 'schedule.sql');
