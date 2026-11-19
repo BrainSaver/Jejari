@@ -232,6 +232,40 @@ sudo -u dita_810 git show $T:deploy/sudoers-jejari | sed "s#__USER__#dita_810#g"
 sudo visudo -cf /tmp/sj && sudo install -m 440 -o root -g root /tmp/sj /etc/sudoers.d/jejari && rm /tmp/sj   # parsed OK가 보여야 설치됨
 ```
 
+### 백업과 복구 (11-19~)
+
+**매일 새벽 3시(KST) 디스크 스냅샷**, 최근 **7일** 보관 (GCP 스냅샷 정책 `jejari-daily`, 디스크 `jejari`에 붙어 있음). 디스크 전체라 Oracle·Mongo·Redis 데이터, `.env`, Caddy 인증서, 배포 파일이 모두 들어 있습니다. 서버는 멈추지 않습니다 (몇 분간 디스크가 약간 느려질 수 있음). 첫 수동 스냅샷 `jejari-manual-20261119` (9.1GB, 2분 25초).
+
+- 전원을 갑자기 끈 것과 같은 상태로 찍힙니다(crash-consistent). Oracle·Mongo는 이 상태에서 스스로 복구하게 만들어져 있지만 100%는 아님 → 중요한 시연 전에는 **수동 스냅샷을 하나 더** 찍어 두기
+- 스냅샷에는 `.env` 비밀값이 들어 있습니다. 스냅샷으로 디스크를 만드는 권한은 프로젝트 주인만
+- 아래 `gcloud`는 **내 PC**(Git Bash, 위 "접속 B"의 `gcloud()` 함수)에서 실행합니다. 서버 안이 아님
+
+```bash
+gcloud compute snapshots list --format="table(name,creationTimestamp,storageBytes)"     # 있는 백업
+gcloud compute snapshots create jejari-manual-$(date +%Y%m%d-%H%M) --source-disk=jejari \
+  --source-disk-zone=asia-northeast3-a --storage-location=asia-northeast3              # 지금 하나 더 (2~3분)
+```
+
+**복구 (그 시점의 서버로 통째로 되돌리기)**: 지금 디스크는 지우지 않고 떼어 두므로, 잘못되면 다시 붙이면 됩니다. 15~20분, **그동안 사이트가 멈춤** → 팀에 먼저 알리기
+
+```bash
+S=<스냅샷 이름>                                    # 위 list에서 고르기
+Z=--zone=asia-northeast3-a
+gcloud compute disks create jejari-restore --source-snapshot=$S --type=pd-balanced $Z   # 1) 스냅샷 → 새 디스크
+gcloud compute instances stop jejari $Z                                                  # 2) VM 끄기 (사이트 멈춤)
+gcloud compute instances detach-disk jejari --disk=jejari $Z                             # 3) 지금 디스크 떼기 (지우지 않음)
+gcloud compute instances attach-disk jejari --disk=jejari-restore --boot $Z              # 4) 새 디스크를 부팅 디스크로
+gcloud compute instances start jejari $Z                                                 # 5) 켜기
+gcloud compute instances describe jejari $Z --format="value(networkInterfaces[0].accessConfigs[0].natIP)"   # 6) 외부 IP
+```
+
+7. **외부 IP가 바뀌었으면** DuckDNS(`jejari.duckdns.org`, 팀장님 계정)에서 새 IP로 바꾸기. 고정 IP가 아니라 VM을 껐다 켜면 바뀔 수 있음
+8. 서버에 들어가 확인: `curl -s localhost:8080/actuator/health`, `cat ~/jejari-app/autodeploy.state`. 앱·컨테이너는 부팅 때 자동으로 뜸 (Oracle healthy까지 수 분)
+9. 백업 정책을 새 디스크에 붙이기: `gcloud compute disks add-resource-policies jejari-restore --resource-policies=jejari-daily $Z`
+10. 며칠 써 보고 괜찮으면 옛 디스크 삭제 (`gcloud compute disks delete jejari $Z`) — 남겨 두면 디스크 값이 계속 나감
+
+DB 하나만(예: Oracle만) 되돌리고 싶으면 스냅샷 디스크를 두 번째 디스크로 붙여 그 볼륨만 복사해야 해서 단계가 더 많습니다 → 필요할 때 조영준에게.
+
 ### 조심 (데이터가 사라지거나 밖에서 보이게 되는 것)
 
 - **데이터 재생성**(위 "운영 규칙")은 회원·예약을 지웁니다. 시연 전날처럼 정해진 때에만, 팀에 알리고. 끝나면 실제 시간표를 바로 다시 넣기 (`sudo systemctl start jejari-tago`, 안 하면 다음 새벽 4:30까지 실제 KTX가 없음)
