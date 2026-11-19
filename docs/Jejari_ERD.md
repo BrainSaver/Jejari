@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v27 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
+> 스키마 v28 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -1751,12 +1751,12 @@ CCTV 녹화 단위. 로그인 세션과 1:1. 평시 샘플링, 위험 사용자�
 | `ended_at` | Date |  | 생성 | 녹화 종료 |  |
 | `event_count` | Int |  | 시스템 | 이벤트 수 | 재생 전 분량 확인 |
 | `run_ids` | Array |  | 생성 | 이 세션에서 본 운행 | 특정 열차 기준 세션 검색 |
-| `recording_mode` | String |  | 시스템 | SAMPLED / FULL | 평시 샘플링, 위험 시 전체 녹화 → 저장량 제어 |
+| `recording_mode` | String |  | 시스템 | SAMPLED / FULL | 평소는 SAMPLED(궤적을 성기게), 위험 점수 replay.full_record_score 이상 또는 세션 해시 표본 replay.full_record_ratio는 FULL → 저장량 제어 |
 | `risk_score_at_start` | Double |  | 시스템 | 시작 시점 점수 | 녹화 모드 결정 근거 |
 | `mask_policy_version` | String |  | 시스템 | 입력 마스킹 규칙 버전 | 어떤 규칙으로 가렸는지 추적 |
-| `retention_until` | Date |  | 시스템 | 보관 기한 (기본 90일) | 원래 보관 기한. legal_hold 중에도 지우지 않아 해제 때 기준이 됨. 개인정보 최소 보관 |
+| `retention_until` | Date |  | 시스템 | 보관 기한 (세션 시작 + replay.retention_days, 기본 90일) | 언제까지 두는지 기록. 삭제 보류 중에도 남긴다 |
 | `expire_at` | Date |  | 시스템 | 삭제 예정 시각 | TTL 기준. legal_hold면 필드 없음 |
-| `legal_hold` | Boolean |  | 시스템 | 삭제 보류 | true로 바꾸면 그 세션 expire_at을 $unset하고 캐시 TTL 뒤 한 번 더 (concurrency.md §13.2). 해제 시 expire_at = max(retention_until, 지금 + 1일) |
+| `legal_hold` | Boolean |  | 시스템 | 삭제 보류 여부 | 케이스가 열리면 true. 적재기는 저장 뒤 한 번 더 확인해 그 사이 걸린 것도 뺀다 |
 
 > **제약·비고** 점선은 논리 참조 · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 절차: concurrency.md §13
 
@@ -1767,26 +1767,26 @@ CCTV 녹화 단위. 로그인 세션과 1:1. 평시 샘플링, 위험 사용자�
 
 MongoDB · 🅱 빅데이터
 
-화면 행동과 서버 도메인 이벤트를 한 타임라인에 기록. 재생기가 화면을 다시 그린다. 일반 컬렉션.
+화면에서 한 행동을 시간순으로 기록한다. 재생기가 이것으로 화면을 다시 그린다. 서버 쪽 결과는 같은 세션의 behavior_log를 함께 읽는다.
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
-| `session_id` | String | PK, FK → replay_session | 시스템 | 녹화 세션 | session_id+seq 유니크로 재전송 중복 제거 |
-| `ts` | Date |  | 생성 | 이벤트 시각 (ms) | TTL 기준 |
+| `session_id` | String | PK, FK → replay_session | 시스템 | 녹화 세션 | 한 세션 재생 조회 (ux_session_seq 앞 칸) |
+| `ts` | Date |  | 생성 | 이벤트 시각 (ms) |  |
 | `expire_at` | Date |  | 시스템 | 삭제 예정 시각 | TTL 기준. 세션 시작 + replay.retention_days로 기록, legal_hold면 필드 제거 |
-| `seq` | Long | PK | 시스템 | 세션 내 순번 | 같은 ms 이벤트도 순서 보장 |
+| `seq` | Long | PK | 시스템 | 세션 내 순번 ("지금 ms × 1000"부터) | 같은 ms 이벤트도 순서 보장. session_id와 묶어 유니크 → 재전달 중복 방지 |
 | `t_offset_ms` | Long |  | 시스템 | 세션 시작부터 경과 시간 | 재생 타임라인 위치, 다중 세션 정렬 |
-| `type` | String |  | 생성 | PAGE_VIEW / CLICK / INPUT / SCROLL / MOUSE_PATH / VISIBILITY / API / DOMAIN |  |
+| `type` | String |  | 생성 | PAGE_VIEW / CLICK / INPUT / SCROLL / MOUSE_PATH / VISIBILITY / LAYOUT |  |
 | `screen` | String |  | 생성 | 화면 ID (queue, seat_map, payment) | 재생기가 화면을 다시 그리는 기준 |
 | `target` | String |  | 생성 | 요소 ID (seat-5A, btn-pay) | 어떤 좌석·버튼을 눌렀는지 |
 | `x` | Int |  | 생성 | 클릭 X (화면 비율 0~1000) | 해상도와 무관하게 재생 |
 | `y` | Int |  | 생성 | 클릭 Y (화면 비율 0~1000) |  |
-| `path` | Array |  | 생성 | 마우스 궤적 [[dt, x, y], …] | 사람은 곡선·가감속, 매크로는 직선·등속·순간이동 |
+| `path` | Array |  | 생성 | 마우스 궤적 [[dt, x, y], …] | 사람은 곡선·가감속, 매크로는 직선·등속·순간이동. 평소(SAMPLED)에도 성기게 남긴다 (0.15초·묶음당 16점) |
 | `input_masked` | String |  | 시스템 | 입력값 마스킹 (길이만) | 개인정보 미보관 |
-| `api` | Object |  | 시스템 | { method, path, status, latency_ms } | 화면 행동과 서버 응답을 같이 봄 |
-| `domain_event` | Object |  | 시스템 | { type, ref_id, kafka_event_id } | 클릭 → 좌석 선점 → 결제 → 취소가 한 줄로 |
+| `label` | String |  | 생성 | 버튼·링크 문구 ("결제하기") | 무엇을 눌렀는지. 숫자 없는 짧은 글자만 받아 개인정보가 섞이지 않게 |
+| `boxes` | Array |  | 생성 | 화면 뼈대 [{ k, x, y, w, h, id, label, off }] (LAYOUT 이벤트만) | 재생 배경. k = button / link / input / select / heading / tab / seat-free / seat-hold / seat-taken / seat-mine / seat-lost. 화면 글자는 label만 |
 
-> **제약·비고** UNIQUE { session_id: 1, seq: 1 } (재전송 중복 제거) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 적재 컨슈머는 저장 전 세션 legal_hold 확인 (보류 중이면 expire_at 없이 저장) · 상한: replay.max_path_points, replay.batch_sec, replay.max_events_per_session · 시계열 컬렉션은 metaField=session_id 버킷 문제와 unique 인덱스 불가로 제외 · DOM 녹화(rrweb)는 확장 과제 · 절차: concurrency.md §13
+> **제약·비고** 일반 컬렉션 · UNIQUE { session_id: 1, seq: 1 } (ux_session_seq) — 시계열 컬렉션은 유니크 인덱스를 만들 수 없어 Kafka 재전달 중복을 막지 못한다 · TTL { expire_at: 1 } expireAfterSeconds 0 · 케이스가 열리면 expire_at을 지워 삭제 보류 · DOM 녹화(rrweb)는 확장 과제 · 점선은 논리 참조
 
 **관계** session_id → [`replay_session`](#replay-session)
 
@@ -2390,6 +2390,7 @@ Oracle
 | v25 | 모델 보조 의견 (RISK-05, 강다인 설계안): MongoDB model_score 추가(계정 단위 점수·근거, UNIQUE member_id+model_version), model_run.algorithm에 ENSEMBLE, is_active는 algorithm별 하나, risk_score의 Isolation Forest 점수 칸 삭제(쓰는 코드 없음). 기존 DB는 db/patch/v25.sql |
 | v26 | train.train_no 설명을 5자리 표기(00103)로. 시드가 실제 KTX 번호로 바뀐 뒤 시간표 적재가 같은 열차를 3자리 번호로 한 번 더 넣던 문제(길동현 11-19)와 표기를 맞춤. 기존 DB는 db/patch/v26.sql(주석만) |
 | v27 | train_run_seq 시퀀스 추가. 생성되는 날짜별 운행의 run_id를 산식(날짜 인코딩)이 아니라 시퀀스로 받고, 중복 판정은 자연키 (train_id, run_date)로 한다. 시드·스케줄러(700000+)와 실제 시간표 적재(400000+) 대역이 겹칠 수 있던 것을 없앴다. 기존 DB는 db/patch/v27.sql |
+| v28 | CCTV 녹화(ADM-11)를 구현과 맞춤 (강다인 요청): replay_event를 시계열 → 일반 컬렉션 + UNIQUE(session_id, seq) (시계열은 유니크 인덱스를 만들 수 없어 Kafka 재전달 중복을 막지 못한다), 쓰지 않는 칸 두 개(서버 응답·도메인 이벤트) 삭제 — 재생할 때 같은 세션의 behavior_log를 함께 읽어 같은 것을 두 번 저장하지 않는다, 실제로 저장하는 expire_at·label·boxes 추가. Oracle 변경 없음 — Mongo 인덱스는 docker/mongo/mongo-init.js |
 
 ## 참고 자료
 
