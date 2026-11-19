@@ -130,6 +130,20 @@ python3 tools/ml/score.py data/ml/model/model.pkl data/ml/contest-<태그>/featu
 - 이 리허설을 하면서 고친 것: 화면이 검색을 비회원으로 기록하던 버그, setup.sh 판매 오픈 시각 9시간 오차,
   모델의 가짜 신호(가입 기간·IP·첫 이벤트 기준 오픈 시각)
 
+## 김성원 모델과 대회 로그 비교 (`compare_dl.py`)
+
+```bash
+git fetch origin SeongWon
+tools/ml/export_live.sh <태그> data/ml/contest-<태그>
+python3 tools/ml/compare_dl.py data/ml/contest-<태그>      # → data/ml/contest-<태그>/compare.md
+```
+
+- 두 모델(`tools/ml` · 김성원 `tools/dl-defense`)을 같은 대회 로그에 돌려 표 한 장과 **미리 정한 판정 기준**에 따른 결과를 낸다. 학습은 하지 않는다
+- 김성원 모델은 main에 없다. 실행할 때만 `origin/SeongWon`에서 꺼내 임시 폴더에서 돌린다 (블라인드 공격자가 탐지 방법을 읽지 않게). 다른 위치면 `--dl-dir`
+- 김성원 모델에 넣기 전에 화면 자동 조회(`meta.auto`)를 뺀다. 그 모델의 `realdata.py`가 빼지 않아 실제 사람을 봇으로 보기 때문
+- 모델을 만든 사람의 봇은 그 모델의 탐지율에서 뺀다 (tools/ml → botc·botx, dl-defense → bota)
+- 배경과 생성 데이터 교차 시험 결과: [`docs/강동균/모델-비교-김성원-20261119.md`](../../docs/강동균/모델-비교-김성원-20261119.md)
+
 ## 실제 사람 데이터로 맞춘 것 (`human_calibration.json`)
 
 캐글은 로그인 키가 필요하고 이 환경의 네트워크가 막아, 공개 데이터 중 받을 수 있는 것을 썼다:
