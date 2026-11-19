@@ -32,12 +32,8 @@ ADMIN_ID=… ADMIN_PW=… loadtest/contest/setup.sh https://<서버>
 # 3) 평가 (서버의 저장소 폴더에서, docker compose가 떠 있는 곳)
 loadtest/tools/eval_contest.sh <태그> <대회 운행 ID>          # 규칙 엔진: 막힌 층
 tools/ml/export_live.sh <태그> data/ml/contest-<태그>           # 모델: 같은 데이터를 꺼내
-git fetch origin SeongWon                                        # 김성원 모델 (실행할 때만 꺼내 씀, main에는 없음)
-python3 tools/ml/compare_dl.py data/ml/contest-<태그>           # 모델 3개 비교 + 미리 정한 기준으로 판정 → compare.md
+python3 tools/ml/compare_dl.py data/ml/contest-<태그>           # 집계자만. 사용법은 그 파일 머리말
 ```
-
-모델 3개: 지금 모델(`data/ml/model`) · next(`data/ml/model-next`) · 김성원 `tools/dl-defense`. 대회 중에는 아무것도 막지 않고
-끝난 로그에 점수만 매긴다. 판정 기준과 이유: [`docs/강동균/모델-비교-김성원-20261119.md`](../../docs/강동균/모델-비교-김성원-20261119.md) "어떻게 고를지"
 
 봇과 사람이 **같은 태그**를 쓰면 한 번에 평가됩니다 (사람 이메일 `lt{태그}.human.g{번호}.{번호}@…`).
 모델 점수는 봇·사람을 **같은 폴더에서 같이** 매깁니다 — 판매 오픈 시각·연결 계정 같은 특징이 같은 기준으로 계산되게.
