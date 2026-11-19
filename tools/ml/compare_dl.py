@@ -21,6 +21,7 @@ import csv
 import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -76,8 +77,8 @@ def score_ours(folder, model, tmp, name):
     work = os.path.join(tmp, name)
     os.makedirs(work, exist_ok=True)
     for x in ("features.csv", "events.jsonl", "members.jsonl", "runs.jsonl"):   # GRU는 features.csv 옆의 로그를 읽는다
-        if os.path.exists(os.path.join(folder, x)):
-            os.symlink(os.path.abspath(os.path.join(folder, x)), os.path.join(work, x))
+        if os.path.exists(os.path.join(folder, x)):     # 복사 (Windows는 심볼릭 링크에 관리자 권한이 필요)
+            shutil.copyfile(os.path.join(folder, x), os.path.join(work, x))
     run([sys.executable, os.path.join(HERE, "score.py"), model, os.path.join(work, "features.csv")])
     with open(os.path.join(work, "scores.csv"), encoding="utf-8") as f:
         return {int(r["member_id"]): r["flag"] == "1" for r in csv.DictReader(f)}
