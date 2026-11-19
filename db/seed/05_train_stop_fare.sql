@@ -17,6 +17,13 @@
 --   시각표는 시·분만 쓰고 날짜는 각 운행의 run_date에서 붙입니다. 운행일이 적재일 기준
 --   상대값이라, 조회한 날짜(API)를 그대로 쓰면 우리 운행과 맞지 않기 때문입니다.
 --   기점은 도착이 없고(arr_hm NULL), 종점은 출발이 없습니다(dep_hm NULL).
+--   대상은 **시드 열차 1·2의 운행만**입니다 (02·03·04와 같은 조건). 전에는 `tr.route_id = 1`이라
+--   경부선 전체였는데, 실제 시간표 적재(tools/load-tago-schedule.js)가 넣는 열차도 경부선이어서
+--   05를 다시 돌리면 실제 편의 정차 시각을 이 시드 시각표로 덮어쓰고 안 서는 역까지 넣었습니다
+--   (2026-11-18 공용 서버, 조영준 님 발견. docs/조영준/troubleshooting/20261118-시드05가-실제시간표-덮어씀.md).
+--   실제 시간표 운행은 그 도구가, 관리자 화면 운행은 RunAdminService가 자기 정차를 넣으므로
+--   05가 손댈 것이 없습니다. 노선이 아니라 열차로 거는 이유는 운행 번호가 v27부터 시퀀스라
+--   run_id 범위로는 구분할 수 없기 때문입니다.
 MERGE INTO train_stop t
 USING (
   WITH sched AS (
@@ -47,7 +54,7 @@ USING (
     FROM train_run run
     JOIN train tr ON tr.train_id = run.train_id
     JOIN sched sc ON sc.direction = tr.direction
-   WHERE tr.route_id = 1
+   WHERE tr.train_id IN (1, 2)
 ) s ON (t.run_id = s.run_id AND t.station_id = s.station_id)
 WHEN MATCHED THEN
   UPDATE SET t.stop_order = s.stop_order, t.arrival_time = s.arrival_time,

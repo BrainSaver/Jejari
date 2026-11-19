@@ -168,7 +168,7 @@ journalctl -u jejari-autodeploy -n 50 --no-pager     # 자동 배포 로그
 ### 조심 (데이터가 사라지거나 밖에서 보이게 되는 것)
 
 - **데이터 재생성**(위 "운영 규칙")은 회원·예약을 지웁니다. 시연 전날처럼 정해진 때에만, 팀에 알리고. 끝나면 실제 시간표를 바로 다시 넣기 (`sudo systemctl start jejari-tago`, 안 하면 다음 새벽 4:30까지 실제 KTX가 없음)
-- ⚠️ **시드 `05_train_stop_fare.sql`을 기존 DB에 다시 돌리면 실제 KTX 시간표의 정차 시각을 전부 시드 시각(09:28)으로 덮어씁니다** (11-18 실제 발생, `docs/조영준/troubleshooting/20261118-시드05가-실제시간표-덮어씀.md`). 시드 05가 실제 시간표 운행을 빼도록 고쳐지기 전까지는, 05를 돌렸으면 **바로 이어서** `sudo systemctl start jejari-tago`
+- 시드 `05_train_stop_fare.sql`은 **시드 열차 1·2의 운행만** 건드립니다. 실제 KTX 시간표(`train_id 10000~`)는 05를 다시 돌려도 그대로입니다 — 11-18에 전부 09:28로 덮어쓴 그 문제는 05의 대상이 경부선 전체였기 때문이고, 11-19에 고쳤습니다 (`docs/조영준/troubleshooting/20261118-시드05가-실제시간표-덮어씀.md`). **옛 05가 들어 있는 배포**에서 05를 돌렸다면 이어서 `sudo systemctl start jejari-tago`
 - `docker volume rm`, `docker compose down -v` 금지 (`caddy-data`를 지우면 인증서를 다시 받아야 하고 발급 횟수 제한이 있음)
 - `compose.yaml`의 `127.0.0.1:` 포트 바인딩, 방화벽 규칙을 바꾸지 않기 (DB가 인터넷에 열림)
 - 서버 `.env`의 `JEJARI_HMAC_KEY`·`JEJARI_PEPPER_KEYS`·`JEJARI_ENC_KEYS`는 바꾸지 않기 (바꾸면 기존 해시·비밀번호·전화번호를 못 읽음)
