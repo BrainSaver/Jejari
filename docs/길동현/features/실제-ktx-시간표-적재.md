@@ -22,6 +22,9 @@ MSYS_NO_PATHCONV=1 docker exec -i jejari-oracle-1 bash -c 'sqlplus -s / as sysdb
 - 결과 SQL은 `build/tago/schedule.sql`, API 원본 응답은 `build/tago/raw/`에 캐시 (`build/`는 깃에 안 올라감)
 - 모두 MERGE라 여러 번 돌려도 같은 결과. 날짜가 지나면 다시 돌리면 됨 (지난 날 운행은 DEPARTED로 바뀜)
 - 키는 출력하지 않음. 스크립트는 `.env`에서 `DATA_GO_KR_KEY_DEC` 줄만 읽음
+  - (2026-11-18 강동균) **`DATA_GO_KR_KEY`도 읽습니다.** 요즘 포털은 64자 키 하나만 줘서 팀이
+    `DATA_GO_KR_KEY` 하나로 모으는 중입니다 (`.env.example`). 옛 이름 `_DEC`가 먼저이고,
+    없으면 새 이름을 봅니다 — 기존 `.env`는 그대로 돌아갑니다
 
 ## 어떻게 동작하나
 

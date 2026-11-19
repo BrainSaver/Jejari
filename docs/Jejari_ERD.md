@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v26 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
+> 스키마 v27 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -408,7 +408,7 @@ Oracle
 | `sale_close_at` | TIMESTAMP |  | 생성 | 판매 마감 |  |
 | `status` | VARCHAR2(10) | NN | 시스템 | SCHEDULED / ON_SALE / CLOSED / DEPARTED | 판매 가능 여부 판단. 전이는 판매 오픈 스케줄러가 한다 — sale_open_at이 지나면 ON_SALE, sale_close_at이 지나면 CLOSED, 기점 출발 시각(MIN(train_stop.departure_time))이 지나면 DEPARTED. 출발은 판매 일정과 무관한 사실이라 DEPARTED가 아닌 모든 상태에서 바로 간다. 주기 app_policy sale.open_interval_sec |
 
-> **제약·비고** UNIQUE(train_id, run_date) · UNIQUE(run_id, train_id) — seat_inventory 복합 FK의 참조 대상 · 일반 예매 오픈은 코레일 규칙대로 출발일 2개월 전 07:00: sale_open_at = run_date - 2개월 + 07:00. 명절 운행은 sale_event.sale_open_at을 그대로 복사합니다 (특별예매 일괄 오픈) · 상태 전이 순서: 출발 → 마감 → 오픈 (센 것부터 봐서 뒤 단계가 앞 단계 결과를 건드리지 않게). 정차 정보가 없는 운행은 출발 시각을 알 수 없어 DEPARTED로 가지 않는다
+> **제약·비고** UNIQUE(train_id, run_date) · UNIQUE(run_id, train_id) — seat_inventory 복합 FK의 참조 대상 · 일반 예매 오픈은 코레일 규칙대로 출발일 2개월 전 07:00: sale_open_at = run_date - 2개월 + 07:00. 명절 운행은 sale_event.sale_open_at을 그대로 복사합니다 (특별예매 일괄 오픈) · 상태 전이 순서: 출발 → 마감 → 오픈 (센 것부터 봐서 뒤 단계가 앞 단계 결과를 건드리지 않게). 정차 정보가 없는 운행은 출발 시각을 알 수 없어 DEPARTED로 가지 않는다 ·  · CREATE SEQUENCE train_run_seq START WITH 100000 INCREMENT BY 1 MAXVALUE 399999 NOCYCLE CACHE 50;
 
 **관계** train_id → [`train`](#train) · sale_event_id → [`sale_event`](#sale-event) · [`train_stop`](#train-stop).run_id → 이 테이블 · [`seat_inventory`](#seat-inventory).run_id → 이 테이블 · [`reservation`](#reservation).run_id → 이 테이블 · [`waitlist`](#waitlist).run_id → 이 테이블 · [`behavior_log`](#behavior-log).run_id → 이 테이블 · [`queue_log`](#queue-log).run_id → 이 테이블
 
@@ -2389,6 +2389,7 @@ Oracle
 | v24 | case_marker.rule_code CHECK에 REGULAR_INTERVAL 추가 (강다인 요청). 일정 간격 매크로가 이 규칙에만 걸리는데 마커 규칙이 아니라 케이스가 열리지 않았다 (조영준 경계 측정). 기존 DB는 db/patch/v24.sql |
 | v25 | 모델 보조 의견 (RISK-05, 강다인 설계안): MongoDB model_score 추가(계정 단위 점수·근거, UNIQUE member_id+model_version), model_run.algorithm에 ENSEMBLE, is_active는 algorithm별 하나, risk_score의 Isolation Forest 점수 칸 삭제(쓰는 코드 없음). 기존 DB는 db/patch/v25.sql |
 | v26 | train.train_no 설명을 5자리 표기(00103)로. 시드가 실제 KTX 번호로 바뀐 뒤 시간표 적재가 같은 열차를 3자리 번호로 한 번 더 넣던 문제(길동현 11-19)와 표기를 맞춤. 기존 DB는 db/patch/v26.sql(주석만) |
+| v27 | train_run_seq 시퀀스 추가. 생성되는 날짜별 운행의 run_id를 산식(날짜 인코딩)이 아니라 시퀀스로 받고, 중복 판정은 자연키 (train_id, run_date)로 한다. 시드·스케줄러(700000+)와 실제 시간표 적재(400000+) 대역이 겹칠 수 있던 것을 없앴다. 기존 DB는 db/patch/v27.sql |
 
 ## 참고 자료
 

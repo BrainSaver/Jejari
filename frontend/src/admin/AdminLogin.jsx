@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router';
 import { adminLogin } from '../api/client.js';
 import { Seal } from './Icon.jsx';
+import { BUSY_MESSAGE, isBusy } from '../lib/busy.js';
 import { useAdminAuth } from './useAdminAuth.js';
 
 /** A-01 관리자 로그인 (AUTH-05). 성공하면 A-04 실시간 현황으로. 어느 쪽이 틀렸는지는 말하지 않는다 */
@@ -47,7 +48,7 @@ export default function AdminLogin() {
           </div>
           {error && (
             <div className="alert stop" role="alert">
-              {MESSAGES[error.code] || error.message}
+              {isBusy(error) ? BUSY_MESSAGE : MESSAGES[error.code] || error.message}
               {error.traceId && <div className="faint" style={{ fontSize: 12 }}>traceId {error.traceId}</div>}
             </div>
           )}

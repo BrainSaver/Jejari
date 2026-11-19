@@ -53,7 +53,9 @@ public class ReplayAdminService {
 			boolean legalHold, List<Object> runIds) {
 	}
 
-	public record Replay(Session session, List<Map<String, Object>> events, List<Map<String, Object>> server) {
+	/** @param seats 이벤트·화면 뼈대에 나온 좌석 요소 ID → "5호차 3A" (재생기가 좌석 번호로 보여 줌) */
+	public record Replay(Session session, List<Map<String, Object>> events, List<Map<String, Object>> server,
+			Map<String, String> seats) {
 	}
 
 	private record CaseWindow(SubjectType type, String hash, Timestamp from, Timestamp to) {
@@ -91,7 +93,43 @@ public class ReplayAdminService {
 			d.remove("_id");
 			server.add(d);
 		}
-		return new Replay(toSession(s), events, server);
+		return new Replay(toSession(s), events, server, seatNames(events));
+	}
+
+	/** 녹화에 나온 seat-{좌석 ID} → "N호차 좌석번호". 좌석 표(seat)는 운영 데이터라 개인정보가 아니다 */
+	private Map<String, String> seatNames(List<Map<String, Object>> events) {
+		java.util.Set<Long> ids = new java.util.TreeSet<>();
+		for (Map<String, Object> e : events) {
+			seatId(e.get("target"), ids);
+			if (e.get("boxes") instanceof List<?> boxes) {
+				for (Object b : boxes) {
+					if (b instanceof Map<?, ?> m) {
+						seatId(m.get("id"), ids);
+					}
+				}
+			}
+		}
+		Map<String, String> out = new java.util.LinkedHashMap<>();
+		List<Long> all = new ArrayList<>(ids);
+		for (int i = 0; i < all.size(); i += 500) {
+			List<Long> chunk = all.subList(i, Math.min(all.size(), i + 500));
+			String in = String.join(",", java.util.Collections.nCopies(chunk.size(), "?"));
+			jdbc.query("SELECT seat_id, car_no, seat_no FROM seat WHERE seat_id IN (" + in + ")",
+					rs -> {
+						out.put("seat-" + rs.getLong(1), rs.getInt(2) + "호차 " + rs.getString(3));
+					}, chunk.toArray());
+		}
+		return out;
+	}
+
+	private static void seatId(Object v, java.util.Set<Long> ids) {
+		if (v instanceof String t && t.startsWith("seat-") && ids.size() < 2000) {
+			try {
+				ids.add(Long.parseLong(t.substring(5)));
+			} catch (NumberFormatException ignore) {
+				// 좌석 ID 형식이 아니면 무시
+			}
+		}
 	}
 
 	/** 케이스와 겹치는 세션의 삭제 보류. 실패해도 케이스 생성은 그대로 (다음 열람 때 다시 할 수 있음) */
