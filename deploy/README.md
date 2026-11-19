@@ -18,7 +18,7 @@ VM 1대(e2-standard-4, 서울)에 로컬과 같은 `compose.yaml`을 올리고, 
 | `make-server-env.sh` | **내 PC에서** 서버용 `.env` 생성 (HMAC 키만 팀 공용, 나머지 새로) |
 | `setup-server.sh` | **서버에서 한 번**: 패키지·docker 그룹·도메인·systemd (앱 2대 + 자동 배포 타이머) + 시간표 타이머 · 서비스 명령 sudo 허용) |
 | `deploy.sh` | 배포: main(또는 `DEPLOY_SHA`) 빌드 → 한 대씩 재시작 → 배포한 커밋 기록 |
-| `auto-deploy.sh` · `jejari-autodeploy.{service,timer}` | **자동 배포**: 10분마다, CI 성공 + DB·인프라 변경 없음일 때만 `deploy.sh` |
+| `auto-deploy.sh` · `jejari-autodeploy.{service,timer}` | **자동 배포**: 20분마다 (관리자 화면 "배포" 버튼으로 바로도), CI 성공 + DB·인프라 변경 없음일 때만 `deploy.sh` |
 | `tago-refresh.sh` · `jejari-tago.{service,timer}` | 실제 KTX 시간표(앞뒤 7일) 매일 갱신 |
 | `grafana-alerting/` · `grafana-team-user.sh` · `sudoers-jejari` | Discord 경보 · Grafana 팀 계정 · 앱 주인의 좁은 sudo |
 
@@ -72,7 +72,7 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
 
 ## 운영 규칙
 
-- **자동 배포** (11-18~): 서버의 `jejari-autodeploy.timer`가 **10분마다** main을 확인해 `auto-deploy.sh`를 실행. 서버에 비밀값을 더 두지 않음 (공개 저장소를 받고, CI 결과는 공개 GitHub API로 봄)
+- **자동 배포** (11-18~): 서버의 `jejari-autodeploy.timer`가 **20분마다** main을 확인해 `auto-deploy.sh`를 실행 (11-19 10분 → 20분). 기다리기 싫으면 **관리자 화면 → 배포 → "지금 배포"** (아래). 서버에 비밀값을 더 두지 않음 (공개 저장소를 받고, CI 결과는 공개 GitHub API로 봄)
 
   | main의 새 커밋이 | 자동 배포는 |
   |---|---|
@@ -91,7 +91,30 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
   sudo systemctl disable --now jejari-autodeploy.timer   # 자동 배포 끄기 (시연 중 등)
   ```
 
+- **관리자 화면 "배포" 버튼** (A-08, 11-19~): 위 자동 배포 장치를 **지금 한 번** 실행 (`sudo systemctl start --no-block jejari-autodeploy.service`). 그래서 CI 확인·BLOCKED는 그대로이고 **BLOCKED는 버튼으로 못 풂**. 누를 수 있는 사람은 서버 `.env`의 `JEJARI_OPS_DEPLOY_ADMIN_IDS`(관리자 번호), 켜는 스위치 `JEJARI_OPS_DEPLOY_ENABLED=true`. 누른 기록 `~/jejari-app/deploy-requests.log`. 연타는 1분 간격. **프로젝트가 끝나면 끔** (웹에서 서버 명령을 실행하는 기능)
 - **직접 배포**: `bash deploy/deploy.sh` (main 기준) 또는 `DEPLOY_SHA=<커밋> bash deploy/deploy.sh`. DB를 맞춘 뒤, 또는 자동 배포를 끈 동안
+
+- **BLOCKED 풀기** (ERD가 바뀌면 거의 항상. 11-19 v25·v26·v27 모두 이렇게 풂):
+  ```bash
+  sudo -iu dita_810 && cd ~/Jejari && git fetch -q
+  cat ~/jejari-app/autodeploy.state                         # BLOCKED <커밋> … 바뀐 파일
+  T=<상태 줄의 커밋>
+  git diff --stat $(cat ~/jejari-app/deployed-sha) $T -- db docs/erd docker compose.yaml deploy   # 무엇이 바뀌었나
+  git show $T:db/patch/v27.sql | less                       # ① 패치를 먼저 읽기 (열 삭제·행 삭제가 있는지)
+  PW=$(grep '^ORACLE_APP_PASSWORD=' .env | cut -d= -f2)
+  git show $T:db/patch/v27.sql | docker compose exec -T -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 oracle \
+    bash -lc "sqlplus -S -L jejari/$PW@localhost:1521/FREEPDB1"    # ② 적용 (패치마다)
+  # ③ mongo-init.js·Caddyfile·timer·sudoers가 바뀌었으면 아래 각 항목대로
+  DEPLOY_SHA=$T bash deploy/deploy.sh                        # ④ 배포 → 자동 배포가 이 커밋부터 다시 따라감
+  sudo systemctl start jejari-autodeploy && cat ~/jejari-app/autodeploy.state   # ⑤ OK로 바뀌었는지
+  ```
+- **`jejari-autodeploy.timer`·`sudoers-jejari`가 바뀌면** (BLOCKED): 운영자가 직접 설치. `dita_810`은 sudo가 좁아서 **구글 계정 사용자로** (`sudo -iu` 하기 전에)
+  ```bash
+  cd /home/dita_810/Jejari && sudo -u dita_810 git fetch -q && sudo -u dita_810 git checkout -q --detach origin/main
+  sed -e "s#__USER__#dita_810#g" -e "s#__HOME__#/home/dita_810#g" deploy/jejari-autodeploy.timer | sudo tee /etc/systemd/system/jejari-autodeploy.timer >/dev/null
+  sudo systemctl daemon-reload && systemctl list-timers jejari-autodeploy
+  sed "s#__USER__#dita_810#g" deploy/sudoers-jejari > /tmp/sj && sudo visudo -cf /tmp/sj && sudo install -m 440 /tmp/sj /etc/sudoers.d/jejari
+  ```
 - **시연 중에는 자동 배포를 끔** (시연 도중 재시작 방지). 끝나면 다시 켬
 
 - **데이터 재생성** (테스트 데이터 삭제): Oracle만 지우면 회원·예약 번호가 1부터 다시 시작해 Redis(매수 카운터·대기열·좌석 키)·Mongo(행동 로그)에 남은 옛 번호 데이터를 새 회원이 물려받음 → **셋을 함께**. Caddy(인증서)·Grafana·Prometheus·Kafka는 남김
@@ -157,7 +180,7 @@ journalctl -u jejari-autodeploy -n 50 --no-pager     # 자동 배포 로그
 
 | 상황 | 명령 |
 |---|---|
-| 지금 main으로 배포 | `bash deploy/deploy.sh` |
+| 지금 main으로 배포 | 관리자 화면 → **배포** → "지금 배포" (허용된 관리자만), 또는 `sudo systemctl start jejari-autodeploy` |
 | 자동 배포 한 번 지금 실행 | `sudo systemctl start jejari-autodeploy` |
 | **시연 중 자동 배포 끄기** / 다시 켜기 | `sudo systemctl disable --now jejari-autodeploy.timer` / `sudo systemctl enable --now jejari-autodeploy.timer` |
 | 앱 한 대가 이상함 | `sudo systemctl restart jejari@8080` (한 대씩. Caddy가 다른 대로 보냄) |

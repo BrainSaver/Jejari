@@ -56,7 +56,11 @@ trap report EXIT
 git fetch -q origin main || { echo "git fetch 실패 (네트워크?) → 다음 차례에"; exit 0; }
 HEAD_MAIN=$(git rev-parse origin/main)
 CUR=$(cat "$DEPLOYED" 2>/dev/null || git rev-parse HEAD)
-[[ "$HEAD_MAIN" == "$CUR" ]] && exit 0
+# 이미 최신이어도 기록한다. 안 쓰면 직접 배포(deploy.sh) 뒤에도 옛 판단(WAITING_CI 등)이 남아
+# 관리자 화면 "배포"가 틀린 상태를 보여 주고 "CI 대기 1시간" 경보가 잘못 울린다 (11-19 발견)
+if [[ "$HEAD_MAIN" == "$CUR" ]]; then
+  state "OK ${CUR:0:7} 최신 (main과 같음)"; exit 0
+fi
 
 # CI 결과: success | pending | failed
 ci() {
