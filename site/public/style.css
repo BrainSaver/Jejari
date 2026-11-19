@@ -874,6 +874,7 @@ body.ai-open .ac-fab,body.sim-on .ac-fab{display:none}
 .ac-live .ac-dot{width:8px;height:8px}
 .ac-live[hidden]{display:none}
 .ac-body{flex:1;min-height:0;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px}
+.ac-body > *{flex:none}
 .ac-pad{padding:4px 6px;margin:0}
 .ac-sum{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line2);border-radius:10px;background:var(--bg)}
 .ac-sum.st-ok{border-color:var(--add-fg);background:var(--add)}
