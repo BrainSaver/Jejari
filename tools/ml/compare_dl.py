@@ -55,9 +55,9 @@ JUDGE = f"""\
 3. 두 모델을 OR로 합쳐도 사람 오탐이 {MAX_HUMAN_FP:.0%} 이하이고 2번 막은 좌석 비율이 더 높으면 합친 쪽
    (김성원 모델은 "같은 타이밍 템플릿" 봇을 잡는 보조 점수로 넣는다. ERD model_score.by에 DL 추가 필요)
 4. 동률이면 지금 연결 준비가 된 tools/ml (지금 모델 > next > dl-defense 순)
+5. 김성원 모델은 **s0**(README의 기본 예시)으로 판정한다. s1·s2는 흔들림을 보는 참고값 (결과를 보고 좋은 시드를 고르지 않는다)
 6. **tools/ml next** (`data/ml/model-next`, 2026-11-19 학습: 사람 고르기 하한 1초 [가정] + 단계별 속도 특징)도 같은 기준으로
    후보에 넣는다. next가 이기면 1차 대회 사람 데이터로 하한 값을 확인한 뒤 data/ml/model과 바꾼다
-5. 김성원 모델은 **s0**(README의 기본 예시)으로 판정한다. s1·s2는 흔들림을 보는 참고값 (결과를 보고 좋은 시드를 고르지 않는다)
 """
 
 
@@ -242,7 +242,9 @@ def main():
         lines.append(f"- **기준 2를 쓸 수 없음**: 좌석을 가져간 남의 블라인드 봇({'·'.join(sorted(BLIND_BOTS))})이 없는 모델이 있다. 블라인드 봇이 좌석을 산 대회 데이터로 다시 돌린다 (모두 못 샀다면 모델이 막을 피해가 없었다는 뜻)")
     else:
         ok = {n: v for n, v in judged.items() if v[0] is not None and v[0] <= 100 * MAX_HUMAN_FP}
-        if not ok:
+        if not humans:
+            lines.append("- 사람 기록이 없어 기준 1(사람 오탐)을 잴 수 없다. 사람이 참가한 데이터로 다시 돌린다 (위 표의 봇 탐지는 참고)")
+        elif not ok:
             lines.append(f"- 기준 1을 넘는 모델이 없다 (모두 사람 오탐 > {MAX_HUMAN_FP:.0%}). 어느 모델도 보조 의견으로 올리지 않는다")
         else:
             rank = {"tools/ml": 2, "tools/ml next": 1}       # 동률이면 지금 모델 > next > dl-defense (기준 4)
