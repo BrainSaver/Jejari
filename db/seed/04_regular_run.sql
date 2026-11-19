@@ -63,22 +63,24 @@ COMMIT;
 -- (status가 SCHEDULED로 들어가고, 07:00이 되면 판매 오픈 스케줄러가 ON_SALE로 넘깁니다).
 --
 -- **이 창은 시드를 돌린 순간의 것입니다.** 하루가 지나면 끝 날짜가 따라와야 하는데 시드는
--- 다시 돌 일이 없습니다. 그 일은 RunHorizonScheduler가 합니다 (같은 번호 규칙·같은 날짜 규칙).
+-- 다시 돌 일이 없습니다. 그 일은 RunHorizonScheduler가 합니다 (같은 자연키·같은 날짜 규칙).
 -- 시드는 앱이 뜨기 전의 첫 창을 깔고, 그 뒤로는 스케줄러가 하루씩 이어 줍니다.
 --
--- run_id = 700000 + (운행일 - 2026-01-01) * 10 + train_id
---   번호를 **날짜에서** 뽑습니다. 적재일 기준으로 매기면 다시 돌릴 때 같은 날짜가 다른
---   번호를 받고, 운행일을 UPDATE하는 도중 uq_train_run_train_id_run_date에 걸립니다.
---   700000 대역은 비어 있습니다 (명절 1001~2004 · 평시 시연 9001~9003 ·
---   스케줄러 테스트 9101~9999 · 합성 데이터 880000~ · 관리자 화면 1000000~).
+-- run_id는 **train_run_seq 시퀀스**가 줍니다 (ERD v27). 중복 판정은 번호가 아니라 진짜 자연키
+-- (train_id, run_date)로 합니다 — UNIQUE가 이미 걸려 있습니다.
+--   전에는 번호에 날짜를 넣었습니다 (700000 + (운행일 - 2026-01-01) * 10 + train_id).
+--   길동현 님 실제 시간표 적재는 400000 + 연중일 * 1000 + 열차번호를 씁니다. 두 산식이 각자
+--   자라서 대역이 겹칩니다 (겹칠 수 있는 번호 880개). 지금 안 깨지는 건 실제 열차번호가
+--   1~128이라 211 이상이 안 나오기 때문인데, KTX-산천(4xx)이 들어오면 바로 겹칩니다.
+--   자연키로 맞추면 번호를 맞출 필요가 없어 산식 자체가 사라집니다.
+--   기존 DB는 db/patch/v27.sql 을 먼저 적용하세요 (없으면 ORA-02289).
 MERGE INTO train_run t
 USING (
-  SELECT r.run_id, r.train_id, CAST(NULL AS NUMBER) AS sale_event_id, r.run_date, r.sale_open_at,
+  SELECT r.train_id, CAST(NULL AS NUMBER) AS sale_event_id, r.run_date, r.sale_open_at,
          CAST(r.run_date + 1 AS TIMESTAMP) AS sale_close_at,
          CASE WHEN r.sale_open_at <= SYSTIMESTAMP THEN 'ON_SALE' ELSE 'SCHEDULED' END AS status
     FROM (
-      SELECT 700000 + (TRUNC(SYSDATE) + d.n - DATE '2026-01-01') * 10 + tr.train_id AS run_id,
-             tr.train_id,
+      SELECT tr.train_id,
              TRUNC(SYSDATE) + d.n AS run_date,
              CAST(ADD_MONTHS(TRUNC(SYSDATE) + d.n, -2) AS TIMESTAMP) + INTERVAL '7' HOUR AS sale_open_at
         FROM train tr
@@ -87,19 +89,15 @@ USING (
                   CONNECT BY TRUNC(SYSDATE) + LEVEL - 1 <= ADD_MONTHS(TRUNC(SYSDATE), 2) + 1) d
        WHERE tr.train_id IN (1, 2)
     ) r
-   -- 같은 열차·같은 날에 다른 운행(명절 8건, 9001·9002, 9003, 화면에서 만든 것)이 있으면 건너뜁니다.
-   -- (train_id, run_date)가 유일해야 하기 때문입니다
-   WHERE NOT EXISTS (SELECT 1 FROM train_run x
-                      WHERE x.train_id = r.train_id AND x.run_date = r.run_date
-                        AND x.run_id <> r.run_id)
-) s ON (t.run_id = s.run_id)
+) s ON (t.train_id = s.train_id AND t.run_date = s.run_date)
 WHEN MATCHED THEN
-  -- 번호가 날짜에서 나오므로 운행일은 그대로입니다. status도 건드리지 않습니다 —
-  -- 오늘 운행은 기점을 떠나면 DEPARTED가 되는데, 실제로 떠난 열차라 되살리면 안 됩니다
+  -- 이미 그 열차·그 날에 운행이 있으면(명절 8건, 9001·9002, 9003, 화면에서 만든 것, 전에 이
+  -- 시드가 넣은 것) 마감 시각만 맞춥니다. status는 건드리지 않습니다 — 오늘 운행은 기점을
+  -- 떠나면 DEPARTED가 되는데 실제로 떠난 열차라 되살리면 안 됩니다
   UPDATE SET t.sale_close_at = s.sale_close_at, t.updated_at = SYSTIMESTAMP
 WHEN NOT MATCHED THEN
   INSERT (run_id, train_id, sale_event_id, run_date, sale_open_at, sale_close_at, status)
-  VALUES (s.run_id, s.train_id, s.sale_event_id, s.run_date,
+  VALUES (train_run_seq.NEXTVAL, s.train_id, s.sale_event_id, s.run_date,
           s.sale_open_at, s.sale_close_at, s.status);
 
 COMMIT;

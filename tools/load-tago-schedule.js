@@ -7,7 +7,9 @@
 // 결과: build/tago/schedule.sql (MERGE라 다시 돌려도 같음), 원본 응답은 build/tago/raw/에 캐시
 // 넣기: docker exec -i jejari-oracle-1 bash -c 'sqlplus -s / as sysdba' < build/tago/schedule.sql
 //
-// 서비스키: 환경변수 DATA_GO_KR_KEY_DEC, 없으면 .env의 그 줄만 읽는다. 키는 출력하지 않는다.
+// 서비스키: 환경변수 DATA_GO_KR_KEY_DEC 또는 DATA_GO_KR_KEY, 없으면 .env의 그 줄만 읽는다. 키는 출력하지 않는다.
+//   이름이 둘인 이유: 요즘 포털은 64자 키 하나만 주므로 팀은 DATA_GO_KR_KEY 로 모으는 중이다
+//   (tools/fetch-train-api.js 와 같은 키). 옛 이름 _DEC 도 계속 받아 기존 .env를 깨뜨리지 않는다.
 // API: https://www.data.go.kr/data/15098552/openapi.do (출/도착지기반열차정보 조회)
 //
 // 넣는 범위 (기존 시드·관리자 화면과 겹치지 않게)
@@ -40,12 +42,15 @@ const trainNo = (no) => String(no).padStart(5, '0'); // 시드와 같은 표기 
 
 function serviceKey() {
   if (process.env.DATA_GO_KR_KEY_DEC) return process.env.DATA_GO_KR_KEY_DEC.trim();
+  if (process.env.DATA_GO_KR_KEY) return process.env.DATA_GO_KR_KEY.trim();
   const envFile = path.join(ROOT, '.env');
   if (fs.existsSync(envFile)) {
-    const m = fs.readFileSync(envFile, 'utf8').match(/^DATA_GO_KR_KEY_DEC\s*=\s*"?([^"\r\n]+)"?/m);
+    const text = fs.readFileSync(envFile, 'utf8');
+    const m = text.match(/^DATA_GO_KR_KEY_DEC\s*=\s*"?([^"\r\n]+)"?/m)
+           || text.match(/^DATA_GO_KR_KEY\s*=\s*"?([^"\r\n]+)"?/m);
     if (m) return m[1].trim();
   }
-  throw new Error('DATA_GO_KR_KEY_DEC가 없습니다 (환경변수 또는 .env)');
+  throw new Error('DATA_GO_KR_KEY가 없습니다 (환경변수 또는 .env)');
 }
 
 const KEY = serviceKey();

@@ -28,9 +28,12 @@ import org.springframework.stereotype.Component;
  * 열립니다"를 화면에 보여 줄 수 있고, 07:00이 되면 {@link SaleOpenScheduler}가 {@code ON_SALE}로
  * 넘기는 것이 매일 실제로 일어난다. 행을 열린 뒤에 만들면 그 전이를 볼 수 없다.
  *
- * <p><b>운행 번호는 날짜에서 뽑는다</b> — {@code 700000 + (운행일 - 2026-01-01) * 10 + train_id}.
- * {@code db/seed/04_regular_run.sql}과 <b>같은 식</b>이라 시드가 넣은 행과 이 스케줄러가 넣는 행이
- * 겹치지 않고 이어진다. 적재일 기준으로 매기면 같은 날짜가 돌릴 때마다 다른 번호를 받는다.
+ * <p><b>운행 번호는 {@code train_run_seq}가 준다</b> (ERD v27). 같은 날짜가 이미 있는지는 번호가 아니라
+ * 진짜 자연키 {@code (train_id, run_date)}로 본다 — {@code uq_train_run_train_id_run_date}가 이미 있다.
+ * 전에는 번호에 날짜를 넣었는데({@code 700000 + ...}), 길동현 님 실제 시간표 적재는
+ * {@code 400000 + 연중일 * 1000 + 열차번호}를 써서 두 대역이 겹칠 수 있었다 (겹칠 수 있는 번호 880개).
+ * 지금 안 깨지는 건 실제 열차번호가 1~128이라 211 이상이 안 나오기 때문이고, 설계가 막아 주는 것이 아니다.
+ * 자연키로 맞추면 번호를 맞출 필요가 없어 산식이 사라진다.
  *
  * <p><b>정차 시각은 그 열차의 기존 운행에서 베낀다.</b> 시각표의 원천은 공공데이터(TAGO 열차정보)이고
  * 시드가 넣은 값이다. 여기서 다시 계산하면 원천이 둘이 된다. 날짜만 바꿔 같은 시각을 쓰며, 날을
@@ -71,7 +74,7 @@ public class RunHorizonScheduler {
 	private static final String FILL_RUNS = """
 			INSERT INTO train_run (run_id, train_id, sale_event_id, run_date,
 			                       sale_open_at, sale_close_at, status)
-			SELECT 700000 + (d.run_date - DATE '2026-01-01') * 10 + t.train_id,
+			SELECT train_run_seq.NEXTVAL,
 			       t.train_id, NULL, d.run_date,
 			       CAST(ADD_MONTHS(d.run_date, -2) AS TIMESTAMP) + INTERVAL '7' HOUR,
 			       CAST(d.run_date + 1 AS TIMESTAMP),

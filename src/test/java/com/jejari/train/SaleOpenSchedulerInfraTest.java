@@ -70,7 +70,7 @@ class SaleOpenSchedulerInfraTest {
 
 	@AfterEach
 	void cleanUp() {
-		// 테스트 대역(9101~9999)만 지운다. 밖에는 시드의 날짜별 운행(700000~), 합성 데이터(880000~),
+		// 테스트 대역(9101~9999)만 지운다. 밖에는 시드의 날짜별 운행(100000~, train_run_seq), 합성 데이터(880000~),
 		// 관리자 화면 운행(1000000~)이 있고 정차 시각이 붙어 있어 지우면 FK에 걸린다.
 		// 출발 전이 테스트가 넣은 정차를 먼저 지워야 train_run이 FK에 걸리지 않는다
 		jdbc.update("DELETE FROM train_stop WHERE run_id >= ? AND run_id < 10000", BASE);
