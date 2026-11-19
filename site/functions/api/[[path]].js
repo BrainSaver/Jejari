@@ -77,33 +77,43 @@ async function cached(request, seconds, make) {
   return res;
 }
 
-// GitHub Actions 최근 실행. 저장소가 공개라 토큰에 Actions 권한이 없으면 토큰 없이 다시 읽는다.
-async function actionsInfo(env) {
-  const path = '/repos/{repo}/actions/runs?per_page=20';
-  let d;
-  try { d = await gh(env, 'GET', path); }
+// GitHub Actions. 저장소가 공개라 토큰에 Actions 권한이 없으면 토큰 없이 다시 읽는다.
+async function ghPublic(env, path) {
+  try { return await gh(env, 'GET', path); }
   catch (e) {
-    if (e.status !== 403 && e.status !== 404) throw e;
+    if (![401, 403, 404].includes(e.status)) throw e;
     const r = await fetch(`https://api.github.com${path.replace('{repo}', repoOf(env))}`, { headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'jejari-docs-site' } });
     if (!r.ok) throw new GhError(r.status, await r.json().catch(() => null), path);
-    d = await r.json();
+    return r.json();
   }
-  const runs = (d.workflow_runs || []).map((r) => ({
-    id: r.id, name: r.name, title: r.display_title, branch: r.head_branch, sha: (r.head_sha || '').slice(0, 7),
-    no: r.run_number, event: r.event, status: r.status, conclusion: r.conclusion,
-    who: r.actor && r.actor.login, at: r.run_started_at || r.created_at, updated: r.updated_at, url: r.html_url,
-  }));
-  // 가장 최근 실패 한 건은 어느 단계에서 실패했는지 함께
-  const bad = runs.find((r) => r.conclusion === 'failure');
-  if (bad) {
-    try {
-      const j = await gh(env, 'GET', `/repos/{repo}/actions/runs/${bad.id}/jobs?per_page=30`);
-      bad.failed = (j.jobs || []).filter((x) => x.conclusion === 'failure').map((x) => ({
-        job: x.name, url: x.html_url, steps: (x.steps || []).filter((st) => st.conclusion === 'failure').map((st) => st.name),
-      }));
-    } catch { /* 단계 정보는 없어도 된다 */ }
-  }
+}
+const slimRun = (env, r) => ({
+  id: r.id, name: r.name, title: r.display_title, branch: r.head_branch, sha: r.head_sha || '',
+  no: r.run_number, attempt: r.run_attempt, event: r.event, status: r.status, conclusion: r.conclusion,
+  who: r.actor && r.actor.login, at: r.run_started_at || r.created_at, updated: r.updated_at, url: r.html_url,
+  msg: r.head_commit && r.head_commit.message ? r.head_commit.message.split('\n')[0] : '',
+  commitUrl: r.head_sha ? `https://github.com/${repoOf(env)}/commit/${r.head_sha}` : '',
+});
+const slimJob = (x) => ({
+  id: x.id, name: x.name, status: x.status, conclusion: x.conclusion, url: x.html_url, at: x.started_at, end: x.completed_at,
+  steps: (x.steps || []).map((st) => ({ n: st.number, name: st.name, status: st.status, conclusion: st.conclusion, at: st.started_at, end: st.completed_at })),
+});
+async function runJobs(env, id) {
+  const j = await ghPublic(env, `/repos/{repo}/actions/runs/${id}/jobs?per_page=50`);
+  return (j.jobs || []).map(slimJob);
+}
+async function actionsInfo(env) {
+  const d = await ghPublic(env, '/repos/{repo}/actions/runs?per_page=20');
+  const runs = (d.workflow_runs || []).map((r) => slimRun(env, r));
+  // 실행 중인 것(최대 3개)과 가장 최근 실패 한 건은 job·step까지 함께
+  const pick = runs.filter((r) => r.status !== 'completed').slice(0, 2);
+  const bad = runs.find((r) => r.conclusion === 'failure'); if (bad && runs.indexOf(bad) < 5) pick.push(bad);
+  await Promise.all(pick.map(async (r) => { try { r.jobs = await runJobs(env, r.id); } catch { /* 없어도 된다 */ } }));
   return { runs, at: new Date().toISOString() };
+}
+async function actionRun(env, id) {
+  const [r, jobs] = await Promise.all([ghPublic(env, `/repos/{repo}/actions/runs/${id}`), runJobs(env, id)]);
+  return { run: { ...slimRun(env, r), jobs }, at: new Date().toISOString() };
 }
 
 // ---------- 읽기 ----------
@@ -350,7 +360,12 @@ export async function onRequest(ctx) {
         if (!me) return LOGIN_FIRST();
         return cached(req, 15, async () => json(await branchesInfo(env)));
       case 'GET /actions':
-        return cached(req, 15, async () => json(await actionsInfo(env)));
+        return cached(req, 5, async () => json(await actionsInfo(env)));
+      case 'GET /actions/run': {
+        const id = String(q.get('id') || '');
+        if (!/^\d{1,20}$/.test(id)) return fail(400, 'BAD_ID', '실행 번호가 잘못됐어요.');
+        return cached(req, 3, async () => json(await actionRun(env, id)));
+      }
       case 'GET /compare': {
         if (!me) return LOGIN_FIRST();
         const b = q.get('branch');
