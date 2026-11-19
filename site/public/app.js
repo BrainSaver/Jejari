@@ -1173,6 +1173,143 @@ $('[data-ai-new]', aiPanel).addEventListener('click', () => aiChat(newConv(null)
 $('[data-ai-list]', aiPanel).addEventListener('click', () => aiList());
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !aiPanel.hidden && $('#modalBack').hidden) aiClose(); });
 
+// ---- 오른쪽 아래 Actions 상황 (채팅 버튼 위) ----
+const acFab = document.createElement('button');
+acFab.className = 'ac-fab'; acFab.type = 'button'; acFab.title = 'GitHub Actions 실행 상황 보기';
+acFab.innerHTML = '<span class="ac-dot" data-st="unknown"></span><span class="ac-fab-t">Actions</span>';
+const acPanel = document.createElement('section');
+acPanel.className = 'ac-panel'; acPanel.hidden = true; acPanel.setAttribute('aria-label', 'GitHub Actions 상황');
+acPanel.innerHTML = `<header class="ai-head">
+    <button type="button" class="btn sm plain" data-ac-back hidden>← 목록</button>
+    <b class="ai-title ac-head-t">Actions 상황</b>
+    <span class="ac-live" title="자동으로 새로 읽는 중"><span class="ac-dot" data-st="run"></span>실시간</span>
+    <a class="btn sm plain" data-ac-gh href="https://github.com/BrainSaver/jejari/actions" target="_blank" rel="noopener">GitHub ↗</a>
+    <button type="button" class="ai-x" data-ac-x aria-label="닫기">✕</button>
+  </header>
+  <div class="ac-body"><p class="muted ac-pad">불러오는 중…</p></div>`;
+document.body.appendChild(acFab); document.body.appendChild(acPanel);
+const acBody = $('.ac-body', acPanel);
+const AC = { list: null, run: null, view: 'list', id: null, timer: null, busy: false };
+const acState = (r) => (r.status !== 'completed' ? (r.status === 'in_progress' ? 'run' : 'wait') : r.conclusion === 'success' ? 'ok' : r.conclusion === 'failure' || r.conclusion === 'timed_out' ? 'fail' : 'skip');
+const AC_LABEL = { ok: '성공', fail: '실패', run: '실행 중', wait: '대기 중', skip: '취소·건너뜀', unknown: '모름' };
+const AC_ICON = { ok: '✓', fail: '✕', run: '●', wait: '○', skip: '–', unknown: '?' };
+const acSec = (a, b) => { const x = Date.parse(a), y = b ? Date.parse(b) : Date.now(); return x && y >= x ? Math.round((y - x) / 1000) : null; };
+const acFmt = (s) => (s == null ? '' : s < 60 ? `${s}초` : s < 3600 ? `${Math.floor(s / 60)}분 ${s % 60}초` : `${Math.floor(s / 3600)}시간 ${Math.floor(s / 60) % 60}분`);
+// 실행 중이면 끝 시각 없이 보내서 1초마다 늘어나게
+const acDur = (at, end, running) => `<span class="ac-t" data-t0="${esc(at || '')}"${running ? '' : ` data-t1="${esc(end || '')}"`}>${acFmt(acSec(at, running ? null : end))}</span>`;
+const acRunning = (r) => !!r && r.status !== 'completed';
+const acSha = (r) => `<a class="ac-sha" href="${esc(r.commitUrl)}" target="_blank" rel="noopener" title="커밋 ${esc(r.sha)} 보기">${esc(String(r.sha || '').slice(0, 7))}</a>`;
+function acNow(r) {
+  // 실행 중인 job·step 한 줄 요약과 진행 막대
+  if (!r.jobs || !acRunning(r)) return '';
+  const steps = r.jobs.flatMap((j) => j.steps.map((st) => ({ ...st, job: j.name })));
+  const done = steps.filter((st) => st.status === 'completed').length;
+  const cur = steps.find((st) => st.status === 'in_progress') || steps.find((st) => st.status !== 'completed');
+  const pct = steps.length ? Math.round((done / steps.length) * 100) : 0;
+  return `<div class="ac-now">${cur ? `<span>지금: <b>${esc(cur.job)}</b> · ${esc(cur.name)}</span>` : '<span>준비 중</span>'}<span class="muted">${done}/${steps.length || '?'} 단계</span></div>
+    <div class="ac-bar"><i style="width:${pct}%"></i></div>`;
+}
+function acFails(r) {
+  if (!r.jobs || acState(r) !== 'fail') return '';
+  const f = r.jobs.filter((j) => j.conclusion === 'failure');
+  return f.length ? `<div class="ac-why">실패: ${f.map((j) => `${esc(j.name)}${j.steps.filter((st) => st.conclusion === 'failure').map((st) => ` · ${esc(st.name)}`).join('')}`).join(' / ')}</div>` : '';
+}
+function acHead() {
+  const det = AC.view === 'run';
+  $('[data-ac-back]', acPanel).hidden = !det;
+  $('.ac-head-t', acPanel).textContent = det && AC.run ? `${AC.run.name} #${AC.run.no}` : 'Actions 상황';
+  $('[data-ac-gh]', acPanel).href = det && AC.run ? AC.run.url : 'https://github.com/BrainSaver/jejari/actions';
+  const live = det ? acRunning(AC.run) : !!(AC.list && AC.list.runs.some(acRunning));
+  $('.ac-live', acPanel).hidden = !live;
+}
+function acRenderList() {
+  const runs = (AC.list && AC.list.runs) || [];
+  if (!runs.length) { acBody.innerHTML = '<p class="muted ac-pad">실행 기록이 없어요.</p>'; return; }
+  const last = runs.find((r) => r.branch === 'main') || runs[0]; const st = acState(last);
+  const running = runs.filter(acRunning).length; const fails = runs.filter((r) => acState(r) === 'fail').length;
+  const sum = `<div class="ac-sum st-${st}"><span class="ac-dot" data-st="${st}"></span><div><b>main 최근 실행: ${AC_LABEL[st]}</b>
+    <span class="muted">실행 중 ${running}개 · 최근 ${runs.length}개 중 실패 ${fails}개 · 눌러서 단계별로 보기</span></div></div>`;
+  const row = (r) => {
+    const s = acState(r);
+    return `<div class="ac-row st-${s}" role="button" tabindex="0" data-run="${r.id}" title="눌러서 단계별로 보기">
+      <span class="ac-dot" data-st="${s}"></span>
+      <span class="ac-main"><b class="ac-title">${esc(r.title || r.name)}</b>
+        <span class="muted">${esc(r.name)} #${r.no} · 커밋 ${acSha(r)} · ${esc(r.branch || '')} · ${esc(r.who || '')}</span>
+        <span class="muted">${ago(Date.parse(r.at))} 시작 · ${acRunning(r) ? '지금까지 ' : ''}${acDur(r.at, r.updated, acRunning(r))}</span>
+        ${acNow(r)}${acFails(r)}</span>
+      <span class="ac-tag">${AC_LABEL[s]}<span class="ac-go">›</span></span></div>`;
+  };
+  acBody.innerHTML = sum + `<div class="ac-list">${runs.map(row).join('')}</div>`;
+}
+function acRenderRun() {
+  const r = AC.run;
+  if (!r) { acBody.innerHTML = '<p class="muted ac-pad">불러오는 중…</p>'; return; }
+  const s = acState(r);
+  const job = (j) => {
+    const js = acState(j);
+    return `<div class="ac-job st-${js}"><div class="ac-job-h"><span class="ac-ico" data-st="${js}">${AC_ICON[js]}</span><b>${esc(j.name)}</b>
+      <span class="muted">${j.at ? acDur(j.at, j.end, acRunning(j)) : ''}</span><a class="ac-jlink" href="${esc(j.url)}" target="_blank" rel="noopener">로그 ↗</a></div>
+      <ol class="ac-steps">${(j.steps || []).map((st) => { const ss = acState(st); return `<li class="st-${ss}"><span class="ac-ico" data-st="${ss}">${AC_ICON[ss]}</span><span class="ac-sn">${esc(st.name)}</span><span class="muted">${st.at ? acDur(st.at, st.end, acRunning(st)) : ''}</span></li>`; }).join('')}</ol></div>`;
+  };
+  acBody.innerHTML = `<div class="ac-sum st-${s}"><span class="ac-dot" data-st="${s}"></span><div><b>${AC_LABEL[s]} · ${esc(r.title || r.name)}</b>
+      <span class="muted">커밋 ${acSha(r)} · ${esc(r.branch || '')} · ${esc(r.who || '')} · ${esc(r.event || '')}${r.attempt > 1 ? ` · ${r.attempt}번째 시도` : ''}</span>
+      <span class="muted">${kst(r.at)} 시작 · ${acRunning(r) ? '지금까지 ' : '걸린 시간 '}${acDur(r.at, r.updated, acRunning(r))}</span></div></div>
+    ${r.jobs ? acNow(r) : ''}
+    ${!r.jobs ? '<p class="muted ac-pad">단계 불러오는 중…</p>' : r.jobs.length ? r.jobs.map(job).join('') : '<p class="muted ac-pad">아직 job이 시작되지 않았어요.</p>'}
+    <a class="btn plain ac-full" href="${esc(r.url)}" target="_blank" rel="noopener">GitHub에서 이 실행 전체 보기 ↗</a>`;
+}
+function acRender() {
+  const runs = (AC.list && AC.list.runs) || [];
+  const last = runs.find((r) => r.branch === 'main') || runs[0];
+  $('.ac-dot', acFab).dataset.st = last ? acState(last) : 'unknown';
+  const nRun = runs.filter(acRunning).length;
+  $('.ac-fab-t', acFab).textContent = nRun ? `Actions 실행 중 ${nRun}` : 'Actions';
+  if (acPanel.hidden) return;
+  acHead();
+  const keep = acBody.scrollTop;
+  if (AC.view === 'run') acRenderRun(); else acRenderList();
+  acBody.scrollTop = keep;
+}
+function acSchedule() {
+  clearTimeout(AC.timer);
+  const anyRun = AC.view === 'run' && !acPanel.hidden ? acRunning(AC.run) : !!(AC.list && AC.list.runs.some(acRunning));
+  const ms = acPanel.hidden ? (anyRun ? 10000 : 60000) : (anyRun ? 3000 : 15000);
+  AC.timer = setTimeout(() => acLoad(), ms);
+}
+async function acLoad(fresh) {
+  if (AC.busy) return; AC.busy = true;
+  try {
+    if (document.hidden && acPanel.hidden) return;
+    const f = fresh ? '&fresh=1' : '';
+    if (!acPanel.hidden && AC.view === 'run') { const id = AC.id; const d = await apiRaw(`/actions/run?id=${encodeURIComponent(id)}${f}`); if (AC.view === 'run' && AC.id === id) AC.run = d.run; }
+    else AC.list = await apiRaw('/actions?v=2' + f);
+    acRender();
+  } catch (e) {
+    if (!acPanel.hidden) acBody.innerHTML = `<p class="muted ac-pad">불러오지 못했어요: ${esc(e.message)}</p>`;
+  } finally { AC.busy = false; acSchedule(); }
+}
+function acOpenRun(id) {
+  AC.view = 'run'; AC.id = id;
+  const r = ((AC.list && AC.list.runs) || []).find((x) => String(x.id) === String(id));
+  AC.run = r ? { ...r, jobs: r.jobs || null } : null;
+  acRender(); acBody.scrollTop = 0; AC.busy = false; acLoad(true);
+}
+function acOpen() { acPanel.hidden = false; acFab.hidden = true; acRender(); acLoad(true); }
+function acClose() { acPanel.hidden = true; acFab.hidden = false; AC.view = 'list'; AC.run = null; acRender(); acSchedule(); }
+acFab.addEventListener('click', acOpen);
+$('[data-ac-x]', acPanel).addEventListener('click', acClose);
+$('[data-ac-back]', acPanel).addEventListener('click', () => { AC.view = 'list'; AC.run = null; acRender(); acBody.scrollTop = 0; AC.busy = false; acLoad(true); });
+acBody.addEventListener('click', (e) => {
+  if (e.target.closest('a')) return;
+  const row = e.target.closest('[data-run]'); if (row) acOpenRun(row.dataset.run);
+});
+acBody.addEventListener('keydown', (e) => { const row = e.target.closest('[data-run]'); if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); acOpenRun(row.dataset.run); } });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !acPanel.hidden) acClose(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) acLoad(); });
+// 실행 중인 시간은 1초마다 늘어나게
+setInterval(() => { if (acPanel.hidden) return; $$('.ac-t', acPanel).forEach((el) => { if (!el.dataset.t1) el.textContent = acFmt(acSec(el.dataset.t0, null)); }); }, 1000);
+acLoad();
+
 const convTitle = (c) => ((c.messages.find((x) => x.role === 'user') || {}).content || c.selection || '새 채팅').slice(0, 80);
 
 async function aiList() {
