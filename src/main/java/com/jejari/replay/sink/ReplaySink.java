@@ -174,6 +174,27 @@ public class ReplaySink {
 		if (e.runId() != null) {
 			d.append("run_id", e.runId());
 		}
+		if (e.label() != null) {
+			d.append("label", e.label());
+		}
+		if (e.boxes() != null) {
+			List<Document> boxes = new ArrayList<>();
+			for (ReplayBatch.Box b : e.boxes()) {
+				Document bd = new Document("k", b.k()).append("x", b.x()).append("y", b.y()).append("w", b.w())
+						.append("h", b.h());
+				if (b.id() != null) {
+					bd.append("id", b.id());
+				}
+				if (b.label() != null) {
+					bd.append("label", b.label());
+				}
+				if (b.off()) {
+					bd.append("off", true);
+				}
+				boxes.add(bd);
+			}
+			d.append("boxes", boxes);
+		}
 		if (expireAt != null) {
 			d.append("expire_at", expireAt);
 		}
