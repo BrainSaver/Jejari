@@ -56,16 +56,17 @@ class RunHorizonSchedulerInfraTest {
 	}
 
 	/**
-	 * 그 날짜에 <b>스케줄러가 만든</b> 운행 수. 700000 대역만 센다.
+	 * 그 날짜에 <b>스케줄러가 만든</b> 운행 수. 시퀀스 대역만 센다.
 	 *
-	 * <p>시드의 시연 운행(9001·9002·9003)과 명절 운행은 날짜가 겹칠 수 있는데 번호 규칙이 달라
-	 * 스케줄러가 다시 만들어 주지 않는다. 그걸 지우면 되돌릴 수 없다 (9003은 다른 테스트와
-	 * 문서가 "오픈 예정" 예시로 쓴다). 그래서 이 테스트는 자기가 복구할 수 있는 것만 건드린다.
+	 * <p>{@code train_run_seq}가 주는 번호는 100000~399999 범위다 (ERD v27의 MAXVALUE가 강제한다).
+	 * 시드의 시연 운행(9001·9002·9003)과 명절 운행은 그 밖에 있고 번호가 고정이라 스케줄러가
+	 * 다시 만들어 주지 않는다. 그걸 지우면 되돌릴 수 없다 (9003은 다른 테스트와 문서가
+	 * "오픈 예정" 예시로 쓴다). 그래서 이 테스트는 자기가 복구할 수 있는 것만 건드린다.
 	 */
 	private int generatedOn(LocalDate d) {
 		return jdbc.queryForObject("""
 				SELECT COUNT(*) FROM train_run
-				 WHERE run_date = ? AND run_id >= 700000 AND run_id < 800000""",
+				 WHERE run_date = ? AND run_id >= 100000 AND run_id < 400000""",
 				Integer.class, java.sql.Date.valueOf(d));
 	}
 
@@ -74,10 +75,10 @@ class RunHorizonSchedulerInfraTest {
 		jdbc.update("""
 				DELETE FROM train_stop WHERE run_id IN
 				  (SELECT run_id FROM train_run
-				    WHERE run_date = ? AND run_id >= 700000 AND run_id < 800000)""", day);
+				    WHERE run_date = ? AND run_id >= 100000 AND run_id < 400000)""", day);
 		jdbc.update("""
 				DELETE FROM train_run
-				 WHERE run_date = ? AND run_id >= 700000 AND run_id < 800000""", day);
+				 WHERE run_date = ? AND run_id >= 100000 AND run_id < 400000""", day);
 	}
 
 	@Test
@@ -117,7 +118,7 @@ class RunHorizonSchedulerInfraTest {
 
 		List<Map<String, Object>> rows = jdbc.queryForList("""
 				SELECT status, sale_open_at FROM train_run
-				 WHERE run_date = ? AND run_id >= 700000 AND run_id < 800000""",
+				 WHERE run_date = ? AND run_id >= 100000 AND run_id < 400000""",
 				java.sql.Date.valueOf(edge));
 		assertThat(rows).isNotEmpty();
 		assertThat(rows).allSatisfy(r -> {
@@ -147,22 +148,42 @@ class RunHorizonSchedulerInfraTest {
 	}
 
 	@Test
-	void 운행_번호는_시드와_같은_규칙으로_날짜에서_나온다() {
+	void 운행_번호는_시퀀스가_주고_할당_범위를_넘지_않는다() {
 		LocalDate edge = LocalDate.now().plusDays(20);
 		deleteGeneratedOn(edge);
 
 		horizon().extendOnce();
 
-		// 700000 + (운행일 - 2026-01-01) * 10 + train_id. 적재일이 아니라 날짜에서 나오므로
-		// 다시 돌려도 같은 날짜가 같은 번호를 받는다 (유니크 제약에 걸리지 않는 이유)
-		Long expected = jdbc.queryForObject(
-				"SELECT 700000 + (? - DATE '2026-01-01') * 10 + 1 FROM dual", Long.class,
-				java.sql.Date.valueOf(edge));
-		Long actual = jdbc.queryForObject(
+		// 번호에 날짜를 인코딩하지 않는다 (ERD v27). 산식을 쓰면 다른 생성기와 대역이 겹칠 수 있다 —
+		// 길동현 님 실제 시간표 적재는 400000 + 연중일 * 1000 + 열차번호를 쓴다.
+		// train_run_seq의 MAXVALUE 399999가 그 아래로 할당을 강제한다
+		Long id = jdbc.queryForObject(
 				"SELECT run_id FROM train_run WHERE run_date = ? AND train_id = 1", Long.class,
 				java.sql.Date.valueOf(edge));
 
-		assertThat(actual).isEqualTo(expected);
+		assertThat(id).isBetween(100000L, 399999L);
+	}
+
+	@Test
+	void 같은_날짜를_두_번_넣지_않는다_번호가_아니라_자연키로_본다() {
+		// 중복 판정은 run_id가 아니라 (train_id, run_date)다. 그래서 번호가 달라도 같은 날짜는 하나다
+		LocalDate edge = LocalDate.now().plusDays(20);
+		deleteGeneratedOn(edge);
+		horizon().extendOnce();
+		Long first = jdbc.queryForObject(
+				"SELECT run_id FROM train_run WHERE run_date = ? AND train_id = 1", Long.class,
+				java.sql.Date.valueOf(edge));
+
+		// 시퀀스는 다음 번호로 가 있지만, 자연키가 같으니 또 넣지 않는다
+		Extended again = horizon().extendOnce();
+
+		assertThat(again.runs()).isZero();
+		assertThat(jdbc.queryForObject(
+				"SELECT COUNT(*) FROM train_run WHERE run_date = ? AND train_id = 1", Integer.class,
+				java.sql.Date.valueOf(edge))).isEqualTo(1);
+		assertThat(jdbc.queryForObject(
+				"SELECT run_id FROM train_run WHERE run_date = ? AND train_id = 1", Long.class,
+				java.sql.Date.valueOf(edge))).isEqualTo(first);
 	}
 
 	@Test

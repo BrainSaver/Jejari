@@ -92,7 +92,7 @@ export default function Queue() {
     } catch {
       /* 이미 빠졌으면 그만 */
     }
-    navigate(`/?from=${from}&to=${to}&date=${run?.runDate || ''}`);
+    navigate('/', { state: { q: { from, to, date: run?.runDate || '' } } });
   };
 
   const ahead = st?.ahead ?? 0;
@@ -122,7 +122,7 @@ export default function Queue() {
           <div className="alert stop" role="alert" style={{ flexWrap: 'wrap' }}>
             <Icon name="info" />
             <span className="grow">{MESSAGES[error.code] || error.message}</span>
-            <Link className="btn sm" to={`/?from=${from}&to=${to}&date=${run?.runDate || ''}`} style={{ marginLeft: 28 }}>열차 다시 찾기</Link>
+            <Link className="btn sm" to="/" state={{ q: { from, to, date: run?.runDate || '' } }} style={{ marginLeft: 28 }}>열차 다시 찾기</Link>
           </div>
         ) : (
           <>

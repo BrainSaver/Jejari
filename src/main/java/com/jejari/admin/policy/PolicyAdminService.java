@@ -120,6 +120,7 @@ public class PolicyAdminService {
 		String value = c.value() == null ? "" : c.value().trim();
 		check(cur.valueType(), value);
 		checkRange(key, value, bounds.get(key));
+		checkKeepsInteger(cur, value);
 		tx.executeWithoutResult(s -> {
 			int n = jdbc.update("""
 					UPDATE app_policy SET policy_value = ?, version = version + 1, updated_by = ?, updated_at = SYSTIMESTAMP
@@ -185,6 +186,19 @@ public class PolicyAdminService {
 		}
 		if (type.equals("NUMBER") && new BigDecimal(value).signum() < 0) {
 			throw new BusinessException(CommonErrorCode.INVALID_REQUEST, "음수는 넣을 수 없습니다.");
+		}
+	}
+
+	/**
+	 * 지금 값이 정수인 숫자 키에는 정수만 받는다. 대부분의 모듈은 {@code Long.parseLong}으로 읽어서, 소수가 들어가면
+	 * 기본값으로 돌아가거나(결제·이벤트) 예외가 나 기능이 멈춘다(대기열 입장 속도 200.5 → 입장 처리가 매초 실패).
+	 * 소수로 읽는 키(예: replay.full_record_ratio 0.10)는 지금 값이 소수라 그대로 소수를 받는다.
+	 */
+	static void checkKeepsInteger(Policy cur, String value) {
+		if ("NUMBER".equals(cur.valueType()) && cur.value() != null && cur.value().trim().matches("-?\\d+")
+				&& !value.matches("-?\\d+")) {
+			throw new BusinessException(CommonErrorCode.INVALID_REQUEST,
+					cur.key() + "는 앱이 정수로 읽습니다. 소수를 넣으면 기본값으로 돌아가거나 기능이 멈춥니다.");
 		}
 	}
 

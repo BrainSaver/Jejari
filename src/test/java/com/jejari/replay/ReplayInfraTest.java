@@ -140,17 +140,26 @@ class ReplayInfraTest {
 	}
 
 	@Test
-	void 평소_회원은_SAMPLED라_마우스_궤적은_남기지_않는다() throws Exception {
+	void 평소_회원은_SAMPLED라_마우스_궤적을_성기게_남긴다() throws Exception {
 		long m = member();
 		String sid = session();
+		mvc.perform(get("/api/v1/replay/config").header("Authorization", bearer(m, sid)))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.mode").value("SAMPLED"))
+				.andExpect(jsonPath("$.maxPathPoints").value(16)).andExpect(jsonPath("$.pathSampleMs").value(150));
 		long now = System.currentTimeMillis();
+		List<List<Integer>> path = new ArrayList<>();
+		for (int i = 0; i < 40; i++) {
+			path.add(List.of(i * 150, 10 + i, 10));
+		}
 		String body = JSON.writeValueAsString(Map.of("events", List.of(
 				Map.of("seq", 1, "ts", now - 500, "type", "CLICK", "screen", "home", "x", 10, "y", 10),
-				Map.of("seq", 2, "ts", now, "type", "MOUSE_PATH", "screen", "home", "path", List.of(List.of(0, 1, 1))))));
+				Map.of("seq", 2, "ts", now, "type", "MOUSE_PATH", "screen", "home", "path", path))));
 		mvc.perform(post("/api/v1/replay/events").header("Authorization", bearer(m, sid))
 				.contentType(MediaType.APPLICATION_JSON).content(body))
-				.andExpect(status().isAccepted()).andExpect(jsonPath("$.accepted").value(1));
-		assertThat(waitEvents(sid, 1)).extracting(d -> d.getString("type")).containsExactly("CLICK");
+				.andExpect(status().isAccepted()).andExpect(jsonPath("$.accepted").value(2));
+		List<Document> saved = waitEvents(sid, 2);
+		assertThat(saved).extracting(d -> d.getString("type")).containsExactly("CLICK", "MOUSE_PATH");
+		assertThat(saved.get(1).getList("path", List.class)).hasSize(16); // FULL(50)의 1/3
 	}
 
 	@Test
