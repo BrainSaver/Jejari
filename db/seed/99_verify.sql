@@ -135,7 +135,7 @@ SELECT status, COUNT(*) AS 건수,
 
 SELECT run_id, train_id, TO_CHAR(run_date, 'YYYY-MM-DD') AS 운행일,
        TO_CHAR(sale_open_at, 'YYYY-MM-DD HH24:MI') AS 예매오픈, status
-  FROM train_run WHERE run_id < 700000 ORDER BY run_id;
+  FROM train_run WHERE run_id < 100000 ORDER BY run_id;   -- 시퀀스(100000~)가 아닌 고정 번호만
 
 SELECT a.station_name AS 출발, b.station_name AS 도착, f.seat_grade, f.amount
   FROM fare f
