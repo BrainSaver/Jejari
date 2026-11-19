@@ -60,8 +60,7 @@ public class TrainController {
 
 	/**
 	 * 화면이 사람 조작 없이 스스로 부른 검색(첫 화면 자동 검색)이라는 표시. 값 "1".
-	 * 행동 로그 meta에 auto=true로 남겨, 위험 점수 특징(둘러본 양·간격)에서 뺄 수 있게 한다.
-	 * 봇이 이 헤더를 붙이면 검색이 "안 한 것"으로 보여 오히려 봇처럼 보이므로 숨는 데 쓸모가 없다.
+	 * 행동 로그 meta에 auto=true로 남긴다.
 	 */
 	public static final String AUTO_HEADER = "X-Search-Auto";
 

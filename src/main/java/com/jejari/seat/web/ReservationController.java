@@ -60,7 +60,7 @@ public class ReservationController {
 		if (body == null || body.runId() == null) {
 			throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
 		}
-		// 행동 로그: 실패(409 등)도 남아야 같은 좌석 반복 실패(SAME_SEAT_RETRY)를 잡는다. 예외 전에 먼저 표시
+		// 행동 로그: 실패(409 등)도 남게 예외 전에 먼저 표시
 		Map<String, Object> meta = new LinkedHashMap<>();
 		List<Long> seatIds = body.seats() == null ? List.of() : body.seats().stream().map(SeatRequest::seatId).toList();
 		meta.put("seatIds", seatIds);
