@@ -2,6 +2,7 @@
 #
 # 왜 HTTPS인가: 리프레시 토큰 쿠키가 Secure라 http에서는 브라우저가 저장·전송하지 않습니다.
 # 왜 앞에 두나: 앱 포트(8080·8081)를 인터넷에 열지 않고, 지표(/actuator/prometheus)를 밖에 보이지 않게 합니다.
+# (시험 11-19: 관리자 화면 BLOCKED 승인 시험용 주석. 동작에는 영향 없음, Caddy 재시작 불필요)
 {$JEJARI_DOMAIN} {
 	encode zstd gzip
 
