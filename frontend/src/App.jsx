@@ -8,6 +8,7 @@ import Risk from './admin/Risk.jsx';
 import Settings from './admin/Settings.jsx';
 import Deploy from './admin/Deploy.jsx';
 import Models from './admin/Models.jsx';
+import Traffic from './admin/Traffic.jsx';
 import CaseDetail, { CaseList } from './admin/Cases.jsx';
 import Login from './user/Login.jsx';
 import Pay from './user/Pay.jsx';
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="settings" element={<Settings />} />
         <Route path="deploy" element={<Deploy />} />
         <Route path="models" element={<Models />} />
+        <Route path="traffic" element={<Traffic />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

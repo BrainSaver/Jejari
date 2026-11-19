@@ -1,5 +1,6 @@
 // 2px 선 아이콘 (시안 docs/ui/A-0x.html의 SVG 세트). 이모지는 쓰지 않는다 (DESIGN.md)
 const PATHS = {
+  flow: <><circle cx="5" cy="12" r="2.2" /><circle cx="19" cy="6" r="2.2" /><circle cx="19" cy="18" r="2.2" /><path d="M7.2 11c4-1 6-4 9.6-4.6M7.2 13c4 1 6 4 9.6 4.6" /></>,
   pulse: <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />,
   shield: <><path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6z" /><path d="M12 8.5v4M12 15.5v.3" /></>,
   folder: <path d="M3.5 6.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />,

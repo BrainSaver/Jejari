@@ -1,0 +1,426 @@
+package com.jejari.admin.traffic;
+
+import java.time.Clock;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+
+import org.springframework.stereotype.Service;
+
+import com.jejari.admin.traffic.PrometheusClient.Series;
+import com.jejari.admin.traffic.TrafficView.Chart;
+import com.jejari.admin.traffic.TrafficView.Endpoint;
+import com.jejari.admin.traffic.TrafficView.Health;
+import com.jejari.admin.traffic.TrafficView.Line;
+import com.jejari.admin.traffic.TrafficView.Now;
+import com.jejari.admin.traffic.TrafficView.Reason;
+
+/**
+ * A-10 트래픽 관제. Prometheus(5초 수집)에서 고정 쿼리 몇 개를 동시에 읽어 화면 하나 분량으로 묶는다.
+ *
+ * <ul>
+ *   <li><b>트래픽</b>: 초당 요청을 업무 영역(대기열·좌석·예약결제·로그인·관리자·기타)별로. URI 템플릿으로 나눈다</li>
+ *   <li><b>응답 시간</b>: p50·p95·p99 (히스토그램 버킷, application.yml {@code percentiles-histogram})</li>
+ *   <li><b>실패·거절</b>: 전체 요청 대비 5xx · 429(요청 제한) · 409(좌석 경합 등) · 기타 4xx 비율</li>
+ *   <li><b>업무 처리량</b>: 예약 성공·결제 성공·409 건/초</li>
+ *   <li><b>대기열</b>: 줄 선 사람·입장한 사람 ({@link QueueMetrics})</li>
+ *   <li><b>자원</b>: CPU · 힙 · DB 커넥션 풀 · Tomcat 스레드 · Redis 메모리 (%). 앱이 여러 대면 가장 바쁜 한 대</li>
+ * </ul>
+ *
+ * <p>상태(정상·주의·위험)는 {@link #health}의 고정 문턱으로 판정한다. 급증(평소의 3배 이상)은 장애가 아니라 "알림"이다 —
+ * 명절 예매 시작에는 당연히 몰린다. 그때 함께 봐야 할 것은 응답 시간과 오류율이다.
+ *
+ * <p>같은 기간 요청은 {@link #CACHE_MS} 동안 결과를 재사용한다 (관리자 여러 명이 10초마다 불러도 Prometheus 부하가 늘지 않게).
+ */
+@Service
+public class TrafficService {
+
+	static final long CACHE_MS = 4_000;
+	static final String APP = "job=\"jejari-app\"";
+	static final String HTTP = APP + ",uri!~\"/actuator.*\"";
+	static final String RESERVE_URI = "/api/v1/reservations";
+	static final String PAY_URI = "/api/v1/reservations/{reservationId}/payments";
+
+	/** 기간 → (길이 초, 점 간격 초). 점은 120~150개 */
+	static final Map<String, int[]> RANGES = Map.of(
+			"30m", new int[] { 1800, 15 },
+			"1h", new int[] { 3600, 30 },
+			"6h", new int[] { 21600, 180 },
+			"24h", new int[] { 86400, 600 });
+
+	/** 업무 영역 (화면 범례 순서 = 색 순서. 바꾸면 화면 색도 바뀐다) */
+	static final List<String> GROUPS = List.of("대기열", "좌석 조회", "예약·결제", "로그인·내 정보", "관리자", "기타");
+
+	private final PrometheusClient prom;
+	private final Clock clock;
+	private final Map<String, Cached> cache = new ConcurrentHashMap<>();
+	private volatile CachedFlow flowCache;
+
+	private record CachedFlow(long at, TrafficFlow flow) {
+	}
+
+	private record Cached(long at, TrafficView view) {
+	}
+
+	public TrafficService(PrometheusClient prom, Clock clock) {
+		this.prom = prom;
+		this.clock = clock;
+	}
+
+	public static boolean validRange(String range) {
+		return RANGES.containsKey(range);
+	}
+
+	public TrafficView view(String range) {
+		long nowMs = clock.millis();
+		Cached c = cache.get(range);
+		if (c != null && nowMs - c.at < CACHE_MS) {
+			return c.view;
+		}
+		TrafficView v = load(range, nowMs / 1000);
+		cache.put(range, new Cached(nowMs, v));
+		return v;
+	}
+
+	/** 실시간 흐름도 (최근 30초). 2초마다 불리므로 1.5초 동안 재사용 */
+	public TrafficFlow flow() {
+		long nowMs = clock.millis();
+		CachedFlow c = flowCache;
+		if (c != null && nowMs - c.at < 1_500) {
+			return c.flow;
+		}
+		TrafficFlow f = loadFlow(nowMs / 1000);
+		flowCache = new CachedFlow(nowMs, f);
+		return f;
+	}
+
+	TrafficFlow loadFlow(long now) {
+		String w = "[30s]";
+		var count = prom.instant("sum by (uri, status) (rate(http_server_requests_seconds_count{" + HTTP + "}" + w + "))", now);
+		var sum = prom.instant("sum by (uri) (rate(http_server_requests_seconds_sum{" + HTTP + "}" + w + "))", now);
+		var redis = prom.instant("sum(rate(lettuce_seconds_count{" + APP + "}" + w + "))", now);
+		var oracle = prom.instant("sum(rate(hikaricp_connections_usage_seconds_count{" + APP + "}" + w + "))", now);
+		var mongo = prom.instant("sum(rate(mongodb_driver_commands_seconds_count{" + APP + "}" + w + "))", now);
+		var kafkaOut = prom.instant("sum(rate(spring_kafka_template_seconds_count{" + APP + "}" + w + "))", now);
+		var kafkaIn = prom.instant("sum(rate(spring_kafka_listener_seconds_count{" + APP + "}" + w + "))", now);
+		var waiting = prom.instant("max(jejari_queue_waiting{" + APP + "})", now);
+		var active = prom.instant("max(jejari_queue_active{" + APP + "})", now);
+		var up = prom.instant("up{" + APP + "}", now);
+		try {
+			CompletableFuture.allOf(count, sum, redis, oracle, mongo, kafkaOut, kafkaIn, waiting, active, up)
+					.get(PrometheusClient.TIMEOUT.toMillis() + 1000, TimeUnit.MILLISECONDS);
+		} catch (Exception e) {
+			return TrafficFlow.unavailable(why(e), now);
+		}
+		Map<String, double[]> g = new LinkedHashMap<>();     // rps, 5xx, 429, 409, 응답 시간 합(초)
+		GROUPS.forEach(k -> g.put(k, new double[5]));
+		for (Series s : count.join()) {
+			Double v = s.v()[0];
+			if (v == null) {
+				continue;
+			}
+			double[] a = g.get(group(s.label("uri")));
+			String st = s.label("status");
+			a[0] += v;
+			a[1] += st.startsWith("5") ? v : 0;
+			a[2] += "429".equals(st) ? v : 0;
+			a[3] += "409".equals(st) ? v : 0;
+		}
+		for (Series s : sum.join()) {
+			if (s.v()[0] != null) {
+				g.get(group(s.label("uri")))[4] += s.v()[0];
+			}
+		}
+		List<TrafficFlow.Group> groups = new ArrayList<>();
+		g.forEach((k, a) -> groups.add(new TrafficFlow.Group(k, a[0], a[1], a[2], a[3], a[0] > 0 ? a[4] / a[0] * 1000 : null)));
+		List<TrafficFlow.Store> stores = List.of(
+				new TrafficFlow.Store("redis", "Redis", scalar(redis.join())),
+				new TrafficFlow.Store("oracle", "Oracle", scalar(oracle.join())),
+				new TrafficFlow.Store("mongo", "MongoDB", scalar(mongo.join())),
+				new TrafficFlow.Store("kafka", "Kafka", scalar(kafkaOut.join())));
+		int[] u = upCount(up.join());
+		return new TrafficFlow(true, null, now, groups, stores, scalar(kafkaIn.join()), scalar(waiting.join()),
+				scalar(active.join()), u[0], u[1]);
+	}
+
+	private String why(Exception e) {
+		Throwable cause = e instanceof java.util.concurrent.ExecutionException || e instanceof CompletionException ? e.getCause() : e;
+		return cause instanceof PrometheusClient.Unavailable u ? u.getMessage() : "Prometheus 응답이 늦습니다 (" + prom.base() + ")";
+	}
+
+	private static int[] upCount(List<Series> ss) {
+		int up = 0;
+		for (Series s : ss) {
+			if (s.v()[0] != null && s.v()[0] >= 1) {
+				up++;
+			}
+		}
+		return new int[] { up, ss.size() };
+	}
+
+	static String group(String uri) {
+		if (uri.startsWith("/api/v1/runs/") && uri.contains("/queue")) {
+			return "대기열";
+		}
+		if (uri.startsWith("/api/v1/runs/") && uri.contains("/seats")) {
+			return "좌석 조회";
+		}
+		if (uri.startsWith("/api/v1/reservations") || uri.startsWith("/api/v1/waitlists")) {
+			return "예약·결제";
+		}
+		if (uri.startsWith("/api/v1/auth") || uri.startsWith("/api/v1/me")) {
+			return "로그인·내 정보";
+		}
+		if (uri.startsWith("/api/v1/admin")) {
+			return "관리자";
+		}
+		return "기타";
+	}
+
+	TrafficView load(String range, long nowSec) {
+		int[] r = RANGES.get(range);
+		int step = r[1];
+		long end = nowSec / step * step;
+		long start = end - r[0];
+		int n = (int) ((end - start) / step) + 1;
+		long[] t = new long[n];
+		for (int i = 0; i < n; i++) {
+			t[i] = start + (long) i * step;
+		}
+		String w = "[" + Math.max(60, step) + "s]";
+
+		var byStatus = prom.range("sum by (method, uri, status) (rate(http_server_requests_seconds_count{" + HTTP + "}" + w + "))", start, end, step);
+		var p50 = prom.range(quantile(0.50, w), start, end, step);
+		var p95 = prom.range(quantile(0.95, w), start, end, step);
+		var p99 = prom.range(quantile(0.99, w), start, end, step);
+		var waiting = prom.range("max(jejari_queue_waiting{" + APP + "})", start, end, step);
+		var active = prom.range("max(jejari_queue_active{" + APP + "})", start, end, step);
+		var cpu = prom.range("max(process_cpu_usage{" + APP + "}) * 100", start, end, step);
+		var heap = prom.range("max(sum by (instance) (jvm_memory_used_bytes{" + APP + ",area=\"heap\"}) / sum by (instance) (jvm_memory_max_bytes{" + APP + ",area=\"heap\"} > 0)) * 100", start, end, step);
+		var db = prom.range("max(sum by (instance) (hikaricp_connections_active{" + APP + "}) / sum by (instance) (hikaricp_connections_max{" + APP + "})) * 100", start, end, step);
+		var tomcat = prom.range("max(sum by (instance) (tomcat_threads_busy_threads{" + APP + "}) / sum by (instance) (tomcat_threads_config_max_threads{" + APP + "})) * 100", start, end, step);
+		var redis = prom.range("max(redis_memory_used_bytes) / max(redis_memory_max_bytes > 0) * 100", start, end, step);
+		var up = prom.instant("up{" + APP + "}", nowSec);
+		var pending = prom.instant("sum(hikaricp_connections_pending{" + APP + "})", nowSec);
+		var baseline = prom.instant("avg_over_time(sum(rate(http_server_requests_seconds_count{" + HTTP + "}[1m]))[1h:1m] offset 10m)", nowSec);
+		var epCount = prom.instant("sum by (method, uri) (rate(http_server_requests_seconds_count{" + HTTP + "}[1m]))", nowSec);
+		var epErr = prom.instant("sum by (method, uri) (rate(http_server_requests_seconds_count{" + HTTP + ",status=~\"5..\"}[1m]))", nowSec);
+		var epP95 = prom.instant("histogram_quantile(0.95, sum by (le, method, uri) (rate(http_server_requests_seconds_bucket{" + HTTP + "}[1m]))) * 1000", nowSec);
+		try {
+			CompletableFuture.allOf(byStatus, p50, p95, p99, waiting, active, cpu, heap, db, tomcat, redis, up, pending, baseline,
+					epCount, epErr, epP95).get(PrometheusClient.TIMEOUT.toMillis() + 1000, TimeUnit.MILLISECONDS);
+		} catch (Exception e) {
+			return TrafficView.unavailable(why(e), nowSec, range);
+		}
+
+		// 요청: 영역별·상태별·업무별로 한 번에 나눈다
+		Map<String, Double[]> groups = new LinkedHashMap<>();
+		GROUPS.forEach(g -> groups.put(g, zeros(n)));
+		Double[] total = zeros(n), e5 = zeros(n), e429 = zeros(n), e409 = zeros(n), e4 = zeros(n), reserve = zeros(n), pay = zeros(n);
+		boolean anyHttp = false;
+		for (Series s : byStatus.join()) {
+			anyHttp = true;
+			String uri = s.label("uri"), status = s.label("status"), method = s.label("method");
+			Double[] g = groups.get(group(uri));
+			boolean ok = status.startsWith("2");
+			boolean post = "POST".equals(method);
+			for (int k = 0; k < s.t().length; k++) {
+				int i = idx(s.t()[k], start, step, n);
+				Double v = s.v()[k];
+				if (i < 0 || v == null) {
+					continue;
+				}
+				add(g, i, v);
+				add(total, i, v);
+				if (status.startsWith("5")) {
+					add(e5, i, v);
+				} else if ("429".equals(status)) {
+					add(e429, i, v);
+				} else if ("409".equals(status)) {
+					add(e409, i, v);
+				} else if (status.startsWith("4")) {
+					add(e4, i, v);
+				}
+				if (ok && post && RESERVE_URI.equals(uri)) {
+					add(reserve, i, v);
+				}
+				if (ok && post && PAY_URI.equals(uri)) {
+					add(pay, i, v);
+				}
+			}
+		}
+		if (!anyHttp) {      // 앱이 수집되지 않음: 0이 아니라 "값 없음"
+			groups.replaceAll((k, v) -> new Double[n]);
+			total = new Double[n];
+			e5 = e429 = e409 = e4 = reserve = pay = new Double[n];
+		}
+		Double[] pct5 = pct(e5, total), pct429 = pct(e429, total), pct409 = pct(e409, total), pct4 = pct(e4, total);
+
+		List<Chart> charts = new ArrayList<>();
+		List<Line> traffic = new ArrayList<>();
+		groups.forEach((k, v) -> traffic.add(new Line(k, v)));
+		charts.add(new Chart("traffic", "영역별 초당 요청", "rps", traffic));
+		Double[] l50 = one(p50.join(), start, step, n), l95 = one(p95.join(), start, step, n), l99 = one(p99.join(), start, step, n);
+		charts.add(new Chart("latency", "응답 시간", "ms", List.of(new Line("p50", l50), new Line("p95", l95), new Line("p99", l99))));
+		charts.add(new Chart("errors", "실패·거절 비율 (전체 요청 대비)", "pct", List.of(new Line("5xx 서버 오류", pct5),
+				new Line("429 요청 제한", pct429), new Line("409 충돌", pct409), new Line("기타 4xx", pct4))));
+		charts.add(new Chart("business", "업무 처리량", "rps", List.of(new Line("예약 성공", reserve), new Line("결제 성공", pay),
+				new Line("409 충돌", e409))));
+		Double[] qw = one(waiting.join(), start, step, n), qa = one(active.join(), start, step, n);
+		charts.add(new Chart("queue", "대기열", "people", List.of(new Line("줄 선 사람", qw), new Line("입장한 사람", qa))));
+		Double[] rc = one(cpu.join(), start, step, n), rh = one(heap.join(), start, step, n), rd = one(db.join(), start, step, n),
+				rt = one(tomcat.join(), start, step, n), rr = one(redis.join(), start, step, n);
+		charts.add(new Chart("resources", "자원 사용률 (가장 바쁜 앱 기준)", "pct", List.of(new Line("CPU", rc), new Line("힙 메모리", rh),
+				new Line("DB 커넥션", rd), new Line("Tomcat 스레드", rt), new Line("Redis 메모리", rr))));
+
+		int[] u = upCount(up.join());
+		int upCount = u[0], upTotal = u[1];
+		Double rps = last(total);
+		Double base = scalar(baseline.join());
+		Double surge = rps != null && base != null && base >= 0.5 ? rps / base : null;
+		Double peak = null;
+		for (Double v : total) {
+			if (v != null && (peak == null || v > peak)) {
+				peak = v;
+			}
+		}
+		Now now = new Now(rps, base, surge, peak, last(l50), last(l95), last(l99), last(pct5), last(pct429), last(e409),
+				last(reserve), last(pay), last(qw), last(qa), last(rc), last(rh), last(rd), scalar(pending.join()), last(rt), last(rr),
+				upCount, upTotal);
+		return new TrafficView(true, null, nowSec, range, step, health(now), now, t, charts,
+				endpoints(epCount.join(), epErr.join(), epP95.join()));
+	}
+
+	private static String quantile(double q, String w) {
+		return "histogram_quantile(" + q + ", sum by (le) (rate(http_server_requests_seconds_bucket{" + HTTP + "}" + w + "))) * 1000";
+	}
+
+	/**
+	 * 고정 문턱. 큰 회사 관제의 흔한 기준을 이 서비스 크기에 맞춘 값이다 (사용자 응답 1초·오류 1%가 "주의"의 시작).
+	 * 바꾸면 docs/ui/A-10.md 표도 같이.
+	 */
+	static Health health(Now n) {
+		List<Reason> rs = new ArrayList<>();
+		if (n.instancesTotal() > 0 && n.instancesUp() < n.instancesTotal()) {
+			rs.add(new Reason(n.instancesUp() == 0 ? "CRIT" : "WARN", "up",
+					"앱 " + n.instancesTotal() + "대 중 " + (n.instancesTotal() - n.instancesUp()) + "대가 응답하지 않음"));
+		} else if (n.instancesTotal() == 0) {
+			rs.add(new Reason("CRIT", "up", "앱 지표가 수집되지 않음 (앱이 꺼졌거나 Prometheus 설정 확인)"));
+		}
+		level(rs, "error", n.errorPct(), 1, 5, v -> "5xx 서버 오류 " + fmt(v) + "%");
+		level(rs, "p95", n.p95Ms(), 1000, 3000, v -> "응답 시간 p95 " + Math.round(v) + "ms");
+		level(rs, "db", n.dbPoolPct(), 80, 95, v -> "DB 커넥션 풀 " + Math.round(v) + "% 사용");
+		if (n.dbPending() != null && n.dbPending() >= 1) {
+			rs.add(new Reason("WARN", "dbPending", "DB 커넥션을 기다리는 요청 " + Math.round(n.dbPending()) + "개"));
+		}
+		level(rs, "tomcat", n.tomcatPct(), 80, 95, v -> "Tomcat 스레드 " + Math.round(v) + "% 사용");
+		level(rs, "cpu", n.cpuPct(), 80, 95, v -> "CPU " + Math.round(v) + "%");
+		level(rs, "heap", n.heapPct(), 85, 95, v -> "힙 메모리 " + Math.round(v) + "%");
+		level(rs, "redis", n.redisMemPct(), 80, 90, v -> "Redis 메모리 " + Math.round(v) + "% (noeviction이라 다 차면 쓰기 실패)");
+		if (n.surge() != null && n.surge() >= 3 && n.rps() != null && n.rps() >= 5) {
+			rs.add(new Reason("INFO", "surge", "트래픽 급증 — 평소의 " + fmt(n.surge()) + "배"));
+		}
+		if (n.rejectPct() != null && n.rejectPct() >= 5) {
+			rs.add(new Reason("INFO", "reject", "요청 제한(429) 작동 중 — 전체의 " + fmt(n.rejectPct()) + "%"));
+		}
+		rs.sort(Comparator.comparingInt(x -> List.of("CRIT", "WARN", "INFO").indexOf(x.level())));
+		String lv = rs.stream().anyMatch(x -> "CRIT".equals(x.level())) ? "CRIT"
+				: rs.stream().anyMatch(x -> "WARN".equals(x.level())) ? "WARN" : "OK";
+		return new Health(lv, rs);
+	}
+
+	private static void level(List<Reason> rs, String metric, Double v, double warn, double crit,
+			java.util.function.DoubleFunction<String> text) {
+		if (v == null) {
+			return;
+		}
+		if (v >= crit) {
+			rs.add(new Reason("CRIT", metric, text.apply(v)));
+		} else if (v >= warn) {
+			rs.add(new Reason("WARN", metric, text.apply(v)));
+		}
+	}
+
+	private static String fmt(double v) {
+		return v >= 10 ? String.valueOf(Math.round(v)) : String.valueOf(Math.round(v * 10) / 10.0);
+	}
+
+	static List<Endpoint> endpoints(List<Series> count, List<Series> err, List<Series> p95) {
+		Map<String, Double> e = new HashMap<>(), lat = new HashMap<>();
+		err.forEach(s -> e.put(s.label("method") + " " + s.label("uri"), s.v()[0]));
+		p95.forEach(s -> lat.put(s.label("method") + " " + s.label("uri"), s.v()[0]));
+		double sum = count.stream().mapToDouble(s -> s.v()[0] == null ? 0 : s.v()[0]).sum();
+		return count.stream().filter(s -> s.v()[0] != null && s.v()[0] > 0)
+				.sorted(Comparator.comparingDouble((Series s) -> s.v()[0]).reversed()).limit(10).map(s -> {
+					String key = s.label("method") + " " + s.label("uri");
+					double rps = s.v()[0];
+					Double er = e.get(key);
+					return new Endpoint(s.label("method"), s.label("uri"), group(s.label("uri")), rps, lat.get(key),
+							er == null ? 0 : er / rps * 100, sum > 0 ? rps / sum * 100 : 0);
+				}).toList();
+	}
+
+	private static int idx(long ts, long start, int step, int n) {
+		long d = ts - start;
+		if (d < 0 || d % step != 0) {
+			return -1;
+		}
+		long i = d / step;
+		return i < n ? (int) i : -1;
+	}
+
+	private static Double[] zeros(int n) {
+		Double[] a = new Double[n];
+		java.util.Arrays.fill(a, 0d);
+		return a;
+	}
+
+	private static void add(Double[] a, int i, double v) {
+		a[i] = (a[i] == null ? 0 : a[i]) + v;
+	}
+
+	private static Double[] pct(Double[] part, Double[] total) {
+		Double[] out = new Double[total.length];
+		for (int i = 0; i < out.length; i++) {
+			out[i] = total[i] == null || part[i] == null ? null : total[i] <= 0 ? 0d : part[i] / total[i] * 100;
+		}
+		return out;
+	}
+
+	/** 결과 첫 시계열을 공통 시각에 맞춘다 (없으면 전부 null) */
+	private static Double[] one(List<Series> ss, long start, int step, int n) {
+		Double[] out = new Double[n];
+		if (ss.isEmpty()) {
+			return out;
+		}
+		Series s = ss.get(0);
+		for (int k = 0; k < s.t().length; k++) {
+			int i = idx(s.t()[k], start, step, n);
+			if (i >= 0) {
+				out[i] = s.v()[k];
+			}
+		}
+		return out;
+	}
+
+	/** 마지막 점. 마지막 한두 점은 수집 직전이라 빌 수 있어 끝에서 3칸까지 본다 */
+	private static Double last(Double[] a) {
+		for (int i = a.length - 1; i >= Math.max(0, a.length - 3); i--) {
+			if (a[i] != null) {
+				return a[i];
+			}
+		}
+		return null;
+	}
+
+	private static Double scalar(List<Series> ss) {
+		return ss.isEmpty() ? null : ss.get(0).v()[0];
+	}
+}

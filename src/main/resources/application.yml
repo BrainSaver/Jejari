@@ -107,6 +107,8 @@ jejari:
     deploy:
       enabled: ${JEJARI_OPS_DEPLOY_ENABLED:false}
       admin-ids: ${JEJARI_OPS_DEPLOY_ADMIN_IDS:}   # 누를 수 있는 관리자 번호(admin_user.admin_id), 쉼표로
+    # A-10 트래픽 관제가 읽는 Prometheus (서버·PC 모두 같은 호스트의 127.0.0.1:9090, TrafficService)
+    prometheus-url: ${JEJARI_PROMETHEUS_URL:http://127.0.0.1:9090}
   # 첫 관리자 계정 (AUTH-05, AdminBootstrap). admin_user가 비어 있을 때만 SUPERVISOR 1명을 만듭니다
   admin:
     bootstrap:

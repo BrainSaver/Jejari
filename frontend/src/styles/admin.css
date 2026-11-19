@@ -103,3 +103,56 @@
 .admin .tl .who-c{font-weight:700;min-width:52px}
 .admin .tl li.gap::before{display:none}
 .admin .tl .gap,.admin .tl li.gap{font-size:12px;color:var(--mut);padding:2px 10px 2px 0;margin-left:-4px}
+
+/* A-10 트래픽 관제 (admin/Traffic.jsx · FlowMap.jsx). 흐름도만 밤색 바탕(관제실), 나머지는 한지 바탕 그대로 */
+.admin .tr-seg{display:inline-flex;border:2px solid var(--ink);border-radius:10px;overflow:hidden;margin-left:8px}
+.admin .tr-seg button{border:0;background:var(--card);padding:5px 12px;font-size:13px;font-weight:800;cursor:pointer;min-height:32px}
+.admin .tr-seg button+button{border-left:1px solid var(--line)}
+.admin .tr-seg button[aria-pressed=true]{background:var(--ink);color:#fff}
+.admin .tr-health{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:10px 14px;border-radius:12px;margin-bottom:16px;background:var(--card);border:1px solid var(--line);border-left:6px solid var(--go)}
+.admin .tr-health.amber{border-left-color:var(--amber);background:var(--amber-t)}
+.admin .tr-health.stop{border-left-color:var(--stop);background:var(--stop-t)}
+.admin .tr-health.sky{border-left-color:var(--ink)}
+.admin .tr-reasons{display:flex;flex-wrap:wrap;gap:6px 14px;flex:1;min-width:0;font-size:13.5px;font-weight:600}
+.admin .tr-reason b{font-weight:900}.admin .tr-reason.crit b{color:var(--stop)}.admin .tr-reason.warn b{color:var(--amber-d)}.admin .tr-reason.info b{color:var(--ink2)}
+.admin .tr-at{font-size:12px;font-weight:700}
+.admin .tr-h-sub{font-size:12px;font-weight:700}
+.admin .tr-flow-panel h2{flex-wrap:wrap}
+.admin .tr-flow{position:relative;border-radius:10px;overflow:hidden;background:#13202F}
+.admin .tr-live{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--go);vertical-align:middle;margin-left:4px;box-shadow:0 0 0 0 rgba(21,128,61,.6);animation:tr-ping 1.6s infinite}
+@keyframes tr-ping{70%{box-shadow:0 0 0 8px rgba(21,128,61,0)}100%{box-shadow:0 0 0 0 rgba(21,128,61,0)}}
+.admin .tr-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;font-size:12.5px;font-weight:700;margin-bottom:10px}
+.admin .tr-legend .tr-right{text-align:right;color:var(--ink)}
+.admin .tr-ldot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#2a78d6;vertical-align:-1px;margin-right:4px}
+.admin .tr-ldot.err{width:12px;height:12px;background:var(--stop)}
+.admin .tr-ldot.rej{background:transparent;box-shadow:inset 0 0 0 2px var(--amber-d)}
+.admin .tr-tip{position:absolute;transform:translate(14px,-50%);background:#0B1522;color:#F3EEE2;border-radius:10px;padding:8px 10px;font-size:12.5px;min-width:150px;pointer-events:none;box-shadow:0 6px 18px rgba(0,0,0,.3);z-index:2}
+.admin .tr-tip.light{transform:none;background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.admin .tr-tip b{display:block;margin-bottom:4px}
+.admin .tr-tip div{display:flex;justify-content:space-between;gap:14px;font-weight:600}
+.admin .tr-tip i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+.admin .tr-meters{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:18px}
+.admin .tr-meter .row{font-size:13px;font-weight:800;margin-bottom:6px}
+.admin .tr-meter b.ok{color:var(--go)}.admin .tr-meter b.warn{color:var(--amber-d)}.admin .tr-meter b.crit{color:var(--stop)}
+.admin .tr-bar{position:relative;height:10px;background:var(--line2);border-radius:5px}
+.admin .tr-bar i{position:absolute;inset:0 auto 0 0;border-radius:5px;background:var(--go);transition:width .6s}
+.admin .tr-bar i.warn{background:var(--amber)}.admin .tr-bar i.crit{background:var(--stop)}
+.admin .tr-bar s{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--amber-d)}
+.admin .tr-bar s.c{background:var(--stop)}
+.admin .tr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}
+.admin .tr-grid>.panel{margin-bottom:0}
+.admin .tr-chart{overflow:visible}
+.admin .tr-chart svg{display:block;font-family:var(--num)}
+.admin .tr-ax{font-size:11px;fill:var(--faint);font-weight:600}
+.admin .tr-tag{font-size:11.5px;fill:var(--ink);font-weight:800}
+.admin .tr-keys{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;font-weight:700;margin:-4px 0 8px}
+.admin .tr-keys i{display:inline-block;width:12px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
+.admin .tr-uri{font-family:var(--num);font-weight:700;word-break:break-all}
+.admin .tr-share{display:inline-block;width:44px;height:6px;background:var(--line2);border-radius:3px;margin-right:6px;vertical-align:middle;overflow:hidden}
+.admin .tr-share i{display:block;height:100%;background:var(--ink2)}
+.admin td.tr-bad{color:var(--stop);font-weight:900}
+@media (max-width:1100px){.admin .tr-grid{grid-template-columns:1fr}.admin .tr-meters{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:720px){.admin .tr-meters{grid-template-columns:1fr 1fr}.admin .tr-legend .tr-right{text-align:left}}
+.admin .kpi.surge{background:var(--amber-t);box-shadow:inset 0 -4px 0 var(--amber)}.admin .kpi.surge .d{color:var(--amber-d);font-weight:800}
+.admin .tr-tip.down{transform:translate(14px,-12px)}
+@media (max-width:720px){.admin .tr-opt{display:none}}

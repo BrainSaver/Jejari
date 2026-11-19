@@ -1,0 +1,197 @@
+package com.jejari.admin.traffic;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import com.sun.net.httpserver.HttpServer;
+
+import tools.jackson.databind.json.JsonMapper;
+
+/** 가짜 Prometheus(같은 프로세스 HTTP 서버)로 A-10 묶음·판정을 확인한다. 인프라 없이 돈다 */
+class TrafficServiceTest {
+
+	static final long NOW = 1_795_000_000L;   // 30의 배수가 아니어도 됨 (끝은 step으로 내림)
+	HttpServer server;
+	final List<String> queries = new ArrayList<>();
+	volatile boolean down;
+
+	@BeforeEach
+	void start() throws IOException {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/", ex -> {
+			String q = URLDecoder.decode(ex.getRequestURI().getRawQuery(), StandardCharsets.UTF_8);
+			queries.add(q);
+			String body = down ? "" : respond(q, ex.getRequestURI().getPath().endsWith("query_range"));
+			byte[] b = body.getBytes(StandardCharsets.UTF_8);
+			ex.sendResponseHeaders(down ? 503 : 200, b.length == 0 ? -1 : b.length);
+			try (OutputStream o = ex.getResponseBody()) {
+				o.write(b);
+			}
+		});
+		server.start();
+	}
+
+	@AfterEach
+	void stop() {
+		server.stop(0);
+	}
+
+	/** 1h 범위(30초 간격)의 마지막 점 시각 */
+	static long end() {
+		return NOW / 30 * 30;
+	}
+
+	static String vec(String labels, double v) {
+		return "{\"metric\":{" + labels + "},\"value\":[" + NOW + ",\"" + v + "\"]}";
+	}
+
+	static String mat(String labels, double v) {
+		return "{\"metric\":{" + labels + "},\"values\":[[" + (end() - 30) + ",\"" + v + "\"],[" + end() + ",\"" + v + "\"]]}";
+	}
+
+	static String ok(String type, String... rs) {
+		return "{\"status\":\"success\",\"data\":{\"resultType\":\"" + type + "\",\"result\":[" + String.join(",", rs) + "]}}";
+	}
+
+	String respond(String q, boolean range) {
+		if (range) {
+			if (q.contains("sum by (method, uri, status)")) {
+				return ok("matrix",
+						mat("\"method\":\"POST\",\"uri\":\"/api/v1/reservations\",\"status\":\"201\"", 8),
+						mat("\"method\":\"POST\",\"uri\":\"/api/v1/reservations\",\"status\":\"409\"", 2),
+						mat("\"method\":\"GET\",\"uri\":\"/api/v1/runs/{runId}/queue\",\"status\":\"200\"", 85),
+						mat("\"method\":\"GET\",\"uri\":\"/api/v1/runs/{runId}/seats\",\"status\":\"500\"", 5));
+			}
+			if (q.contains("histogram_quantile(0.95")) {
+				return ok("matrix", mat("", 1500));
+			}
+			if (q.contains("hikaricp_connections_active")) {
+				return ok("matrix", mat("", 97));
+			}
+			return ok("matrix");
+		}
+		if (q.contains("up{")) {
+			return ok("vector", vec("\"instance\":\"app-1\"", 1), vec("\"instance\":\"app-2\"", 0));
+		}
+		if (q.contains("avg_over_time")) {
+			return ok("vector", vec("", 20));
+		}
+		if (q.contains("sum by (uri, status)")) {
+			return ok("vector", vec("\"uri\":\"/api/v1/runs/{runId}/queue\",\"status\":\"200\"", 40),
+					vec("\"uri\":\"/api/v1/runs/{runId}/queue\",\"status\":\"429\"", 10),
+					vec("\"uri\":\"/api/v1/reservations\",\"status\":\"500\"", 1));
+		}
+		if (q.contains("_sum{")) {
+			return ok("vector", vec("\"uri\":\"/api/v1/runs/{runId}/queue\"", 1.0));
+		}
+		if (q.contains("lettuce")) {
+			return ok("vector", vec("", 300));
+		}
+		if (q.contains("sum by (method, uri) (rate(http_server_requests_seconds_count{job=\"jejari-app\",uri!~\"/actuator.*\"}[1m]))")) {
+			return ok("vector", vec("\"method\":\"GET\",\"uri\":\"/api/v1/runs/{runId}/queue\"", 90),
+					vec("\"method\":\"POST\",\"uri\":\"/api/v1/reservations\"", 10));
+		}
+		return ok("vector");
+	}
+
+	TrafficService service() {
+		Clock clock = Clock.fixed(Instant.ofEpochSecond(NOW), ZoneId.of("Asia/Seoul"));
+		return new TrafficService(new PrometheusClient("http://127.0.0.1:" + server.getAddress().getPort(),
+				JsonMapper.builder().build()), clock);
+	}
+
+	@Test
+	void 영역별로_묶고_비율과_상태를_낸다() {
+		TrafficView v = service().view("1h");
+
+		assertThat(v.available()).isTrue();
+		assertThat(v.t()).hasSize(121);
+		var traffic = v.charts().get(0);
+		assertThat(traffic.lines()).extracting(TrafficView.Line::name).containsExactlyElementsOf(TrafficService.GROUPS);
+		assertThat(traffic.lines().get(0).v()[120]).isEqualTo(85.0);      // 대기열
+		assertThat(traffic.lines().get(2).v()[120]).isEqualTo(10.0);      // 예약·결제 (201 + 409)
+		assertThat(traffic.lines().get(0).v()[0]).isZero();                // 값 없는 시각은 0 (요청 없음)
+
+		var now = v.now();
+		assertThat(now.rps()).isEqualTo(100.0);
+		assertThat(now.errorPct()).isEqualTo(5.0);
+		assertThat(now.conflictPerSec()).isEqualTo(2.0);
+		assertThat(now.reservePerSec()).isEqualTo(8.0);
+		assertThat(now.surge()).isEqualTo(5.0);                            // 100 / 평소 20
+		assertThat(now.instancesUp()).isEqualTo(1);
+		assertThat(now.instancesTotal()).isEqualTo(2);
+
+		// 5xx 5% · DB 97% → 위험. p95 1.5초·앱 1대 응답 없음 → 주의. 급증은 알림
+		assertThat(v.health().level()).isEqualTo("CRIT");
+		assertThat(v.health().reasons()).extracting(TrafficView.Reason::metric)
+				.contains("error", "db", "p95", "up", "surge");
+		assertThat(v.health().reasons().get(0).level()).isEqualTo("CRIT");
+
+		assertThat(v.endpoints()).hasSize(2);
+		assertThat(v.endpoints().get(0).group()).isEqualTo("대기열");
+		assertThat(v.endpoints().get(0).share()).isEqualTo(90.0);
+	}
+
+	@Test
+	void 흐름도는_영역별_초당값과_저장소_작업을_낸다() {
+		TrafficFlow f = service().flow();
+
+		assertThat(f.available()).isTrue();
+		var queue = f.groups().get(0);
+		assertThat(queue.name()).isEqualTo("대기열");
+		assertThat(queue.rps()).isEqualTo(50.0);
+		assertThat(queue.rejected()).isEqualTo(10.0);
+		assertThat(queue.avgMs()).isEqualTo(20.0);                          // 1초 / 50건
+		assertThat(f.groups().get(2).err5()).isEqualTo(1.0);
+		assertThat(f.stores().get(0).ops()).isEqualTo(300.0);
+		assertThat(f.stores().get(1).ops()).isNull();                       // 수집 안 된 지표는 null
+	}
+
+	@Test
+	void 쿼리는_서버에_고정되고_화면값이_섞이지_않는다() {
+		service().view("30m");
+		assertThat(TrafficService.validRange("1h")).isTrue();
+		assertThat(TrafficService.validRange("sum(up)")).isFalse();
+		assertThat(queries).allMatch(q -> q.startsWith("query="));
+	}
+
+	@Test
+	void 프로메테우스가_죽으면_사용불가로_알린다() {
+		down = true;
+		TrafficView v = service().view("1h");
+		assertThat(v.available()).isFalse();
+		assertThat(v.reason()).contains("503");
+		assertThat(service().flow().available()).isFalse();
+	}
+
+	@Test
+	void 연결이_안되면_주소를_알려준다() {
+		server.stop(0);
+		TrafficView v = service().view("1h");
+		assertThat(v.available()).isFalse();
+		assertThat(v.reason()).contains("연결하지 못했습니다");
+	}
+
+	@Test
+	void 영역_분류() {
+		assertThat(TrafficService.group("/api/v1/runs/{runId}/queue/status")).isEqualTo("대기열");
+		assertThat(TrafficService.group("/api/v1/reservations/{reservationId}/payments")).isEqualTo("예약·결제");
+		assertThat(TrafficService.group("/api/v1/waitlists")).isEqualTo("예약·결제");
+		assertThat(TrafficService.group("/api/v1/me/reservations")).isEqualTo("로그인·내 정보");
+		assertThat(TrafficService.group("/**")).isEqualTo("기타");
+	}
+}
