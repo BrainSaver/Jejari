@@ -2,17 +2,19 @@ import { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 import { api, get } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
-import { toMs } from './fmt.js';
+import { hm, shortDate, toMs } from './fmt.js';
 import { useMember } from './useMember.js';
 
 /**
  * U-11 알림함 (EVT-06, WL-04).
  *   GET   /api/v1/notifications?before=&size=     최신순 + 읽지 않은 수 (다음 쪽은 nextBefore)
  *   PATCH /api/v1/notifications/{id}/read         누르면 읽음 표시 후 관련 화면으로
- * 알림 행에는 종류(type)와 가리키는 대상(refType·refId)만 있다. 문구는 화면이 종류별로 만든다.
+ * 알림 행에는 종류(type)와 가리키는 대상(refType·refId)이 있고, 예약 알림이면 서버가 표 요약(trip: 열차·날짜·출발·구간·좌석)을
+ * 붙여 준다. 문구는 화면이 종류별로 만들고, 표 요약이 있으면 그 표가 무엇인지 한 줄로 보여 준다.
  * 알림은 Kafka 이벤트를 소비자가 받아 쓰는 것이라(Outbox → Kafka → 알림 소비자) 몇 초 늦게 생길 수 있다.
  */
 const KIND = {
+  CONFIRMED: { icon: 'ticket', bg: 'var(--go-t)', fg: 'var(--go-d)', title: '예매가 완료됐어요', body: '결제가 끝나 좌석이 확정됐어요.', goto: '예매 내역 보기' },
   WAITLIST_OFFER: { icon: 'ticket', bg: 'var(--amber-t)', fg: 'var(--amber-d)', title: '취소표가 나왔어요', body: '좌석을 잡아 뒀어요. 기한 안에 결제하면 확정돼요.' },
   PAY_REMINDER: { icon: 'clock', bg: 'var(--stop-t)', fg: 'var(--stop)', title: '결제 기한이 얼마 안 남았어요', body: '잡아 둔 좌석의 결제 기한이 곧 끝나요.' },
   EXPIRED: { icon: 'info', bg: 'var(--sky-t)', fg: 'var(--ink)', title: '예약이 만료됐어요', body: '결제 기한이 지나 좌석이 풀렸어요.' },
@@ -41,7 +43,8 @@ export default function Notifications() {
   const open = async (n) => {
     if (!n.readAt) await api('PATCH', `/api/v1/notifications/${n.notificationId}/read`).catch(() => {});
     if (n.refType === 'RESERVATION') {
-      navigate(n.type === 'WAITLIST_OFFER' || n.type === 'PAY_REMINDER' ? `/pay/${n.refId}` : '/reservations');
+      // 예매 내역에서는 그 표를 펼친 채로 연다 (?open=예약 번호)
+      navigate(n.type === 'WAITLIST_OFFER' || n.type === 'PAY_REMINDER' ? `/pay/${n.refId}` : `/reservations?open=${n.refId}`);
     } else if (n.refType === 'WAITLIST') navigate('/waitlist');
     else navigate('/reservations');
   };
@@ -63,7 +66,9 @@ export default function Notifications() {
               <span style={{ width: 38, height: 38, borderRadius: 8, display: 'grid', placeItems: 'center', flex: 'none', background: k.bg, color: k.fg }}><Icon name={k.icon} /></span>
               <span className="grow">
                 <b style={{ fontSize: 15 }}>{k.title}</b><br />
-                <span className="mut" style={{ fontSize: 13.5 }}>{k.body}{n.refType === 'RESERVATION' ? ` (예약 ${n.refId})` : ''}</span>
+                <span className="mut" style={{ fontSize: 13.5 }}>{k.body}{n.refType === 'RESERVATION' && !n.trip ? ` (예약 ${n.refId})` : ''}</span>
+                {n.trip && <><br /><span style={{ fontSize: 14, fontWeight: 600 }}>{tripText(n.trip)}</span></>}
+                {k.goto && <><br /><span className="btn sm soft" style={{ display: 'inline-flex', marginTop: 8, pointerEvents: 'none' }}>{k.goto} →</span></>}
               </span>
               <span className="faint" style={{ fontSize: 12, whiteSpace: 'nowrap', textAlign: 'right' }}>
                 {ago(n.createdAt)}
@@ -96,4 +101,13 @@ function ago(t) {
   if (m < 60) return `${m}분 전`;
   if (m < 1440) return `${Math.floor(m / 60)}시간 전`;
   return `${Math.floor(m / 1440)}일 전`;
+}
+
+/** "00049 열차 · 11월 19일(목) 15:45 · 서울 → 부산 · 2호차 7A" */
+function tripText(t) {
+  const parts = [`${t.trainNo} 열차`];
+  if (t.runDate) parts.push(`${shortDate(t.runDate)}${t.departureAt ? ' ' + hm(t.departureAt) : ''}`);
+  parts.push(`${t.fromName} → ${t.toName}`);
+  if (t.seats) parts.push(t.seats);
+  return parts.join(' · ');
 }

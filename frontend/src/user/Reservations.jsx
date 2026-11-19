@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, Navigate, useLocation, useNavigate } from 'react-router';
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { get, post } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
 import { ConfirmButton } from '../admin/ui.jsx';
@@ -38,11 +38,17 @@ export default function Reservations() {
   const location = useLocation();
   const [items, setItems] = useState(null);
   const [chip, setChip] = useState('all');
-  const [open, setOpen] = useState(null); // 펼친 예약 id
+  const [params] = useSearchParams();
+  const [open, setOpen] = useState(Number(params.get('open')) || null); // 펼친 예약 id (알림에서 오면 그 표)
   const [sheet, setSheet] = useState(null); // 취소 시트를 연 예약 id
   const [error, setError] = useState(null);
 
   const load = () => get('/api/v1/reservations?size=50').then((p) => setItems(p.items)).catch(setError);
+  // 알림에서 왔으면(?open=) 목록이 그려진 뒤 그 표로 내려간다
+  useEffect(() => {
+    const id = params.get('open');
+    if (items && id) document.getElementById('res-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [items]);
   useEffect(() => {
     if (member) load();
   }, [member]);
@@ -108,7 +114,7 @@ function ResCard({ r, i, open, onToggle, onCancel, onChanged }) {
   const leftMin = r.from?.time ? Math.round((toMs(r.from.time) - Date.now()) / 60000) : null;
 
   return (
-    <article className="ticket h" style={{ '--i': i, ...(hold ? { boxShadow: '0 0 0 2px var(--amber) inset' } : {}), ...(dim ? { opacity: 0.7 } : {}) }}>
+    <article id={'res-' + r.reservationId} className="ticket h" style={{ '--i': i, ...(hold ? { boxShadow: '0 0 0 2px var(--amber) inset' } : {}), ...(dim ? { opacity: 0.7 } : {}) }}>
       <div>
         <div className="row">
           <span className="tno grow"><b>{r.trainNo}</b> 열차<span className="dd">{shortDate(r.runDate)}</span></span>

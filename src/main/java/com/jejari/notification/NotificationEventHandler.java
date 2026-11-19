@@ -17,6 +17,7 @@ import com.jejari.event.EventType;
  * <ul>
  *   <li>{@code RESERVATION_EXPIRED} → {@code EXPIRED} (기한 초과·결제 실패·재선점. 취소표 제안을 놓친 경우도 포함)</li>
  *   <li>{@code REFUND_COMPLETED} → {@code REFUNDED}</li>
+ *   <li>{@code RESERVATION_CONFIRMED} → {@code CONFIRMED} (예매 완료. 결제가 끝났다는 걸 알림함에서도 확인)</li>
  * </ul>
  *
  * <p>취소표 제안·건너뜀(WL-04)은 강동균의 제안 트랜잭션이 이미 행을 남기므로 여기서 다시 만들지 않습니다.
@@ -29,7 +30,8 @@ public class NotificationEventHandler {
 
 	private static final Map<String, NotificationType> TYPES = Map.of(
 			EventType.RESERVATION_EXPIRED.name(), NotificationType.EXPIRED,
-			EventType.REFUND_COMPLETED.name(), NotificationType.REFUNDED);
+			EventType.REFUND_COMPLETED.name(), NotificationType.REFUNDED,
+			EventType.RESERVATION_CONFIRMED.name(), NotificationType.CONFIRMED);
 
 	private final JdbcTemplate jdbc;
 	private final NotificationWriter writer;
