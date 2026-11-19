@@ -64,7 +64,9 @@ function setToken(token) {
 /** 리프레시 쿠키로 액세스 토큰을 다시 받는다. 성공하면 true */
 export function refresh() {
   if (!refreshing) {
-    refreshing = send('POST', '/api/v1/auth/refresh', undefined, { auth: false })
+    // 관리자 화면은 관리자 쿠키(jejari_art)로, 나머지는 회원 쿠키(jejari_rt)로. 서버가 서로의 세션을 받지 않는다
+    const path = location.pathname.startsWith('/admin') ? '/api/v1/admin/auth/refresh' : '/api/v1/auth/refresh';
+    refreshing = send('POST', path, undefined, { auth: false })
       .then((r) => {
         setToken(r.accessToken);
         return true;
@@ -86,9 +88,12 @@ export async function adminLogin(loginId, password) {
   return tokenClaims();
 }
 
-/** 회원 로그인 (U-01). 관리자와 같은 리프레시 쿠키를 쓰므로 한 브라우저에서는 한 사람만 로그인한다 */
-export async function memberLogin(email, password) {
-  const r = await send('POST', '/api/v1/auth/login', { email, password }, { auth: false });
+/**
+ * 회원 로그인 (U-01). 관리자와 쿠키가 달라 한 브라우저에서 회원·관리자를 오가도 서로 덮어쓰지 않는다.
+ * @param remember "로그인 상태 유지" — 고르면 14일, 아니면 브라우저를 닫으면 로그아웃(최대 12시간)
+ */
+export async function memberLogin(email, password, remember = false) {
+  const r = await send('POST', '/api/v1/auth/login', { email, password, remember }, { auth: false });
   setToken(r.accessToken);
   return tokenClaims();
 }

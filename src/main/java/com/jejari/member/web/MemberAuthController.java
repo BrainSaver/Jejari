@@ -64,7 +64,8 @@ public class MemberAuthController {
 	/** 로그인 → 액세스 토큰(본문) + 리프레시 토큰(HttpOnly·Secure·SameSite=Strict 쿠키) */
 	@PostMapping("/login")
 	public ResponseEntity<TokenResponse> login(@RequestBody LoginRequest req, HttpServletRequest http) {
-		return tokenResponses.ok(login.login(req.email(), req.password(), ipHash(http), userAgent(http)));
+		return tokenResponses.ok(login.login(req.email(), req.password(), ipHash(http), userAgent(http),
+				Boolean.TRUE.equals(req.remember())));
 	}
 
 	private String ipHash(HttpServletRequest http) {
@@ -107,7 +108,8 @@ public class MemberAuthController {
 	public record SignupResponse(String email) {
 	}
 
-	public record LoginRequest(String email, String password) {
+	/** @param remember "로그인 상태 유지" (없으면 false) */
+	public record LoginRequest(String email, String password, Boolean remember) {
 		@Override
 		public String toString() {
 			return "LoginRequest[***]";
