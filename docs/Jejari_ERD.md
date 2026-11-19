@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v29 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
+> 스키마 v30 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -1479,7 +1479,7 @@ Oracle
 |---|---|---|---|---|---|
 | `notification_id` | NUMBER | PK | 시스템 |  |  |
 | `member_id` | NUMBER | FK, NN → member | 시스템 |  |  |
-| `type` | VARCHAR2(20) | NN | 시스템 | WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED | 취소표 건너뜀(매수 한도 초과)·환불 완료 안내 |
+| `type` | VARCHAR2(20) | NN | 시스템 | WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED / CONFIRMED | 취소표 건너뜀(매수 한도 초과)·환불 완료·예매 완료 안내 |
 | `ref_type` | VARCHAR2(20) | NN | 시스템 | RESERVATION / WAITLIST / CASE | ref_id가 어느 테이블을 가리키는지 |
 | `ref_id` | NUMBER |  | 시스템 | 관련 예약·대기 ID |  |
 | `channel` | VARCHAR2(10) | NN | 시스템 | PUSH / EMAIL / IN_APP | 채널 추가 확장 |
@@ -2394,6 +2394,7 @@ Oracle
 | v27 | train_run_seq 시퀀스 추가. 생성되는 날짜별 운행의 run_id를 산식(날짜 인코딩)이 아니라 시퀀스로 받고, 중복 판정은 자연키 (train_id, run_date)로 한다. 시드·스케줄러(700000+)와 실제 시간표 적재(400000+) 대역이 겹칠 수 있던 것을 없앴다. 기존 DB는 db/patch/v27.sql |
 | v28 | CCTV 녹화(ADM-11)를 구현과 맞춤 (강다인 요청): replay_event를 시계열 → 일반 컬렉션 + UNIQUE(session_id, seq) (시계열은 유니크 인덱스를 만들 수 없어 Kafka 재전달 중복을 막지 못한다), 쓰지 않는 칸 두 개(서버 응답·도메인 이벤트) 삭제 — 재생할 때 같은 세션의 behavior_log를 함께 읽어 같은 것을 두 번 저장하지 않는다, 실제로 저장하는 expire_at·label·boxes 추가. Oracle 변경 없음 — Mongo 인덱스는 docker/mongo/mongo-init.js |
 | v29 | model_score에 닮은 유형 type(SPEED / RETRY / MULTI_ACCOUNT / EVASIVE / CANCEL / HOARD)·type_prob 추가 — 별도 유형 모델(tools/ml/train_type.py)의 추정, 관리자 화면은 봇 쪽으로 본 계정에만 표시. Mongo라 기존 DB 패치 없음 |
+| v30 | notification.type CHECK에 CONFIRMED 추가 — 예매 완료 알림 (RESERVATION_CONFIRMED 이벤트 → "예매가 완료됐어요"). 기존 DB는 db/patch/v30.sql을 먼저 넣고 나서 알림 코드를 합친다 |
 
 ## 참고 자료
 

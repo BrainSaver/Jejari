@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v29)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v30)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -610,12 +610,12 @@ CREATE TABLE notification (
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_notification PRIMARY KEY (notification_id),
-  CONSTRAINT ck_notification_type CHECK (type IN ('WAITLIST_OFFER', 'PAY_REMINDER', 'EXPIRED', 'WAITLIST_SKIPPED', 'REFUNDED')),
+  CONSTRAINT ck_notification_type CHECK (type IN ('WAITLIST_OFFER', 'PAY_REMINDER', 'EXPIRED', 'WAITLIST_SKIPPED', 'REFUNDED', 'CONFIRMED')),
   CONSTRAINT ck_notification_ref_type CHECK (ref_type IN ('RESERVATION', 'WAITLIST', 'CASE')),
   CONSTRAINT ck_notification_channel CHECK (channel IN ('PUSH', 'EMAIL', 'IN_APP'))
 );
 COMMENT ON TABLE notification IS '알림 - 취소표 배정·결제 독촉·만료 알림.';
-COMMENT ON COLUMN notification.type IS 'WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED / 취소표 건너뜀(매수 한도 초과)·환불 완료 안내';
+COMMENT ON COLUMN notification.type IS 'WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED / CONFIRMED / 취소표 건너뜀(매수 한도 초과)·환불 완료·예매 완료 안내';
 COMMENT ON COLUMN notification.ref_type IS 'RESERVATION / WAITLIST / CASE / ref_id가 어느 테이블을 가리키는지';
 COMMENT ON COLUMN notification.ref_id IS '관련 예약·대기 ID';
 COMMENT ON COLUMN notification.channel IS 'PUSH / EMAIL / IN_APP / 채널 추가 확장';
