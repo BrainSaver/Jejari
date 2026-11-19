@@ -27,10 +27,13 @@
 	@grafana path /grafana /grafana/*
 	reverse_proxy @grafana 127.0.0.1:3000
 
-	reverse_proxy 127.0.0.1:8080 127.0.0.1:8081 {
+	# 11-19부터 앱 1대 (PERF-01: CPU 4개 VM에서 2대가 서로 CPU를 다퉈 더 느림, docs/조영준/features/성능측정-공용서버.md).
+	# 2대로 되돌리려면 "127.0.0.1:8080 127.0.0.1:8081" + lb_try_duration 10s
+	reverse_proxy 127.0.0.1:8080 {
 		lb_policy round_robin
-		# 한 대가 재시작 중이면 다른 대로 (배포 때 한 대씩 재시작)
-		lb_try_duration 10s
+		# 배포로 앱이 재시작하는 동안(약 40초) 들어온 요청은 502 대신 앱이 뜰 때까지 기다렸다가 보냄
+		lb_try_duration 45s
+		lb_try_interval 1s
 		health_uri /actuator/health
 		health_interval 5s
 		health_timeout 2s

@@ -1,5 +1,6 @@
 # 공용 서버용 Prometheus 설정 (deploy/compose.server.yaml이 docker/prometheus/prometheus.yml 대신 씀)
-# 로컬과 다른 점: 앱이 2대(8080·8081)
+# 로컬과 다른 점: 앱 주소가 호스트(host.docker.internal). 11-19부터 앱 1대(8080)
+# 2대로 되돌리려면 아래 app-2 줄 주석을 풀고 컨테이너 재시작 (deploy/README.md)
 global:
   scrape_interval: 5s
   evaluation_interval: 15s
@@ -11,9 +12,9 @@ scrape_configs:
       - targets: ["host.docker.internal:8080"]
         labels:
           instance: app-1
-      - targets: ["host.docker.internal:8081"]
-        labels:
-          instance: app-2
+      # - targets: ["host.docker.internal:8081"]
+      #   labels:
+      #     instance: app-2
 
   # 자동 배포 상태 (auto-deploy.sh → Pushgateway). honor_labels: 보낸 쪽의 job 라벨을 그대로
   - job_name: pushgateway

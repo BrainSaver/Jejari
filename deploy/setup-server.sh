@@ -45,7 +45,8 @@ for unit in jejari@.service jejari-autodeploy.service jejari-autodeploy.timer je
     | sudo tee "/etc/systemd/system/$unit" >/dev/null
 done
 sudo systemctl daemon-reload
-sudo systemctl enable jejari@8080 jejari@8081 >/dev/null
+# 앱은 1대(8080)만 켬 (11-19, PERF-01). 2대로 되돌리려면 jejari@8081도 enable + Caddyfile·prometheus.server.yml
+sudo systemctl enable jejari@8080 >/dev/null
 
 # 앱 주인이 제자리 서비스만 비밀번호 없이 켜고 끌 수 있게 (OS Login을 켜면 기존 계정의 sudo가 사라져 자동 배포가 멈춤)
 sed "s#__USER__#${USER}#g" deploy/sudoers-jejari > /tmp/jejari.sudoers

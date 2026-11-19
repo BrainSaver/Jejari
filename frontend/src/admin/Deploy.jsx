@@ -8,7 +8,7 @@ import { ConfirmButton, ErrorBox } from './ui.jsx';
  * A-08 공용 서버 배포. 버튼은 서버의 자동 배포 장치(jejari-autodeploy)를 지금 한 번 실행시킨다.
  *   GET  /api/v1/admin/deploy   지금 서버 버전 · 마지막 판단 · 진행 중 여부
  *   POST /api/v1/admin/deploy   시작만 걸고 바로 돌아옴 (SUPERVISOR 중 서버 .env에 적힌 관리자만)
- * 배포 중에는 앱이 한 대씩 재시작돼 이 화면의 요청이 잠깐 실패할 수 있다 → 몇 초마다 다시 읽는다.
+ * 배포 중에는 앱이 재시작돼 이 화면의 요청이 잠깐 느리거나 실패할 수 있다 → 몇 초마다 다시 읽는다.
  * 프로젝트가 끝나면 지운다.
  */
 const STATE = {
@@ -63,7 +63,7 @@ export default function Deploy() {
       <div className="head"><h1>배포</h1><span style={{ flex: 1 }} /><Who claims={claims} /></div>
       <div className="alert sky">
         버튼을 누르면 서버의 자동 배포 장치를 <b>지금 한 번</b> 실행해요. 자동으로는 20분마다 돌아요.
-        GitHub main에서 <b>CI를 통과한 최신 커밋</b>만 배포하고, 앱 2대를 한 대씩 재시작해서 사이트는 멈추지 않아요 (보통 2~4분).
+        GitHub main에서 <b>CI를 통과한 최신 커밋</b>만 배포해요 (보통 2~4분). 앱이 1대라 재시작하는 <b>40초~1분 동안 사이트가 느려져요</b> (요청은 앱이 뜰 때까지 기다렸다 처리). 시연 중에는 누르지 마세요.
       </div>
       <ErrorBox error={error} onClose={() => setError(null)} />
       {s && !s.enabled && <div className="alert amber">이 서버에서는 수동 배포가 꺼져 있어요 (공용 서버에서만 켜요).</div>}

@@ -47,7 +47,10 @@ mkdir -p "$HOME/jejari-app"
 cp "$JAR" "$HOME/jejari-app/jejari.jar.new"
 mv "$HOME/jejari-app/jejari.jar.new" "$HOME/jejari-app/jejari.jar"
 
+# 켜 둔(enabled) 앱만 재시작. 11-19부터 1대(8080) 운영 (PERF-01: CPU 4개 VM에서 2대가 더 느림).
+# 2대로 되돌리려면 sudo systemctl enable --now jejari@8081 + Caddyfile·prometheus.server.yml의 8081 줄 되살리기
 for port in 8080 8081; do
+  systemctl is-enabled -q "jejari@$port" 2>/dev/null || continue
   sudo systemctl restart "jejari@$port"
   echo -n "jejari@$port 기동 대기"
   for _ in $(seq 1 60); do health "$port" && break; echo -n "."; sleep 3; done
