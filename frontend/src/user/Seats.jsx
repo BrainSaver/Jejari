@@ -63,10 +63,12 @@ export default function Seats() {
     get(`/api/v1/runs/${runId}?from=${from}&to=${to}`).then(setRun).catch(() => {});
   }, [runId, from, to]);
 
-  const loadMap = useCallback(async () => {
+  // auto = 사람이 누르지 않았는데 화면이 스스로 다시 부름 (좌석을 뺏긴 직후 새로고침). 행동 로그에서 구분해
+  // 위험 점수 특징(간격)에서 뺀다 — 안 빼면 봇에게 좌석을 놓친 사람이 "0.2초 만에 다시 조회"로 봇처럼 보인다
+  const loadMap = useCallback(async (auto = false) => {
     if (!pass) return;
     try {
-      const m = await get(`/api/v1/runs/${runId}/seats?from=${from}&to=${to}`, passHeader);
+      const m = await get(`/api/v1/runs/${runId}/seats?from=${from}&to=${to}`, auto ? { ...passHeader, 'X-Search-Auto': '1' } : passHeader);
       setMap(m);
       setCarNo((c) => c ?? firstFreeCar(m, wantGrade));
     } catch (e) {
@@ -75,7 +77,7 @@ export default function Seats() {
   }, [runId, from, to, pass]);
 
   useEffect(() => {
-    if (member) loadMap();
+    if (member) loadMap(false);
   }, [member, loadMap]);
 
   // 고른 좌석·인원이 바뀌면 다른 요청 → 새 멱등 키
@@ -93,7 +95,7 @@ export default function Seats() {
       setLost(picked.map((p) => p.seatId));
       setTimeout(() => setLost([]), 1300);
       setPicked([]);
-      loadMap();
+      loadMap(true);
     } else {
       setNotice({ kind: 'error', text: MESSAGES[code] || e.message || '좌석을 잡지 못했어요.' });
     }

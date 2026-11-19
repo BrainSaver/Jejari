@@ -7,7 +7,8 @@
 #
 # 환경 변수 (모두 선택):
 #   TRAIN_ID  열차 (기본 1: 서울→부산 하행, 1,050석)
-#   DAYS      오늘부터 며칠 뒤 운행 (기본 10. 시드 04가 쓰는 "오늘+3일"과 겹치지 않게)
+#   DAYS      오늘부터 며칠 뒤 운행 (기본 70). 시드 04가 열차 1·2에 "오늘 ~ 2개월+1일" 운행을 미리 깔아 두므로
+#             그보다 뒤여야 운행이 만들어진다 (같은 열차·같은 날 운행은 하나뿐 — 10이면 건너뛰어 실패했다, 2026-11-18 리허설)
 #   NAME      행사 이름 (기본 "봇 대회 YYYYMMDD")
 #
 # 만드는 것:
@@ -21,7 +22,7 @@ set -euo pipefail
 
 BASE_URL="${1:-${BASE_URL:-http://localhost:8080}}"
 TRAIN_ID="${TRAIN_ID:-1}"
-DAYS="${DAYS:-10}"
+DAYS="${DAYS:-70}"
 : "${ADMIN_ID:?ADMIN_ID 환경 변수가 필요합니다 (SUPERVISOR 관리자)}"
 : "${ADMIN_PW:?ADMIN_PW 환경 변수가 필요합니다}"
 
@@ -62,7 +63,8 @@ BULK=$(call POST /api/v1/admin/runs \
   "{\"trainId\":${TRAIN_ID},\"from\":\"${RUN_DATE}\",\"to\":\"${RUN_DATE}\",\"saleEventId\":${EVENT_ID}}")
 RUN_ID=$(printf '%s' "$BULK" | sed -n 's/.*"created":\[\([0-9]*\).*/\1/p')
 if [[ -z "$RUN_ID" ]]; then
-  echo "운행이 만들어지지 않았습니다 (같은 날 운행이 이미 있으면 건너뜀): ${BULK}"; exit 1
+  echo "운행이 만들어지지 않았습니다 (같은 날 운행이 이미 있으면 건너뜀): ${BULK}"
+  echo "  → 다른 날로: DAYS=$((DAYS + 1)) 또는 다른 열차: TRAIN_ID=2"; exit 1
 fi
 
 echo "판매 열기"
