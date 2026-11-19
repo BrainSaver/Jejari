@@ -107,8 +107,12 @@ class ModelOpinionInfraTest {
 				.andExpect(jsonPath("$.accounts[0].by").value("GRU"))
 				.andExpect(jsonPath("$.accounts[0].label").value("계정 2"))
 				.andExpect(jsonPath("$.accounts[0].reasons[1]").value("선점 전 둘러보기 0 (사람 2~9)"))
+				.andExpect(jsonPath("$.accounts[0].type").value("EVASIVE")) // 봇 쪽으로 본 계정만 닮은 유형을 보여 준다
+				.andExpect(jsonPath("$.accounts[0].typeProb").value(0.82))
 				.andExpect(jsonPath("$.accounts[1].memberId").value(a))
 				.andExpect(jsonPath("$.accounts[1].overThreshold").value(false))
+				.andExpect(jsonPath("$.accounts[1].type").doesNotExist()) // 사람 쪽이면 수법 이름을 붙이지 않음
+				.andExpect(jsonPath("$.accounts[1].typeProb").doesNotExist())
 				.andExpect(jsonPath("$.accounts[0].label").exists())
 				.andExpect(jsonPath("$.accounts[0].strategy").doesNotExist()) // 정답 라벨 없음
 				.andExpect(jsonPath("$.unscored").value(1)); // c
@@ -119,7 +123,8 @@ class ModelOpinionInfraTest {
 	void score(long memberId, double score, String by, List<String> reasons) {
 		mongo.getCollection("model_score").insertOne(new Document("member_id", memberId).append("model_version", VERSION)
 				.append("score", score).append("by", by).append("scores", Map.of("gbm", score))
-				.append("reasons", reasons).append("source", "test").append("scored_at", new Date()));
+				.append("reasons", reasons).append("source", "test").append("scored_at", new Date())
+				.append("type", "EVASIVE").append("type_prob", 0.82)); // 닮은 유형 (ERD v29) — 모든 계정에 매겨져 있다
 	}
 
 	long caseFor(String ci) {

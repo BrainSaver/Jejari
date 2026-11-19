@@ -1127,7 +1127,8 @@ const DOCS = {
   ['v25','모델 보조 의견 (RISK-05, 강다인 설계안): MongoDB model_score 추가(계정 단위 점수·근거, UNIQUE member_id+model_version), model_run.algorithm에 ENSEMBLE, is_active는 algorithm별 하나, risk_score의 Isolation Forest 점수 칸 삭제(쓰는 코드 없음). 기존 DB는 db/patch/v25.sql'],
   ['v26','train.train_no 설명을 5자리 표기(00103)로. 시드가 실제 KTX 번호로 바뀐 뒤 시간표 적재가 같은 열차를 3자리 번호로 한 번 더 넣던 문제(길동현 11-19)와 표기를 맞춤. 기존 DB는 db/patch/v26.sql(주석만)'],
   ['v27','train_run_seq 시퀀스 추가. 생성되는 날짜별 운행의 run_id를 산식(날짜 인코딩)이 아니라 시퀀스로 받고, 중복 판정은 자연키 (train_id, run_date)로 한다. 시드·스케줄러(700000+)와 실제 시간표 적재(400000+) 대역이 겹칠 수 있던 것을 없앴다. 기존 DB는 db/patch/v27.sql'],
-  ['v28','CCTV 녹화(ADM-11)를 구현과 맞춤 (강다인 요청): replay_event를 시계열 → 일반 컬렉션 + UNIQUE(session_id, seq) (시계열은 유니크 인덱스를 만들 수 없어 Kafka 재전달 중복을 막지 못한다), 쓰지 않는 칸 두 개(서버 응답·도메인 이벤트) 삭제 — 재생할 때 같은 세션의 behavior_log를 함께 읽어 같은 것을 두 번 저장하지 않는다, 실제로 저장하는 expire_at·label·boxes 추가. Oracle 변경 없음 — Mongo 인덱스는 docker/mongo/mongo-init.js']]}
+  ['v28','CCTV 녹화(ADM-11)를 구현과 맞춤 (강다인 요청): replay_event를 시계열 → 일반 컬렉션 + UNIQUE(session_id, seq) (시계열은 유니크 인덱스를 만들 수 없어 Kafka 재전달 중복을 막지 못한다), 쓰지 않는 칸 두 개(서버 응답·도메인 이벤트) 삭제 — 재생할 때 같은 세션의 behavior_log를 함께 읽어 같은 것을 두 번 저장하지 않는다, 실제로 저장하는 expire_at·label·boxes 추가. Oracle 변경 없음 — Mongo 인덱스는 docker/mongo/mongo-init.js'],
+  ['v29','model_score에 닮은 유형 type(SPEED / RETRY / MULTI_ACCOUNT / EVASIVE / CANCEL / HOARD)·type_prob 추가 — 별도 유형 모델(tools/ml/train_type.py)의 추정, 관리자 화면은 봇 쪽으로 본 계정에만 표시. Mongo라 기존 DB 패치 없음']]}
 };
 // ===== 스키마 v5: 팀 검토 12건 반영 (2026-11-06) =====
 const V5_TABLES = [
@@ -1622,7 +1623,15 @@ const V28_OPS = [
   ['set','replay_session','legal_hold',{desc:'삭제 보류 여부',reason:'케이스가 열리면 true. 적재기는 저장 뒤 한 번 더 확인해 그 사이 걸린 것도 뺀다'}],
   ['set','replay_session','recording_mode',{desc:'SAMPLED / FULL',reason:'평소는 SAMPLED(궤적을 성기게), 위험 점수 replay.full_record_score 이상 또는 세션 해시 표본 replay.full_record_ratio는 FULL → 저장량 제어'}],
 ];
-const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS}, {v:24,tables:V24_TABLES,ops:V24_OPS}, {v:25,tables:V25_TABLES,ops:V25_OPS}, {v:26,tables:V26_TABLES,ops:V26_OPS}, {v:27,tables:V27_TABLES,ops:V27_OPS}, {v:28,tables:V28_TABLES,ops:V28_OPS} ];
+const V29_TABLES = [];
+const V29_OPS = [
+  // 모델 보조 의견에 닮은 유형 (2026-11-19 강동균). 봇이냐 아니냐는 그대로 score가 정하고, 유형은 별도 모델(tools/ml/train_type.py)의 추정.
+  // 화면은 문턱 이상(봇 쪽으로 봄)인 계정에만 "닮은 유형(추정)"으로 보여 준다
+  ['add','model_score','reasons',[
+    ['type','String','','시스템','SPEED / RETRY / MULTI_ACCOUNT / EVASIVE / CANCEL / HOARD','가장 닮은 봇 수법 (추정). 빠른 반복 · 같은 좌석 반복 · 다계정 · 사람 흉내 · 취소·되팔기 · 사재기'],
+    ['type_prob','Double','','시스템','그 유형의 확률 (0~1)','추정이 얼마나 분명한지']]],
+];
+const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS}, {v:24,tables:V24_TABLES,ops:V24_OPS}, {v:25,tables:V25_TABLES,ops:V25_OPS}, {v:26,tables:V26_TABLES,ops:V26_OPS}, {v:27,tables:V27_TABLES,ops:V27_OPS}, {v:28,tables:V28_TABLES,ops:V28_OPS}, {v:29,tables:V29_TABLES,ops:V29_OPS} ];
 const SEED_VERSION = Math.max(2,...PATCHES.map(p=>p.v));
 const LAYOUT = [
  ['station','route','route_station','fare','common_code'],

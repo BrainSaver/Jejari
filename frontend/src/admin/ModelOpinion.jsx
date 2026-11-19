@@ -7,6 +7,15 @@ import { get } from '../api/client.js';
  * 규칙 점수와 모델이 다르게 볼 때 한 번 더 보라는 뜻으로 나란히 보여 준다.
  */
 const BY = { GBM: '부스팅', IF: 'Isolation Forest', GRU: '행동 순서(GRU)' };
+// 닮은 유형 (ERD v29 model_score.type, tools/ml/train_type.py). 별도 모델의 추정이라 "봇 쪽으로 봄"인 계정에만 서버가 내려 준다
+const TYPE = {
+  SPEED: ['빠른 반복 매크로', '연타·일정 간격·판매 오픈 순간 요청'],
+  RETRY: ['같은 좌석 반복 시도', '이미 잡힌 좌석을 계속 다시 누름'],
+  MULTI_ACCOUNT: ['다계정', '명의·기기·카드를 여러 개 돌려 씀'],
+  EVASIVE: ['사람 흉내 매크로', '느리게·흩어져 움직여 사람처럼 보이려 함'],
+  CANCEL: ['취소·되팔기 반복', '결제 직후 취소, 좌석 넘겨주기'],
+  HOARD: ['사재기', '한도까지 채우기, 여러 운행을 한꺼번에 잡기'],
+};
 
 export default function ModelOpinion({ caseId }) {
   const [m, setM] = useState(null);
@@ -36,6 +45,12 @@ export default function ModelOpinion({ caseId }) {
             <span className="grow" />
             <span className="faint" style={{ fontSize: 12 }}>{BY[a.by] || a.by}가 가장 높게 봄</span>
           </div>
+          {a.type && (
+            <p style={{ fontSize: 12.5, margin: '4px 0 0' }}>
+              닮은 유형 <b>{TYPE[a.type]?.[0] || a.type}</b>
+              <span className="faint"> · 추정 {Math.round((a.typeProb ?? 0) * 100)}%{TYPE[a.type] ? ` · ${TYPE[a.type][1]}` : ''}</span>
+            </p>
+          )}
           {a.reasons.length > 0 && (
             <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12.5 }} className="mut">
               {a.reasons.map((r) => <li key={r}>{r}</li>)}

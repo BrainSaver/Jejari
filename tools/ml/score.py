@@ -95,6 +95,22 @@ def row_reasons(model, x, by):
     return (["행동 순서가 학습한 봇과 닮음(GRU)"] + r[:2]) if by == "GRU" else r
 
 
+def bot_types(model_path, rows):
+    """model.pkl 옆에 type.pkl(train_type.py)이 있으면 계정마다 가장 닮은 봇 유형과 확률(0~1). 없으면 빈 칸.
+    봇이냐 아니냐와는 별개로 모든 계정에 매긴다 — 화면은 "봇 쪽으로 봄"인 계정에만 보여 준다"""
+    p = os.path.join(os.path.dirname(model_path), "type.pkl")
+    if not os.path.exists(p) or not rows:
+        return [""] * len(rows), [""] * len(rows)
+    with open(p, "rb") as f:
+        t = pickle.load(f)
+    if any(c not in rows[0] for c in t["features"]):
+        return [""] * len(rows), [""] * len(rows)
+    X = np.array([[float(r[c]) if r[c] not in ("", "nan") else np.nan for c in t["features"]] for r in rows])
+    pr = t["clf"].predict_proba(X)
+    best = pr.argmax(axis=1)
+    return [t["types"][i] for i in best], [round(float(pr[j, i]), 3) for j, i in enumerate(best)]
+
+
 def main():
     if len(sys.argv) != 3:
         sys.exit("사용법: score.py <model.pkl> <features.csv>")
@@ -112,13 +128,16 @@ def main():
     s = np.maximum.reduce(list(P.values()))
     by = [max(P, key=lambda k: P[k][j]) for j in range(len(rows))]   # 어느 모델이 가장 높게 봤나
     thr = model["threshold"] if seq is not None else model.get("threshold_base", model["threshold"])
+    types, type_p = bot_types(sys.argv[1], rows)
     out = os.path.join(os.path.dirname(sys.argv[2]), "scores.csv")
     with open(out, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["member_id", "label", "strategy", "score", "flag", "by", *[f"score_{k}" for k in P], "reasons"])
+        w.writerow(["member_id", "label", "strategy", "score", "flag", "by", *[f"score_{k}" for k in P], "reasons",
+                    "type", "type_prob"])
         for j, (r, v, x) in enumerate(zip(rows, s, X)):
             w.writerow([r["member_id"], r["label"], r["strategy"], round(float(v), 1), int(v >= thr), by[j],
-                        *[round(float(P[k][j]), 1) for k in P], " · ".join(row_reasons(model, x, by[j]))])
+                        *[round(float(P[k][j]), 1) for k in P], " · ".join(row_reasons(model, x, by[j])),
+                        types[j], type_p[j]])
 
     print(f"모델 {model['trained']['at']} (계정 {model['trained']['accounts']}) · 문턱 {thr:.1f}점 · 뺀 특징 {model['excluded']} → {out}")
     print(f"쓴 모델: {' + '.join(P)}" + (f"  (GRU 빠짐: {why})" if why and model.get("gru") else "") + "\n")

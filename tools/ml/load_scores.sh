@@ -7,6 +7,7 @@
 #   - 모델 이름을 ERD 이름으로: 부스팅 → GBM/gbm, IF → IF/if, GRU → GRU/gru
 #   - (member_id, model_version)으로 덮어쓴다 → 같은 버전으로 다시 넣어도 한 건
 #   - model_run에 그 버전(algorithm = ENSEMBLE)이 있어야 한다 (문턱·성능은 거기에). 없으면 멈춘다
+#   - 닮은 유형(type·type_prob)은 scores.csv에 있으면 같이 넣는다 (tools/ml/train_type.py)
 #   - --activate: 그 버전을 사용 중으로 (ENSEMBLE은 하나만 Y) → 관리자 화면(A-06)에 나타남
 #
 # 예) 대회 데이터로 매긴 점수를 올리고 켜기:
@@ -69,6 +70,8 @@ for (const line of lines.slice(1)) {
     reasons: (r.reasons || '').split(' · ').map((s) => s.trim()).filter(Boolean).slice(0, 3),
     scored_at: { $date: now } };
   if (source) doc.source = source;
+  // 닮은 유형 (tools/ml/train_type.py의 type.pkl이 있을 때만 score.py가 채움). 추정이라 화면은 "봇 쪽으로 봄"에만 보여 줌
+  if (r.type) { doc.type = r.type; doc.type_prob = Number(r.type_prob); }
   process.stdout.write(JSON.stringify(doc) + '\n'); ok++;
 }
 process.stderr.write(`  계정 ${ok}개 (건너뜀 ${skip})\n`);

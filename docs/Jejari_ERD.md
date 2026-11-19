@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v28 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
+> 스키마 v29 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -39,7 +39,7 @@
 | 테이블 | 61개 (운영 57 + 확장 예정 4) |
 | 저장소 | Oracle 44 · MongoDB 12 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 529개 |
+| 컬럼 | 531개 |
 | 관계 (FK) | 87개 (Oracle 제약 60 · 논리 참조 22) |
 
 | 영역 | 저장소 | 테이블 |
@@ -1654,6 +1654,8 @@ MongoDB
 | `by` | String | NN | 시스템 | GBM / IF / GRU | 가장 높게 본 모델. GRU면 근거 숫자로 이유가 안 보여 화면 재생(CCTV)으로 안내 |
 | `scores` | Object |  | 시스템 | 모델별 점수 { gbm, if, gru } (GRU가 없으면 gru 없음) | 규칙과 모델이 다르게 볼 때 비교 |
 | `reasons` | Array |  | 시스템 | 근거 3개 (특징 이름·값 문자열) | 운영 원칙: 근거 기록. 개인정보 없음 |
+| `type` | String |  | 시스템 | SPEED / RETRY / MULTI_ACCOUNT / EVASIVE / CANCEL / HOARD | 가장 닮은 봇 수법 (추정). 빠른 반복 · 같은 좌석 반복 · 다계정 · 사람 흉내 · 취소·되팔기 · 사재기 |
+| `type_prob` | Double |  | 시스템 | 그 유형의 확률 (0~1) | 추정이 얼마나 분명한지 |
 | `source` | String |  | 시스템 | 점수를 매긴 데이터 (대회 태그 등) | 어느 데이터로 매겼는지 |
 | `scored_at` | Date | NN | 시스템 | 점수를 매긴 시각 |  |
 
@@ -2391,6 +2393,7 @@ Oracle
 | v26 | train.train_no 설명을 5자리 표기(00103)로. 시드가 실제 KTX 번호로 바뀐 뒤 시간표 적재가 같은 열차를 3자리 번호로 한 번 더 넣던 문제(길동현 11-19)와 표기를 맞춤. 기존 DB는 db/patch/v26.sql(주석만) |
 | v27 | train_run_seq 시퀀스 추가. 생성되는 날짜별 운행의 run_id를 산식(날짜 인코딩)이 아니라 시퀀스로 받고, 중복 판정은 자연키 (train_id, run_date)로 한다. 시드·스케줄러(700000+)와 실제 시간표 적재(400000+) 대역이 겹칠 수 있던 것을 없앴다. 기존 DB는 db/patch/v27.sql |
 | v28 | CCTV 녹화(ADM-11)를 구현과 맞춤 (강다인 요청): replay_event를 시계열 → 일반 컬렉션 + UNIQUE(session_id, seq) (시계열은 유니크 인덱스를 만들 수 없어 Kafka 재전달 중복을 막지 못한다), 쓰지 않는 칸 두 개(서버 응답·도메인 이벤트) 삭제 — 재생할 때 같은 세션의 behavior_log를 함께 읽어 같은 것을 두 번 저장하지 않는다, 실제로 저장하는 expire_at·label·boxes 추가. Oracle 변경 없음 — Mongo 인덱스는 docker/mongo/mongo-init.js |
+| v29 | model_score에 닮은 유형 type(SPEED / RETRY / MULTI_ACCOUNT / EVASIVE / CANCEL / HOARD)·type_prob 추가 — 별도 유형 모델(tools/ml/train_type.py)의 추정, 관리자 화면은 봇 쪽으로 본 계정에만 표시. Mongo라 기존 DB 패치 없음 |
 
 ## 참고 자료
 

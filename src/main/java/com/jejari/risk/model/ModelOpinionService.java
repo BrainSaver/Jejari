@@ -61,11 +61,15 @@ public class ModelOpinionService {
 	}
 
 	/**
-	 * @param by     가장 높게 본 모델 GBM / IF / GRU (GRU면 근거 숫자로는 이유가 잘 안 보여 화면 녹화 재생을 권함)
-	 * @param scores 모델별 점수
+	 * @param by       가장 높게 본 모델 GBM / IF / GRU (GRU면 근거 숫자로는 이유가 잘 안 보여 화면 녹화 재생을 권함)
+	 * @param scores   모델별 점수
+	 * @param type     가장 닮은 봇 수법 SPEED / RETRY / MULTI_ACCOUNT / EVASIVE / CANCEL / HOARD (별도 유형 모델의 추정,
+	 *                 ERD v29). 문턱 아래(사람 쪽으로 봄)이면 null — 사람에게 수법 이름을 붙이지 않는다
+	 * @param typeProb 그 유형의 확률 (0~1). type이 null이면 null
 	 */
 	public record AccountScore(String label, long memberId, double score, boolean overThreshold, String by,
-			Map<String, Object> scores, List<String> reasons, String source, Instant scoredAt) {
+			Map<String, Object> scores, List<String> reasons, String source, Instant scoredAt, String type,
+			Double typeProb) {
 	}
 
 	private record ActiveModel(String version, BigDecimal threshold, Instant trainedAt, String trainSource) {
@@ -95,10 +99,12 @@ public class ModelOpinionService {
 				double score = ((Number) d.get("score")).doubleValue();
 				Object scores = d.get("scores");
 				Date at = d.getDate("scored_at");
-				out.add(new AccountScore(labelOf.get(memberId), memberId, score,
-						m.threshold() != null && score >= m.threshold().doubleValue(), d.getString("by"),
+				boolean over = m.threshold() != null && score >= m.threshold().doubleValue();
+				Object tp = d.get("type_prob");
+				out.add(new AccountScore(labelOf.get(memberId), memberId, score, over, d.getString("by"),
 						scores instanceof Map<?, ?> sm ? toMap(sm) : Map.of(), d.getList("reasons", String.class, List.of()),
-						d.getString("source"), at == null ? null : at.toInstant()));
+						d.getString("source"), at == null ? null : at.toInstant(),
+						over ? d.getString("type") : null, over && tp instanceof Number n ? n.doubleValue() : null));
 			}
 		}
 		out.sort(Comparator.comparingDouble(AccountScore::score).reversed());

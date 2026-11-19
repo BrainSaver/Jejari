@@ -165,6 +165,16 @@ python tools/ml/train_next.py --quick                   # GRU 없이 약 1분, �
   `python tools/ml/compare_dl.py data/ml/contest-<태그> --next data/ml/model-next-local/model.pkl`
 - 리허설 로그(`data/ml/contest-r1118*`)는 저장소에 없어서 다른 PC에서는 생성 데이터로만 시험한다
 
+## 닮은 유형 (`train_type.py` → `type.pkl`)
+
+```bash
+python3 tools/ml/train_type.py data/ml/model data/ml/g7/features.csv data/ml/g8/features.csv data/ml/g9/features.csv
+```
+
+- 봇이냐 아니냐는 지금처럼 `model.pkl`이 정하고, 이 모델은 "어떤 수법과 가장 닮았나"만 붙인다: SPEED(빠른 반복) · RETRY(같은 좌석 반복) · MULTI_ACCOUNT(다계정) · EVASIVE(사람 흉내) · CANCEL(취소·되팔기) · HOARD(사재기)
+- 정답은 생성기의 계열(family). 생성 데이터 안 정답률 99%는 낙관적인 값 — 화면은 **"닮은 유형(추정)"**으로만 쓰고, **봇 쪽으로 본 계정에만** 보여 준다 (사람에게 수법 이름을 붙이지 않음)
+- `score.py`가 `model.pkl` 옆에 `type.pkl`이 있으면 `scores.csv`에 `type`·`type_prob`를 더하고, `load_scores.sh`가 `model_score`(ERD v29)에 넣는다. 리허설 botc는 EVASIVE로 나옴
+
 ## 실험 스위치 (기본 꺼짐)
 
 | 환경 변수 | 무엇 | 왜 꺼 두나 |
