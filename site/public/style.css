@@ -765,14 +765,41 @@ mark.sr-hit.fade{outline-color:transparent}
 .rm-matrix td.dim,.rm-matrix tr.dimrow th{opacity:.3}
 .rm-matrix td.hl{background:var(--accent-soft)}
 
-/* 홈 상단 서비스 링크 */
-.svc-links{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 22px}
-.svc-main{display:inline-flex;align-items:center;gap:12px;padding:12px 18px;border:2px solid var(--accent);border-radius:12px;background:var(--accent-soft);color:var(--fg)}
-.svc-main:hover{background:var(--accent);color:var(--accent-fg);text-decoration:none}
-.svc-main b{display:block;font-size:17px}
-.svc-main small{display:block;font-size:12.5px;color:inherit;opacity:.75}
-.svc-ico{font-size:22px}
-.svc-arrow{font-size:18px;font-weight:700}
-.svc-sub{display:inline-flex;align-items:center;gap:4px;font-size:13px;padding:5px 10px;border:1px solid var(--line2);border-radius:8px;color:var(--muted);background:var(--bg2)}
-.svc-sub:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
-@media (max-width:480px){.svc-main{flex:1 1 100%}}
+/* 홈 */
+.hm .hm-hero{background:var(--bg2);border:1px solid var(--line);border-radius:16px;padding:24px 24px 22px;margin-bottom:8px}
+.hm-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px 20px;flex-wrap:wrap}
+.hm-head h1.page{font-size:28px}
+.hm-head .page-sub{margin:0 0 18px}
+.hm-mon{display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:5px 11px;border:1px solid var(--line2);border-radius:999px;color:var(--muted);background:var(--bg);white-space:nowrap}
+.hm-mon:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
+.hm-svcs{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.hm-svc{display:flex;align-items:center;gap:14px;padding:16px 18px;border:2px solid var(--accent);border-radius:12px;background:var(--accent-soft);color:var(--fg);transition:background .15s,color .15s}
+.hm-svc:hover{background:var(--accent);color:var(--accent-fg);text-decoration:none}
+.hm-svc-ic{flex:none;width:44px;height:44px;border-radius:10px;display:grid;place-items:center;background:var(--accent);color:var(--accent-fg)}
+.hm-svc:hover .hm-svc-ic{background:var(--accent-fg);color:var(--accent)}
+.hm-svc .hm-txt b{font-size:18px}
+.hm-svc .hm-txt span{opacity:.75}
+.hm-go{margin-left:auto;font-size:20px;font-weight:700}
+.hm-h{font-size:17px;font-weight:700;margin:26px 0 10px}
+.hm-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.hm-card{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;color:var(--fg)}
+a.hm-card:hover{border-color:var(--accent);text-decoration:none}
+a.hm-card:hover .hm-ic{background:var(--accent);color:var(--accent-fg)}
+.hm-ic{flex:none;width:38px;height:38px;border-radius:9px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);transition:background .15s,color .15s}
+.hm-txt{display:flex;flex-direction:column;min-width:0}
+.hm-txt b{font-size:16px;line-height:1.35}
+.hm-txt span{font-size:13.5px;color:inherit}
+.hm-card .hm-txt span{color:var(--muted)}
+.hm-llm{align-items:center}
+.hm-llm .btn{margin-left:auto;flex:none}
+@media (max-width:640px){
+  .hm .hm-hero{padding:18px 16px}
+  .hm-head h1.page{font-size:24px}
+  .hm-head{gap:0}
+  .hm-head .page-sub{margin-bottom:10px}
+  .hm-mon{margin-bottom:14px}
+  .hm{padding-bottom:40px}
+  .hm-svcs,.hm-grid{grid-template-columns:1fr}
+  .hm-llm{flex-wrap:wrap}
+  .hm-llm .btn{margin-left:50px}
+}

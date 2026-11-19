@@ -501,27 +501,41 @@ async function projectBundle() {
 
 // ---------- 페이지 ----------
 function pageHomeAnon() {
-  main.innerHTML = `<div class="wrap"><h1 class="page">제자리 설계 문서</h1>
-    <p class="page-sub">명절 열차 공정 예매 시스템의 설계 문서예요.${S.me ? '' : ' 팀원은 오른쪽 위에서 로그인하면 문서를 고칠 수 있어요.'}</p>
-    <div class="svc-links">
-      <a class="svc-main" href="https://jejari.duckdns.org/" target="_blank" rel="noopener"><span class="svc-ico" aria-hidden="true">🚆</span><span><b>이용자 사이트</b><small>jejari.duckdns.org</small></span><span class="svc-arrow" aria-hidden="true">↗</span></a>
-      <a class="svc-main" href="https://jejari.duckdns.org/admin" target="_blank" rel="noopener"><span class="svc-ico" aria-hidden="true">🛠️</span><span><b>관리자 사이트</b><small>jejari.duckdns.org/admin</small></span><span class="svc-arrow" aria-hidden="true">↗</span></a>
-      <a class="svc-sub" href="https://jejari.duckdns.org/grafana/login" target="_blank" rel="noopener" title="Grafana 에러·지표 확인"><span aria-hidden="true">📈</span> 에러 확인 (Grafana)</a>
+  const card = (href, icon, title, desc) => `<a class="hm-card" href="${href}"><span class="hm-ic">${svgI(icon, 20)}</span><span class="hm-txt"><b>${title}</b><span>${desc}</span></span></a>`;
+  const svc = (href, icon, title, url) => `<a class="hm-svc" href="${href}" target="_blank" rel="noopener"><span class="hm-svc-ic">${svgI(icon, 22)}</span><span class="hm-txt"><b>${title}</b><span>${url}</span></span><span class="hm-go" aria-hidden="true">↗</span></a>`;
+  main.innerHTML = `<div class="wrap hm">
+    <section class="hm-hero">
+      <div class="hm-head">
+        <div><h1 class="page">제자리 설계 문서</h1>
+        <p class="page-sub">명절 열차 공정 예매 시스템의 설계 문서예요.${S.me ? '' : ' 팀원은 오른쪽 위에서 로그인하면 문서를 고칠 수 있어요.'}</p></div>
+        <a class="hm-mon" href="https://jejari.duckdns.org/grafana/login" target="_blank" rel="noopener" title="Grafana에서 에러·지표 확인">${svgI('chart', 15)} 에러 확인 (Grafana) ↗</a>
+      </div>
+      <div class="hm-svcs">
+        ${svc('https://jejari.duckdns.org/', 'train', '이용자 사이트', 'jejari.duckdns.org')}
+        ${svc('https://jejari.duckdns.org/admin', 'gear', '관리자 사이트', 'jejari.duckdns.org/admin')}
+      </div>
+    </section>
+
+    <h2 class="hm-h">진행 상황</h2>
+    <div class="hm-grid two">
+      ${card('#/roadmap', 'map', '로드맵', '기능 영역별 보드, A~E 파트별 진행, 개발자에게 남길 말')}
+      ${card('#/doc/plan', 'doc', '기획서', '프로젝트 목표, 팀 역할, 일정, 기술 선택 이유')}
     </div>
-    <div class="cards">
-      <a class="card" href="#/roadmap"><h3>로드맵</h3><p>기능 영역별 보드, A~E 파트별 했다·안 했다, 개발자에게 남길 말</p></a>
-      <a class="card" href="#/doc/plan"><h3>기획서</h3><p>프로젝트 목표, 팀 역할, 일정, 기술 선택 이유</p></a>
-      <a class="card" href="#/doc/func"><h3>기능설계</h3><p>기능 목록, 상세, 상태 전이, API, Kafka, 에러 코드</p></a>
-      <a class="card" href="#/db"><h3>DB설계 · ERD</h3><p>Oracle·MongoDB·Redis·Kafka 역할, 테이블 정의, ERD</p></a>
-      <a class="card" href="#/ui"><h3>화면설계</h3><p>사용자 11개, 관리자 7개 화면을 눌러 보는 시안과 설명</p></a>
-      <a class="card" href="#/doc/conc"><h3>동시성</h3><p>트랜잭션 순서, SQL, Redis Lua, 락 순서, 테스트 목록</p></a>
-      <a class="card" href="#/people"><h3>팀원 문서</h3><p>팀원별 개발일지, 기능 문서, 트러블슈팅, 기여 정리</p></a>
+
+    <h2 class="hm-h">설계</h2>
+    <div class="hm-grid">
+      ${card('#/doc/func', 'ticket', '기능설계', '기능 목록, 상세, 상태 전이, API, Kafka, 에러 코드')}
+      ${card('#/db', 'database', 'DB설계 · ERD', 'Oracle·MongoDB·Redis·Kafka 역할, 테이블 정의, ERD')}
+      ${card('#/ui', 'monitor', '화면설계', '사용자 11개, 관리자 7개 화면 시안과 설명')}
+      ${card('#/doc/conc', 'cpu', '동시성', '트랜잭션 순서, SQL, Redis Lua, 락 순서, 테스트')}
     </div>
-    <div class="llm-all">
-      <div><h3>프로젝트 전체를 LLM에 주기</h3>
-      <p class="muted">기획서·기능설계·동시성·DB설계·화면설계 설명을 한 덩어리로 복사해요. Claude·ChatGPT처럼 긴 글을 받는 곳에 붙여 넣고 질문하면 프로젝트 전체를 아는 상태로 답해요. 문서마다 위쪽의 "LLM용 전체 복사", 섹션마다 "LLM 복사", 글을 드래그하면 "AI에게 물어보기"도 있어요.</p></div>
-      <button class="btn" data-copyproject>프로젝트 전체 LLM용 복사</button>
-    </div></div>`;
+
+    <h2 class="hm-h">팀</h2>
+    <div class="hm-grid two">
+      ${card('#/people', 'user', '팀원 문서', '팀원별 개발일지, 기능 문서, 트러블슈팅, 기여 정리')}
+      <div class="hm-card hm-llm"><span class="hm-ic">${svgI('bot', 20)}</span><span class="hm-txt"><b>프로젝트 전체를 LLM에 주기</b><span>기획서·기능설계·동시성·DB설계·화면설계 설명을 한 번에 복사해 Claude·ChatGPT에 붙여 넣고 질문하세요.</span></span><button class="btn sm" data-copyproject>전체 복사</button></div>
+    </div>
+  </div>`;
   $('[data-copyproject]', main).addEventListener('click', () => copyLater(projectBundle, '프로젝트 문서 전체를 LLM용으로 복사했어요.'));
 }
 function pageLocked() {
