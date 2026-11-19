@@ -17,11 +17,13 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
   UNION ALL
   SELECT '4. 차량 유형 2개',                   CASE WHEN COUNT(*) = 2   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM car_type
   UNION ALL
-  SELECT '5. 열차 2편',                        CASE WHEN COUNT(*) = 2   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train
+  -- 5~7은 시드 열차(1·2)만 셉니다. 실제 시간표 열차(train_id 10000~, tools/load-tago-schedule.js)와
+  -- 관리자 화면에서 만든 열차는 편성·좌석을 각자 넣습니다 (13·14와 같은 범위)
+  SELECT '5. 시드 열차 2편',                   CASE WHEN COUNT(*) = 2   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train WHERE train_id IN (1, 2)
   UNION ALL
-  SELECT '6. 편성 20호차',                     CASE WHEN COUNT(*) = 20  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_car
+  SELECT '6. 시드 편성 20호차',                CASE WHEN COUNT(*) = 20  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_car WHERE train_id IN (1, 2)
   UNION ALL
-  SELECT '7. 좌석 1050석 (525 × 2)',           CASE WHEN COUNT(*) = 1050 THEN 1 ELSE 0 END,     '실제 ' || COUNT(*) FROM seat
+  SELECT '7. 시드 좌석 1050석 (525 × 2)',      CASE WHEN COUNT(*) = 1050 THEN 1 ELSE 0 END,     '실제 ' || COUNT(*) FROM seat WHERE train_id IN (1, 2)
   UNION ALL
   SELECT '8. 호차 좌석수 = car_type.seat_count', CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END,
          '어긋난 호차 ' || COUNT(*) || '건'
