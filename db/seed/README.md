@@ -273,3 +273,5 @@ docker compose rm -sf oracle && docker volume rm jejari_oracle-data && docker co
 | C 길동현 | `PER_DAY` scope를 `concurrency.md` §10에 넣었습니다 (구매일 기준). 절차 문서를 고쳤으니 봐 주세요 |
 | E 조영준 | Docker Compose에서 Oracle 컨테이너에 `TZ=Asia/Seoul`이 필요합니다 (동시성 §0.7, 검증 20번) |
 | A 김성원 | 대기열 테스트용 `ON_SALE` 운행은 `run_id = 9001`(하행)·`9002`(상행)입니다 |
+
+> 11-19 시험: `db/patch/v0.sql`은 관리자 화면 BLOCKED 승인 시험용 패치입니다 (DB 변경 없음).

@@ -5,7 +5,8 @@
 #   1) CI(GitHub Actions)가 성공한 커밋 — main 최신부터 거꾸로 5개 중 가장 최근 성공 커밋 (진행 중·실패는 건너뜀)
 #   2) 앱에 영향을 주는 파일이 바뀜 — 문서만 바뀌었으면 빌드하지 않고 "반영됨"으로만 기록
 #   3) DB·인프라가 안 바뀜 — ERD/DDL·시드·패치·compose·Caddy가 바뀌면 자동 배포를 멈추고 사람을 기다림
-#      (코드만 배포하면 옛 DB 제약에 걸릴 수 있음. DB를 맞춘 뒤 `bash deploy/deploy.sh`를 직접 실행하면 풀림)
+#      (코드만 배포하면 옛 DB 제약에 걸릴 수 있음. DB를 맞춘 뒤 `bash deploy/deploy.sh`를 직접 실행하거나
+#      관리자 화면 A-08에서 DB 패치 적용·승인하면 풀림 → ~/jejari-app/autodeploy.approved)
 #
 # 서버에 비밀값을 더 두지 않는다: 공개 저장소를 받고, CI 결과는 공개 GitHub API로 본다 (시간당 60회 한도 안).
 # 상태: ~/jejari-app/autodeploy.state (OK / WAITING_CI / CI_FAILED / BLOCKED / FAILED), 로그: journalctl -u jejari-autodeploy
@@ -88,8 +89,16 @@ if [[ -z "$NEW" ]]; then
 fi
 SHORT=${NEW:0:7}
 
-# 이미 차단·실패로 판단한 커밋이면 다시 하지 않음 (더 새 커밋이 CI를 통과하면 그때 다시 판단)
-if grep -qE "^[0-9-]+ [0-9:]+ (BLOCKED|FAILED) $SHORT " "$STATE" 2>/dev/null; then
+# 관리자 화면(A-08)에서 BLOCKED를 승인한 커밋 (DeployApprovalService가 씀). 그 커밋 하나에만 유효
+APPROVED=$(awk 'NR==1{print $1}' "$APP/autodeploy.approved" 2>/dev/null)
+
+# 이미 차단·실패로 판단한 커밋이면 다시 하지 않음 (더 새 커밋이 CI를 통과하면 그때 다시 판단). 승인된 BLOCKED는 진행
+if grep -qE "^[0-9-]+ [0-9:]+ FAILED $SHORT " "$STATE" 2>/dev/null; then
+  exit 0
+fi
+# (autodeploy.blocked가 이 커밋 것이 아니면 다시 판단해 목록을 남김: 이 기능 전에 멈춘 커밋도 화면에 나오게)
+if [[ "$APPROVED" != "$NEW" ]] && grep -qE "^[0-9-]+ [0-9:]+ BLOCKED $SHORT " "$STATE" 2>/dev/null \
+   && [[ "$(head -1 "$APP/autodeploy.blocked" 2>/dev/null)" == "$NEW" ]]; then
   exit 0
 fi
 
@@ -97,8 +106,14 @@ fi
 changed=$(git diff --name-only "$CUR" "$NEW")
 # 사람이 적용해야 하는 것: DB·시드·compose·Caddy·Prometheus 설정, systemd 유닛(설치에 sudo), 경보 규칙(Grafana 재시작), sudoers
 blocking=$(grep -E '^(docs/erd/|db/|compose\.yaml$|docker/|deploy/compose\.server\.yaml$|deploy/Caddyfile$|deploy/prometheus\.server\.yml$|deploy/jejari[@-][a-z]*\.(service|timer)$|deploy/jejari@\.service$|deploy/grafana-alerting/|deploy/sudoers-jejari$)' <<<"$changed" || true)
+if [[ -n "$blocking" && "$APPROVED" == "$NEW" ]]; then
+  echo "BLOCKED였지만 관리자 화면에서 승인된 커밋 → 배포 진행: $(echo $blocking | cut -c1-200)"
+  blocking=""
+fi
 if [[ -n "$blocking" ]]; then
-  state "BLOCKED $SHORT DB·인프라 변경이 있어 자동 배포를 멈춤 → DB 패치·compose 반영 뒤 'bash deploy/deploy.sh' 직접 실행: $(echo $blocking | cut -c1-200)"
+  # 관리자 화면이 파일별 할 일을 보여 주도록 커밋과 막힌 파일 목록을 남김 (첫 줄 커밋, 다음 줄부터 파일)
+  { echo "$NEW"; echo "$blocking"; } > "$APP/autodeploy.blocked"
+  state "BLOCKED $SHORT DB·인프라 변경이 있어 자동 배포를 멈춤 → 관리자 화면 A-08에서 확인·승인, 또는 DB 패치·compose 반영 뒤 'bash deploy/deploy.sh' 직접 실행: $(echo $blocking | cut -c1-200)"
   exit 0
 fi
 appfiles=$(grep -E '^(src/main/|frontend/|build\.gradle$|settings\.gradle$|gradle/|gradlew$|deploy/deploy\.sh$)' <<<"$changed" || true)
