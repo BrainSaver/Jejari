@@ -82,7 +82,7 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
   | CI **실패** | 배포 안 함 (`CI_FAILED`), 다음 커밋을 기다림 |
   | 문서·테스트만 바뀜 | 빌드 없이 "반영됨"으로 기록 (`OK`) |
   | 코드·화면·빌드 설정이 바뀜 | **그 커밋으로 고정해 배포** (앱 재시작, 약 40초~1분 느려짐) (`OK`) |
-  | **ERD·DB 패치·시드·compose·Caddy가 바뀜** | **멈추고 사람을 기다림** (`BLOCKED`) → DB 패치·`docker compose up -d` 뒤 `bash deploy/deploy.sh`를 직접 실행하면 기준이 앞으로 가서 풀림 |
+  | **ERD·DB 패치·시드·compose·Caddy가 바뀜** | **멈추고 사람을 기다림** (`BLOCKED`) → 관리자 화면 A-08 "막힌 커밋 승인"에서 패치 적용·승인, 또는 DB 패치·`docker compose up -d` 뒤 `bash deploy/deploy.sh`를 직접 실행하면 기준이 앞으로 가서 풀림 |
   | 배포 실패 (앱이 안 뜸) | 같은 커밋을 반복하지 않음 (`FAILED`), 살아 있는 한 대가 응답. 로그 확인 후 고쳐서 다음 커밋으로 |
 
   ```bash
@@ -93,7 +93,7 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
   sudo systemctl disable --now jejari-autodeploy.timer   # 자동 배포 끄기 (시연 중 등)
   ```
 
-- **관리자 화면 "배포" 버튼** (A-08, 11-19~): 위 자동 배포 장치를 **지금 한 번** 실행 (`sudo systemctl start --no-block jejari-autodeploy.service`). 그래서 CI 확인·BLOCKED는 그대로이고 **BLOCKED는 버튼으로 못 풂**. 누를 수 있는 사람은 서버 `.env`의 `JEJARI_OPS_DEPLOY_ADMIN_IDS`(관리자 번호), 켜는 스위치 `JEJARI_OPS_DEPLOY_ENABLED=true`. 누른 기록 `~/jejari-app/deploy-requests.log`. 연타는 1분 간격. **프로젝트가 끝나면 끔** (웹에서 서버 명령을 실행하는 기능)
+- **관리자 화면 "배포" 버튼** (A-08, 11-19~): 위 자동 배포 장치를 **지금 한 번** 실행 (`sudo systemctl start --no-block jejari-autodeploy.service`). 그래서 CI 확인·BLOCKED는 그대로이고 **BLOCKED는 배포 버튼으로 못 풂** → 같은 화면 아래 **"막힌 커밋 승인"**(11-19~, `DeployApprovalService`)에서 DB 패치 [적용]·서버 작업 체크 후 승인하면 그 커밋만 BLOCKED를 건너뛰고 배포 (`~/jejari-app/autodeploy.blocked`·`autodeploy.approved`·`db-patches.applied`·`deploy-approvals.log`, 문서 `docs/길동현/features/배포-승인.md`). 누를 수 있는 사람은 서버 `.env`의 `JEJARI_OPS_DEPLOY_ADMIN_IDS`(관리자 번호), 켜는 스위치 `JEJARI_OPS_DEPLOY_ENABLED=true`. 누른 기록 `~/jejari-app/deploy-requests.log`. 연타는 1분 간격. **프로젝트가 끝나면 끔** (웹에서 서버 명령을 실행하는 기능)
 - **직접 배포**: `bash deploy/deploy.sh` (main 기준) 또는 `DEPLOY_SHA=<커밋> bash deploy/deploy.sh`. DB를 맞춘 뒤, 또는 자동 배포를 끈 동안
 
 - **BLOCKED 풀기**: 아래 "운영자 안내 → BLOCKED 풀기 (한 단계씩)" (ERD가 바뀌면 거의 항상 멈춤. 11-19 v25~v28 모두 이렇게 풂)

@@ -9,13 +9,14 @@ import { ConfirmButton, ErrorBox } from './ui.jsx';
  *   GET  /api/v1/admin/deploy   지금 서버 버전 · 마지막 판단 · 진행 중 여부
  *   POST /api/v1/admin/deploy   시작만 걸고 바로 돌아옴 (SUPERVISOR 중 서버 .env에 적힌 관리자만)
  * 배포 중에는 앱이 재시작돼 이 화면의 요청이 잠깐 느리거나 실패할 수 있다 → 몇 초마다 다시 읽는다.
+ * BLOCKED면 아래 BlockedPanel에서 막힌 파일별 할 일을 처리하고 승인한다 (DeployApprovalService).
  * 프로젝트가 끝나면 지운다.
  */
 const STATE = {
   OK: ['go', '정상', '서버가 main의 최신(CI 통과) 버전이에요.'],
   WAITING_CI: ['amber', 'CI 기다림', '새 커밋의 GitHub CI가 아직 안 끝났어요. 끝나면 다시 누르거나 다음 자동 주기(20분)를 기다리세요.'],
   CI_FAILED: ['stop', 'CI 실패', '최근 커밋들이 CI를 통과하지 못해 배포하지 않았어요.'],
-  BLOCKED: ['stop', '멈춤 (DB·인프라 변경)', 'ERD·DB 패치·시드·서버 설정이 바뀐 커밋이에요. 버튼으로는 못 풀어요 → 운영자가 서버에서 DB 패치를 적용한 뒤 배포 (deploy/README.md "BLOCKED 풀기").'],
+  BLOCKED: ['stop', '멈춤 (DB·인프라 변경)', 'ERD·DB 패치·시드·서버 설정이 바뀐 커밋이에요. 아래 "막힌 커밋 승인"에서 할 일을 처리하고 승인하면 배포돼요.'],
   FAILED: ['stop', '실패', '빌드나 앱 기동이 실패했어요. 서버 로그를 확인하세요 (journalctl -u jejari-autodeploy).'],
 };
 
@@ -95,6 +96,153 @@ export default function Deploy() {
           </section>
         </div>
       )}
+      {s?.enabled && s.lastState === 'BLOCKED' && <BlockedPanel onChanged={load} />}
     </>
+  );
+}
+
+const KIND = {
+  PATCH: ['amber', 'DB 패치'],
+  INFO: ['go', '할 일 없음'],
+  MANUAL: ['stop', '서버에서 직접'],
+};
+
+/**
+ * BLOCKED 승인 (DeployApprovalService). 막힌 파일마다 할 일을 보여 준다.
+ *   DB 패치 → [적용]으로 Oracle에 넣음 / 문서·시드 → 자동 통과 / 그 밖 → 서버에서 직접 하고 "처리함" 체크
+ * 모두 끝나야 [승인]이 켜지고, 승인하면 자동 배포가 그 커밋 하나만 BLOCKED를 건너뛰고 배포한다.
+ * 프로젝트가 끝나면 지운다.
+ */
+function BlockedPanel({ onChanged }) {
+  const [b, setB] = useState(null);
+  const [error, setError] = useState(null);
+  const [checked, setChecked] = useState({});
+  const [results, setResults] = useState({});
+  const [open, setOpen] = useState({});
+
+  const load = () => get('/api/v1/admin/deploy/blocked').then((r) => { setB(r); setError(null); }).catch(setError);
+  useEffect(() => {
+    load();
+  }, []);
+
+  if (error) return <ErrorBox error={error} onClose={() => setError(null)} />;
+  if (!b) return null;
+  if (!b.blocked) {
+    return (
+      <section className="panel" style={{ marginTop: 16 }}>
+        <h2>막힌 커밋 승인</h2>
+        <p className="sub">막힌 파일 목록이 아직 없어요. 자동 배포 장치가 한 번 더 돌면 생겨요 (최대 20분, 위 "지금 배포"를 누르면 바로).</p>
+      </section>
+    );
+  }
+
+  const apply = async (path) => {
+    setError(null);
+    try {
+      const r = await post('/api/v1/admin/deploy/blocked/patches', { sha: b.sha, path });
+      setResults((x) => ({ ...x, [path]: r }));
+      await load();
+    } catch (e) {
+      setError(e);
+    }
+  };
+  const show = async (path) => {
+    if (open[path] !== undefined) {
+      setOpen((x) => { const y = { ...x }; delete y[path]; return y; });
+      return;
+    }
+    try {
+      const r = await get(`/api/v1/admin/deploy/blocked/file?sha=${b.sha}&path=${encodeURIComponent(path)}`);
+      setOpen((x) => ({ ...x, [path]: r.content }));
+    } catch (e) {
+      setError(e);
+    }
+  };
+  const approve = async () => {
+    setError(null);
+    try {
+      const confirmed = b.items.filter((i) => i.kind === 'MANUAL' && checked[i.path]).map((i) => i.path);
+      setB(await post('/api/v1/admin/deploy/blocked/approve', { sha: b.sha, confirmed }));
+      onChanged();
+    } catch (e) {
+      setError(e);
+    }
+  };
+
+  const manualLeft = b.items.filter((i) => i.kind === 'MANUAL' && !checked[i.path]).length;
+  const patchLeft = b.items.filter((i) => i.kind === 'PATCH' && !i.done).length;
+
+  return (
+    <section className="panel" style={{ marginTop: 16 }}>
+      <h2>막힌 커밋 승인</h2>
+      <p className="sub">
+        <code>{b.shortSha}</code> <span className="mut">{b.subject}</span>
+      </p>
+      <div className="alert sky">
+        DB 패치는 <b>[적용]</b>으로 Oracle에 넣어요. "서버에서 직접"은 적힌 명령을 운영자가 서버에서 실행한 뒤(또는 배포 직후 하기로 하고) 체크하세요.
+        모두 끝나면 <b>승인</b>할 수 있고, 승인하면 이 커밋 하나만 BLOCKED를 건너뛰고 배포해요.
+      </div>
+      <table>
+        <thead>
+          <tr><th>파일</th><th style={{ width: 110 }}>종류</th><th>할 일</th><th style={{ width: 150 }} /></tr>
+        </thead>
+        <tbody>
+          {b.items.map((i) => {
+            const [tone, label] = KIND[i.kind];
+            const r = results[i.path];
+            return (
+              <tr key={i.path}>
+                <td>
+                  <code>{i.path}</code>
+                  {b.canAct && (
+                    <button type="button" className="btn ghost sm" style={{ marginLeft: 6, minHeight: 24 }} onClick={() => show(i.path)}>
+                      {open[i.path] !== undefined ? '닫기' : '내용'}
+                    </button>
+                  )}
+                  {open[i.path] !== undefined && (
+                    <pre style={{ maxHeight: 260, overflow: 'auto', fontSize: 12, marginTop: 6, whiteSpace: 'pre-wrap' }}>{open[i.path]}</pre>
+                  )}
+                  {r && (
+                    <div className={`alert ${r.ok ? 'go' : 'stop'}`} style={{ marginTop: 6 }}>
+                      {r.ok ? '적용했어요' : '실패했어요 (ORA-/SP2- 오류)'}
+                      <pre style={{ maxHeight: 200, overflow: 'auto', fontSize: 12, whiteSpace: 'pre-wrap' }}>{r.output}</pre>
+                    </div>
+                  )}
+                </td>
+                <td><span className={`st ${i.done ? 'go' : tone}`}>{i.done ? (i.kind === 'PATCH' ? '적용함' : label) : label}</span></td>
+                <td className="mut" style={{ fontSize: 13 }}>{i.kind === 'MANUAL' ? <code>{i.how}</code> : i.how}</td>
+                <td>
+                  {i.kind === 'PATCH' && b.canAct && (
+                    <ConfirmButton confirm="한 번 더 누르면 적용" onConfirm={() => apply(i.path)}>
+                      {i.done ? '다시 적용' : '적용'}
+                    </ConfirmButton>
+                  )}
+                  {i.kind === 'MANUAL' && b.canAct && (
+                    <label style={{ fontSize: 13 }}>
+                      <input type="checkbox" checked={!!checked[i.path]} onChange={(e) => setChecked((x) => ({ ...x, [i.path]: e.target.checked }))} /> 처리함
+                    </label>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div style={{ marginTop: 12 }}>
+        {b.approvedAt ? (
+          <div className="alert go">승인됨 ({b.approvedAt}). 자동 배포가 이 커밋을 배포해요. 위 "마지막 판단"이 바뀔 때까지 기다려 주세요.</div>
+        ) : (
+          <>
+            <ConfirmButton className="btn" confirm="한 번 더 누르면 승인·배포" onConfirm={approve} disabled={!b.canAct || patchLeft > 0 || manualLeft > 0}>
+              승인하고 배포
+            </ConfirmButton>
+            {b.canAct && (patchLeft > 0 || manualLeft > 0) && (
+              <p className="sub" style={{ marginTop: 8 }}>남은 일: DB 패치 {patchLeft}개, 서버 작업 체크 {manualLeft}개</p>
+            )}
+            {!b.canAct && <p className="sub" style={{ marginTop: 8 }}>이 계정은 보기만 돼요.</p>}
+          </>
+        )}
+      </div>
+    </section>
   );
 }
