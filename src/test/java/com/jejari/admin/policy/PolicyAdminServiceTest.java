@@ -142,4 +142,19 @@ class PolicyAdminServiceTest {
 	void 범위를_알려_준_모듈이_없는_키는_형식만_본다() {
 		PolicyAdminService.checkRange("queue.admit_per_sec", "100000", null);
 	}
+
+	@Test
+	void 지금_정수인_키에는_소수를_넣을_수_없다() {
+		Policy admit = new Policy("queue.admit_per_sec", "queue", "200", null, 1, "NUMBER", "", null, null);
+		assertThatThrownBy(() -> PolicyAdminService.checkKeepsInteger(admit, "200.5"))
+				.isInstanceOf(BusinessException.class).hasMessageContaining("정수");
+		PolicyAdminService.checkKeepsInteger(admit, "300");
+	}
+
+	@Test
+	void 지금_소수인_키는_소수를_받는다() {
+		Policy ratio = new Policy("replay.full_record_ratio", "replay", "0.10", null, 1, "NUMBER", "", null, null);
+		PolicyAdminService.checkKeepsInteger(ratio, "0.25");
+		PolicyAdminService.checkKeepsInteger(ratio, "1");
+	}
 }

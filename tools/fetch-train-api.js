@@ -22,7 +22,7 @@
  *   - API는 **중간역 정차 시각을 주지 않는다** (출발역·도착역 둘뿐). 그래서 역 쌍을 돌며
  *     모아야 한다. 어떤 역의 도착 시각은 (기점 → 그 역), 출발 시각은 (그 역 → 종점)에서 나온다.
  *   - 운임은 **일반실 어른(adultcharge)만** 준다. 특실은 여전히 우리가 정한다.
- *   - 서비스키는 .env 의 DATA_GO_KR_KEY. 저장소에 올리지 않는다.
+ *   - 서비스키는 .env 의 DATA_GO_KR_KEY (옛 이름 DATA_GO_KR_KEY_DEC 도 받는다). 저장소에 올리지 않는다.
  */
 'use strict';
 
@@ -47,12 +47,27 @@ const STATIONS = [
 const GRADE = 'KTX';
 
 // ───────────────────────────────── API 호출
+/**
+ * 서비스키를 찾는다. 환경변수 먼저, 없으면 .env 의 그 줄만 읽는다.
+ *
+ * 이름이 둘인 이유: 예전 포털은 인코딩·디코딩 키를 따로 줬고, tools/load-tago-schedule.js 가
+ * 디코딩 키를 쓴다는 뜻으로 DATA_GO_KR_KEY_DEC 를 썼다. 요즘 포털은 64자 키 하나만 주므로
+ * 팀은 DATA_GO_KR_KEY 하나로 모으는 중이다. 팀원 .env 를 깨뜨리지 않으려고 옛 이름도 받는다.
+ */
 function key() {
+  const NAMES = ['DATA_GO_KR_KEY', 'DATA_GO_KR_KEY_DEC'];
+  for (const n of NAMES) {
+    if (process.env[n]) return process.env[n].trim();
+  }
   const env = path.join(ROOT, '.env');
-  if (!fs.existsSync(env)) throw new Error('.env 가 없습니다. DATA_GO_KR_KEY 를 넣어 주세요');
-  const line = fs.readFileSync(env, 'utf8').split(/\r?\n/).find((l) => l.startsWith('DATA_GO_KR_KEY='));
-  if (!line) throw new Error('.env 에 DATA_GO_KR_KEY 가 없습니다 (공공데이터포털 일반 인증키)');
-  return line.slice('DATA_GO_KR_KEY='.length).trim();
+  if (fs.existsSync(env)) {
+    const text = fs.readFileSync(env, 'utf8');
+    for (const n of NAMES) {
+      const hit = text.split(/\r?\n/).find((l) => l.startsWith(n + '='));
+      if (hit) return hit.slice(n.length + 1).trim();
+    }
+  }
+  throw new Error('DATA_GO_KR_KEY 가 없습니다 (환경변수 또는 .env, 공공데이터포털 일반 인증키)');
 }
 
 const SERVICE_KEY = key();

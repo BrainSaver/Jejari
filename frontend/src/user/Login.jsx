@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { memberLogin } from '../api/client.js';
 import Icon, { Seal } from '../admin/Icon.jsx';
 import { useMember } from './useMember.js';
+import { BUSY_MESSAGE, isBusy } from '../lib/busy.js';
 
 /**
  * U-01 로그인 (AUTH-03). POST /api/v1/auth/login → 액세스 토큰(메모리) + 리프레시 토큰(httpOnly 쿠키)
@@ -37,9 +38,13 @@ export default function Login() {
       await memberLogin(email.trim(), password);
       navigate(next, { replace: true });
     } catch (err) {
-      setError(MESSAGES[err.code] || err.message);
-      setPassword('');
-      pwRef.current?.focus();
+      if (isBusy(err)) {
+        setError(BUSY_MESSAGE); // 서버가 바쁜 것 → 비밀번호를 다시 치게 하지 않는다
+      } else {
+        setError(MESSAGES[err.code] || err.message);
+        setPassword('');
+        pwRef.current?.focus();
+      }
     } finally {
       setBusy(false);
     }

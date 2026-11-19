@@ -13,6 +13,7 @@ import { ErrorBox } from './ui.jsx';
  */
 const W = 1000;
 const H = 625; // 16:10
+const TOP = 44; // 위쪽 화면 이름 띠
 const SPEEDS = [1, 4, 16];
 const TRAIL_MS = 1500;
 const CLICK_MS = 900;
@@ -69,6 +70,7 @@ function Player({ data, markers }) {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(4);
   const raf = useRef(0);
+  const stepsRef = useRef(null);
 
   useEffect(() => {
     setT(tl.start);
@@ -95,45 +97,65 @@ function Player({ data, markers }) {
     return () => cancelAnimationFrame(raf.current);
   }, [playing, speed, tl]);
 
-  const screen = lastBefore(tl.pages, t)?.screen || '—';
+  const page = lastBefore(tl.pages, t);
+  const screen = page?.screen || '';
+  const layout = lastBefore(tl.layouts, t);
+  const boxes = layout && layout.screen === screen ? layout.boxes : [];
   const hidden = lastBefore(tl.visibility, t)?.target === 'hidden';
   const trail = tl.points.filter((p) => p.t <= t && p.t >= t - TRAIL_MS);
   const cursor = lastBefore(tl.points, t) || lastBefore(tl.clicks, t);
   const clicks = tl.clicks.filter((c) => c.t <= t && c.t >= t - CLICK_MS);
-  const scroll = lastBefore(tl.scrolls, t)?.y ?? 0;
-  const server = tl.server.filter((s) => s.t <= t).slice(-6);
-  const recent = tl.all.filter((e) => e.t <= t).slice(-6);
   const span = Math.max(1, tl.end - tl.start);
   const caseMarks = markers.map((m) => Date.parse(m.at)).filter((x) => x >= tl.start && x <= tl.end);
+  const done = tl.steps.filter((s) => s.t <= t);
+
+  // 줄글은 지금 줄이 보이게 따라 내려간다
+  useEffect(() => {
+    const el = stepsRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [done.length]);
+
+  const y = (v) => TOP + (v / 1000) * (H - TOP);
+  const seatName = (id) => data.seats?.[id] || null;
 
   return (
     <div className="cols" style={{ alignItems: 'start' }}>
       <div>
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`녹화 화면 ${screen}`}
-          style={{ width: '100%', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, display: 'block' }}>
-          <rect x="0" y="0" width={W} height="44" fill="var(--line2)" />
-          <text x="18" y="29" fontSize="20" fill="var(--ink)" fontWeight="700">{screen}</text>
-          <text x={W - 18} y="29" fontSize="16" fill="var(--mut)" textAnchor="end">{clock(new Date(t))}</text>
-          <rect x={W - 10} y={44 + (scroll / 1000) * (H - 104)} width="6" height="60" rx="3" fill="var(--line)" />
+        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`녹화 화면 ${screenName(screen)}`}
+          style={{ width: '100%', background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: 8, display: 'block' }}>
+          <rect x="0" y="0" width={W} height={TOP} fill="var(--ink)" />
+          <text x="18" y="29" fontSize="20" fill="var(--cream)" fontWeight="700">{screenName(screen)}</text>
+          <text x={W - 18} y="29" fontSize="16" fill="var(--cream)" textAnchor="end" opacity="0.8">{clock(new Date(t))}</text>
+          {/* 그때 회원 화면의 뼈대 (버튼·입력 칸·좌석의 위치와 상태). 화면 글자는 녹화하지 않아 버튼 문구만 */}
+          {boxes.map((b, i) => <BoxShape key={i} b={b} y={y} seatName={seatName} />)}
+          {!boxes.length && screen && (
+            <text x={W / 2} y={H / 2} fontSize="18" fill="var(--mut)" textAnchor="middle">이 화면의 배치는 녹화되지 않았어요 (클릭·마우스만)</text>
+          )}
           {trail.length > 1 && (
-            <polyline points={trail.map((p) => `${p.x},${(p.y / 1000) * H}`).join(' ')} fill="none" stroke="var(--ink2)" strokeWidth="3" strokeOpacity="0.6" strokeLinejoin="round" />
+            <polyline points={trail.map((p) => `${p.x},${y(p.y)}`).join(' ')} fill="none" stroke="var(--ink2)" strokeWidth="3" strokeOpacity="0.55" strokeLinejoin="round" />
           )}
           {clicks.map((c) => {
             const k = 1 - (t - c.t) / CLICK_MS;
+            const name = seatName(c.target) || c.label || '';
             return (
               <g key={c.seq}>
-                <circle cx={c.x} cy={(c.y / 1000) * H} r={10 + (1 - k) * 26} fill="none" stroke="var(--stop)" strokeWidth="3" opacity={k} />
-                {c.target && <text x={c.x + 16} y={(c.y / 1000) * H - 14} fontSize="16" fill="var(--stop)" opacity={k}>{c.target}</text>}
+                <circle cx={c.x} cy={y(c.y)} r={10 + (1 - k) * 26} fill="none" stroke="var(--stop)" strokeWidth="3" opacity={k} />
+                {name && (
+                  <g opacity={k}>
+                    <rect x={c.x + 12} y={y(c.y) - 40} width={name.length * 15 + 16} height="28" rx="6" fill="var(--stop)" />
+                    <text x={c.x + 20} y={y(c.y) - 20} fontSize="16" fill="var(--cream)" fontWeight="700">{name}</text>
+                  </g>
+                )}
               </g>
             );
           })}
           {cursor && cursor.x != null && (
-            <path d={`M${cursor.x},${(cursor.y / 1000) * H} l0,22 l6,-6 l10,0 z`} fill="var(--ink)" stroke="var(--card)" strokeWidth="1.5" />
+            <path d={`M${cursor.x},${y(cursor.y)} l0,22 l6,-6 l10,0 z`} fill="var(--ink)" stroke="var(--card)" strokeWidth="1.5" />
           )}
           {hidden && (
             <g>
-              <rect x="0" y="44" width={W} height={H - 44} fill="var(--ink)" opacity="0.35" />
-              <text x={W / 2} y={H / 2} fontSize="26" fill="var(--card)" textAnchor="middle" fontWeight="700">탭이 숨겨짐</text>
+              <rect x="0" y={TOP} width={W} height={H - TOP} fill="var(--ink)" opacity="0.4" />
+              <text x={W / 2} y={H / 2} fontSize="26" fill="var(--cream)" textAnchor="middle" fontWeight="700">다른 탭으로 나감</text>
             </g>
           )}
         </svg>
@@ -154,30 +176,100 @@ function Player({ data, markers }) {
             <span key={i} title="탐지 마커" style={{ position: 'absolute', top: -4, left: `${((m - tl.start) / span) * 100}%`, width: 3, height: 10, background: 'var(--stop)' }} />
           ))}
         </div>
+        <Legend />
       </div>
       <div>
-        <h2 style={{ fontSize: 14 }}>서버에서 일어난 일</h2>
-        {!server.length && <p className="mut" style={{ fontSize: 13 }}>아직 없음</p>}
-        {server.map((s, i) => (
-          <div key={i} className="row" style={{ fontSize: 13, padding: '3px 0', borderBottom: '1px solid var(--line2)' }}>
-            <span className="faint num">{clock(new Date(s.t))}</span>
-            <span className="grow">{s.event_type}{s.run_id ? ` · 운행 ${s.run_id}` : ''}</span>
-            <span className={'st plain ' + (s.response_status >= 400 ? 'stop' : 'go')}>{s.response_status}</span>
-          </div>
-        ))}
-        <h2 style={{ fontSize: 14, marginTop: 14 }}>화면 이벤트</h2>
-        {recent.map((e) => (
-          <div key={e.seq} className="row" style={{ fontSize: 13, padding: '3px 0', borderBottom: '1px solid var(--line2)' }}>
-            <span className="faint num">{clock(new Date(e.t))}</span>
-            <span className="grow">{e.type}{e.target ? ` · ${e.target}` : ''}{e.input_masked ? ` · ${e.input_masked}` : ''}</span>
-          </div>
-        ))}
+        <h2 style={{ fontSize: 14 }}>무엇을 했나 <span className="mut" style={{ fontWeight: 500 }}>화면 동작과 서버 결과를 시간순으로</span></h2>
+        <div ref={stepsRef} style={{ maxHeight: 420, overflowY: 'auto' }}>
+          {!done.length && <p className="mut" style={{ fontSize: 13 }}>[재생]을 누르면 한 줄씩 나와요. 재생 막대를 끌어도 돼요.</p>}
+          {done.map((s, i) => (
+            <div key={i} className="row" style={{ fontSize: 13, padding: '4px 0', borderBottom: '1px solid var(--line2)', alignItems: 'baseline',
+              ...(i === done.length - 1 ? { background: 'var(--sign-t)' } : {}) }}>
+              <span className="faint num" style={{ flex: 'none' }}>{clock(new Date(s.t))}</span>
+              <span className={'st plain ' + s.tone} style={{ flex: 'none' }}>{s.kind}</span>
+              <span className="grow">{s.text(seatName)}</span>
+            </div>
+          ))}
+        </div>
         <p className="mut" style={{ fontSize: 12, marginTop: 10 }}>
-          입력값은 녹화하지 않아요 (길이만). 마우스 궤적은 FULL 녹화(위험 점수 70 이상 또는 표본 10%)에서만 남아요.
+          화면 글자와 입력값은 녹화하지 않아요 (버튼 문구와 입력 길이만). 마우스 궤적은 평소 0.15초, FULL 녹화(위험 점수 70 이상 또는 표본 10%)는 0.05초 간격이에요.
         </p>
       </div>
     </div>
   );
+}
+
+/** 화면 뼈대 상자 하나. 좌석은 상태 색, 버튼은 문구, 입력 칸은 빈 칸 */
+function BoxShape({ b, y, seatName }) {
+  const x = b.x;
+  const top = y(b.y);
+  const w = Math.max(4, b.w);
+  const h = Math.max(4, y(b.y + b.h) - top);
+  if (b.k.startsWith('seat-')) {
+    const st = b.k.slice(5);
+    const fill = { free: 'var(--card)', hold: 'var(--amber-t)', taken: 'var(--line)', mine: 'var(--go)', lost: 'var(--stop-t)' }[st];
+    return (
+      <g>
+        <title>{(seatName(b.id) || '좌석') + ' · ' + SEAT_KO[st]}</title>
+        <rect x={x} y={top} width={w} height={h} rx="3" fill={fill} stroke="var(--line)" />
+      </g>
+    );
+  }
+  if (b.k === 'heading') {
+    return b.label
+      ? <text x={x} y={top + h * 0.75} fontSize={Math.min(26, h * 0.8)} fill="var(--ink)" fontWeight="700">{b.label}</text>
+      : <rect x={x} y={top + h * 0.2} width={Math.min(w, 260)} height={h * 0.6} rx="4" fill="var(--line)" />;
+  }
+  const isInput = b.k === 'input' || b.k === 'select';
+  return (
+    <g opacity={b.off ? 0.45 : 1}>
+      <rect x={x} y={top} width={w} height={h} rx={b.k === 'tab' ? h / 2 : 6}
+        fill={isInput ? 'var(--card)' : b.k === 'link' ? 'none' : 'var(--sky-t)'}
+        stroke={b.k === 'link' ? 'none' : 'var(--line)'} />
+      {b.label && h > 12 && (
+        <text x={x + w / 2} y={top + h / 2 + 5} fontSize={Math.min(15, h * 0.55)} fill="var(--ink2)" textAnchor="middle"
+          textDecoration={b.k === 'link' ? 'underline' : undefined}>{b.label.length * 13 > w ? b.label.slice(0, Math.max(1, Math.floor(w / 13))) + '…' : b.label}</text>
+      )}
+      {b.k === 'select' && <text x={x + w - 14} y={top + h / 2 + 5} fontSize="14" fill="var(--mut)">▾</text>}
+    </g>
+  );
+}
+
+function Legend() {
+  const items = [['var(--card)', '빈 좌석'], ['var(--line)', '판매됨'], ['var(--amber-t)', '다른 사람이 고르는 중'], ['var(--go)', '이 사람이 고름']];
+  return (
+    <div className="row" style={{ gap: 12, flexWrap: 'wrap', marginTop: 6, fontSize: 12 }}>
+      {items.map(([c, l]) => (
+        <span key={l} className="row" style={{ gap: 4 }}><span style={{ width: 12, height: 12, background: c, border: '1px solid var(--line)', borderRadius: 2 }} />{l}</span>
+      ))}
+      <span className="row" style={{ gap: 4 }}><span style={{ width: 12, height: 12, border: '2px solid var(--stop)', borderRadius: 6 }} />클릭</span>
+    </div>
+  );
+}
+
+const SEAT_KO = { free: '빈 좌석', hold: '다른 사람이 고르는 중', taken: '판매됨', mine: '이 사람이 고름', lost: '놓침' };
+
+/** 화면 ID → 한글 이름 */
+const SCREENS = [
+  [/^home$/, '열차 검색'], [/^queue\/:id$/, '줄 서기'], [/^runs\/:id\/seats$/, '좌석 선택'], [/^pay\/:id$/, '결제'],
+  [/^pay\/:id\/result$/, '결제 결과'], [/^reservations$/, '예매 내역'], [/^waitlist$/, '취소표'], [/^me$/, '내 정보'],
+  [/^login$/, '로그인'], [/^signup$/, '회원가입'], [/^notifications$/, '알림'],
+];
+function screenName(s) {
+  if (!s) return '—';
+  const hit = SCREENS.find(([re]) => re.test(s));
+  return hit ? hit[1] : s;
+}
+
+/** 서버 행동 로그 → 한글 */
+const SERVER_KO = {
+  VIEW_TRAIN: '열차 목록 조회', VIEW_SEAT: '좌석표 조회', QUEUE_ENTER: '줄 서기', SEAT_HOLD: '좌석 선점', PAY: '결제',
+  CANCEL: '취소', WAITLIST_APPLY: '취소표 신청', WAITLIST_CANCEL: '취소표 대기 취소',
+};
+function statusKo(code) {
+  if (code >= 200 && code < 300) return '성공';
+  return { 409: '실패 — 이미 다른 사람이 잡음/상태 충돌', 403: '거절 — 권한·입장 토큰 없음', 429: '거절 — 요청이 너무 많음',
+    404: '없음', 401: '로그인 필요', 422: '거절 — 매수 제한', 410: '기한 지남' }[code] || `실패 (${code})`;
 }
 
 /** 이벤트를 재생용 시간축으로. 마우스 궤적의 각 점은 "보낸 시각 − (마지막 dt − 그 점의 dt)" */
@@ -194,13 +286,46 @@ function build({ events, server }) {
   const times = [...all.map((e) => e.t), ...points.map((p) => p.t), ...srv.map((s) => s.t)];
   const start = times.length ? Math.min(...times) : Date.now();
   const end = times.length ? Math.max(...times) + 500 : start + 1000;
+
+  // "무엇을 했나": 화면 이동·클릭·입력·탭 이동 + 서버 결과. 연달아 같은 입력 칸은 한 줄로
+  const steps = [];
+  for (const e of all) {
+    if (e.type === 'PAGE_VIEW') steps.push({ t: e.t, kind: '화면', tone: 'sky', text: () => `${screenName(e.screen)} 화면을 엶` });
+    else if (e.type === 'CLICK') {
+      steps.push({ t: e.t, kind: '클릭', tone: 'amber', text: (seat) => {
+        const s = seat(e.target);
+        if (s) return `좌석 ${s} 누름`;
+        if (e.label) return `[${e.label}] 누름`;
+        return e.target ? `${e.target} 누름` : '빈 곳 누름';
+      } });
+    } else if (e.type === 'INPUT') {
+      const prev = steps[steps.length - 1];
+      if (prev?.input === e.target) {
+        prev.len = e.input_masked;
+        prev.t2 = e.t;
+      } else {
+        const st = { t: e.t, kind: '입력', tone: '', input: e.target, len: e.input_masked, text: () => `입력 칸에 씀 (${(st.len || '').replace('len:', '')}자, 내용은 녹화 안 함)` };
+        steps.push(st);
+      }
+    } else if (e.type === 'VISIBILITY') {
+      steps.push({ t: e.t, kind: '탭', tone: '', text: () => (e.target === 'hidden' ? '다른 탭·창으로 나감' : '돌아옴') });
+    }
+  }
+  for (const s of srv) {
+    const bad = s.response_status >= 400;
+    steps.push({ t: s.t, kind: '서버', tone: bad ? 'stop' : 'go',
+      text: () => `${SERVER_KO[s.event_type] || s.event_type} → ${statusKo(s.response_status)}${s.run_id ? ` (운행 ${s.run_id})` : ''}` });
+  }
+  steps.sort((a, b) => a.t - b.t);
+
   return {
     all,
     points,
     server: srv,
+    steps,
     pages: all.filter((e) => e.type === 'PAGE_VIEW'),
+    layouts: all.filter((e) => e.type === 'LAYOUT'),
     clicks: all.filter((e) => e.type === 'CLICK'),
-    scrolls: all.filter((e) => e.type === 'SCROLL'),
     visibility: all.filter((e) => e.type === 'VISIBILITY'),
     start,
     end,
