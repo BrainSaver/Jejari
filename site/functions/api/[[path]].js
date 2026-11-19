@@ -1,5 +1,5 @@
 // 문서 사이트 API. 읽기는 누구나, 쓰기는 이름+PIN 로그인 후 자기 이름 브랜치에만.
-import { MEMBERS, NAMES, MAIN, REFS, EDITABLE, READABLE, PERSON_FILE, PERSON_DIR, ownerOk, adminOf } from '../../lib/config.js';
+import { MEMBERS, NAMES, MAIN, REFS, EDITABLE, READABLE, PERSON_FILE, PERSON_DIR, ownerOk, adminOf, repoOf } from '../../lib/config.js';
 import {
   gh, GhError, getFile, listDir, putFile, syncMain, compare, conflictFiles, listCommits, slimCommit,
 } from '../../lib/github.js';
@@ -75,6 +75,45 @@ async function cached(request, seconds, make) {
     await cache.put(key, copy).catch(() => {});
   }
   return res;
+}
+
+// GitHub Actions. 저장소가 공개라 토큰에 Actions 권한이 없으면 토큰 없이 다시 읽는다.
+async function ghPublic(env, path) {
+  try { return await gh(env, 'GET', path); }
+  catch (e) {
+    if (![401, 403, 404].includes(e.status)) throw e;
+    const r = await fetch(`https://api.github.com${path.replace('{repo}', repoOf(env))}`, { headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'jejari-docs-site' } });
+    if (!r.ok) throw new GhError(r.status, await r.json().catch(() => null), path);
+    return r.json();
+  }
+}
+const slimRun = (env, r) => ({
+  id: r.id, name: r.name, title: r.display_title, branch: r.head_branch, sha: r.head_sha || '',
+  no: r.run_number, attempt: r.run_attempt, event: r.event, status: r.status, conclusion: r.conclusion,
+  who: r.actor && r.actor.login, at: r.run_started_at || r.created_at, updated: r.updated_at, url: r.html_url,
+  msg: r.head_commit && r.head_commit.message ? r.head_commit.message.split('\n')[0] : '',
+  commitUrl: r.head_sha ? `https://github.com/${repoOf(env)}/commit/${r.head_sha}` : '',
+});
+const slimJob = (x) => ({
+  id: x.id, name: x.name, status: x.status, conclusion: x.conclusion, url: x.html_url, at: x.started_at, end: x.completed_at,
+  steps: (x.steps || []).map((st) => ({ n: st.number, name: st.name, status: st.status, conclusion: st.conclusion, at: st.started_at, end: st.completed_at })),
+});
+async function runJobs(env, id) {
+  const j = await ghPublic(env, `/repos/{repo}/actions/runs/${id}/jobs?per_page=50`);
+  return (j.jobs || []).map(slimJob);
+}
+async function actionsInfo(env) {
+  const d = await ghPublic(env, '/repos/{repo}/actions/runs?per_page=20');
+  const runs = (d.workflow_runs || []).map((r) => slimRun(env, r));
+  // 실행 중인 것(최대 3개)과 가장 최근 실패 한 건은 job·step까지 함께
+  const pick = runs.filter((r) => r.status !== 'completed').slice(0, 2);
+  const bad = runs.find((r) => r.conclusion === 'failure'); if (bad && runs.indexOf(bad) < 5) pick.push(bad);
+  await Promise.all(pick.map(async (r) => { try { r.jobs = await runJobs(env, r.id); } catch { /* 없어도 된다 */ } }));
+  return { runs, at: new Date().toISOString() };
+}
+async function actionRun(env, id) {
+  const [r, jobs] = await Promise.all([ghPublic(env, `/repos/{repo}/actions/runs/${id}`), runJobs(env, id)]);
+  return { run: { ...slimRun(env, r), jobs }, at: new Date().toISOString() };
 }
 
 // ---------- 읽기 ----------
@@ -320,6 +359,13 @@ export async function onRequest(ctx) {
       case 'GET /branches':
         if (!me) return LOGIN_FIRST();
         return cached(req, 15, async () => json(await branchesInfo(env)));
+      case 'GET /actions':
+        return cached(req, 5, async () => json(await actionsInfo(env)));
+      case 'GET /actions/run': {
+        const id = String(q.get('id') || '');
+        if (!/^\d{1,20}$/.test(id)) return fail(400, 'BAD_ID', '실행 번호가 잘못됐어요.');
+        return cached(req, 3, async () => json(await actionRun(env, id)));
+      }
       case 'GET /compare': {
         if (!me) return LOGIN_FIRST();
         const b = q.get('branch');
@@ -444,11 +490,11 @@ export async function onRequest(ctx) {
 
       // 로드맵 (보기는 누구나, 바꾸기·사진은 로그인)
       case 'GET /roadmap': case 'GET /roadmap/rev': case 'GET /roadmap/item-log': case 'GET /roadmap/img': case 'GET /roadmap/flow-default':
-      case 'POST /roadmap/save': case 'POST /roadmap/delete': case 'POST /roadmap/note': case 'POST /roadmap/note-delete': case 'POST /roadmap/check': case 'POST /roadmap/now': case 'POST /roadmap/flow': case 'POST /roadmap/log-delete': case 'POST /roadmap/log-edit': {
+      case 'POST /roadmap/save': case 'POST /roadmap/delete': case 'POST /roadmap/note': case 'POST /roadmap/note-delete': case 'POST /roadmap/check': case 'POST /roadmap/now': case 'POST /roadmap/flow': case 'POST /roadmap/log-delete': case 'POST /roadmap/log-edit': case 'POST /roadmap/read': {
         const rm = roadmap(env);
         if (!rm) return fail(500, 'NO_D1', 'D1 바인딩 AI_DB가 없어 로드맵을 저장할 수 없어요.');
         const out = (r) => (r.error ? json(r, r.status) : json(r));
-        if (route === 'GET /roadmap') return json({ ...(await rm.all()), me });
+        if (route === 'GET /roadmap') return json({ ...(await rm.all(me)), me });
         if (route === 'GET /roadmap/rev') return json({ rev: await rm.rev() });
         if (route === 'GET /roadmap/flow-default') return json({ flow: DEFAULT_FLOW });
         if (route === 'GET /roadmap/item-log') return json({ log: await rm.itemLog(String(q.get('id') || '')) });
@@ -464,6 +510,7 @@ export async function onRequest(ctx) {
         if (route === 'POST /roadmap/note') return out(await rm.note(me, String(body.id || ''), body.text, body.img, body.to));
         if (route === 'POST /roadmap/flow') return out(await rm.saveFlow(me, body.flow, body.v));
         if (route === 'POST /roadmap/now') return out(await rm.setNow(me, String(body.area || ''), String(body.part || ''), body.text));
+        if (route === 'POST /roadmap/read') return out(await rm.markRead(me, body.seqs, body.read !== false));
         if (route === 'POST /roadmap/check') return out(await rm.check(me, String(body.id || ''), String(body.part || ''), !!body.done));
         const admin = me === adminOf(env);
         if (route === 'POST /roadmap/log-delete' || route === 'POST /roadmap/log-edit') {
