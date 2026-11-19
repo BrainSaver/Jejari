@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v24)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v26)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -103,7 +103,7 @@ CREATE TABLE train (
 );
 COMMENT ON TABLE train IS '열차 (정의) - 열차 번호·종류·노선. 날짜와 무관한 열차 정의.';
 COMMENT ON COLUMN train.train_id IS '열차 ID';
-COMMENT ON COLUMN train.train_no IS '열차 번호 (101, 103…)';
+COMMENT ON COLUMN train.train_no IS '열차 번호, 앞을 0으로 채운 5자리 (예: 00103, 00026) / 코레일 표기와 같게. 같은 번호의 열차를 두 번 넣지 않도록 적재 스크립트가 이 값으로 비교';
 COMMENT ON COLUMN train.train_kind IS 'KTX / 새마을 등 / 운임 단가 구분';
 COMMENT ON COLUMN train.route_id IS '운행 노선';
 COMMENT ON COLUMN train.direction IS 'DOWN / UP / 상·하행 구분';
@@ -635,7 +635,6 @@ CREATE TABLE risk_score (
   avg_request_interval_ms    NUMBER,
   account_age_days           NUMBER,
   rule_score                 NUMBER(5,2),
-  iforest_score              NUMBER(5,2),
   final_score                NUMBER(5,2) NOT NULL,
   reasons                    CLOB,
   model_version              VARCHAR2(20),
@@ -659,7 +658,6 @@ COMMENT ON COLUMN risk_score.linked_account_cnt IS '연결된 계정 수 / 다�
 COMMENT ON COLUMN risk_score.avg_request_interval_ms IS '평균 요청 간격 / 매크로 신호';
 COMMENT ON COLUMN risk_score.account_age_days IS '가장 오래된 계정 나이 / 신규 계정 기본 신뢰도';
 COMMENT ON COLUMN risk_score.rule_score IS '규칙 기반 점수';
-COMMENT ON COLUMN risk_score.iforest_score IS 'Isolation Forest 점수 / 두 방식 비교';
 COMMENT ON COLUMN risk_score.final_score IS '최종 점수 (0~100) / 대기열 순번 조정량';
 COMMENT ON COLUMN risk_score.reasons IS '점수 근거 목록 (JSON) / 운영 원칙: 근거 기록';
 COMMENT ON COLUMN risk_score.model_version IS '산정 모델 버전 / 모델 교체 시 비교';
@@ -946,12 +944,12 @@ CREATE TABLE model_run (
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_model_run PRIMARY KEY (model_version),
-  CONSTRAINT ck_model_run_algorithm CHECK (algorithm IN ('RULE', 'IFOREST')),
+  CONSTRAINT ck_model_run_algorithm CHECK (algorithm IN ('RULE', 'IFOREST', 'ENSEMBLE')),
   CONSTRAINT ck_model_run_is_active CHECK (is_active IN ('Y', 'N'))
 );
-COMMENT ON TABLE model_run IS '모델 학습 기록 - 규칙·Isolation Forest 모델 버전별 파라미터와 성능. 발표용 수치의 원천.';
-COMMENT ON COLUMN model_run.model_version IS '예: iforest-2026.11-01 / risk_score.model_version이 참조';
-COMMENT ON COLUMN model_run.algorithm IS 'RULE / IFOREST / 두 방식 비교';
+COMMENT ON TABLE model_run IS '모델 학습 기록 - 규칙·모델 버전별 파라미터와 성능. 발표용 수치의 원천. 규칙(RULE)은 risk_score를, 합성 모델(ENSEMBLE)은 model_score를 낸다.';
+COMMENT ON COLUMN model_run.model_version IS '예: rule-2026.11-01, ens-2026.11-01 / risk_score.model_version·model_score.model_version이 참조';
+COMMENT ON COLUMN model_run.algorithm IS 'RULE / IFOREST / ENSEMBLE / 두 방식 비교. ENSEMBLE = 부스팅 + IF + GRU 합성 (tools/ml, 점수는 model_score)';
 COMMENT ON COLUMN model_run.params IS 'contamination, n_estimators 등 (JSON) / 재현';
 COMMENT ON COLUMN model_run.train_source IS '학습 데이터 범위';
 COMMENT ON COLUMN model_run.precision_score IS '정밀도 / 발표용 성능 수치';
@@ -1224,6 +1222,7 @@ CREATE INDEX ix_app_policy_history_1jzu2w ON app_policy_history (changed_by);
 -- 예시 데이터 (팀 확정 전 예시값)
 INSERT INTO model_run (model_version, algorithm, params, train_source, trained_at, threshold, decay_half_life_days, is_active) VALUES ('rule-2026.11-01', 'RULE', '{"weights":"risk_score 신호별 가중치"}', 'synthetic v1', TIMESTAMP '2026-11-18 10:00:00', 80, 30, 'Y');
 INSERT INTO model_run (model_version, algorithm, params, train_source, trained_at, threshold, decay_half_life_days, is_active) VALUES ('iforest-2026.11-01', 'IFOREST', '{"n_estimators":200,"contamination":0.05}', 'synthetic v1 + ext_web_access_log', TIMESTAMP '2026-11-18 10:00:00', 80, 30, 'N');
+INSERT INTO model_run (model_version, algorithm, params, train_source, trained_at, threshold, is_active) VALUES ('ens-2026.11-01', 'ENSEMBLE', '{"models":["gbm","iforest","gru x5"],"dropped":["account_age_days_log","accounts_on_ip","distinct_ips","min_sync_gap_ip_s_log"]}', 'tools/ml generate.py 18000계정', TIMESTAMP '2026-11-18 10:52:00', 97.6, 'N');
 INSERT INTO sale_event (sale_event_id, name, holiday_from, holiday_to, sale_open_at, priority_open_at, status) VALUES (1, '2026 추석 (예시)', DATE '2026-09-24', DATE '2026-09-27', TIMESTAMP '2026-09-08 07:00:00', TIMESTAMP '2026-09-07 07:00:00', 'PLANNED');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('inventory.segment_mode', 'OFF', 1, 'STRING', '구간 재고 사용 여부 (OFF면 segment_no=0). 2주차 말 결정');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('queue.admit_per_sec', '200', 1, 'NUMBER', '초당 대기열 입장 허용 인원');

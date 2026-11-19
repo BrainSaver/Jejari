@@ -62,7 +62,7 @@ public class SeatMapController {
 			@RequestHeader(name = TrainController.AUTO_HEADER, required = false) String auto) {
 		Map<String, Object> meta = new LinkedHashMap<>();
 		if ("1".equals(auto)) {
-			meta.put("auto", true); // 화면이 스스로 다시 부른 조회 (좌석을 뺏긴 직후). 위험 점수 특징에서 뺀다
+			meta.put("auto", true); // 화면이 스스로 다시 부른 조회 (좌석을 뺏긴 직후)
 		}
 		if (grade != null) {
 			meta.put("grade", grade);

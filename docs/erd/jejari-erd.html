@@ -1000,7 +1000,7 @@ const DOCS = {
   ['Kafka 소비','processed_event INSERT(중복이면 skip) → 업무 처리 → 커밋 → 오프셋 커밋 (§12)'],
   ['로그 적재·보관','behavior_log·replay_event는 Kafka → insertMany. expire_at TTL, legal_hold 세션은 컨슈머가 expire_at 없이 저장 (§13)'],
   ['운영 설정 변경','app_policy 값 변경 → version + 1 → app_policy_history 한 행 → policy:cache 갱신 → 각 서버가 version 비교 후 다시 로딩'],
-  ['위험 점수','behavior_log·replay_event·cancellation → risk_feature → model_run(활성 모델) → risk_score → risk:* 캐시 → 대기열 score 반영'],
+  ['위험 점수','behavior_log·replay_event·cancellation → risk_feature → model_run(활성 모델) → risk_score → risk:* 캐시 → 대기열 score 반영. 모델 보조 의견은 별도: tools/ml score.py → model_score → 관리자 화면만'],
   ['CCTV','임계 초과·규칙 적중 → suspicious_case → 같은 CI·기기·결제수단 세션 case_session → 자동 case_marker → evidence_snapshot 동결(조각+해시) → 관리자 재생·판정 → admin_action → replay_access_log에 열람 기록'],
   ['Argon2 로그인','rate:login 확인 → 세마포어 획득(auth.max_concurrent_hash) → Argon2id 검증(없는 계정도 더미 해시) → verify_ms 기록 → needs_rehash면 재해싱 → auth_session 발급']]},
  trace:{title:'기능 추적표',head:['기능','테이블·키','검증'],rows:[
@@ -1015,6 +1015,7 @@ const DOCS = {
   ['관리자: 열차·노선·좌석 등록','route, route_station, train, train_car, seat, train_run','좌석 자동 생성 수 = car_type.seat_count 합'],
   ['관리자: 실시간 현황','Prometheus·Grafana + reservation 집계','대시보드'],
   ['관리자: 위험 사용자 조치','risk_score, admin_action, admin_user, member.status','조치 후 대기열 반영'],
+  ['모델 보조 의견 (A-05·A-06)','model_score, model_run(ENSEMBLE)','정답 칸 미적재, 대기열 순번이 모델 점수와 무관'],
   ['CCTV 되돌아보기','replay_session, replay_event, suspicious_case, case_session, case_marker, evidence_snapshot, replay_access_log','증거 해시 재계산 일치'],
   ['운영 설정','app_policy, app_policy_history, policy:cache','값 변경 후 version 증가·이력·캐시 갱신'],
   ['빅데이터 분석','ext_dataset, ext_hotel_booking, ext_web_access_log, ext_renfe_price, risk_feature, model_run','정밀도·재현율·F1']]},
@@ -1122,7 +1123,9 @@ const DOCS = {
   ['v21','상시 취소 수수료 정책 (강다인 요청): cancel_fee_policy 예시에 sale_event_id NULL 세트 5건. 기존 5건이 모두 지난 행사(1번)에 묶여 있어 평시 운행(9001·9002)에서 수수료가 계산되지 않고 "취소 불가"로 보였다'],
   ['v22','취소표 행동 로그 (WL-01·02): behavior_log.event_type에 WAITLIST_APPLY·WAITLIST_CANCEL 추가. 취소표는 대기열 토큰 없이 들어오는 유일한 길인데 로그가 없어 FAST_CLICK·REGULAR_INTERVAL이 그 구간을 못 본다'],
   ['v23','train_run.status의 DEPARTED 전이 주체를 판매 오픈 스케줄러로 명시 (기점 출발 시각이 지나면). 지금까지 DEPARTED로 바꾸는 코드도 읽는 코드도 없어 CHECK 제약에만 살아 있던 값이다'],
-  ['v24','case_marker.rule_code CHECK에 REGULAR_INTERVAL 추가 (강다인 요청). 일정 간격 매크로가 이 규칙에만 걸리는데 마커 규칙이 아니라 케이스가 열리지 않았다 (조영준 경계 측정). 기존 DB는 db/patch/v24.sql']]}
+  ['v24','case_marker.rule_code CHECK에 REGULAR_INTERVAL 추가 (강다인 요청). 일정 간격 매크로가 이 규칙에만 걸리는데 마커 규칙이 아니라 케이스가 열리지 않았다 (조영준 경계 측정). 기존 DB는 db/patch/v24.sql'],
+  ['v25','모델 보조 의견 (RISK-05, 강다인 설계안): MongoDB model_score 추가(계정 단위 점수·근거, UNIQUE member_id+model_version), model_run.algorithm에 ENSEMBLE, is_active는 algorithm별 하나, risk_score의 Isolation Forest 점수 칸 삭제(쓰는 코드 없음). 기존 DB는 db/patch/v25.sql'],
+  ['v26','train.train_no 설명을 5자리 표기(00103)로. 시드가 실제 KTX 번호로 바뀐 뒤 시간표 적재가 같은 열차를 3자리 번호로 한 번 더 넣던 문제(길동현 11-19)와 표기를 맞춤. 기존 DB는 db/patch/v26.sql(주석만)']]}
 };
 // ===== 스키마 v5: 팀 검토 12건 반영 (2026-11-06) =====
 const V5_TABLES = [
@@ -1539,7 +1542,37 @@ const V24_OPS = [
   // 걸리는데 15점이라 케이스가 열리지 않았다 → 마커 규칙으로 올려 케이스를 연다. 마커를 찍으려면 CHECK에 값이 있어야 한다
   ['set','case_marker','rule_code',{desc:'FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / REGULAR_INTERVAL / LINEAR_MOUSE',reason:'어떤 규칙이 잡았는지. 값은 RiskRule 중 마커 규칙(marker=true)과 같게 둔다'}],
 ];
-const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS}, {v:24,tables:V24_TABLES,ops:V24_OPS} ];
+const V25_TABLES = [
+ {id:'model_score',ko:'모델 보조 의견 점수',g:'risk',db:'MongoDB',desc:'위험 점수 모델(부스팅 + Isolation Forest + GRU, tools/ml)이 계정마다 매긴 점수와 근거. 관리자 화면(A-05·A-06)에 보여 주는 보조 의견이며 대기열 순번·제한에는 쓰지 않는다.',notes:'UNIQUE { member_id: 1, model_version: 1 } — 같은 버전을 다시 적재하면 덮어씀(upsert) · 인덱스 { model_version: 1, score: -1 } (A-05 목록) · 적재는 오프라인 Python(score.py → scores.csv)이 하고 정답 칸(label·strategy)은 넣지 않음. CSV는 헤더 이름으로 읽음 · 화면은 model_run에서 algorithm = ENSEMBLE AND is_active = Y인 버전만 · 케이스 대상(CI·기기·결제수단)에 묶인 계정은 서버가 조회 시 Oracle에서 찾아 최댓값을 보여 줌 (CI 해시 사본을 두지 않음) · risk_score(규칙 점수, 대기열이 읽음)와 섞지 않음 · 점선은 논리 참조',cols:[
+  ['_id','ObjectId','PK','시스템','',''],
+  ['member_id','Long','FK,NN','시스템','점수를 매긴 계정','모델이 계정 단위로 매김','member'],
+  ['model_version','String','FK,NN','시스템','예: ens-2026.11-01','버전끼리 비교','model_run'],
+  ['score','Double','NN','시스템','합성 점수 (0~100, 세 모델 백분위 중 최댓값)','보조 의견. 문턱은 model_run.threshold'],
+  ['by','String','NN','시스템','GBM / IF / GRU','가장 높게 본 모델. GRU면 근거 숫자로 이유가 안 보여 화면 재생(CCTV)으로 안내'],
+  ['scores','Object','','시스템','모델별 점수 { gbm, if, gru } (GRU가 없으면 gru 없음)','규칙과 모델이 다르게 볼 때 비교'],
+  ['reasons','Array','','시스템','근거 3개 (특징 이름·값 문자열)','운영 원칙: 근거 기록. 개인정보 없음'],
+  ['source','String','','시스템','점수를 매긴 데이터 (대회 태그 등)','어느 데이터로 매겼는지'],
+  ['scored_at','Date','NN','시스템','점수를 매긴 시각','']]},
+];
+const V25_OPS = [
+  // 모델 보조 의견 연결 (RISK-05, 강다인 설계안 + 강동균 답장 2026-11-19).
+  // 모델 점수는 계정 단위 · 근거 배열이라 Mongo model_score에 두고, risk_score는 대기열이 읽는 규칙 점수 전용으로 남긴다
+  ['set','model_run','algorithm',{desc:'RULE / IFOREST / ENSEMBLE',reason:'두 방식 비교. ENSEMBLE = 부스팅 + IF + GRU 합성 (tools/ml, 점수는 model_score)'}],
+  ['set','model_run','model_version',{desc:'예: rule-2026.11-01, ens-2026.11-01',reason:'risk_score.model_version·model_score.model_version이 참조'}],
+  ['desc','model_run','규칙·모델 버전별 파라미터와 성능. 발표용 수치의 원천. 규칙(RULE)은 risk_score를, 합성 모델(ENSEMBLE)은 model_score를 낸다.'],
+  ['notes','model_run','is_active = Y는 algorithm별로 하나 (RULE과 ENSEMBLE은 동시에 켤 수 있음) · threshold는 RULE이면 케이스 자동 생성 기준, ENSEMBLE이면 화면 표시 기준(사람 검증 세트 오탐 5%)'],
+  ['samples+','model_run',[
+    {model_version:'ens-2026.11-01',algorithm:'ENSEMBLE',params:'{"models":["gbm","iforest","gru x5"],"dropped":["account_age_days_log","accounts_on_ip","distinct_ips","min_sync_gap_ip_s_log"]}',train_source:'tools/ml generate.py 18000계정',trained_at:'2026-11-18 10:52',threshold:97.6,is_active:'N'}]],
+  // iforest_score: 계정 단위 모델 점수는 model_score로 가서 이 칸은 아무 코드도 쓰지 않는다
+  ['del','risk_score','iforest_score'],
+];
+const V26_TABLES = [];
+const V26_OPS = [
+  // 열차 번호 표기 (11-19 길동현 트러블슈팅). 시드(DATA-01)가 실제 KTX 번호 5자리('00103')로 바뀌었고,
+  // 시간표 적재(tools/load-tago-schedule.js)도 5자리로 맞췄다. 표기가 3자리·5자리로 섞이면 같은 열차인 줄 모르고 두 번 넣게 된다
+  ['set','train','train_no',{desc:'열차 번호, 앞을 0으로 채운 5자리 (예: 00103, 00026)',reason:'코레일 표기와 같게. 같은 번호의 열차를 두 번 넣지 않도록 적재 스크립트가 이 값으로 비교'}],
+];
+const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS}, {v:24,tables:V24_TABLES,ops:V24_OPS}, {v:25,tables:V25_TABLES,ops:V25_OPS}, {v:26,tables:V26_TABLES,ops:V26_OPS} ];
 const SEED_VERSION = Math.max(2,...PATCHES.map(p=>p.v));
 const LAYOUT = [
  ['station','route','route_station','fare','common_code'],
@@ -1551,7 +1584,7 @@ const LAYOUT = [
  ['auth_session','login_attempt','admin_user','password_reset_token','synthetic_label'],
  ['outbox_event','processed_event','saga_instance'],
  ['waitlist','notification'],
- ['risk_score','risk_score_history','admin_action','model_run'],
+ ['risk_score','risk_score_history','admin_action','model_run','model_score'],
  ['suspicious_case','case_session','case_marker','replay_access_log'],
  ['replay_session','replay_event','evidence_snapshot'],
  ['behavior_log','queue_log','redis_keys'],
