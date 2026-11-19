@@ -44,7 +44,8 @@ public class TrafficService {
 
 	static final long CACHE_MS = 4_000;
 	static final String APP = "job=\"jejari-app\"";
-	static final String HTTP = APP + ",uri!~\"/actuator.*\"";
+	/** 세는 요청: actuator(Prometheus 수집)와 이 화면 자신의 폴링은 뺀다 (흐름도 2초 폴링이 관리자 한 명당 초당 0.5건) */
+	static final String HTTP = APP + ",uri!~\"/actuator.*|/api/v1/admin/traffic.*\"";
 	static final String RESERVE_URI = "/api/v1/reservations";
 	static final String PAY_URI = "/api/v1/reservations/{reservationId}/payments";
 
@@ -119,8 +120,8 @@ public class TrafficService {
 		} catch (Exception e) {
 			return TrafficFlow.unavailable(why(e), now);
 		}
-		Map<String, double[]> g = new LinkedHashMap<>();     // rps, 5xx, 429, 409, 응답 시간 합(초)
-		GROUPS.forEach(k -> g.put(k, new double[5]));
+		Map<String, double[]> g = new LinkedHashMap<>();     // rps, 5xx, 429, 409, 응답 시간 합(초), 기타 4xx
+		GROUPS.forEach(k -> g.put(k, new double[6]));
 		for (Series s : count.join()) {
 			Double v = s.v()[0];
 			if (v == null) {
@@ -132,6 +133,7 @@ public class TrafficService {
 			a[1] += st.startsWith("5") ? v : 0;
 			a[2] += "429".equals(st) ? v : 0;
 			a[3] += "409".equals(st) ? v : 0;
+			a[5] += st.startsWith("4") && !"409".equals(st) && !"429".equals(st) ? v : 0;
 		}
 		for (Series s : sum.join()) {
 			if (s.v()[0] != null) {
@@ -139,7 +141,7 @@ public class TrafficService {
 			}
 		}
 		List<TrafficFlow.Group> groups = new ArrayList<>();
-		g.forEach((k, a) -> groups.add(new TrafficFlow.Group(k, a[0], a[1], a[2], a[3], a[0] > 0 ? a[4] / a[0] * 1000 : null)));
+		g.forEach((k, a) -> groups.add(new TrafficFlow.Group(k, a[0], a[1], a[2], a[3], a[5], a[0] > 0 ? a[4] / a[0] * 1000 : null)));
 		List<TrafficFlow.Store> stores = List.of(
 				new TrafficFlow.Store("redis", "Redis", scalar(redis.join())),
 				new TrafficFlow.Store("oracle", "Oracle", scalar(oracle.join())),
@@ -209,13 +211,23 @@ public class TrafficService {
 		var redis = prom.range("max(redis_memory_used_bytes) / max(redis_memory_max_bytes > 0) * 100", start, end, step);
 		var up = prom.instant("up{" + APP + "}", nowSec);
 		var pending = prom.instant("sum(hikaricp_connections_pending{" + APP + "})", nowSec);
-		var baseline = prom.instant("avg_over_time(sum(rate(http_server_requests_seconds_count{" + HTTP + "}[1m]))[1h:1m] offset 10m)", nowSec);
+		// 평소 = 최근 24시간 초당 요청의 중앙값 (지금 10분은 뺌). 1시간 평균은 몰림이 길어지면 몰림 자체가 "평소"가 된다
+		var baseline = prom.instant("quantile_over_time(0.5, sum(rate(http_server_requests_seconds_count{" + HTTP + "}[5m]))[24h:5m] offset 10m)", nowSec);
+		var yesterday = prom.range("sum(rate(http_server_requests_seconds_count{" + HTTP + "}" + w + " offset 1d))", start, end, step);
+		var starts = prom.range("process_start_time_seconds{" + APP + "}", start, end, step);
+		// "지금" 값과 상태 판정은 최근 30초로 따로 잰다 (흐름도와 같은 창). 그래프 마지막 점은 rate 창이 1분 이상이라
+		// 장애가 끝난 뒤에도 1분 가까이 "위험"이 남는다 (Redis를 40초 끊었다 살린 실측에서 회복 30초 뒤에도 5xx 43%로 보임)
+		var nowStatus = prom.instant("sum by (method, uri, status) (rate(http_server_requests_seconds_count{" + HTTP + "}[30s]))", nowSec);
+		var now50 = prom.instant(quantile(0.50, "[30s]"), nowSec);
+		var now95 = prom.instant(quantile(0.95, "[30s]"), nowSec);
+		var now99 = prom.instant(quantile(0.99, "[30s]"), nowSec);
 		var epCount = prom.instant("sum by (method, uri) (rate(http_server_requests_seconds_count{" + HTTP + "}[1m]))", nowSec);
 		var epErr = prom.instant("sum by (method, uri) (rate(http_server_requests_seconds_count{" + HTTP + ",status=~\"5..\"}[1m]))", nowSec);
+		var epErr4 = prom.instant("sum by (method, uri) (rate(http_server_requests_seconds_count{" + HTTP + ",status=~\"4..\",status!~\"409|429\"}[1m]))", nowSec);
 		var epP95 = prom.instant("histogram_quantile(0.95, sum by (le, method, uri) (rate(http_server_requests_seconds_bucket{" + HTTP + "}[1m]))) * 1000", nowSec);
 		try {
 			CompletableFuture.allOf(byStatus, p50, p95, p99, waiting, active, cpu, heap, db, tomcat, redis, up, pending, baseline,
-					epCount, epErr, epP95).get(PrometheusClient.TIMEOUT.toMillis() + 1000, TimeUnit.MILLISECONDS);
+					yesterday, starts, nowStatus, now50, now95, now99, epCount, epErr, epErr4, epP95).get(PrometheusClient.TIMEOUT.toMillis() + 1000, TimeUnit.MILLISECONDS);
 		} catch (Exception e) {
 			return TrafficView.unavailable(why(e), nowSec, range);
 		}
@@ -225,6 +237,7 @@ public class TrafficService {
 		GROUPS.forEach(g -> groups.put(g, zeros(n)));
 		Double[] total = zeros(n), e5 = zeros(n), e429 = zeros(n), e409 = zeros(n), e4 = zeros(n), reserve = zeros(n), pay = zeros(n);
 		boolean anyHttp = false;
+		boolean[] present = new boolean[n];     // 그 시각에 앱 지표가 하나라도 있나 (없으면 앱이 꺼져 있던 것 → 0이 아니라 빈칸)
 		for (Series s : byStatus.join()) {
 			anyHttp = true;
 			String uri = s.label("uri"), status = s.label("status"), method = s.label("method");
@@ -237,6 +250,7 @@ public class TrafficService {
 				if (i < 0 || v == null) {
 					continue;
 				}
+				present[i] = true;
 				add(g, i, v);
 				add(total, i, v);
 				if (status.startsWith("5")) {
@@ -256,14 +270,15 @@ public class TrafficService {
 				}
 			}
 		}
-		if (!anyHttp) {      // 앱이 수집되지 않음: 0이 아니라 "값 없음"
-			groups.replaceAll((k, v) -> new Double[n]);
-			total = new Double[n];
-			e5 = e429 = e409 = e4 = reserve = pay = new Double[n];
+		for (Double[] a : List.of(total, e5, e429, e409, e4, reserve, pay)) {
+			blank(a, present);
 		}
+		groups.values().forEach(a -> blank(a, present));
 		Double[] pct5 = pct(e5, total), pct429 = pct(e429, total), pct409 = pct(e409, total), pct4 = pct(e4, total);
 
 		List<Chart> charts = new ArrayList<>();
+		charts.add(new Chart("total", "전체 초당 요청 — 어제 같은 시각과 비교", "rps", List.of(new Line("지금", total),
+				new Line("어제 같은 시각", one(yesterday.join(), start, step, n)))));
 		List<Line> traffic = new ArrayList<>();
 		groups.forEach((k, v) -> traffic.add(new Line(k, v)));
 		charts.add(new Chart("traffic", "영역별 초당 요청", "rps", traffic));
@@ -282,7 +297,9 @@ public class TrafficService {
 
 		int[] u = upCount(up.join());
 		int upCount = u[0], upTotal = u[1];
-		Double rps = last(total);
+		double[] m = mix(nowStatus.join());     // 최근 30초: 전체, 5xx, 429, 409, 기타 4xx, 예약 성공, 결제 성공
+		boolean has = !nowStatus.join().isEmpty();
+		Double rps = has ? m[0] : null;
 		Double base = scalar(baseline.join());
 		Double surge = rps != null && base != null && base >= 0.5 ? rps / base : null;
 		Double peak = null;
@@ -291,11 +308,12 @@ public class TrafficService {
 				peak = v;
 			}
 		}
-		Now now = new Now(rps, base, surge, peak, last(l50), last(l95), last(l99), last(pct5), last(pct429), last(e409),
-				last(reserve), last(pay), last(qw), last(qa), last(rc), last(rh), last(rd), scalar(pending.join()), last(rt), last(rr),
+		Now now = new Now(rps, base, surge, peak, scalar(now50.join()), scalar(now95.join()), scalar(now99.join()),
+				has ? ratio(m[1], m[0]) : null, has ? ratio(m[2], m[0]) : null, has ? ratio(m[4], m[0]) : null, has ? m[3] : null,
+				has ? m[5] : null, has ? m[6] : null, last(qw), last(qa), last(rc), last(rh), last(rd), scalar(pending.join()), last(rt), last(rr),
 				upCount, upTotal);
 		return new TrafficView(true, null, nowSec, range, step, health(now), now, t, charts,
-				endpoints(epCount.join(), epErr.join(), epP95.join()));
+				endpoints(epCount.join(), epErr.join(), epErr4.join(), epP95.join()), restarts(starts.join(), start, end));
 	}
 
 	private static String quantile(double q, String w) {
@@ -315,6 +333,8 @@ public class TrafficService {
 			rs.add(new Reason("CRIT", "up", "앱 지표가 수집되지 않음 (앱이 꺼졌거나 Prometheus 설정 확인)"));
 		}
 		level(rs, "error", n.errorPct(), 1, 5, v -> "5xx 서버 오류 " + fmt(v) + "%");
+		// 4xx는 보통 이용자 탓이라 위험까지 올리지 않는다. 하지만 4건 중 1건 이상이면 로그인 고장·화면 배포 실수·봇 두드림일 때가 많다
+		level(rs, "client", n.clientErrorPct(), 25, Double.MAX_VALUE, v -> "4xx 클라이언트 오류 " + fmt(v) + "% (409·429 제외 — 로그인·화면 배포·잘못된 호출 확인)");
 		level(rs, "p95", n.p95Ms(), 1000, 3000, v -> "응답 시간 p95 " + Math.round(v) + "ms");
 		level(rs, "db", n.dbPoolPct(), 80, 95, v -> "DB 커넥션 풀 " + Math.round(v) + "% 사용");
 		if (n.dbPending() != null && n.dbPending() >= 1) {
@@ -352,19 +372,66 @@ public class TrafficService {
 		return v >= 10 ? String.valueOf(Math.round(v)) : String.valueOf(Math.round(v * 10) / 10.0);
 	}
 
-	static List<Endpoint> endpoints(List<Series> count, List<Series> err, List<Series> p95) {
-		Map<String, Double> e = new HashMap<>(), lat = new HashMap<>();
+	static List<Endpoint> endpoints(List<Series> count, List<Series> err, List<Series> err4, List<Series> p95) {
+		Map<String, Double> e = new HashMap<>(), e4 = new HashMap<>(), lat = new HashMap<>();
 		err.forEach(s -> e.put(s.label("method") + " " + s.label("uri"), s.v()[0]));
+		err4.forEach(s -> e4.put(s.label("method") + " " + s.label("uri"), s.v()[0]));
 		p95.forEach(s -> lat.put(s.label("method") + " " + s.label("uri"), s.v()[0]));
 		double sum = count.stream().mapToDouble(s -> s.v()[0] == null ? 0 : s.v()[0]).sum();
 		return count.stream().filter(s -> s.v()[0] != null && s.v()[0] > 0)
 				.sorted(Comparator.comparingDouble((Series s) -> s.v()[0]).reversed()).limit(10).map(s -> {
 					String key = s.label("method") + " " + s.label("uri");
 					double rps = s.v()[0];
-					Double er = e.get(key);
+					Double er = e.get(key), er4 = e4.get(key);
 					return new Endpoint(s.label("method"), s.label("uri"), group(s.label("uri")), rps, lat.get(key),
-							er == null ? 0 : er / rps * 100, sum > 0 ? rps / sum * 100 : 0);
+							er == null ? 0 : er / rps * 100, er4 == null ? 0 : er4 / rps * 100, sum > 0 ? rps / sum * 100 : 0);
 				}).toList();
+	}
+
+	/** 상태별 순간 값 합: [전체, 5xx, 429, 409, 기타 4xx, 예약 성공, 결제 성공] */
+	static double[] mix(List<Series> ss) {
+		double[] m = new double[7];
+		for (Series s : ss) {
+			Double v = s.v()[0];
+			if (v == null) {
+				continue;
+			}
+			String st = s.label("status"), uri = s.label("uri");
+			boolean okPost = st.startsWith("2") && "POST".equals(s.label("method"));
+			m[0] += v;
+			m[1] += st.startsWith("5") ? v : 0;
+			m[2] += "429".equals(st) ? v : 0;
+			m[3] += "409".equals(st) ? v : 0;
+			m[4] += st.startsWith("4") && !"409".equals(st) && !"429".equals(st) ? v : 0;
+			m[5] += okPost && RESERVE_URI.equals(uri) ? v : 0;
+			m[6] += okPost && PAY_URI.equals(uri) ? v : 0;
+		}
+		return m;
+	}
+
+	private static Double ratio(double part, double total) {
+		return total > 0 ? part / total * 100 : 0d;
+	}
+
+	/** 그래프 기간 안에 앱이 새로 시작한 시각들 (배포·재시작 표시). 앱마다 process_start_time_seconds 값이 바뀐 곳 */
+	static List<Long> restarts(List<Series> starts, long start, long end) {
+		java.util.TreeSet<Long> out = new java.util.TreeSet<>();
+		for (Series s : starts) {
+			for (Double v : s.v()) {
+				if (v != null && v >= start && v <= end) {
+					out.add(v.longValue());
+				}
+			}
+		}
+		return List.copyOf(out);
+	}
+
+	private static void blank(Double[] a, boolean[] present) {
+		for (int i = 0; i < a.length; i++) {
+			if (!present[i]) {
+				a[i] = null;
+			}
+		}
 	}
 
 	private static int idx(long ts, long start, int step, int n) {

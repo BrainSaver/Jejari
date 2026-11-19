@@ -16,8 +16,8 @@ public record TrafficFlow(boolean available, String reason, long at, List<Group>
 		return new TrafficFlow(false, reason, at, List.of(), List.of(), null, null, null, 0, 0);
 	}
 
-	/** rps 전체 중 err5 = 5xx, rejected = 429, conflict = 409 (모두 초당). avgMs = 평균 응답 시간 */
-	public record Group(String name, double rps, double err5, double rejected, double conflict, Double avgMs) {
+	/** rps 전체 중 err5 = 5xx, rejected = 429, conflict = 409, err4 = 그 밖의 4xx (모두 초당). avgMs = 평균 응답 시간 */
+	public record Group(String name, double rps, double err5, double rejected, double conflict, double err4, Double avgMs) {
 	}
 
 	/** key: redis · oracle · mongo · kafka. ops = 초당 작업 수 (값 없으면 null — 그 지표가 수집되지 않음) */

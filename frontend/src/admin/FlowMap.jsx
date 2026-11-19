@@ -6,15 +6,17 @@ import { useEffect, useRef, useState } from 'react';
  *
  *  - 점 수는 실제 초당 값(GET /api/v1/admin/traffic/flow, 최근 30초 평균)에 비례한다. 가장 바쁜 선이 초당 점 25개를 넘지 않게
  *    "점 1개 = N건"을 1·2·5 단위로 고르고 범례에 적는다 (꾸민 움직임이 아니라 그 비율 그대로)
- *  - 파란 점 = 정상, 빨간 큰 점 = 5xx (영역 노드에서 터짐), 노란 빈 점 = 429 요청 제한 (노드 앞에서 되돌아감)
- *  - 노드 테두리: 초록 정상 · 노랑 주의(오류 1%↑ 또는 평균 1초↑) · 빨강 위험(오류 5%↑)
+ *  - 파란 점 = 정상, 빨간 큰 점 = 5xx (영역 노드에서 터짐), 노란 빈 점 = 429 요청 제한 (노드 앞에서 되돌아감),
+ *    회색 점 = 그 밖의 4xx (409 포함 — 없는 주소·권한 없음·좌석 경합. 이용자 쪽 오류라 정상과 따로 보여 준다)
+ *  - 노드 테두리: 초록 정상 · 노랑 주의(5xx 1%↑, 4xx 25%↑, 평균 1초↑) · 빨강 위험(5xx 5%↑). 노드 크기 = 초당 요청(로그)
+ *  - 새 값이 6초 넘게 안 오면(서버·Prometheus 끊김) 점을 멈추고 "끊김"을 덮는다 — 옛 값으로 움직이는 화면은 거짓말이라서
  *  - 2초마다 새 값이 오면 0.8초에 걸쳐 부드럽게 바뀐다. 움직임 줄이기 설정이면 점 없이 선 굵기·숫자만 보인다
  */
 const MAX_DOTS_PER_SEC = 25;
 const TRAVEL_SEC = 1.6;
 const C = {
   bg: '#13202F', grid: 'rgba(255,248,231,.05)', edge: 'rgba(143,211,255,.16)', node: '#1D2F45', text: '#F3EEE2',
-  sub: '#9FB0C6', ok: '#3FBF7F', warn: '#F2B705', crit: '#FF5D5D', dot: '#8FD3FF', err: '#FF5D5D', rej: '#F2B705',
+  sub: '#9FB0C6', e4: '#76839A', ok: '#3FBF7F', warn: '#F2B705', crit: '#FF5D5D', dot: '#8FD3FF', err: '#FF5D5D', rej: '#F2B705',
 };
 const STORE_UNIT = { redis: '명령', oracle: '커넥션', mongo: '명령', kafka: '발행' };
 
@@ -29,7 +31,7 @@ function groupLevel(g) {
   if (!g || g.rps <= 0) return 'idle';
   const e = g.err5 / g.rps;
   if (e >= 0.05) return 'crit';
-  if (e >= 0.01 || (g.avgMs ?? 0) >= 1000) return 'warn';
+  if (e >= 0.01 || (g.err4 ?? 0) / g.rps >= 0.25 || (g.avgMs ?? 0) >= 1000) return 'warn';
   return 'ok';
 }
 
@@ -105,7 +107,7 @@ function sprite(color, r, hollow) {
   return { img: s, size };
 }
 
-export default function FlowMap({ flow, error }) {
+export default function FlowMap({ flow, error, stale, age }) {
   const box = useRef(null);
   const canvas = useRef(null);
   const target = useRef(null);
@@ -115,6 +117,8 @@ export default function FlowMap({ flow, error }) {
   const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
   target.current = flow;
+  const staleRef = useRef(null);
+  staleRef.current = stale ? age : null;
   const groups = flow?.groups?.length ? flow.groups : [];
   const stores = flow?.stores?.length ? flow.stores : [];
   const lay = useRef(null);
@@ -130,7 +134,7 @@ export default function FlowMap({ flow, error }) {
   useEffect(() => {
     const cv = canvas.current;
     const ctx = cv.getContext('2d');
-    const sp = { dot: sprite(C.dot, 3), err: sprite(C.err, 4.6), rej: sprite(C.rej, 3.6, true), flash: sprite(C.crit, 9, true) };
+    const sp = { dot: sprite(C.dot, 3), err: sprite(C.err, 4.6), rej: sprite(C.rej, 3.6, true), e4: sprite(C.e4, 2.6), flash: sprite(C.crit, 9, true) };
     const shown = new Map(); // edge id → 보이는 초당 값
     const acc = new Map();
     let dots = [];
@@ -160,7 +164,7 @@ export default function FlowMap({ flow, error }) {
         ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(L.w, y + 0.5); ctx.stroke();
       }
 
-      const live = f?.available;
+      const live = f?.available && staleRef.current == null;
       for (const e of L.edges) {
         const goal = live ? e.rate(f) : 0;
         const cur = shown.get(e.id) ?? goal;
@@ -192,6 +196,7 @@ export default function FlowMap({ flow, error }) {
               const r = Math.random() * g.rps;
               if (r < g.err5) kind = 'err';
               else if (r < g.err5 + g.rejected) kind = 'rej';
+              else if (r < g.err5 + g.rejected + (g.err4 ?? 0) + g.conflict) kind = 'e4';
             }
             dots.push({ e, t: 0, kind, back: false, jitter: (Math.random() - 0.5) * 6 });
           }
@@ -219,7 +224,7 @@ export default function FlowMap({ flow, error }) {
         }
         const [x, y] = bez(d.e.p, d.t);
         const s = sp[d.kind];
-        const fade = d.kind === 'rej' && d.back ? Math.max(0, (d.t - 0.45) / 0.37) : 1;
+        const fade = d.kind === 'rej' && d.back ? Math.max(0, (d.t - 0.45) / 0.37) : d.kind === 'e4' ? 0.6 : 1;
         ctx.globalAlpha = fade;
         ctx.drawImage(s.img, x - s.size / 2, y + d.jitter * Math.sin(d.t * Math.PI) - s.size / 2, s.size, s.size);
         next.push(d);
@@ -236,14 +241,16 @@ export default function FlowMap({ flow, error }) {
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = 'source-over';
 
-      drawNodes(ctx, L, f, groups, stores);
+      // 노드 이름표·테두리는 지금 받은 값으로 (effect를 만들 때의 groups를 쓰면 첫 값에 멈춰 있다)
+      drawNodes(ctx, L, f, f?.groups ?? [], f?.stores ?? []);
       if (!live) {
         ctx.fillStyle = 'rgba(19,32,47,.7)';
         ctx.fillRect(0, 0, L.w, L.h);
         ctx.fillStyle = C.text;
         ctx.font = '700 15px "Noto Sans KR",sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(f ? f.reason || '지표를 읽지 못했습니다' : '불러오는 중…', L.w / 2, L.h / 2);
+        const msg = staleRef.current != null ? `연결 끊김 — ${staleRef.current}초째 새 값이 안 와요` : f ? f.reason || '지표를 읽지 못했습니다' : '불러오는 중…';
+        ctx.fillText(msg, L.w / 2, L.h / 2);
         ctx.textAlign = 'left';
       }
       raf = requestAnimationFrame(frame);
@@ -291,6 +298,7 @@ export default function FlowMap({ flow, error }) {
         <span><i className="tr-ldot" /> 정상 요청</span>
         <span><i className="tr-ldot err" /> 서버 오류 5xx</span>
         <span><i className="tr-ldot rej" /> 요청 제한 429 (되돌아감)</span>
+        <span><i className="tr-ldot e4" /> 그 밖의 4xx</span>
         <span className="mut">점 1개 = 요청 {unit.toLocaleString()}건 · 저장소 작업 {sunit.toLocaleString()}건</span>
         <span className="mut grow tr-right">
           지금 {fmt(total)}건/초{total > 0 ? ` · 오류 ${((100 * err) / total).toFixed(1)}%` : ''}
@@ -314,7 +322,17 @@ export default function FlowMap({ flow, error }) {
 
 function drawNodes(ctx, L, f, groups, stores) {
   const ring = (lv) => (lv === 'crit' ? C.crit : lv === 'warn' ? C.warn : lv === 'ok' ? C.ok : '#3A4C63');
-  const circle = (n, lv, label, sub, side) => {
+  const pulse = (performance.now() % 1400) / 1400;
+  const circle = (n0, lv, label, sub, side, rps) => {
+    // 바쁠수록 노드가 조금 커진다 (로그, 최대 +8px). 위험이면 테두리 밖으로 번지는 고리
+    const n = { ...n0, r: n0.r + (rps > 0 ? Math.min(8, Math.log10(1 + rps) * 3) : 0) };
+    if (lv === 'crit') {
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r + 4 + pulse * 14, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,93,93,${(1 - pulse) * 0.7})`;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
     ctx.beginPath();
     ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
     ctx.fillStyle = C.node;
@@ -337,6 +355,9 @@ function drawNodes(ctx, L, f, groups, stores) {
       });
     } else {
       ctx.textAlign = 'center';
+      const wMax = Math.max(...lines.map((s, i) => { ctx.font = (i ? '600 11.5px' : '800 12.5px') + ' "Noto Sans KR",sans-serif'; return ctx.measureText(s).width; }));
+      ctx.fillStyle = 'rgba(19,32,47,.85)';
+      ctx.fillRect(n.x - wMax / 2 - 4, n.y + n.r + 3, wMax + 8, lines.length * 15 + 5);
       lines.forEach((s, i) => {
         ctx.font = (i ? '600 11.5px' : '800 12.5px') + ' "Noto Sans KR",sans-serif';
         ctx.fillStyle = i ? C.sub : C.text;
@@ -347,12 +368,12 @@ function drawNodes(ctx, L, f, groups, stores) {
   };
   const live = f?.available;
   const total = groups.reduce((s, g) => s + g.rps, 0);
-  circle(L.nodes.user, live ? 'ok' : 'idle', '사용자', live ? `${fmt(total)}/초` : '');
+  circle(L.nodes.user, live ? 'ok' : 'idle', '사용자', live ? `${fmt(total)}/초` : '', null, total);
   groups.forEach((g, i) => {
     let sub = g.rps > 0 ? `${fmt(g.rps)}/초 · 평균 ${fmt(g.avgMs)}ms` : '요청 없음';
     if (i === 0 && f?.queueWaiting != null) sub = `${sub} · 줄 ${fmt(f.queueWaiting)}명`;
     if (L.narrow) sub = g.rps > 0 ? `${fmt(g.rps)}/초` : '0';
-    circle(L.nodes['g' + i], live ? groupLevel(g) : 'idle', g.name, sub, 'right');
+    circle(L.nodes['g' + i], live ? groupLevel(g) : 'idle', g.name, sub, 'right', g.rps);
   });
   const appLv = !live ? 'idle' : f.instancesUp === 0 ? 'crit' : f.instancesUp < f.instancesTotal ? 'warn' : 'ok';
   circle(L.nodes.app, appLv, '앱 서버', live ? `${f.instancesUp}/${f.instancesTotal}대 응답` : '');
@@ -373,7 +394,7 @@ function Tip({ hover, flow, groups, stores }) {
   } else if (hover.id.startsWith('g')) {
     const g = groups[+hover.id.slice(1)];
     title = g.name;
-    rows = [['초당 요청', fmt(g.rps)], ['평균 응답', `${fmt(g.avgMs)}ms`], ['5xx', `${fmt(g.err5)}/초`], ['429 제한', `${fmt(g.rejected)}/초`], ['409 충돌', `${fmt(g.conflict)}/초`]];
+    rows = [['초당 요청', fmt(g.rps)], ['평균 응답', `${fmt(g.avgMs)}ms`], ['5xx', `${fmt(g.err5)}/초`], ['429 제한', `${fmt(g.rejected)}/초`], ['409 충돌', `${fmt(g.conflict)}/초`], ['그 밖의 4xx', `${fmt(g.err4)}/초`]];
     if (hover.id === 'g0') rows.push(['줄 선 사람', fmt(flow?.queueWaiting)], ['입장한 사람', fmt(flow?.queueActive)]);
   } else {
     const s = stores[+hover.id.slice(1)];
@@ -394,21 +415,21 @@ function FlowTable({ flow, groups, stores }) {
   return (
     <table>
       <thead>
-        <tr><th>구간</th><th className="n">초당</th><th className="n">평균 응답</th><th className="n">5xx/초</th><th className="n">429/초</th><th className="n">409/초</th></tr>
+        <tr><th>구간</th><th className="n">초당</th><th className="n">평균 응답</th><th className="n">5xx/초</th><th className="n">429/초</th><th className="n">409/초</th><th className="n">4xx/초</th></tr>
       </thead>
       <tbody>
         {groups.map((g) => (
           <tr key={g.name}>
             <td>사용자 → {g.name}</td><td className="n">{fmt(g.rps)}</td><td className="n">{fmt(g.avgMs)}ms</td>
-            <td className="n">{fmt(g.err5)}</td><td className="n">{fmt(g.rejected)}</td><td className="n">{fmt(g.conflict)}</td>
+            <td className="n">{fmt(g.err5)}</td><td className="n">{fmt(g.rejected)}</td><td className="n">{fmt(g.conflict)}</td><td className="n">{fmt(g.err4)}</td>
           </tr>
         ))}
         {stores.map((s) => (
           <tr key={s.key}>
-            <td>앱 → {s.name} ({STORE_UNIT[s.key]})</td><td className="n">{fmt(s.ops)}</td><td colSpan={4} />
+            <td>앱 → {s.name} ({STORE_UNIT[s.key]})</td><td className="n">{fmt(s.ops)}</td><td colSpan={5} />
           </tr>
         ))}
-        <tr><td>Kafka → 앱 (소비)</td><td className="n">{fmt(flow?.kafkaConsumed)}</td><td colSpan={4} /></tr>
+        <tr><td>Kafka → 앱 (소비)</td><td className="n">{fmt(flow?.kafkaConsumed)}</td><td colSpan={5} /></tr>
       </tbody>
     </table>
   );

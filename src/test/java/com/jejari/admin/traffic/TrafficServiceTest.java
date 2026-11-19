@@ -28,6 +28,7 @@ class TrafficServiceTest {
 	HttpServer server;
 	final List<String> queries = new ArrayList<>();
 	volatile boolean down;
+	volatile boolean recovered;   // 최근 30초는 깨끗하고 그래프(1분 창)에는 아직 오류가 남은 상태
 
 	@BeforeEach
 	void start() throws IOException {
@@ -74,7 +75,8 @@ class TrafficServiceTest {
 						mat("\"method\":\"POST\",\"uri\":\"/api/v1/reservations\",\"status\":\"201\"", 8),
 						mat("\"method\":\"POST\",\"uri\":\"/api/v1/reservations\",\"status\":\"409\"", 2),
 						mat("\"method\":\"GET\",\"uri\":\"/api/v1/runs/{runId}/queue\",\"status\":\"200\"", 85),
-						mat("\"method\":\"GET\",\"uri\":\"/api/v1/runs/{runId}/seats\",\"status\":\"500\"", 5));
+						mat("\"method\":\"GET\",\"uri\":\"/api/v1/runs/{runId}/seats\",\"status\":\"500\"", 5),
+						mat("\"method\":\"GET\",\"uri\":\"/**\",\"status\":\"404\"", 45));
 			}
 			if (q.contains("histogram_quantile(0.95")) {
 				return ok("matrix", mat("", 1500));
@@ -82,18 +84,40 @@ class TrafficServiceTest {
 			if (q.contains("hikaricp_connections_active")) {
 				return ok("matrix", mat("", 97));
 			}
+			if (q.contains("offset 1d")) {
+				return ok("matrix", mat("", 20));
+			}
+			if (q.contains("process_start_time_seconds")) {     // 30분 전에 재시작, 그 전 값은 기간 밖
+				return ok("matrix", "{\"metric\":{\"instance\":\"app-1\"},\"values\":[[" + (end() - 30) + ",\"" + (end() - 1800)
+						+ "\"],[" + end() + ",\"" + (end() - 1800) + "\"]]}", "{\"metric\":{\"instance\":\"app-2\"},\"values\":[["
+						+ end() + ",\"" + (end() - 90000) + "\"]]}");
+			}
 			return ok("matrix");
 		}
 		if (q.contains("up{")) {
 			return ok("vector", vec("\"instance\":\"app-1\"", 1), vec("\"instance\":\"app-2\"", 0));
 		}
-		if (q.contains("avg_over_time")) {
+		if (q.contains("quantile_over_time")) {
 			return ok("vector", vec("", 20));
+		}
+		if (q.contains("sum by (method, uri, status)") && recovered) {
+			return ok("vector", vec("\"method\":\"GET\",\"uri\":\"/api/v1/runs/{runId}/queue\",\"status\":\"200\"", 120));
+		}
+		if (q.contains("sum by (method, uri, status)")) {    // "지금" 값 (최근 30초) — 그래프와 같은 비율로
+			return ok("vector", vec("\"method\":\"POST\",\"uri\":\"/api/v1/reservations\",\"status\":\"201\"", 8),
+					vec("\"method\":\"POST\",\"uri\":\"/api/v1/reservations\",\"status\":\"409\"", 2),
+					vec("\"method\":\"GET\",\"uri\":\"/api/v1/runs/{runId}/queue\",\"status\":\"200\"", 85),
+					vec("\"method\":\"GET\",\"uri\":\"/api/v1/runs/{runId}/seats\",\"status\":\"500\"", 5),
+					vec("\"method\":\"GET\",\"uri\":\"/**\",\"status\":\"404\"", 45));
+		}
+		if (q.contains("histogram_quantile(0.95")) {
+			return ok("vector", vec("", 1500));
 		}
 		if (q.contains("sum by (uri, status)")) {
 			return ok("vector", vec("\"uri\":\"/api/v1/runs/{runId}/queue\",\"status\":\"200\"", 40),
 					vec("\"uri\":\"/api/v1/runs/{runId}/queue\",\"status\":\"429\"", 10),
-					vec("\"uri\":\"/api/v1/reservations\",\"status\":\"500\"", 1));
+					vec("\"uri\":\"/api/v1/reservations\",\"status\":\"500\"", 1),
+					vec("\"uri\":\"/**\",\"status\":\"404\"", 4));
 		}
 		if (q.contains("_sum{")) {
 			return ok("vector", vec("\"uri\":\"/api/v1/runs/{runId}/queue\"", 1.0));
@@ -101,7 +125,7 @@ class TrafficServiceTest {
 		if (q.contains("lettuce")) {
 			return ok("vector", vec("", 300));
 		}
-		if (q.contains("sum by (method, uri) (rate(http_server_requests_seconds_count{job=\"jejari-app\",uri!~\"/actuator.*\"}[1m]))")) {
+		if (q.startsWith("query=sum by (method, uri) (rate(http_server_requests_seconds_count{") && !q.contains("status=~")) {
 			return ok("vector", vec("\"method\":\"GET\",\"uri\":\"/api/v1/runs/{runId}/queue\"", 90),
 					vec("\"method\":\"POST\",\"uri\":\"/api/v1/reservations\"", 10));
 		}
@@ -120,25 +144,31 @@ class TrafficServiceTest {
 
 		assertThat(v.available()).isTrue();
 		assertThat(v.t()).hasSize(121);
-		var traffic = v.charts().get(0);
+		var total = v.charts().get(0);
+		assertThat(total.key()).isEqualTo("total");
+		assertThat(total.lines().get(0).v()[120]).isEqualTo(145.0);
+		assertThat(total.lines().get(1).v()[120]).isEqualTo(20.0);          // 어제 같은 시각
+		var traffic = v.charts().get(1);
 		assertThat(traffic.lines()).extracting(TrafficView.Line::name).containsExactlyElementsOf(TrafficService.GROUPS);
 		assertThat(traffic.lines().get(0).v()[120]).isEqualTo(85.0);      // 대기열
 		assertThat(traffic.lines().get(2).v()[120]).isEqualTo(10.0);      // 예약·결제 (201 + 409)
-		assertThat(traffic.lines().get(0).v()[0]).isZero();                // 값 없는 시각은 0 (요청 없음)
+		assertThat(traffic.lines().get(0).v()[0]).isNull();                // 앱 지표가 없던 시각은 0이 아니라 빈칸
+		assertThat(v.restarts()).containsExactly(end() - 1800);             // 기간 밖(하루 전) 시작은 빼고
 
 		var now = v.now();
-		assertThat(now.rps()).isEqualTo(100.0);
-		assertThat(now.errorPct()).isEqualTo(5.0);
+		assertThat(now.rps()).isEqualTo(145.0);
+		assertThat(now.errorPct()).isEqualTo(5.0 / 145 * 100);
+		assertThat(now.clientErrorPct()).isEqualTo(45.0 / 145 * 100);
 		assertThat(now.conflictPerSec()).isEqualTo(2.0);
 		assertThat(now.reservePerSec()).isEqualTo(8.0);
-		assertThat(now.surge()).isEqualTo(5.0);                            // 100 / 평소 20
+		assertThat(now.surge()).isEqualTo(7.25);                           // 145 / 평소 20
 		assertThat(now.instancesUp()).isEqualTo(1);
 		assertThat(now.instancesTotal()).isEqualTo(2);
 
 		// 5xx 5% · DB 97% → 위험. p95 1.5초·앱 1대 응답 없음 → 주의. 급증은 알림
 		assertThat(v.health().level()).isEqualTo("CRIT");
 		assertThat(v.health().reasons()).extracting(TrafficView.Reason::metric)
-				.contains("error", "db", "p95", "up", "surge");
+				.contains("error", "db", "p95", "up", "surge", "client");
 		assertThat(v.health().reasons().get(0).level()).isEqualTo("CRIT");
 
 		assertThat(v.endpoints()).hasSize(2);
@@ -157,6 +187,7 @@ class TrafficServiceTest {
 		assertThat(queue.rejected()).isEqualTo(10.0);
 		assertThat(queue.avgMs()).isEqualTo(20.0);                          // 1초 / 50건
 		assertThat(f.groups().get(2).err5()).isEqualTo(1.0);
+		assertThat(f.groups().get(5).err4()).isEqualTo(4.0);
 		assertThat(f.stores().get(0).ops()).isEqualTo(300.0);
 		assertThat(f.stores().get(1).ops()).isNull();                       // 수집 안 된 지표는 null
 	}
@@ -167,6 +198,8 @@ class TrafficServiceTest {
 		assertThat(TrafficService.validRange("1h")).isTrue();
 		assertThat(TrafficService.validRange("sum(up)")).isFalse();
 		assertThat(queries).allMatch(q -> q.startsWith("query="));
+		// 이 화면 자신의 폴링은 요청 수에서 뺀다
+		assertThat(queries).filteredOn(q -> q.contains("http_server_requests")).allMatch(q -> q.contains("/api/v1/admin/traffic.*"));
 	}
 
 	@Test
@@ -184,6 +217,16 @@ class TrafficServiceTest {
 		TrafficView v = service().view("1h");
 		assertThat(v.available()).isFalse();
 		assertThat(v.reason()).contains("연결하지 못했습니다");
+	}
+
+	@Test
+	void 장애가_끝나면_30초_안에_정상으로_돌아온다() {
+		recovered = true;
+		TrafficView v = service().view("1h");
+		// 그래프에는 5xx가 남아 있어도 (1분 창) 지금 값·상태는 최근 30초로 본다
+		assertThat(v.charts().get(3).lines().get(0).v()[120]).isGreaterThan(0);
+		assertThat(v.now().errorPct()).isZero();
+		assertThat(v.health().reasons()).extracting(TrafficView.Reason::metric).doesNotContain("error", "client");
 	}
 
 	@Test

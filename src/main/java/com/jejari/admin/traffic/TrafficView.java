@@ -9,11 +9,11 @@ import java.util.List;
  * @param t         그래프 공통 시각 (초). 모든 {@link Chart}의 점이 이 시각에 맞춰 있다
  */
 public record TrafficView(boolean available, String reason, long at, String range, int stepSec, Health health, Now now,
-		long[] t, List<Chart> charts, List<Endpoint> endpoints) {
+		long[] t, List<Chart> charts, List<Endpoint> endpoints, List<Long> restarts) {
 
 	static TrafficView unavailable(String reason, long at, String range) {
 		return new TrafficView(false, reason, at, range, 0, new Health("UNKNOWN", List.of()), null, new long[0], List.of(),
-				List.of());
+				List.of(), List.of());
 	}
 
 	/** level: OK · WARN · CRIT · UNKNOWN. reasons는 심각한 것부터 */
@@ -25,11 +25,11 @@ public record TrafficView(boolean available, String reason, long at, String rang
 	}
 
 	/**
-	 * 지금 값 (그래프의 마지막 점). baselineRps = 직전 1시간 평균(마지막 10분 제외), surge = rps / baselineRps.
-	 * 비율(%)은 0~100.
+	 * 지금 값 (그래프의 마지막 점). baselineRps = 최근 24시간 초당 요청 중앙값(마지막 10분 제외), surge = rps / baselineRps.
+	 * 비율(%)은 0~100. clientErrorPct = 409·429를 뺀 4xx 비율
 	 */
 	public record Now(Double rps, Double baselineRps, Double surge, Double peakRps, Double p50Ms, Double p95Ms, Double p99Ms,
-			Double errorPct, Double rejectPct, Double conflictPerSec, Double reservePerSec, Double payPerSec,
+			Double errorPct, Double rejectPct, Double clientErrorPct, Double conflictPerSec, Double reservePerSec, Double payPerSec,
 			Double queueWaiting, Double queueActive, Double cpuPct, Double heapPct, Double dbPoolPct, Double dbPending,
 			Double tomcatPct, Double redisMemPct, int instancesUp, int instancesTotal) {
 	}
@@ -43,6 +43,7 @@ public record TrafficView(boolean available, String reason, long at, String rang
 	}
 
 	/** 최근 1분 기준 요청 많은 순 */
-	public record Endpoint(String method, String uri, String group, double rps, Double p95Ms, double errorPct, double share) {
+	public record Endpoint(String method, String uri, String group, double rps, Double p95Ms, double errorPct,
+			double clientErrorPct, double share) {
 	}
 }

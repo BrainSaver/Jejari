@@ -157,3 +157,20 @@
 .admin .kpi.surge{background:var(--amber-t);box-shadow:inset 0 -4px 0 var(--amber)}.admin .kpi.surge .d{color:var(--amber-d);font-weight:800}
 .admin .tr-tip.down{transform:translate(14px,-12px)}
 @media (max-width:720px){.admin .tr-opt{display:none}}
+/* A-10 다듬기: 크게 보기(관제실 TV), 끊김, KPI 추세선, 재시작 표시 */
+.admin .tr-page.full{background:var(--hanji),var(--paper);overflow:auto;height:100vh;padding:20px 28px}
+.admin .tr-page.full .tr-flow canvas{min-height:480px}
+.admin .tr-stale{opacity:.45;filter:grayscale(1);transition:opacity .3s}
+.admin .tr-kpis .kpi{position:relative;padding-bottom:34px}
+.admin .tr-spark{position:absolute;left:18px;right:18px;bottom:8px;height:22px;width:calc(100% - 36px)}
+.admin .tr-spark .l{fill:none;stroke:var(--ink2);stroke-width:1.5}
+.admin .tr-spark .a{fill:var(--line2);opacity:.7}
+.admin .kpi.alarm .tr-spark .l{stroke:#fff}.admin .kpi.alarm .tr-spark .a{fill:#fff;opacity:.18}
+.admin .tr-wide{grid-column:1/-1}
+.admin .tr-keys i.ref{background:none!important;border-top:2px dashed var(--faint);height:0}
+.admin .tr-keys i.restart{width:0;height:12px;border-left:2px dashed var(--mut);background:none}
+.admin .tr-restart line{stroke:var(--mut);stroke-width:1.5;stroke-dasharray:2 3}
+.admin .tr-restart text{font-size:10.5px;fill:var(--mut);font-weight:800}
+.admin .tr-ldot.e4{background:#8A97A8}
+.admin td.tr-warn{color:var(--amber-d);font-weight:900}
+.admin .tr-foot{font-size:12px;margin:4px 2px 0}
