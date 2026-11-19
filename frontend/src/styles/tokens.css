@@ -18,6 +18,9 @@
 }
 *{box-sizing:border-box}[hidden]{display:none!important}
 html,body{margin:0}
+/* 스크롤바 자리를 늘 비워 둔다. 창을 열며 스크롤을 막거나(overflow:hidden) 짧은 화면으로 바뀌어
+   스크롤바가 사라져도 가운데 정렬된 내용이 옆으로 밀리지 않는다 */
+html{scrollbar-gutter:stable}
 body{background:var(--hanji),var(--paper);background-attachment:fixed;color:var(--ink);font:17px/1.65 var(--sans);-webkit-font-smoothing:antialiased;word-break:keep-all}
 a{color:inherit}
 button{font:inherit;color:inherit}
