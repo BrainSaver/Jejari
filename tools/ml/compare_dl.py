@@ -20,8 +20,10 @@ import argparse
 import csv
 import glob
 import json
+import io
 import os
 import shutil
+import tarfile
 import subprocess
 import sys
 
@@ -99,7 +101,9 @@ def get_dl_dir(args, tmp):
     tar = subprocess.run(["git", "-C", ROOT, "archive", args.dl_ref, "tools/dl-defense"], capture_output=True)
     if tar.returncode != 0:
         sys.exit(f"{args.dl_ref}에서 tools/dl-defense를 꺼내지 못함 (git fetch origin SeongWon 먼저):\n{tar.stderr.decode()[-500:]}")
-    subprocess.run(["tar", "-x", "-C", tmp], input=tar.stdout, check=True)
+    # 외부 tar 대신 파이썬 tarfile (Windows tar는 -f - 없이는 테이프 장치를 찾는다). data 필터 = 폴더 밖으로 못 나감
+    with tarfile.open(fileobj=io.BytesIO(tar.stdout)) as tf:
+        tf.extractall(tmp, filter="data")
     return os.path.join(tmp, "tools", "dl-defense")
 
 
