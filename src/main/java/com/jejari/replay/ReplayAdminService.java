@@ -58,7 +58,8 @@ public class ReplayAdminService {
 			Map<String, String> seats) {
 	}
 
-	private record CaseWindow(SubjectType type, String hash, Timestamp from, Timestamp to) {
+	/** @param linked 케이스를 열 때 묶어 둔 세션 (case_session) */
+	private record CaseWindow(SubjectType type, String hash, Timestamp from, Timestamp to, List<String> linked) {
 	}
 
 	public List<Session> sessions(long caseId) {
@@ -157,11 +158,14 @@ public class ReplayAdminService {
 		List<CaseWindow> r = jdbc.query("""
 				SELECT subject_type, subject_hash, window_from, window_to FROM suspicious_case WHERE case_id = ?""",
 				(rs, i) -> new CaseWindow(SubjectType.valueOf(rs.getString(1)), rs.getString(2), rs.getTimestamp(3),
-						rs.getTimestamp(4)), caseId);
+						rs.getTimestamp(4), List.of()), caseId);
 		if (r.isEmpty()) {
 			throw new BusinessException(RiskAdminErrorCode.CASE_NOT_FOUND);
 		}
-		return r.get(0);
+		CaseWindow w = r.get(0);
+		List<String> linked = jdbc.queryForList("SELECT session_id FROM case_session WHERE case_id = ?", String.class,
+				caseId);
+		return new CaseWindow(w.type(), w.hash(), w.from(), w.to(), linked);
 	}
 
 	/** 대상의 계정(또는 같은 CI·기기) 세션 중 의심 구간과 겹치는 것 */
@@ -169,6 +173,9 @@ public class ReplayAdminService {
 		List<Long> members = jdbc.queryForList(RiskInputReader.membersOf(w.type()), Long.class, w.hash());
 		List<Bson> who = new ArrayList<>();
 		who.add(Filters.in("member_id", members));
+		if (!w.linked().isEmpty()) {
+			who.add(Filters.in("_id", w.linked())); // 열 때 묶어 둔 세션 (그 뒤 연결이 바뀌어도 남음)
+		}
 		if (w.type() == SubjectType.CI) {
 			who.add(Filters.eq("ci_hash", w.hash()));
 		} else if (w.type() == SubjectType.DEVICE) {
