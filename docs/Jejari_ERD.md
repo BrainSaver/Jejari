@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v24 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-18
+> 스키마 v25 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -36,11 +36,11 @@
 
 | 항목 | 값 |
 |---|---|
-| 테이블 | 60개 (운영 56 + 확장 예정 4) |
-| 저장소 | Oracle 44 · MongoDB 11 · Redis 1 · 확장 예정 4 |
+| 테이블 | 61개 (운영 57 + 확장 예정 4) |
+| 저장소 | Oracle 44 · MongoDB 12 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 521개 |
-| 관계 (FK) | 85개 (Oracle 제약 60 · 논리 참조 20) |
+| 컬럼 | 529개 |
+| 관계 (FK) | 87개 (Oracle 제약 60 · 논리 참조 22) |
 
 | 영역 | 저장소 | 테이블 |
 |---|---|---|
@@ -50,7 +50,7 @@
 | 예약·결제 | Oracle | `seat_inventory`, `reservation`, `reservation_seat`, `reservation_history`, `payment`, `cancellation`, `cancel_fee_policy`, `ticket_transfer`(확장), `purchase_counter` |
 | 이벤트 신뢰성 | Oracle | `outbox_event`, `processed_event`, `saga_instance` |
 | 취소표 재배정 | Oracle | `waitlist`, `notification` |
-| 위험 점수·관리자 | Oracle | `risk_score`, `risk_score_history`, `admin_action`, `model_run` |
+| 위험 점수·관리자 | Oracle, MongoDB | `risk_score`, `risk_score_history`, `admin_action`, `model_run`, `model_score` |
 | CCTV 되돌아보기 | MongoDB, Oracle | `replay_session`, `replay_event`, `suspicious_case`, `case_session`, `case_marker`, `evidence_snapshot`, `replay_access_log` |
 | MongoDB 로그 | MongoDB | `behavior_log`, `queue_log` |
 | Redis | Redis | `redis_keys` |
@@ -137,7 +137,7 @@
 | Kafka 소비 | processed_event INSERT(중복이면 skip) → 업무 처리 → 커밋 → 오프셋 커밋 (§12) |
 | 로그 적재·보관 | behavior_log·replay_event는 Kafka → insertMany. expire_at TTL, legal_hold 세션은 컨슈머가 expire_at 없이 저장 (§13) |
 | 운영 설정 변경 | app_policy 값 변경 → version + 1 → app_policy_history 한 행 → policy:cache 갱신 → 각 서버가 version 비교 후 다시 로딩 |
-| 위험 점수 | behavior_log·replay_event·cancellation → risk_feature → model_run(활성 모델) → risk_score → risk:* 캐시 → 대기열 score 반영 |
+| 위험 점수 | behavior_log·replay_event·cancellation → risk_feature → model_run(활성 모델) → risk_score → risk:* 캐시 → 대기열 score 반영. 모델 보조 의견은 별도: tools/ml score.py → model_score → 관리자 화면만 |
 | CCTV | 임계 초과·규칙 적중 → suspicious_case → 같은 CI·기기·결제수단 세션 case_session → 자동 case_marker → evidence_snapshot 동결(조각+해시) → 관리자 재생·판정 → admin_action → replay_access_log에 열람 기록 |
 | Argon2 로그인 | rate:login 확인 → 세마포어 획득(auth.max_concurrent_hash) → Argon2id 검증(없는 계정도 더미 해시) → verify_ms 기록 → needs_rehash면 재해싱 → auth_session 발급 |
 
@@ -680,6 +680,9 @@ erDiagram
   password_reset_token {
     NUMBER token_id PK
   }
+  model_score {
+    ObjectId _id PK
+  }
   member ||--o{ payment_method : "member_id"
   member ||--o{ member_device : "member_id"
   member ||--o{ reservation : "member_id"
@@ -699,6 +702,7 @@ erDiagram
   member |o--o{ ticket_transfer : "to_member_id"
   member |o--o{ member_push_token : "member_id"
   member |o--o{ password_reset_token : "member_id"
+  member ||--o{ model_score : "member_id"
 ```
 
 <a id="member"></a>
@@ -723,7 +727,7 @@ Oracle
 
 > **제약·비고** ci_hash는 UNIQUE를 걸지 않음. 다계정 어뷰저를 재현하려면 같은 CI가 여러 계정에 있어야 함. · ci_hash는 변경 불가 (본인인증 결과가 바뀌면 신규 회원으로 처리). 그래서 reservation.ci_hash 비정규화가 안전함 · CREATE SEQUENCE member_seq; · CREATE INDEX ix_member_ci_hash ON member (ci_hash);
 
-**관계** [`payment_method`](#payment-method).member_id → 이 테이블 · [`member_device`](#member-device).member_id → 이 테이블 · [`reservation`](#reservation).member_id → 이 테이블 · [`waitlist`](#waitlist).member_id → 이 테이블 · [`notification`](#notification).member_id → 이 테이블 · [`behavior_log`](#behavior-log).member_id → 이 테이블 · [`queue_log`](#queue-log).member_id → 이 테이블 · [`synthetic_label`](#synthetic-label).member_id → 이 테이블 · [`member_credential`](#member-credential).member_id → 이 테이블 · [`identity_verification`](#identity-verification).member_id → 이 테이블 · [`auth_session`](#auth-session).member_id → 이 테이블 · [`login_attempt`](#login-attempt).member_id → 이 테이블 · [`replay_session`](#replay-session).member_id → 이 테이블 · [`case_session`](#case-session).member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).from_member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).to_member_id → 이 테이블 · [`member_push_token`](#member-push-token).member_id → 이 테이블 · [`password_reset_token`](#password-reset-token).member_id → 이 테이블
+**관계** [`payment_method`](#payment-method).member_id → 이 테이블 · [`member_device`](#member-device).member_id → 이 테이블 · [`reservation`](#reservation).member_id → 이 테이블 · [`waitlist`](#waitlist).member_id → 이 테이블 · [`notification`](#notification).member_id → 이 테이블 · [`behavior_log`](#behavior-log).member_id → 이 테이블 · [`queue_log`](#queue-log).member_id → 이 테이블 · [`synthetic_label`](#synthetic-label).member_id → 이 테이블 · [`member_credential`](#member-credential).member_id → 이 테이블 · [`identity_verification`](#identity-verification).member_id → 이 테이블 · [`auth_session`](#auth-session).member_id → 이 테이블 · [`login_attempt`](#login-attempt).member_id → 이 테이블 · [`replay_session`](#replay-session).member_id → 이 테이블 · [`case_session`](#case-session).member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).from_member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).to_member_id → 이 테이블 · [`member_push_token`](#member-push-token).member_id → 이 테이블 · [`password_reset_token`](#password-reset-token).member_id → 이 테이블 · [`model_score`](#model-score).member_id → 이 테이블
 
 <a id="payment-method"></a>
 #### `payment_method` 결제 수단
@@ -1506,6 +1510,11 @@ erDiagram
   model_run {
     VARCHAR2 model_version PK
   }
+  model_score {
+    ObjectId _id PK
+    Long member_id FK
+    String model_version FK
+  }
   admin_user {
     NUMBER admin_id PK
   }
@@ -1515,10 +1524,15 @@ erDiagram
   risk_feature {
     String subject_type PK
   }
+  member {
+    NUMBER member_id PK
+  }
   model_run |o--o{ risk_score : "model_version"
   admin_user ||--o{ admin_action : "admin_id"
   admin_action |o--o{ suspicious_case : "admin_action_id"
   model_run |o--o{ risk_feature : "model_version"
+  member ||--o{ model_score : "member_id"
+  model_run ||--o{ model_score : "model_version"
 ```
 
 <a id="risk-score"></a>
@@ -1541,7 +1555,6 @@ Oracle
 | `avg_request_interval_ms` | NUMBER |  | 시스템 | 평균 요청 간격 | 매크로 신호 |
 | `account_age_days` | NUMBER |  | 시스템 | 가장 오래된 계정 나이 | 신규 계정 기본 신뢰도 |
 | `rule_score` | NUMBER(5,2) |  | 시스템 | 규칙 기반 점수 |  |
-| `iforest_score` | NUMBER(5,2) |  | 시스템 | Isolation Forest 점수 | 두 방식 비교 |
 | `final_score` | NUMBER(5,2) | NN | 시스템 | 최종 점수 (0~100) | 대기열 순번 조정량 |
 | `reasons` | CLOB |  | 시스템 | 점수 근거 목록 (JSON) | 운영 원칙: 근거 기록 |
 | `model_version` | VARCHAR2(20) | FK → model_run | 시스템 | 산정 모델 버전 | 모델 교체 시 비교 |
@@ -1597,12 +1610,12 @@ Oracle
 
 Oracle
 
-규칙·Isolation Forest 모델 버전별 파라미터와 성능. 발표용 수치의 원천.
+규칙·모델 버전별 파라미터와 성능. 발표용 수치의 원천. 규칙(RULE)은 risk_score를, 합성 모델(ENSEMBLE)은 model_score를 낸다.
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
-| `model_version` | VARCHAR2(20) | PK | 시스템 | 예: iforest-2026.11-01 | risk_score.model_version이 참조 |
-| `algorithm` | VARCHAR2(20) | NN | 시스템 | RULE / IFOREST | 두 방식 비교 |
+| `model_version` | VARCHAR2(20) | PK | 시스템 | 예: rule-2026.11-01, ens-2026.11-01 | risk_score.model_version·model_score.model_version이 참조 |
+| `algorithm` | VARCHAR2(20) | NN | 시스템 | RULE / IFOREST / ENSEMBLE | 두 방식 비교. ENSEMBLE = 부스팅 + IF + GRU 합성 (tools/ml, 점수는 model_score) |
 | `params` | CLOB |  | 시스템 | contamination, n_estimators 등 (JSON) | 재현 |
 | `train_source` | VARCHAR2(100) |  | 시스템 | 학습 데이터 범위 |  |
 | `trained_at` | TIMESTAMP | NN | 시스템 |  |  |
@@ -1613,9 +1626,9 @@ Oracle
 | `decay_half_life_days` | NUMBER(4) |  | 시스템 | 점수 반감기 (일) | 기간 경과 시 점수 감소 파라미터 |
 | `is_active` | CHAR(1) | NN | 시스템 | 운영 적용 여부 |  |
 
-> **제약·비고** is_active = Y는 한 번에 하나
+> **제약·비고** is_active = Y는 algorithm별로 하나 (RULE과 ENSEMBLE은 동시에 켤 수 있음) · threshold는 RULE이면 케이스 자동 생성 기준, ENSEMBLE이면 화면 표시 기준(사람 검증 세트 오탐 5%)
 
-**관계** [`risk_score`](#risk-score).model_version → 이 테이블 · [`risk_feature`](#risk-feature).model_version → 이 테이블
+**관계** [`risk_score`](#risk-score).model_version → 이 테이블 · [`risk_feature`](#risk-feature).model_version → 이 테이블 · [`model_score`](#model-score).model_version → 이 테이블
 
 **예시 데이터** (팀 확정 전 예시값)
 
@@ -1623,6 +1636,30 @@ Oracle
 |---|---|---|---|---|---|---|---|
 | rule-2026.11-01 | RULE | {"weights":"risk_score 신호별 가중치"} | synthetic v1 | 2026-11-18 10:00 | 80 | 30 | Y |
 | iforest-2026.11-01 | IFOREST | {"n_estimators":200,"contamination":0.05} | synthetic v1 + ext_web_access_log | 2026-11-18 10:00 | 80 | 30 | N |
+| ens-2026.11-01 | ENSEMBLE | {"models":["gbm","iforest","gru x5"],"dropped":["account_age_days_log","accounts_on_ip","distinct_ips","min_sync_gap_ip_s_log"]} | tools/ml generate.py 18000계정 | 2026-11-18 10:52 | 97.6 | null | N |
+
+<a id="model-score"></a>
+#### `model_score` 모델 보조 의견 점수
+
+MongoDB
+
+위험 점수 모델(부스팅 + Isolation Forest + GRU, tools/ml)이 계정마다 매긴 점수와 근거. 관리자 화면(A-05·A-06)에 보여 주는 보조 의견이며 대기열 순번·제한에는 쓰지 않는다.
+
+| 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
+|---|---|---|---|---|---|
+| `_id` | ObjectId | PK | 시스템 |  |  |
+| `member_id` | Long | FK, NN → member | 시스템 | 점수를 매긴 계정 | 모델이 계정 단위로 매김 |
+| `model_version` | String | FK, NN → model_run | 시스템 | 예: ens-2026.11-01 | 버전끼리 비교 |
+| `score` | Double | NN | 시스템 | 합성 점수 (0~100, 세 모델 백분위 중 최댓값) | 보조 의견. 문턱은 model_run.threshold |
+| `by` | String | NN | 시스템 | GBM / IF / GRU | 가장 높게 본 모델. GRU면 근거 숫자로 이유가 안 보여 화면 재생(CCTV)으로 안내 |
+| `scores` | Object |  | 시스템 | 모델별 점수 { gbm, if, gru } (GRU가 없으면 gru 없음) | 규칙과 모델이 다르게 볼 때 비교 |
+| `reasons` | Array |  | 시스템 | 근거 3개 (특징 이름·값 문자열) | 운영 원칙: 근거 기록. 개인정보 없음 |
+| `source` | String |  | 시스템 | 점수를 매긴 데이터 (대회 태그 등) | 어느 데이터로 매겼는지 |
+| `scored_at` | Date | NN | 시스템 | 점수를 매긴 시각 |  |
+
+> **제약·비고** UNIQUE { member_id: 1, model_version: 1 } — 같은 버전을 다시 적재하면 덮어씀(upsert) · 인덱스 { model_version: 1, score: -1 } (A-05 목록) · 적재는 오프라인 Python(score.py → scores.csv)이 하고 정답 칸(label·strategy)은 넣지 않음. CSV는 헤더 이름으로 읽음 · 화면은 model_run에서 algorithm = ENSEMBLE AND is_active = Y인 버전만 · 케이스 대상(CI·기기·결제수단)에 묶인 계정은 서버가 조회 시 Oracle에서 찾아 최댓값을 보여 줌 (CI 해시 사본을 두지 않음) · risk_score(규칙 점수, 대기열이 읽음)와 섞지 않음 · 점선은 논리 참조
+
+**관계** member_id → [`member`](#member) · model_version → [`model_run`](#model-run)
 
 <a id="g-replay"></a>
 ### CCTV 되돌아보기
@@ -2223,6 +2260,7 @@ Oracle
 | 관리자: 열차·노선·좌석 등록 | route, route_station, train, train_car, seat, train_run | 좌석 자동 생성 수 = car_type.seat_count 합 |
 | 관리자: 실시간 현황 | Prometheus·Grafana + reservation 집계 | 대시보드 |
 | 관리자: 위험 사용자 조치 | risk_score, admin_action, admin_user, member.status | 조치 후 대기열 반영 |
+| 모델 보조 의견 (A-05·A-06) | model_score, model_run(ENSEMBLE) | 정답 칸 미적재, 대기열 순번이 모델 점수와 무관 |
 | CCTV 되돌아보기 | replay_session, replay_event, suspicious_case, case_session, case_marker, evidence_snapshot, replay_access_log | 증거 해시 재계산 일치 |
 | 운영 설정 | app_policy, app_policy_history, policy:cache | 값 변경 후 version 증가·이력·캐시 갱신 |
 | 빅데이터 분석 | ext_dataset, ext_hotel_booking, ext_web_access_log, ext_renfe_price, risk_feature, model_run | 정밀도·재현율·F1 |
@@ -2349,6 +2387,7 @@ Oracle
 | v22 | 취소표 행동 로그 (WL-01·02): behavior_log.event_type에 WAITLIST_APPLY·WAITLIST_CANCEL 추가. 취소표는 대기열 토큰 없이 들어오는 유일한 길인데 로그가 없어 FAST_CLICK·REGULAR_INTERVAL이 그 구간을 못 본다 |
 | v23 | train_run.status의 DEPARTED 전이 주체를 판매 오픈 스케줄러로 명시 (기점 출발 시각이 지나면). 지금까지 DEPARTED로 바꾸는 코드도 읽는 코드도 없어 CHECK 제약에만 살아 있던 값이다 |
 | v24 | case_marker.rule_code CHECK에 REGULAR_INTERVAL 추가 (강다인 요청). 일정 간격 매크로가 이 규칙에만 걸리는데 마커 규칙이 아니라 케이스가 열리지 않았다 (조영준 경계 측정). 기존 DB는 db/patch/v24.sql |
+| v25 | 모델 보조 의견 (RISK-05, 강다인 설계안): MongoDB model_score 추가(계정 단위 점수·근거, UNIQUE member_id+model_version), model_run.algorithm에 ENSEMBLE, is_active는 algorithm별 하나, risk_score의 Isolation Forest 점수 칸 삭제(쓰는 코드 없음). 기존 DB는 db/patch/v25.sql |
 
 ## 참고 자료
 
