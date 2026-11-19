@@ -1,3 +1,6 @@
 out/
 __pycache__/
 *.pt
+# 최종 학습 모델만 추적한다 (실험용 out/ 은 계속 제외)
+!models/
+!models/*.pt

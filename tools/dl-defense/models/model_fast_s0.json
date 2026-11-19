@@ -1,0 +1,19 @@
+{
+  "threshold": 0.6440005898475647,
+  "cfg": {
+    "epochs": 30,
+    "batch_size": 128,
+    "lr": 0.002,
+    "weight_decay": 0.01,
+    "hidden": 64,
+    "scale_aug": [
+      1.0,
+      1.0
+    ],
+    "seed": 0
+  },
+  "extra": {
+    "data": "attack csv (+simulated humans)",
+    "max_fpr": 0.02
+  }
+}

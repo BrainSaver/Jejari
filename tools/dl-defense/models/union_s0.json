@@ -1,0 +1,19 @@
+{
+  "models": [
+    {
+      "name": "main",
+      "path": "models/model_fast_s0.pt",
+      "thr": 0.6766188144683838,
+      "soft_thr": 0.6695970892906189
+    },
+    {
+      "name": "spec1",
+      "path": "models/model_fastspec_s0.pt",
+      "thr": 0.9629179239273071,
+      "soft_thr": 0.8063908219337463
+    }
+  ],
+  "calib_humans": 3200,
+  "calib_hard_fpr": 0.015,
+  "calib_soft_fpr": 0.05
+}

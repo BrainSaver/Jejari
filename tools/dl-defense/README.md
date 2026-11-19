@@ -13,6 +13,27 @@
 - 입력에 **이메일·태그·라벨·UA·IP 해시를 쓰지 않습니다.** 기기 해시만 씁니다 (같은 와이파이는 IP가 같아서 가짜 신호가 됩니다).
 - 매수 제한(1회 4 · 열차당 4 · 1일 20 · 명절 8)과 무관합니다. 점수는 참고용입니다.
 
+## 학습된 모델 (`models/`)
+
+최종 구성(단계형, fast 방어 포함)의 학습 모델이 저장소에 있습니다. 실험용 모델은 `out/`에 두며 커밋하지 않습니다.
+
+| 파일 | 내용 |
+|---|---|
+| `models/model_fast_s{0,1,2}.pt` | 주 모델 (v3 17변형 + 가속 사람형 봇 학습, 모델 시드 0·1·2) |
+| `models/model_fastspec_s{0,1,2}.pt` | fast 전용 모델 (사람 대 가속 봇) |
+| `models/union_s{0,1,2}.json` | 단계형 문턱 (강한 오탐 1.5% · 약한 오탐 5%, 보정 사람 3,200명). 시드마다 주 모델 + 전용 모델 한 쌍 |
+| `models/*.json` | 각 모델에 저장된 문턱·설정 (참고용) |
+
+```bash
+cd tools/dl-defense                                   # JSON 안의 경로가 이 폴더 기준이다
+python score.py --union models/union_s0.json --input events.jsonl --top 20
+python eval_csv.py --union models/union_s0.json --csv test_attack.csv --device-context --dup-context
+```
+
+- **가상 데이터·공격 생성기 CSV로 학습**했습니다. 개인정보와 업로드 CSV는 들어 있지 않습니다.
+- 모델 구조(`jejari_dl/model.py`)나 입력(`schema.py`)이 바뀌면 이 파일들은 불러올 수 없으니, 바꾼 뒤에는 README의 명령으로 다시 학습하고 `calibrate_union.py`로 문턱 파일도 다시 만드세요.
+- 실제 로그에 쓸 때는 `score.py`가 `realdata.py`의 변환(기기 해시 기반 공유 신호 · 간격 중복)을 씁니다. CSV 시험용 변환과 매핑이 달라서, **실제 로그에서의 점수 분포는 합성 데이터와 다를 수 있고 문턱도 그대로 맞지 않을 수 있습니다.**
+
 ## 구성
 
 ```
