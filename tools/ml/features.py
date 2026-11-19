@@ -47,6 +47,20 @@ FEATURES = [
     "handoff_in",                # 남이 취소한 좌석을 60초 안에 잡은 횟수 (넘겨받기)
     "handoff_out",               # 내가 취소한 좌석을 남이 60초 안에 잡은 횟수 (넘겨주기)
 ]
+# 단계별 속도 (2026-11-19 실험, docs/강동균/모델-비교-김성원-20261119.md). ML_STAGE=1일 때만 넣는다.
+# 기본값은 꺼짐 — 대회 전 모델(data/ml/model)은 이 특징 없이 학습했다. 끝에 붙이므로 기존 모델의 열 번호는 그대로
+STAGE = [
+    "open_to_queue_log",         # 판매 오픈(운행 첫 이벤트) → 첫 대기열 진입, 초 log1p
+    "queue_to_seatview_log",     # 첫 대기열 진입 → 첫 좌석표 조회 (대기 시간 포함)
+    "view_to_hold_min_log",      # 좌석표 조회 → 선점, 가장 빠른 한 번 (사람: 좌석표를 보고 고르기)
+    "view_to_hold_med_log",      # 같은 값의 중앙값
+    "hold_without_view",         # 직전에 좌석표 조회가 없던 선점 수 (API 직접 호출)
+    "hold_to_pay_med_log",       # 선점 → 결제 중앙값 (카드 입력)
+    "crit_vs_pace",              # 가장 빠른 고르기 − 평소 간격 (log). 중요한 단계만 유난히 빠르면 크게 음수
+]
+STAGE_ON = os.environ.get("ML_STAGE") == "1"
+if STAGE_ON:
+    FEATURES = FEATURES + STAGE
 HANDOFF_SEC = 60
 
 
@@ -80,6 +94,40 @@ def pct(xs, q):
         return math.nan
     xs = sorted(xs)
     return xs[min(len(xs) - 1, int(q * len(xs)))]
+
+
+def stage_speed(evs, holds, pays, ints, run_open) -> dict:
+    """단계별 속도 (STAGE). 평균 하나로 뭉개지 않고 "어느 단계에서 얼마나 빨랐나"를 따로 둔다"""
+    L = math.log1p
+    qe = [e for e in evs if e["event_type"] == "QUEUE_ENTER"]
+    o2q = q2v = math.nan
+    if qe and qe[0].get("run_id") in run_open:
+        o2q = L(max(0.0, (ts(qe[0]["ts"]) - run_open[qe[0]["run_id"]]).total_seconds()))
+    if qe:
+        t0 = ts(qe[0]["ts"])
+        v = next((e for e in evs if e["event_type"] == "VIEW_SEAT" and ts(e["ts"]) >= t0), None)
+        q2v = L((ts(v["ts"]) - t0).total_seconds()) if v else math.nan
+    v2h, no_view, last_view = [], 0, None
+    for e in evs:
+        if e["event_type"] == "VIEW_SEAT":
+            last_view = ts(e["ts"])
+        elif e["event_type"] == "SEAT_HOLD":
+            if last_view is None:
+                no_view += 1
+            else:
+                v2h.append((ts(e["ts"]) - last_view).total_seconds())
+            last_view = None if e["response_status"] < 300 else last_view
+    hold_at = {(e.get("meta") or {}).get("reservationId"): ts(e["ts"]) for e in holds if e["response_status"] < 300}
+    h2p = [(ts(e["ts"]) - hold_at[r]).total_seconds() for e in pays
+           if (r := (e.get("meta") or {}).get("reservationId")) in hold_at]
+    v2h_min = L(max(0.0, min(v2h))) if v2h else math.nan
+    return {
+        "open_to_queue_log": o2q, "queue_to_seatview_log": q2v, "view_to_hold_min_log": v2h_min,
+        "view_to_hold_med_log": L(max(0.0, statistics.median(v2h))) if v2h else math.nan,
+        "hold_without_view": no_view,
+        "hold_to_pay_med_log": L(max(0.0, statistics.median(h2p))) if h2p else math.nan,
+        "crit_vs_pace": (v2h_min - L(statistics.median(ints))) if v2h and ints else math.nan,
+    }
 
 
 def build(folder: str) -> list[dict]:
@@ -197,7 +245,7 @@ def build(folder: str) -> list[dict]:
         short = [i for i in ints if i < 10]
         smean = statistics.fmean(short) if short else math.nan
 
-        rows.append({
+        rows.append({**(stage_speed(evs, holds, pays, ints, run_open) if STAGE_ON else {}),
             "member_id": m, "label": info.get("label"), "strategy": info.get("strategy"),
             "group": info.get("group"), "source": info.get("source"), "family": info.get("family"),
             "n_events": len(evs), "n_view": typ.count("VIEW_TRAIN") + typ.count("VIEW_SEAT"),

@@ -128,6 +128,10 @@ class World:
                 return seats
         return []
 
+    # 사람이 좌석표를 보고(또는 실패를 보고) 고르고 누르기까지. [가정] 대회 사람 데이터로 다시 맞춘다
+    # ML_PICK_FLOOR=1일 때만 쓴다 (기본 꺼짐 = 대회 전 모델의 학습 데이터와 같게). 꺼 두면 사람도 0.25초 만에 고를 수 있다
+    PICK_FLOOR_S, PICK_MED_S = 1.0, 3.0
+
     def buy(self, acc: Account, t: datetime, n: int, gap, *, browse=0, retry_same=0, retry_other=0,
             pay=True, together=False, run=None, refresh=0, want=None, hold_gap=None, queue=(2, 90)
             ) -> tuple[datetime, int | None]:
@@ -136,28 +140,35 @@ class World:
         run = run or self.cur_run
         E = lambda *a, **k: self.emit(*a, run=run, **k)
         hg = hold_gap or gap
+        human = acc.label == "NORMAL" and os.environ.get("ML_PICK_FLOOR") == "1"
+        if human:
+            pick_med = self.PICK_MED_S * self.r.lognormvariate(0, HUMAN_SPEED_SIGMA)
+            pick = lambda: max(self.PICK_FLOOR_S, self.r.lognormvariate(math.log(pick_med), 0.5))
+            hgp = lambda: max(pick(), hg())
+        else:
+            pick, hgp = gap, hg
         for _ in range(browse):
             E(acc, t, "VIEW_TRAIN")
             t += timedelta(seconds=gap())
         E(acc, t, "QUEUE_ENTER", ticketNo=self.r.randint(1, 50000), rejected=False)
         t += timedelta(seconds=self.r.uniform(*queue))      # 대기열에서 기다린 시간 (로그 없음)
         E(acc, t, "VIEW_SEAT", availableCount=self.r.randint(0, 900))
-        t += timedelta(seconds=gap())
-        for _ in range(refresh):
+        t += timedelta(seconds=(pick() if human and not refresh else gap()))
+        for i in range(refresh):
             E(acc, t, "VIEW_SEAT", availableCount=self.r.randint(0, 900))
-            t += timedelta(seconds=gap())
+            t += timedelta(seconds=(pick() if human and i == refresh - 1 else gap()))
         # 남이 먼저 잡은 좌석을 노렸다가 실패 (같은 좌석 반복 / 다른 좌석)
         if retry_same:
             target = self.r.choice(SEAT_POOL)
             for _ in range(retry_same):
                 E(acc, t, "SEAT_HOLD", 409, seatIds=[target], seatCount=1, errorCode="SEAT_ALREADY_HELD")
-                t += timedelta(seconds=hg())
+                t += timedelta(seconds=hgp())
         for _ in range(retry_other):
             s = self.r.choice(SEAT_POOL)
             E(acc, t, "SEAT_HOLD", 409, seatIds=[s], seatCount=1, errorCode="SEAT_ALREADY_HELD")
             t += timedelta(seconds=hg())
             E(acc, t, "VIEW_SEAT", availableCount=self.r.randint(0, 900))
-            t += timedelta(seconds=gap())
+            t += timedelta(seconds=pick() if human else gap())
         if want and not self.taken.intersection(want):
             seats = list(want)
         else:
