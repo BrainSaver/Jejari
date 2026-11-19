@@ -82,6 +82,8 @@ export default function Search() {
     // 이전 검색의 시각은 같은 날짜를 다시 찾을 때만 유지한다
     const keepTime = form.timeSet || (params.get('time') === form.time && params.get('date') === form.date);
     // 시각을 직접 고르지 않았으면 조건에 넣지 않는다. 넣으면 "검색한 순간의 지금 시각"이 굳어, 나중에 날짜만 바꿀 때 열차가 걸러진다
+    // 고르지 않은 시각은 [열차 찾기]를 누른 지금으로 다시 맞춘다 (화면을 오래 열어 두면 처음 연 시각이 남아 있음)
+    if (!keepTime) setForm((f) => ({ ...f, time: defaultTime(f.date) }));
     setParams({ from: form.from, to: form.to, date: form.date, ...(keepTime ? { time: form.time } : {}), adult: String(form.adult), child: String(form.child), senior: String(form.senior), ...(form.grade ? { grade: form.grade } : {}) });
   };
 
@@ -152,7 +154,6 @@ export default function Search() {
                 <span className="v">{timeShort(form.time)}</span>
                 <input
                   type="time" aria-label="출발 시각" value={form.time} required
-                  min={form.date === seoulToday() ? seoulHm() : undefined}
                   onClick={openPicker}
                   onChange={(e) => e.target.value && setForm({ ...form, time: e.target.value, timeSet: true })}
                   style={overlay}
