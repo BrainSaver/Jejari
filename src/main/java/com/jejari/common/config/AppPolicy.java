@@ -2,11 +2,14 @@ package com.jejari.common.config;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+
+import com.jejari.common.policy.PolicyBounds;
 
 /**
  * 운영 값 읽기 (app_policy). TTL·마감·주기를 코드에 박지 않기 위한 장치입니다 (CLAUDE.md "Redis").
@@ -18,7 +21,7 @@ import org.springframework.stereotype.Component;
  * 요청마다 Redis·DB를 왕복하지 않도록 앱 안에서 1초 들고 있습니다. 바꾸면 최대 1초 뒤 반영됩니다.
  */
 @Component
-public class AppPolicy {
+public class AppPolicy implements PolicyBounds {
 
 	public static final String PAY_DEADLINE_MIN = "reservation.pay_deadline_min";
 	public static final String IDEM_TTL_SEC = "idem.ttl_sec";
@@ -71,6 +74,34 @@ public class AppPolicy {
 	public AppPolicy(StringRedisTemplate redis, JdbcTemplate jdbc) {
 		this.redis = redis;
 		this.jdbc = jdbc;
+	}
+
+	// ── 관리자 화면(ADM-08)이 저장 전에 거절하는 기준 (PolicyBounds, 2026-11-19) ──
+	// 이 클래스는 범위를 검사하지 않고 읽으므로(0이면 녹화가 바로 지워지는 등) 관리자 쪽에서 막는다.
+	// 대기·리플레이는 강다인 님, idem.ttl_sec 하한은 팀장님 확정. 예약·스캐너·좌석 배치도·판매 오픈(강동균 님)은 답을 받은 뒤 추가
+
+	@Override
+	public Map<String, Range> bounds() {
+		return Map.ofEntries(
+				range(WAITLIST_MAX_PER_RUN, 1, 5),
+				range(WAITLIST_MAX_ACTIVE, 1, 10),
+				range(REOFFER_HOLD_SEC, 30, 600),
+				range(WAITLIST_PENALTY_MS_PER_POINT, 0, 3_600_000),
+				range(REPLAY_RETENTION_DAYS, 7, 180),      // 0이면 녹화가 바로 지워짐
+				range(REPLAY_MAX_PATH_POINTS, 5, 200),
+				range(REPLAY_BATCH_SEC, 1, 60),
+				range(REPLAY_MAX_EVENTS_PER_SESSION, 100, 50_000),
+				range(REPLAY_FULL_RECORD_SCORE, 0, 100),
+				range(IDEM_TTL_SEC, 600, 86_400));         // 결제 마감 전에 중복 방지 키가 사라지지 않게 (팀장님)
+	}
+
+	@Override
+	public Map<String, DecimalRange> decimalBounds() {
+		return Map.of(REPLAY_FULL_RECORD_RATIO, DecimalRange.of("0", "1"));
+	}
+
+	private static Entry<String, Range> range(String key, long min, long max) {
+		return Map.entry(key, new Range(min, max));
 	}
 
 	public long getLong(String key) {

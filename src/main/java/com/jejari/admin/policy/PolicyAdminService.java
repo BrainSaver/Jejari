@@ -2,9 +2,13 @@ package com.jejari.admin.policy;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
@@ -22,7 +26,9 @@ import com.jejari.common.error.BusinessException;
 import com.jejari.common.error.CommonErrorCode;
 import com.jejari.common.error.ErrorCode;
 import com.jejari.common.policy.PolicyBounds;
+import com.jejari.common.policy.PolicyBounds.DecimalRange;
 import com.jejari.common.policy.PolicyBounds.Range;
+import com.jejari.common.policy.PolicyBounds.Rule;
 
 /**
  * ADM-08 운영 설정 (화면 A-07). {@code app_policy} 값을 보고 바꾼다.
@@ -50,6 +56,9 @@ public class PolicyAdminService {
 	private final TransactionTemplate tx;
 	private final StringRedisTemplate redis;
 	private final Map<String, Range> bounds;
+	private final Map<String, DecimalRange> decimals;
+	private final Map<String, Set<String>> allowed;
+	private final List<Rule> rules;
 
 	@Autowired
 	public PolicyAdminService(JdbcTemplate jdbc, TransactionTemplate tx, StringRedisTemplate redis,
@@ -61,11 +70,27 @@ public class PolicyAdminService {
 		this.jdbc = jdbc;
 		this.tx = tx;
 		this.redis = redis;
-		Map<String, Range> all = new HashMap<>();
+		// 같은 키를 두 모듈이 알려 주면 둘 다 만족해야 한다 (겹치는 구간, 공통 허용값)
+		Map<String, Range> b = new HashMap<>();
+		Map<String, DecimalRange> d = new HashMap<>();
+		Map<String, Set<String>> a = new HashMap<>();
+		List<Rule> r = new ArrayList<>();
 		for (PolicyBounds m : modules) {
-			all.putAll(m.bounds());
+			m.bounds().forEach((k, v) -> b.merge(k, v,
+					(x, y) -> new Range(Math.max(x.min(), y.min()), Math.min(x.max(), y.max()))));
+			m.decimalBounds().forEach((k, v) -> d.merge(k, v,
+					(x, y) -> new DecimalRange(x.min().max(y.min()), x.max().min(y.max()))));
+			m.allowedValues().forEach((k, v) -> a.merge(k, Set.copyOf(v), (x, y) -> {
+				Set<String> both = new HashSet<>(x);
+				both.retainAll(y);
+				return Set.copyOf(both);
+			}));
+			r.addAll(m.rules());
 		}
-		this.bounds = Map.copyOf(all);
+		this.bounds = Map.copyOf(b);
+		this.decimals = Map.copyOf(d);
+		this.allowed = Map.copyOf(a);
+		this.rules = List.copyOf(r);
 	}
 
 	/**
@@ -120,7 +145,10 @@ public class PolicyAdminService {
 		String value = c.value() == null ? "" : c.value().trim();
 		check(cur.valueType(), value);
 		checkRange(key, value, bounds.get(key));
+		checkDecimal(key, value, decimals.get(key));
+		checkAllowed(key, value, allowed.get(key));
 		checkKeepsInteger(cur, value);
+		checkRules(key, value);
 		tx.executeWithoutResult(s -> {
 			int n = jdbc.update("""
 					UPDATE app_policy SET policy_value = ?, version = version + 1, updated_by = ?, updated_at = SYSTIMESTAMP
@@ -216,6 +244,71 @@ public class PolicyAdminService {
 		if (n < r.min() || n > r.max()) {
 			throw new BusinessException(CommonErrorCode.INVALID_REQUEST,
 					key + "는 " + r.min() + "~" + r.max() + " 사이만 넣을 수 있습니다. 범위 밖 값은 앱이 무시하고 기본값을 씁니다.");
+		}
+	}
+
+	static void checkDecimal(String key, String value, DecimalRange r) {
+		if (r == null) {
+			return;
+		}
+		BigDecimal n = new BigDecimal(value); // check()가 숫자 형식을 이미 확인함
+		if (n.compareTo(r.min()) < 0 || n.compareTo(r.max()) > 0) {
+			throw new BusinessException(CommonErrorCode.INVALID_REQUEST, key + "는 " + r.min().toPlainString() + "~"
+					+ r.max().toPlainString() + " 사이만 넣을 수 있습니다.");
+		}
+	}
+
+	static void checkAllowed(String key, String value, Set<String> ok) {
+		if (ok != null && !ok.contains(value)) {
+			throw new BusinessException(CommonErrorCode.INVALID_REQUEST,
+					key + "는 " + String.join(" / ", new TreeSet<>(ok)) + " 중 하나만 넣을 수 있습니다.");
+		}
+	}
+
+	/** 바꿀 키가 들어 있는 묶음 조건을, 저장된 값에 새 값을 덮어쓴 상태로 검사한다 */
+	private void checkRules(String key, String value) {
+		List<Rule> mine = rules.stream().filter(r -> r.keys().contains(key)).toList();
+		if (mine.isEmpty()) {
+			return;
+		}
+		Map<String, String> now = new HashMap<>();
+		jdbc.query("SELECT policy_key, policy_value FROM app_policy", rs -> {
+			now.put(rs.getString(1), rs.getString(2));
+		});
+		now.put(key, value);
+		checkRules(mine, now);
+	}
+
+	static void checkRules(List<Rule> rules, Map<String, String> values) {
+		PolicyBounds.Values v = new PolicyBounds.Values() {
+			@Override
+			public BigDecimal num(String k) {
+				String s = values.get(k);
+				if (s == null || !NUMBER.matcher(s.trim()).matches()) {
+					throw new PolicyBounds.MissingValue(k);
+				}
+				return new BigDecimal(s.trim());
+			}
+
+			@Override
+			public String str(String k) {
+				String s = values.get(k);
+				if (s == null) {
+					throw new PolicyBounds.MissingValue(k);
+				}
+				return s.trim();
+			}
+		};
+		for (Rule r : rules) {
+			boolean ok;
+			try {
+				ok = r.ok().test(v);
+			} catch (PolicyBounds.MissingValue e) {
+				continue; // 조건이 보는 키가 아직 app_policy에 없으면 건너뜀 (ERD에 행이 생기면 그때부터)
+			}
+			if (!ok) {
+				throw new BusinessException(CommonErrorCode.INVALID_REQUEST, r.message());
+			}
 		}
 	}
 
