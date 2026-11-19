@@ -1,3 +1,4 @@
+import ModelOpinion from './ModelOpinion.jsx';
 import ReplayPlayer from './ReplayPlayer.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router';
@@ -135,6 +136,8 @@ export default function CaseDetail() {
         <Timeline tl={tl} color={color} range={range} />
         {s && (
           <section className="panel">
+            <ModelOpinion caseId={caseId} />
+            <hr className="sep" />
             <Judge caseId={caseId} summary={s} claims={claims} onDone={load} />
             <hr className="sep" />
             <Unmask caseId={caseId} claims={claims} />

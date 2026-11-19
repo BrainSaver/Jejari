@@ -156,6 +156,12 @@ public class CaseAdminService {
 	 * 케이스의 연결 계정 (가입 순) = 열 때 묶어 둔 계정(case_session, 조사 시점 보존) ∪ 지금 연결된 계정
 	 * (위험 점수 배치와 같은 기준 RiskInputReader.membersOf — 연 뒤에 추가된 계정도 보이게).
 	 */
+	/** 케이스의 연결 계정 (없는 케이스면 CASE_NOT_FOUND). 모델 보조 의견이 같은 계정·같은 번호(계정 1…)를 쓰게 */
+	public List<Account> caseAccounts(long caseId) {
+		CaseRow c = load(caseId);
+		return accounts(caseId, SubjectType.valueOf(c.summary().subjectType()), c.summary().subjectHash());
+	}
+
 	List<Account> accounts(long caseId, SubjectType type, String hash) {
 		Map<Long, String> reasonOf = new java.util.HashMap<>();
 		jdbc.query("SELECT member_id, link_reason FROM case_session WHERE case_id = ?", rs -> {

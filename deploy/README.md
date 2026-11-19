@@ -94,27 +94,7 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
 - **관리자 화면 "배포" 버튼** (A-08, 11-19~): 위 자동 배포 장치를 **지금 한 번** 실행 (`sudo systemctl start --no-block jejari-autodeploy.service`). 그래서 CI 확인·BLOCKED는 그대로이고 **BLOCKED는 버튼으로 못 풂**. 누를 수 있는 사람은 서버 `.env`의 `JEJARI_OPS_DEPLOY_ADMIN_IDS`(관리자 번호), 켜는 스위치 `JEJARI_OPS_DEPLOY_ENABLED=true`. 누른 기록 `~/jejari-app/deploy-requests.log`. 연타는 1분 간격. **프로젝트가 끝나면 끔** (웹에서 서버 명령을 실행하는 기능)
 - **직접 배포**: `bash deploy/deploy.sh` (main 기준) 또는 `DEPLOY_SHA=<커밋> bash deploy/deploy.sh`. DB를 맞춘 뒤, 또는 자동 배포를 끈 동안
 
-- **BLOCKED 풀기** (ERD가 바뀌면 거의 항상. 11-19 v25·v26·v27 모두 이렇게 풂):
-  ```bash
-  sudo -iu dita_810 && cd ~/Jejari && git fetch -q
-  cat ~/jejari-app/autodeploy.state                         # BLOCKED <커밋> … 바뀐 파일
-  T=<상태 줄의 커밋>
-  git diff --stat $(cat ~/jejari-app/deployed-sha) $T -- db docs/erd docker compose.yaml deploy   # 무엇이 바뀌었나
-  git show $T:db/patch/v27.sql | less                       # ① 패치를 먼저 읽기 (열 삭제·행 삭제가 있는지)
-  PW=$(grep '^ORACLE_APP_PASSWORD=' .env | cut -d= -f2)
-  git show $T:db/patch/v27.sql | docker compose exec -T -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 oracle \
-    bash -lc "sqlplus -S -L jejari/$PW@localhost:1521/FREEPDB1"    # ② 적용 (패치마다)
-  # ③ mongo-init.js·Caddyfile·timer·sudoers가 바뀌었으면 아래 각 항목대로
-  DEPLOY_SHA=$T bash deploy/deploy.sh                        # ④ 배포 → 자동 배포가 이 커밋부터 다시 따라감
-  sudo systemctl start jejari-autodeploy && cat ~/jejari-app/autodeploy.state   # ⑤ OK로 바뀌었는지
-  ```
-- **`jejari-autodeploy.timer`·`sudoers-jejari`가 바뀌면** (BLOCKED): 운영자가 직접 설치. `dita_810`은 sudo가 좁아서 **구글 계정 사용자로** (`sudo -iu` 하기 전에)
-  ```bash
-  cd /home/dita_810/Jejari && sudo -u dita_810 git fetch -q && sudo -u dita_810 git checkout -q --detach origin/main
-  sed -e "s#__USER__#dita_810#g" -e "s#__HOME__#/home/dita_810#g" deploy/jejari-autodeploy.timer | sudo tee /etc/systemd/system/jejari-autodeploy.timer >/dev/null
-  sudo systemctl daemon-reload && systemctl list-timers jejari-autodeploy
-  sed "s#__USER__#dita_810#g" deploy/sudoers-jejari > /tmp/sj && sudo visudo -cf /tmp/sj && sudo install -m 440 /tmp/sj /etc/sudoers.d/jejari
-  ```
+- **BLOCKED 풀기**: 아래 "운영자 안내 → BLOCKED 풀기 (한 단계씩)" (ERD가 바뀌면 거의 항상 멈춤. 11-19 v25~v28 모두 이렇게 풂)
 - **시연 중에는 자동 배포를 끔** (시연 도중 재시작 방지). 끝나면 다시 켬
 
 - **데이터 재생성** (테스트 데이터 삭제): Oracle만 지우면 회원·예약 번호가 1부터 다시 시작해 Redis(매수 카운터·대기열·좌석 키)·Mongo(행동 로그)에 남은 옛 번호 데이터를 새 회원이 물려받음 → **셋을 함께**. Caddy(인증서)·Grafana·Prometheus·Kafka는 남김
@@ -155,15 +135,38 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
 
 ### 접속
 
+**운영 명령은 전부 서버 터미널에 입력합니다** (내 PC 터미널이 아님). 들어가는 방법은 둘입니다.
+
+**A. 브라우저 (가장 쉬움)**: https://console.cloud.google.com → 위쪽 프로젝트 **jejari** → **Compute Engine → VM 인스턴스** → `jejari` 줄의 **SSH** 버튼 → 새 창의 검은 터미널. 붙여넣기는 `Ctrl+Shift+V` 또는 마우스 오른쪽
+
+**B. 내 PC의 Git Bash (Windows)**
+
+1. **처음 한 번만** (PC마다): [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) 설치 → Git Bash에서
+   ```bash
+   B="$LOCALAPPDATA/Google/Cloud SDK/google-cloud-sdk"
+   gcloud() { "$B/platform/bundledpython/python.exe" "$B/lib/gcloud.py" "$@"; }   # 왜 이렇게 부르는지: 아래 "Windows(Git Bash)에서 gcloud"
+   gcloud auth login                   # 브라우저가 열림 → 서버 권한을 받은 구글 계정으로 로그인
+   gcloud config set project jejari
+   ```
+   매번 `B=`·`gcloud()` 두 줄을 치기 싫으면 `~/.bashrc` 맨 아래에 그대로 붙여 두기 (Git Bash를 다시 열면 적용)
+2. **들어갈 때마다**
+   ```bash
+   gcloud compute ssh jejari --zone=asia-northeast3-a --tunnel-through-iap
+   ```
+   - 처음엔 SSH 키를 만들고 구글 계정에 등록합니다 (1~2분, 비밀번호 문구는 빈칸으로 Enter 두 번 해도 됨). PuTTY 창이 뜨면 그 창이 서버 터미널입니다
+   - 들어가면 맨 앞이 `구글계정이름@jejari:~$`처럼 바뀝니다. **이게 보이면 서버 안**
+   - `Permission denied`·`IAP`가 나오면 그 구글 계정에 권한이 없는 것 → 프로젝트 주인(조영준)에게
+3. **나올 때**: `exit` (`sudo -iu dita_810`으로 바꿨다면 `exit` 두 번)
+
+**들어간 뒤 공통**
+
 ```bash
-gcloud auth login                       # 권한을 받은 구글 계정으로
-gcloud config set project jejari
-gcloud compute ssh jejari --zone=asia-northeast3-a --tunnel-through-iap   # 처음엔 SSH 키를 만들고 구글 계정에 등록 (1~2분)
-sudo -iu dita_810                       # 앱·배포 파일 주인으로 바꾼 뒤 운영 (~/Jejari)
+sudo -iu dita_810        # 앱·배포 파일 주인으로 바꾸기 → 맨 앞이 dita_810@jejari:~$ 로 바뀜
+cd ~/Jejari              # 서버의 저장소 (지금 배포된 커밋으로 맞춰져 있음, 직접 고치지 않기)
 ```
 
-- 로그인하면 **구글 계정 이름의 사용자**가 됩니다 (OS Login). 앱·`.env`·systemd는 `dita_810` 소유라 운영은 꼭 `sudo -iu dita_810` 뒤에
-- Windows는 아래 "Windows(Git Bash)에서 gcloud" 방법으로
+- 로그인하면 **구글 계정 이름의 사용자**가 됩니다 (OS Login). 앱·`.env`·systemd는 `dita_810` 소유라 운영은 꼭 `sudo -iu dita_810` 뒤에. 단, **timer·sudoers 설치처럼 `sudo`가 필요한 일은 바꾸기 전(구글 계정 사용자)에** (`dita_810`의 sudo는 서비스 켜고 끄기만 됨)
+- `sudo -iu dita_810`는 **새 셸을 여는 명령**이라 `sudo -iu dita_810 && cd …`처럼 한 줄로 이으면 뒤가 실행되지 않습니다. 한 줄씩
 - `sudo`가 있으면 서버 `.env`(모든 비밀값)를 볼 수 있습니다. **밖으로 복사·메신저 공유 금지**
 
 ### 상태 보기
@@ -184,9 +187,50 @@ journalctl -u jejari-autodeploy -n 50 --no-pager     # 자동 배포 로그
 | 자동 배포 한 번 지금 실행 | `sudo systemctl start jejari-autodeploy` |
 | **시연 중 자동 배포 끄기** / 다시 켜기 | `sudo systemctl disable --now jejari-autodeploy.timer` / `sudo systemctl enable --now jejari-autodeploy.timer` |
 | 앱 한 대가 이상함 | `sudo systemctl restart jejari@8080` (한 대씩. Caddy가 다른 대로 보냄) |
-| `BLOCKED` (DB·인프라 변경) | 상태 줄에 적힌 파일을 보고: ERD → `db/patch/v*.sql`, `mongo-init.js` → 위 "운영 규칙"의 명령, compose·Caddy → `up -d`·`restart` → 그 다음 `bash deploy/deploy.sh` |
+| `BLOCKED` (DB·인프라 변경) | 아래 "BLOCKED 풀기 (한 단계씩)" |
 | `FAILED` (앱이 안 뜸) | `journalctl -u jejari@8080 -n 200` (TZ·`.env` 키 누락이 흔함). 고친 커밋이 main에 오면 자동으로 다시 시도 |
 | 실제 시간표 지금 다시 넣기 | `sudo systemctl start jejari-tago` → `journalctl -u jejari-tago -n 20` |
+
+### BLOCKED 풀기 (한 단계씩)
+
+자동 배포는 ERD·DB 패치·시드·compose·Caddy·서버 설정이 바뀐 커밋을 보면 **멈추고 Discord로 알립니다** ("자동 배포 실패 또는 사람이 처리해야 함"). 새 코드가 바뀐 DB를 전제로 하는데 DB 패치는 사람이 읽고 적용해야 해서입니다 (열·행 삭제가 섞여 있음). 관리자 화면 "배포" 버튼으로는 못 풉니다.
+
+위 "접속"으로 서버에 들어가 `sudo -iu dita_810` → `cd ~/Jejari` 한 다음, 한 줄씩:
+
+| # | 입력 | 이게 보이면 다음으로 |
+|---|---|---|
+| 1 | `git fetch -q && cat ~/jejari-app/autodeploy.state` | `… BLOCKED <커밋> … 바뀐 파일 목록` |
+| 2 | `T=<위 줄의 커밋 7자리>` (예: `T=e521a7f`) | 아무것도 안 나옴 (변수만 정함) |
+| 3 | `git diff --stat $(cat ~/jejari-app/deployed-sha) $T -- db docs/erd docker compose.yaml deploy` | 바뀐 파일과 줄 수. 아래 표에서 파일마다 할 일 확인 |
+| 4 | `git show $T:db/patch/v28.sql \| less` (번호는 3의 목록대로, 여러 개면 낮은 번호부터) | 패치 설명. **"Oracle은 바뀌는 것이 없습니다"면 5는 건너뜀**. `DROP`·`DELETE`가 있으면 무엇이 지워지는지 읽고, 모르겠으면 멈추고 묻기. `q`로 나옴 |
+| 5 | `PW=$(grep '^ORACLE_APP_PASSWORD=' .env \| cut -d= -f2)` 다음 줄 `git show $T:db/patch/v28.sql \| docker compose exec -T -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 oracle bash -lc "sqlplus -S -L jejari/$PW@localhost:1521/FREEPDB1"` | 패치 끝의 확인 결과 (예: 시퀀스 이름). `ORA-`로 시작하는 오류가 없어야 함. 패치는 다시 돌려도 안전하게 짜여 있음 |
+| 6 | (`docker/mongo/mongo-init.js`가 목록에 있으면) `git show $T:docker/mongo/mongo-init.js \| docker compose -f compose.yaml -f deploy/compose.server.yaml exec -T mongo bash -c 'mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin'` | 끝에 `jejari mongo init done` |
+| 7 | `DEPLOY_SHA=$T bash deploy/deploy.sh` | 2~4분 뒤 `배포 완료: …` (앱 한 대씩 재시작, 사이트는 안 멈춤) |
+| 8 | `sudo systemctl start jejari-autodeploy && cat ~/jejari-app/autodeploy.state` | `OK …` → 끝. Discord에 "해결됨"이 옴. 또 `BLOCKED`면 그 뒤 커밋에도 DB 변경이 있는 것 → 1부터 다시 |
+| 9 | `exit` 두 번 | 내 PC로 돌아옴 |
+
+3의 목록에 다른 파일이 있으면 7 전에:
+
+| 바뀐 파일 | 할 일 |
+|---|---|
+| `db/patch/vNN.sql` | 4·5 |
+| `db/seed/*.sql` | 시드를 다시 돌릴지 판단 (`db/seed/README.md`). 보통 필요 없음 |
+| `docker/mongo/mongo-init.js` | 6 |
+| `compose.yaml`·`deploy/compose.server.yaml` | `docker compose -f compose.yaml -f deploy/compose.server.yaml up -d` |
+| `deploy/Caddyfile`·`deploy/prometheus.server.yml` | 7 뒤에 `docker compose -f compose.yaml -f deploy/compose.server.yaml restart caddy` (또는 `prometheus`). Caddy는 몇 초 끊김 |
+| `deploy/grafana-alerting/*` | 7 뒤에 `… restart grafana` |
+| `deploy/jejari-*.timer`·`*.service`·`sudoers-jejari` | `exit`로 **구글 계정 사용자로 돌아가서** 아래 명령 → 다시 `sudo -iu dita_810` |
+| `docs/erd/*`만 | 할 일 없음 (설명 문서) |
+
+timer·service·sudoers 설치 (구글 계정 사용자로, `T`는 다시 정하기):
+
+```bash
+cd /home/dita_810/Jejari && sudo -u dita_810 git fetch -q && T=<커밋>
+sudo -u dita_810 git show $T:deploy/jejari-autodeploy.timer | sed -e "s#__USER__#dita_810#g" -e "s#__HOME__#/home/dita_810#g" | sudo tee /etc/systemd/system/jejari-autodeploy.timer >/dev/null
+sudo systemctl daemon-reload && systemctl list-timers jejari-autodeploy       # 다음 실행 시각이 보이면 OK
+sudo -u dita_810 git show $T:deploy/sudoers-jejari | sed "s#__USER__#dita_810#g" > /tmp/sj
+sudo visudo -cf /tmp/sj && sudo install -m 440 -o root -g root /tmp/sj /etc/sudoers.d/jejari && rm /tmp/sj   # parsed OK가 보여야 설치됨
+```
 
 ### 조심 (데이터가 사라지거나 밖에서 보이게 되는 것)
 
