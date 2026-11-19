@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v25)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v26)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -103,7 +103,7 @@ CREATE TABLE train (
 );
 COMMENT ON TABLE train IS '열차 (정의) - 열차 번호·종류·노선. 날짜와 무관한 열차 정의.';
 COMMENT ON COLUMN train.train_id IS '열차 ID';
-COMMENT ON COLUMN train.train_no IS '열차 번호 (101, 103…)';
+COMMENT ON COLUMN train.train_no IS '열차 번호, 앞을 0으로 채운 5자리 (예: 00103, 00026) / 코레일 표기와 같게. 같은 번호의 열차를 두 번 넣지 않도록 적재 스크립트가 이 값으로 비교';
 COMMENT ON COLUMN train.train_kind IS 'KTX / 새마을 등 / 운임 단가 구분';
 COMMENT ON COLUMN train.route_id IS '운행 노선';
 COMMENT ON COLUMN train.direction IS 'DOWN / UP / 상·하행 구분';
