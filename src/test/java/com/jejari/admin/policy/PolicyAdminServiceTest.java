@@ -31,6 +31,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.jejari.admin.policy.PolicyAdminService.Policy;
 import com.jejari.admin.policy.PolicyAdminService.UpdateCommand;
 import com.jejari.common.error.BusinessException;
+import com.jejari.common.policy.PolicyBounds;
 
 /** ADM-08 저장 뒤 처리: Redis 캐시 실패를 숨기지 않기, 이력 번호 겹침 재시도, 캐시에 넣는 값 */
 class PolicyAdminServiceTest {
@@ -65,7 +66,9 @@ class PolicyAdminServiceTest {
 		when(jdbc.queryForObject(contains("MAX(history_id)"), eq(Long.class))).thenReturn(7L, 8L, 9L);
 		when(jdbc.queryForObject(contains("SELECT policy_value FROM app_policy"), eq(String.class), eq(KEY)))
 				.thenReturn("45");
-		service = new PolicyAdminService(jdbc, tx, redis);
+		// 이 키는 30~60만 받는 모듈이 있다고 가정
+		PolicyBounds module = () -> Map.of(KEY, new PolicyBounds.Range(30, 60));
+		service = new PolicyAdminService(jdbc, tx, redis, List.of(module));
 	}
 
 	@Test
@@ -111,5 +114,32 @@ class PolicyAdminServiceTest {
 				.update(contains("INSERT INTO app_policy_history"), any(), any(), any(), any(), any(), any());
 		assertThat(org.mockito.Mockito.mockingDetails(hash).getInvocations().stream()
 				.noneMatch(i -> i.getMethod().getName().equals("put"))).isTrue();
+	}
+
+	@Test
+	void 모듈이_알려_준_범위_밖이면_저장하지_않는다() {
+		// 2026-11-19: 10000을 저장했더니 앱은 범위 밖이라 기본값을 써서 관리자만 바뀐 줄 알았던 것
+		assertThatThrownBy(() -> service.update(1L, KEY, new UpdateCommand("10000", 4L)))
+				.isInstanceOf(BusinessException.class).hasMessageContaining("30~60");
+		assertThatThrownBy(() -> service.update(1L, KEY, new UpdateCommand("29", 4L)))
+				.isInstanceOf(BusinessException.class);
+		verify(jdbc, times(0)).update(contains("UPDATE app_policy"), any(), any(), any(), any());
+	}
+
+	@Test
+	void 범위가_있는_키에는_소수를_넣을_수_없다() {
+		assertThatThrownBy(() -> service.update(1L, KEY, new UpdateCommand("45.5", 4L)))
+				.isInstanceOf(BusinessException.class).hasMessageContaining("정수");
+	}
+
+	@Test
+	void 범위_끝값은_받는다() {
+		service.update(1L, KEY, new UpdateCommand("60", 4L));
+		verify(jdbc).update(contains("UPDATE app_policy"), eq("60"), eq(1L), eq(KEY), eq(4L));
+	}
+
+	@Test
+	void 범위를_알려_준_모듈이_없는_키는_형식만_본다() {
+		PolicyAdminService.checkRange("queue.admit_per_sec", "100000", null);
 	}
 }
