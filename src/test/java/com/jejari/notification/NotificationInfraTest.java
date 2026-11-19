@@ -164,6 +164,26 @@ class NotificationInfraTest {
 	}
 
 	@Test
+	void DB_제약에_CONFIRMED가_아직_없으면_예매_완료_알림만_건너뛰고_멈추지_않는다() {
+		long m = newMember();
+		long r = holdSeat(m);
+		String withConfirmed = "type IN ('WAITLIST_OFFER', 'PAY_REMINDER', 'EXPIRED', 'WAITLIST_SKIPPED', 'REFUNDED', 'CONFIRMED')";
+		String old = "type IN ('WAITLIST_OFFER', 'PAY_REMINDER', 'EXPIRED', 'WAITLIST_SKIPPED', 'REFUNDED')";
+		jdbc.execute("ALTER TABLE notification DROP CONSTRAINT ck_notification_type");
+		jdbc.execute("ALTER TABLE notification ADD CONSTRAINT ck_notification_type CHECK (" + old + ")"); // ERD 패치 전 DB
+		try {
+			NotificationEventHandler fresh = new NotificationEventHandler(jdbc, writer); // 확인 결과를 기억하지 않은 새것
+			tx.executeWithoutResult(st -> fresh.handle(event(EventType.RESERVATION_CONFIRMED, r))); // 예외 없이 끝남
+			tx.executeWithoutResult(st -> fresh.handle(event(EventType.RESERVATION_EXPIRED, r))); // 다른 알림은 그대로
+			assertThat(count("SELECT COUNT(*) FROM notification WHERE member_id = ? AND type = 'CONFIRMED'", m)).isZero();
+			assertThat(count("SELECT COUNT(*) FROM notification WHERE member_id = ? AND type = 'EXPIRED'", m)).isOne();
+		} finally {
+			jdbc.execute("ALTER TABLE notification DROP CONSTRAINT ck_notification_type");
+			jdbc.execute("ALTER TABLE notification ADD CONSTRAINT ck_notification_type CHECK (" + withConfirmed + ")");
+		}
+	}
+
+	@Test
 	void 알림을_만들지_않는_이벤트는_도장도_찍지_않는다() {
 		assertThat(handler.handles(EventType.RESERVATION_EXPIRED.name())).isTrue();
 		assertThat(handler.handles(EventType.REFUND_COMPLETED.name())).isTrue();

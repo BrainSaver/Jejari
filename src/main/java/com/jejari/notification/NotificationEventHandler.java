@@ -59,6 +59,33 @@ public class NotificationEventHandler {
 			log.warn("알림: 예약 {} 이 없어 {} 알림을 만들지 않음 (이벤트 {})", reservationId, type, e.eventId());
 			return;
 		}
+		if (type == NotificationType.CONFIRMED && !confirmedAllowed()) {
+			// 새 종류라 DB의 notification.type CHECK(ERD)에 아직 없을 수 있다. 넣다가 걸리면 Inbox 트랜잭션이 통째로 실패하고
+			// 이 이벤트를 끝없이 다시 시도하며 뒤의 알림까지 막는다 → 넣기 전에 확인하고, 없으면 이 한 건만 건너뛴다
+			log.warn("예매 완료 알림을 건너뜀: notification.type CHECK에 CONFIRMED가 없음 (ERD 패치 필요, 예약 {})", reservationId);
+			return;
+		}
 		writer.create(member.get(0), type, "RESERVATION", reservationId);
+	}
+
+	private volatile boolean confirmedAllowed;
+	private volatile long confirmedCheckedAt;
+
+	/** DB 제약이 CONFIRMED를 받는지. 받으면 계속 true, 아니면 5분마다 다시 본다 (패치를 적용하면 재시작 없이 켜짐) */
+	boolean confirmedAllowed() {
+		long now = System.currentTimeMillis();
+		if (confirmedAllowed || now - confirmedCheckedAt < 300_000) {
+			return confirmedAllowed;
+		}
+		confirmedCheckedAt = now;
+		try {
+			List<String> cond = jdbc.queryForList("""
+					SELECT search_condition_vc FROM user_constraints
+					 WHERE table_name = 'NOTIFICATION' AND constraint_name = 'CK_NOTIFICATION_TYPE'""", String.class);
+			confirmedAllowed = cond.isEmpty() || (cond.get(0) != null && cond.get(0).contains("'CONFIRMED'"));
+		} catch (RuntimeException e) {
+			log.warn("notification.type 제약을 확인하지 못함: {}", e.toString());
+		}
+		return confirmedAllowed;
 	}
 }
