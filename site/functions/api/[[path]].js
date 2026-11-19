@@ -1,5 +1,5 @@
 // 문서 사이트 API. 읽기는 누구나, 쓰기는 이름+PIN 로그인 후 자기 이름 브랜치에만.
-import { MEMBERS, NAMES, MAIN, REFS, EDITABLE, READABLE, PERSON_FILE, PERSON_DIR, ownerOk, adminOf } from '../../lib/config.js';
+import { MEMBERS, NAMES, MAIN, REFS, EDITABLE, READABLE, PERSON_FILE, PERSON_DIR, ownerOk, adminOf, repoOf } from '../../lib/config.js';
 import {
   gh, GhError, getFile, listDir, putFile, syncMain, compare, conflictFiles, listCommits, slimCommit,
 } from '../../lib/github.js';
@@ -75,6 +75,35 @@ async function cached(request, seconds, make) {
     await cache.put(key, copy).catch(() => {});
   }
   return res;
+}
+
+// GitHub Actions 최근 실행. 저장소가 공개라 토큰에 Actions 권한이 없으면 토큰 없이 다시 읽는다.
+async function actionsInfo(env) {
+  const path = '/repos/{repo}/actions/runs?per_page=20';
+  let d;
+  try { d = await gh(env, 'GET', path); }
+  catch (e) {
+    if (e.status !== 403 && e.status !== 404) throw e;
+    const r = await fetch(`https://api.github.com${path.replace('{repo}', repoOf(env))}`, { headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'jejari-docs-site' } });
+    if (!r.ok) throw new GhError(r.status, await r.json().catch(() => null), path);
+    d = await r.json();
+  }
+  const runs = (d.workflow_runs || []).map((r) => ({
+    id: r.id, name: r.name, title: r.display_title, branch: r.head_branch, sha: (r.head_sha || '').slice(0, 7),
+    no: r.run_number, event: r.event, status: r.status, conclusion: r.conclusion,
+    who: r.actor && r.actor.login, at: r.run_started_at || r.created_at, updated: r.updated_at, url: r.html_url,
+  }));
+  // 가장 최근 실패 한 건은 어느 단계에서 실패했는지 함께
+  const bad = runs.find((r) => r.conclusion === 'failure');
+  if (bad) {
+    try {
+      const j = await gh(env, 'GET', `/repos/{repo}/actions/runs/${bad.id}/jobs?per_page=30`);
+      bad.failed = (j.jobs || []).filter((x) => x.conclusion === 'failure').map((x) => ({
+        job: x.name, url: x.html_url, steps: (x.steps || []).filter((st) => st.conclusion === 'failure').map((st) => st.name),
+      }));
+    } catch { /* 단계 정보는 없어도 된다 */ }
+  }
+  return { runs, at: new Date().toISOString() };
 }
 
 // ---------- 읽기 ----------
@@ -320,6 +349,8 @@ export async function onRequest(ctx) {
       case 'GET /branches':
         if (!me) return LOGIN_FIRST();
         return cached(req, 15, async () => json(await branchesInfo(env)));
+      case 'GET /actions':
+        return cached(req, 15, async () => json(await actionsInfo(env)));
       case 'GET /compare': {
         if (!me) return LOGIN_FIRST();
         const b = q.get('branch');
