@@ -20,6 +20,7 @@ VM 1대(e2-standard-4, 서울)에 로컬과 같은 `compose.yaml`을 올리고, 
 | `deploy.sh` | 배포: main(또는 `DEPLOY_SHA`) 빌드 → 켜 둔 앱만 재시작 → 배포한 커밋 기록 |
 | `auto-deploy.sh` · `jejari-autodeploy.{service,timer}` | **자동 배포**: 20분마다 (관리자 화면 "배포" 버튼으로 바로도), CI 성공 + DB·인프라 변경 없음일 때만 `deploy.sh` |
 | `tago-refresh.sh` · `jejari-tago.{service,timer}` | 실제 KTX 시간표(앞뒤 7일) 매일 갱신 |
+| `model-refresh.sh` · `jejari-model.{service,timer}` · `ml/Dockerfile` | 위험 점수 모델 보조 의견 매시간 갱신 (최근 행동 로그 → `model_score`) |
 | `grafana-alerting/` · `grafana-team-user.sh` · `sudoers-jejari` | Discord 경보 · Grafana 팀 계정 · 앱 주인의 좁은 sudo |
 
 ## 강동균 님 문서와 다른 점 (이유)
@@ -121,6 +122,7 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
   | 실제 KTX 시간표 갱신 실패 | 마지막 갱신 실패 또는 26시간 넘게 안 돎 | `journalctl -u jejari-tago -n 50`, 서비스 키 확인 → `sudo systemctl start jejari-tago` |
   | 앱 한 대가 응답하지 않음 | `up{job="jejari-app"}`이 2분 넘게 0 | `journalctl -u jejari@8080` |
 
+- **위험 점수 모델 보조 의견** (11-19~, `deploy/model-refresh.sh`, 매시간 17분 `jejari-model.timer`): 최근 1일 행동 로그가 있는 회원을 꺼내(`tools/ml/export_live.sh --recent 1`) 컨테이너(`deploy/ml/Dockerfile`, 서버에 파이썬 라이브러리를 깔지 않음)에서 `data/ml/model`로 점수를 매기고 `tools/ml/load_scores.sh`로 MongoDB `model_score`에 넣은 뒤 그 버전(`ens-2026.11-01`)을 사용 중으로. 관리자 케이스 화면(A-06)의 "모델 보조 의견" 카드에 나온다. **보조 의견뿐 — 대기열 순번·이용 제한·케이스 열기에는 쓰지 않는다.** 처음 한 번 필요: DB에 `db/patch/v25.sql`(model_run 행), 그리고 `bash deploy/setup-server.sh`(타이머 설치) 또는 아래 수동 설치. 첫 실행은 이미지 빌드(torch CPU) 때문에 몇 분 걸림. 숨기려면 앱 설정 `jejari.model.show=false`
 - **실제 KTX 시간표** (11-18~, `deploy/tago-refresh.sh`, 매일 새벽 4:30 `jejari-tago.timer`): 시드 운행은 "넣은 날 + 3일" 하루뿐이라, 길동현 님 `tools/load-tago-schedule.js`(공공데이터포털 TAGO)로 **오늘 기준 앞뒤 7일** 실제 KTX를 매일 다시 넣음 (MERGE라 중복 없음, run_id 400000~). 서버에 Node 없이 Node 22 컨테이너로. **`.env`의 `DATA_GO_KR_KEY_DEC` 또는 `DATA_GO_KR_KEY`(공공데이터포털 서비스 키) 필요**. 지금 한 번: `sudo systemctl start jejari-tago`, 결과: `journalctl -u jejari-tago -n 20`
 
   같은 경보는 4시간마다만 다시 오고, 해결되면 "해결됨"이 옴. 웹훅 주소를 바꾸면 `.env` 수정 뒤 `docker compose -f compose.yaml -f deploy/compose.server.yaml up -d grafana`
@@ -191,6 +193,7 @@ journalctl -u jejari-autodeploy -n 50 --no-pager     # 자동 배포 로그
 | `BLOCKED` (DB·인프라 변경) | 아래 "BLOCKED 풀기 (한 단계씩)" |
 | `FAILED` (앱이 안 뜸) | `journalctl -u jejari@8080 -n 200` (TZ·`.env` 키 누락이 흔함). 고친 커밋이 main에 오면 자동으로 다시 시도 |
 | 실제 시간표 지금 다시 넣기 | `sudo systemctl start jejari-tago` → `journalctl -u jejari-tago -n 20` |
+| 모델 보조 의견 지금 다시 매기기 | `sudo systemctl start jejari-model` → `journalctl -u jejari-model -n 20` |
 
 ### BLOCKED 풀기 (한 단계씩)
 

@@ -14,10 +14,20 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1
 cd "$(dirname "$0")/../.."
 
-TAG="${1:-}"; OUT="${2:-}"
-if [[ ! "$TAG" =~ ^[a-z0-9]{1,8}$ || -z "$OUT" ]]; then
-  echo "사용법: $0 <실행 태그> <출력 폴더>"; exit 1
+# 운영 모드: tools/ml/export_live.sh --recent <일수> <출력 폴더>
+#   태그와 상관없이 최근 N일 행동 로그가 있는 모든 회원을 꺼낸다 (서버에서 모델 점수를 매길 때, deploy/model-refresh.sh).
+#   정답이 없으므로 라벨은 모두 UNKNOWN. 이메일로 봇·사람을 가르지 않는다
+RECENT=""
+if [[ "${1:-}" == "--recent" ]]; then
+  RECENT="${2:-}"; OUT="${3:-}"; TAG="recent"
+  [[ "$RECENT" =~ ^[0-9]{1,3}$ && -n "$OUT" ]] || { echo "사용법: $0 --recent <일수> <출력 폴더>"; exit 1; }
+else
+  TAG="${1:-}"; OUT="${2:-}"
+  if [[ ! "$TAG" =~ ^[a-z0-9]{1,8}$ || -z "$OUT" ]]; then
+    echo "사용법: $0 <실행 태그> <출력 폴더>   또는   $0 --recent <일수> <출력 폴더>"; exit 1
+  fi
 fi
+if [[ -n "$RECENT" ]]; then MEMBER_WHERE="1 = 1"; else MEMBER_WHERE="m.email LIKE 'lt${TAG}.%'"; fi
 mkdir -p "$OUT"
 
 sql() {
@@ -33,19 +43,20 @@ SELECT m.member_id || '|' || REGEXP_SUBSTR(m.email, '^lt[a-z0-9]+\.([a-z]+)\.', 
        || '|' || m.ci_hash || '|' || TRUNC(SYSDATE - CAST(m.created_at AS DATE))
        || '|' || (SELECT LISTAGG(p.method_hash, ',') WITHIN GROUP (ORDER BY p.method_hash)
                     FROM payment_method p WHERE p.member_id = m.member_id AND p.method_hash IS NOT NULL)
-  FROM member m WHERE m.email LIKE 'lt${TAG}.%';
+  FROM member m WHERE ${MEMBER_WHERE};
 EOF
 n=$(wc -l < "$OUT/.members.txt")
 if (( n == 0 )); then echo "태그 ${TAG}의 계정이 없습니다."; rm -f "$OUT/.members.txt"; exit 1; fi
 
-python3 -I - "$OUT" "$TAG" <<'PY'
+python3 -I - "$OUT" "$TAG" "$RECENT" <<'PY'
 import json, os, sys
-out, tag = sys.argv[1], sys.argv[2]
+out, tag, recent = sys.argv[1], sys.argv[2], sys.argv[3]
 LABEL = {"human": "NORMAL", "normal": "NORMAL", "multi": "RESELLER", "cancel": "CANCEL_ABUSER"}
-with open(os.path.join(out, ".members.txt")) as f, open(os.path.join(out, "members.jsonl"), "w") as w:
+with open(os.path.join(out, ".members.txt"), encoding="utf-8") as f, \
+        open(os.path.join(out, "members.jsonl"), "w", encoding="utf-8") as w:
     for line in f:
         mid, kind, grp, ci, age, cards = (line.rstrip("\n").split("|") + [""] * 6)[:6]
-        label = LABEL.get(kind, "RESELLER" if kind.startswith("bot") else "MACRO")
+        label = "UNKNOWN" if recent else LABEL.get(kind, "RESELLER" if kind.startswith("bot") else "MACRO")
         w.write(json.dumps({"member_id": int(mid), "label": label, "strategy": kind, "group": int(grp or 0),
                             "ci": ci, "cards": [c for c in cards.split(",") if c],
                             "created_days_ago": int(age or 0), "source": f"live:{tag}"}) + "\n")
@@ -54,9 +65,15 @@ ids=$(cut -d'|' -f1 "$OUT/.members.txt" | paste -sd, -)
 rm -f "$OUT/.members.txt"
 
 # ── 행동 로그 (Mongo) ────────────────────────────────────────────
+# 운영 모드는 회원 ID 목록 대신 기간으로 거른다 (회원이 많으면 ID 목록이 명령줄 길이를 넘는다)
+if [[ -n "$RECENT" ]]; then
+  EVENT_FILTER="{ ts: { \$gte: new Date(Date.now() - ${RECENT} * 86400000) }, member_id: { \$ne: null } }"
+else
+  EVENT_FILTER="{ member_id: { \$in: [${ids}] } }"
+fi
 docker compose exec -T mongo bash -c \
   'mongosh --quiet -u "$MONGO_APP_USER" -p "$MONGO_APP_PASSWORD" --authenticationDatabase jejari jejari --eval "$0"' "
-db.behavior_log.find({ member_id: { \$in: [${ids}] } }, { _id: 0, expire_at: 0, user_agent: 0 })
+db.behavior_log.find(${EVENT_FILTER}, { _id: 0, expire_at: 0, user_agent: 0 })
   .sort({ member_id: 1, ts: 1 })
   .forEach(d => { d.ts = d.ts.toISOString(); print(EJSON.stringify(d, null, 0, { relaxed: true })); })" \
   | tr -d '\r' | grep '^{' > "$OUT/events.jsonl"

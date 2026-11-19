@@ -37,7 +37,10 @@ n=$(printf "SET HEADING OFF FEEDBACK OFF PAGESIZE 0\nSELECT COUNT(*) FROM model_
 
 echo "[2/3] scores.csv → JSON (정답 라벨 빼기)"
 JSONL=$(mktemp)
-node - "$CSV" "$VERSION" "$SOURCE" > "$JSONL" <<'JS'
+# Node가 없는 서버(공용 서버는 Node를 깔지 않음)에서는 Node 컨테이너로 같은 스크립트를 돌린다
+if command -v node >/dev/null 2>&1; then NODE=(node); else
+  NODE=(docker run --rm -i --user "$(id -u):$(id -g)" -v "$PWD:$PWD" -w "$PWD" node:22-alpine node); fi
+"${NODE[@]}" - "$CSV" "$VERSION" "$SOURCE" > "$JSONL" <<'JS'
 const fs = require('fs');
 const [file, version, source] = process.argv.slice(2);
 // 따옴표가 있는 CSV 한 줄 나누기 (근거에 쉼표가 들어갈 수 있음)

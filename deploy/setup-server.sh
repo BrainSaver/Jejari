@@ -40,7 +40,7 @@ else
 fi
 
 # 3) systemd 템플릿 (실제 사용자·홈으로 채움)
-for unit in jejari@.service jejari-autodeploy.service jejari-autodeploy.timer jejari-tago.service jejari-tago.timer; do
+for unit in jejari@.service jejari-autodeploy.service jejari-autodeploy.timer jejari-tago.service jejari-tago.timer jejari-model.service jejari-model.timer; do
   sed -e "s#__USER__#${USER}#g" -e "s#__HOME__#${HOME}#g" "deploy/$unit" \
     | sudo tee "/etc/systemd/system/$unit" >/dev/null
 done
@@ -56,6 +56,8 @@ rm -f /tmp/jejari.sudoers
 sudo systemctl enable --now jejari-autodeploy.timer >/dev/null
 # 실제 KTX 시간표 매일 갱신 (.env의 DATA_GO_KR_KEY_DEC 필요). 지금 한 번: sudo systemctl start jejari-tago
 sudo systemctl enable --now jejari-tago.timer >/dev/null
+# 위험 점수 모델 보조 의견 매시간 갱신 (DB에 v25 패치 필요). 지금 한 번: sudo systemctl start jejari-model
+sudo systemctl enable --now jejari-model.timer >/dev/null
 
 echo "준비 끝. 주소: https://${DOMAIN}"
 echo "다음: docker compose -f compose.yaml -f deploy/compose.server.yaml up -d  → Oracle healthy 대기 → bash deploy/deploy.sh"

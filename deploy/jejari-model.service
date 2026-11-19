@@ -1,0 +1,14 @@
+# 위험 점수 모델 보조 의견 갱신 한 번 (jejari-model.timer가 부름). setup-server.sh가 __USER__·__HOME__을 채워 설치
+[Unit]
+Description=Jejari 위험 점수 모델 보조 의견 갱신 (최근 행동 로그 → model_score)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__HOME__/Jejari
+Environment=LANG=C.UTF-8
+Environment=TZ=Asia/Seoul
+ExecStart=/bin/bash __HOME__/Jejari/deploy/model-refresh.sh
+TimeoutStartSec=30min
