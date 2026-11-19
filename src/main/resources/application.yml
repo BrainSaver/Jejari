@@ -101,6 +101,12 @@ jejari:
     purchase-window: 30d        # 구매·취소 집계 기간
     decay-refresh-after: 1d     # 새 신호가 없어도 이만큼 지난 점수는 감쇠를 반영해 다시 계산
     signal-listener-enabled: true  # 예약 확정·취소 이벤트 소비 (risk-signal)
+  # 공용 서버 수동 배포 버튼 (관리자 화면 A-08, DeployAdminService). 서버 .env에서만 켭니다.
+  # 버튼은 서버의 자동 배포 장치(jejari-autodeploy)를 지금 한 번 실행시킬 뿐이라 CI·ERD 확인은 그대로입니다
+  ops:
+    deploy:
+      enabled: ${JEJARI_OPS_DEPLOY_ENABLED:false}
+      admin-ids: ${JEJARI_OPS_DEPLOY_ADMIN_IDS:}   # 누를 수 있는 관리자 번호(admin_user.admin_id), 쉼표로
   # 첫 관리자 계정 (AUTH-05, AdminBootstrap). admin_user가 비어 있을 때만 SUPERVISOR 1명을 만듭니다
   admin:
     bootstrap:

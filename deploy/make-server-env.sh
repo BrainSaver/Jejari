@@ -72,6 +72,10 @@ DISCORD_WEBHOOK_URL=
 # 공공데이터포털 서비스 키 (디코딩 값). 실제 KTX 시간표 매일 갱신(deploy/tago-refresh.sh)이 씀
 DATA_GO_KR_KEY_DEC=
 
+# 관리자 화면 "배포" 버튼 (A-08). 누를 수 있는 관리자 번호(admin_user.admin_id, 쉼표로). 프로젝트가 끝나면 false
+JEJARI_OPS_DEPLOY_ENABLED=true
+JEJARI_OPS_DEPLOY_ADMIN_IDS=1
+
 # Caddy 주소. 서버에서 deploy/setup-server.sh가 외부 IP로 채움 (예: 34-64-12-34.sslip.io)
 JEJARI_DOMAIN=
 EOF
