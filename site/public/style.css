@@ -853,3 +853,8 @@ a.hm-card:hover .hm-ic{background:var(--accent);color:var(--accent-fg)}
   .ib-view{padding:12px}
   .ib-card-go{display:none}
 }
+
+/* 사이드바 GitHub 버튼 */
+.side a.side-gh{display:flex;align-items:center;gap:8px;margin:12px 2px 0;padding:8px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--bg2);font-weight:600}
+.side a.side-gh span{margin-left:auto;color:var(--muted)}
+.side a.side-gh:hover{border-color:var(--accent);color:var(--accent);background:var(--bg2)}
