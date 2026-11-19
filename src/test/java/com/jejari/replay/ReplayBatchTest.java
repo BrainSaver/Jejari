@@ -34,13 +34,13 @@ class ReplayBatchTest {
 	}
 
 	@Test
-	void SAMPLED면_마우스_궤적을_버리고_FULL이면_점_수를_자른다() {
+	void 마우스_궤적은_FULL은_정책값까지_SAMPLED는_그_3분의_1까지() {
 		List<List<Number>> path = new ArrayList<>();
 		for (int i = 0; i < 80; i++) {
 			path.add(List.of(i * 10, i * 100, -5));
 		}
 		ReplayBatch.In mouse = new ReplayBatch.In(1L, T, "MOUSE_PATH", "home", null, null, null, path, null, null);
-		assertThat(ReplayBatch.sanitize(List.of(mouse), "SAMPLED", 50, NOW)).isEmpty();
+		assertThat(ReplayBatch.sanitize(List.of(mouse), "SAMPLED", 50, NOW).get(0).path()).hasSize(16); // 성기게
 		ReplayBatch.Event e = ReplayBatch.sanitize(List.of(mouse), "FULL", 50, NOW).get(0);
 		assertThat(e.path()).hasSize(50);
 		assertThat(e.path().get(20)).containsExactly(200, 1000, 0); // 좌표 0~1000으로
@@ -53,6 +53,35 @@ class ReplayBatchTest {
 		List<ReplayBatch.Event> out = ReplayBatch.sanitize(List.of(input, old), "FULL", 50, NOW);
 		assertThat(out).hasSize(1);
 		assertThat(out.get(0).inputLen()).isEqualTo(1000);
+	}
+
+	@Test
+	void 버튼_문구는_숫자_없는_짧은_글자만() {
+		ReplayBatch.In ok = new ReplayBatch.In(1L, T, "CLICK", "pay/:id", null, 1, 1, null, null, null, "  결제하기 ", null);
+		ReplayBatch.In phone = new ReplayBatch.In(2L, T, "CLICK", "me", null, 1, 1, null, null, null, "010-1234-5678", null);
+		ReplayBatch.In mail = new ReplayBatch.In(3L, T, "CLICK", "me", null, 1, 1, null, null, null, "a@b.com", null);
+		ReplayBatch.In card = new ReplayBatch.In(4L, T, "CLICK", "pay/:id", null, 1, 1, null, null, null, "카드 4111", null);
+		List<ReplayBatch.Event> out = ReplayBatch.sanitize(List.of(ok, phone, mail, card), "SAMPLED", 50, NOW);
+		assertThat(out).extracting(ReplayBatch.Event::label).containsExactly("결제하기", null, null, null);
+	}
+
+	@Test
+	void 화면_뼈대는_정해진_종류만_좌표를_자르고_SAMPLED에서도_남긴다() {
+		List<ReplayBatch.BoxIn> boxes = new ArrayList<>(List.of(
+				new ReplayBatch.BoxIn("seat-taken", 100, 200, 30, 40, "seat-105007", null, true),
+				new ReplayBatch.BoxIn("button", -5, 900, 2000, 50, null, "결제하기", null),
+				new ReplayBatch.BoxIn("script", 1, 1, 1, 1, null, null, null), // 모르는 종류 → 버림
+				new ReplayBatch.BoxIn("input", 1, 1, 1, 1, "<b>", "홍길동 010", null))); // 이상한 ID·문구 → 뺌
+		for (int i = 0; i < 500; i++) {
+			boxes.add(new ReplayBatch.BoxIn("seat-free", i, i, 10, 10, null, null, null));
+		}
+		ReplayBatch.In layout = new ReplayBatch.In(1L, T, "LAYOUT", "runs/:id/seats", null, null, null, null, null, 9001L,
+				null, boxes);
+		ReplayBatch.Event e = ReplayBatch.sanitize(List.of(layout), "SAMPLED", 50, NOW).get(0);
+		assertThat(e.boxes()).hasSize(400); // 상한
+		assertThat(e.boxes().get(0)).isEqualTo(new ReplayBatch.Box("seat-taken", 100, 200, 30, 40, "seat-105007", null, true));
+		assertThat(e.boxes().get(1)).isEqualTo(new ReplayBatch.Box("button", 0, 900, 1000, 50, null, "결제하기", false));
+		assertThat(e.boxes().get(2)).isEqualTo(new ReplayBatch.Box("input", 1, 1, 1, 1, null, null, false));
 	}
 
 	@Test

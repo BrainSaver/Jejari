@@ -316,3 +316,34 @@
 .dlg footer{display:flex;justify-content:center;gap:10px}
 .dlg .pill{min-width:84px;min-height:42px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:15px;font-weight:800;cursor:pointer;padding:0 18px}
 .dlg .pill.on{border-color:var(--ink);background:var(--ink);color:#fff}
+
+/* ── 좁은 화면(모바일) 보정 ──────────────────────────────────────────────
+   "편안한 화면" 글자 크기는 .user{zoom}으로 키우므로, 큰 글씨에서는 실제 화면 폭보다 레이아웃 폭이 더 좁아진다
+   (360px 폰 × 1.3배 ≈ 277px). 화면 폭 미디어 쿼리는 이걸 모르므로, 카드 자신의 폭을 기준으로 줄이는
+   컨테이너 쿼리(cqw)를 쓴다. 데스크톱(960px~)에는 적용하지 않는다. */
+@media (max-width:959px){
+  /* 도우미 줄: 옆으로 잘려 스크롤되는 대신 두 줄로 접는다 */
+  .user .sbar{flex-wrap:wrap;overflow:visible;row-gap:6px}
+  /* 열차 카드: 출발·도착 시각이 카드 폭에 맞게 줄어 잘리지 않는다 */
+  .user .ticket{container-type:inline-size}
+  .user .route{grid-template-columns:auto minmax(0,1fr) auto;gap:clamp(6px,2.6cqw,12px)}
+  .user .route .t{font-size:clamp(22px,9.4cqw,34px)}
+  .user .route .mid span{white-space:nowrap;font-size:clamp(10.5px,3.4cqw,12px)}
+  .user .fare .left{white-space:nowrap}
+  .user .fare .p{font-size:clamp(16px,6cqw,19px);white-space:nowrap}
+  /* 검색 결과 제목: 정렬 버튼 옆에서 한 글자씩 쪼개지지 않게, 제목이 한 줄을 다 쓰고 정렬 버튼은 그 아래로 */
+  .user .row:has(>.sort){flex-wrap:wrap;row-gap:6px}
+  .user .row:has(>.sort)>.grow{flex:1 1 100%}
+  /* 예매 단계 표시줄: 폭이 좁으면(큰 글씨 포함) 숫자 아래에 글자를 두어 4번째 칸이 잘리지 않게 */
+  .user .flow{container-type:inline-size}
+  .user .flow li{min-width:0}
+  /* 검색 칸: 값이 길면 옆 칸으로 넘치지 않고 줄바꿈 ("오늘" 배지가 다음 줄로) */
+  .user .search .fld .v{flex-wrap:wrap;white-space:normal;gap:2px 8px;min-width:0}
+}
+@media (max-width:380px){
+  .user .search .fld{padding:10px}
+  .user .search .fld .v,.user .search .fld select{font-size:15.5px}
+  .user .search .fld .k{font-size:12px}
+}
+
+@container (max-width:300px){.user .flow li{flex-direction:column;align-items:flex-start;gap:4px;font-size:12px}}

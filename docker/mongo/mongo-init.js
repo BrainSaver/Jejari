@@ -47,7 +47,7 @@ ensure('login_attempt', [
 ]);
 
 // 화면 녹화 (ADM-11, 세션 시작 + replay.retention_days 90일, 케이스에 걸리면 legal_hold로 expire_at 제거)
-// ERD는 시계열 컬렉션이지만 시계열은 유니크 인덱스를 못 만들어 재전달 중복을 막을 수 없어 일반 컬렉션으로 둔다
+// 시계열 컬렉션이 아니라 일반 컬렉션이다 — 시계열은 유니크 인덱스를 못 만들어 재전달 중복을 막을 수 없다 (ERD v28)
 ensure('replay_session', [
   [{ ci_hash: 1, started_at: 1 }, { name: 'ix_ci_started' }],
   [{ device_hash: 1, started_at: 1 }, { name: 'ix_device_started' }],

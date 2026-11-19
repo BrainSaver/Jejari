@@ -2,6 +2,7 @@ package com.jejari.auth.web;
 
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -134,7 +135,7 @@ class AuthWebTest {
 
 	@Test
 	void 재발급_성공하면_본문엔_액세스만_리프레시는_HttpOnly_쿠키() throws Exception {
-		when(authTokenService.refresh("old-rt")).thenReturn(new IssuedTokens(SID, "new-access",
+		when(authTokenService.refresh("old-rt", ActorType.MEMBER)).thenReturn(new IssuedTokens(SID, "new-access",
 				clock.instant().plus(Duration.ofMinutes(15)), "new-rt", clock.instant().plus(Duration.ofDays(3))));
 
 		mvc.perform(post("/api/v1/auth/refresh").cookie(new Cookie(TokenResponses.REFRESH_COOKIE, "old-rt")))
@@ -157,7 +158,7 @@ class AuthWebTest {
 	void 만료된_Bearer를_달고_재발급해도_막히지_않는다() throws Exception {
 		String expired = bearer(ActorType.MEMBER, 1001);
 		clock.advance(Duration.ofMinutes(16));
-		when(authTokenService.refresh("old-rt")).thenReturn(new IssuedTokens(SID, "new-access",
+		when(authTokenService.refresh("old-rt", ActorType.MEMBER)).thenReturn(new IssuedTokens(SID, "new-access",
 				clock.instant().plus(Duration.ofMinutes(15)), "new-rt", clock.instant().plus(Duration.ofDays(3))));
 
 		mvc.perform(post("/api/v1/auth/refresh")
@@ -165,6 +166,25 @@ class AuthWebTest {
 						.cookie(new Cookie(TokenResponses.REFRESH_COOKIE, "old-rt")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.accessToken").value("new-access"));
+	}
+
+	@Test
+	void 유지하지_않는_회원_세션은_브라우저를_닫으면_사라지는_쿠키() throws Exception {
+		when(authTokenService.refresh("old-rt", ActorType.MEMBER)).thenReturn(new IssuedTokens(SID, "new-access",
+				clock.instant().plus(Duration.ofMinutes(15)), "new-rt", clock.instant().plus(Duration.ofHours(12)),
+				ActorType.MEMBER, false));
+		mvc.perform(post("/api/v1/auth/refresh").cookie(new Cookie(TokenResponses.REFRESH_COOKIE, "old-rt")))
+				.andExpect(status().isOk())
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, allOf(containsString("jejari_rt=new-rt"),
+						containsString("Path=/api/v1/auth"), not(containsString("Max-Age")))));
+	}
+
+	@Test
+	void 관리자가_로그아웃하면_관리자_쿠키를_지운다() throws Exception {
+		mvc.perform(post("/api/v1/auth/logout").header(HttpHeaders.AUTHORIZATION, bearer(ActorType.ADMIN, 7)))
+				.andExpect(status().isNoContent())
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, allOf(containsString("jejari_art="),
+						containsString("Path=/api/v1/admin/auth"), containsString("Max-Age=0"))));
 	}
 
 	@Test
@@ -185,7 +205,7 @@ class AuthWebTest {
 
 	@Test
 	void 인증_경로는_토큰_없이_열려_있다() throws Exception {
-		when(authTokenService.refresh(any())).thenThrow(
+		when(authTokenService.refresh(any(), any())).thenThrow(
 				new BusinessException(AuthErrorCode.AUTH_REFRESH_INVALID));
 		mvc.perform(post("/api/v1/auth/refresh").cookie(new Cookie(TokenResponses.REFRESH_COOKIE, "x")))
 				.andExpect(jsonPath("$.code").value("AUTH_REFRESH_INVALID"));

@@ -1,6 +1,7 @@
 package com.jejari.auth.session;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -61,20 +62,31 @@ public class AuthTokenService {
 	 */
 	@Transactional
 	public IssuedTokens issue(ActorType actorType, long actorId, ClientInfo client) {
+		return issue(actorType, actorId, client, false);
+	}
+
+	/**
+	 * @param remember 회원의 "로그인 상태 유지". 고르면 14일 + 브라우저를 닫아도 남는 쿠키, 아니면 12시간 + 닫으면 사라지는 쿠키.
+	 *                 관리자는 무시하고 늘 8시간 + 닫으면 사라지는 쿠키 (권한이 커서 오래 남기지 않음)
+	 */
+	@Transactional
+	public IssuedTokens issue(ActorType actorType, long actorId, ClientInfo client, boolean remember) {
 		AdminRole adminRole = actorType == ActorType.ADMIN
 				? adminRoles.activeRole(actorId).orElseThrow(() -> new BusinessException(AuthErrorCode.AUTH_INVALID_CREDENTIALS))
 				: null;
 		String sessionId = UUID.randomUUID().toString();
 		RefreshToken refreshToken = RefreshToken.generate(sessionId);
 		LocalDateTime now = LocalDateTime.now(clock);
-		LocalDateTime expiresAt = now.plus(props.refreshTtl());
+		boolean persistent = actorType == ActorType.MEMBER && remember;
+		LocalDateTime expiresAt = now.plus(actorType == ActorType.ADMIN ? props.adminRefreshTtl()
+				: persistent ? props.refreshTtl() : props.sessionRefreshTtl());
 
 		repository.save(AuthSession.open(sessionId, UUID.randomUUID().toString(), actorType, actorId,
 				refreshToken.hash(), client, now, expiresAt));
 
 		IssuedAccessToken access = accessTokenIssuer.issue(actorType, actorId, sessionId, adminRole);
 		return new IssuedTokens(sessionId, access.value(), access.expiresAt(),
-				refreshToken.value(), toInstant(expiresAt));
+				refreshToken.value(), toInstant(expiresAt), actorType, persistent);
 	}
 
 	/**
@@ -83,9 +95,25 @@ public class AuthTokenService {
 	 */
 	@Transactional(noRollbackFor = BusinessException.class)
 	public IssuedTokens refresh(String rawRefreshToken) {
+		return refresh(rawRefreshToken, null);
+	}
+
+	/**
+	 * @param expected 이 입구가 받는 세션 종류 (회원 재발급은 MEMBER, 관리자 재발급은 ADMIN). 다르면 회전하지 않고 거절한다
+	 *                 → 한 브라우저에서 회원·관리자 쿠키가 섞여도 서로의 세션을 쓰거나 망가뜨리지 않음. null이면 가리지 않음
+	 */
+	@Transactional(noRollbackFor = BusinessException.class)
+	public IssuedTokens refresh(String rawRefreshToken, ActorType expected) {
 		RefreshToken presented = RefreshToken.parse(rawRefreshToken)
 				.orElseThrow(() -> new BusinessException(AuthErrorCode.AUTH_REFRESH_INVALID));
 		String sessionId = presented.sessionId();
+		if (expected != null) {
+			AuthSession owner = repository.findById(sessionId)
+					.orElseThrow(() -> new BusinessException(AuthErrorCode.AUTH_REFRESH_INVALID));
+			if (owner.getActorType() != expected) {
+				throw new BusinessException(AuthErrorCode.AUTH_REFRESH_INVALID); // 재사용 판정도 하지 않음 (회전 안 함)
+			}
+		}
 		RefreshToken next = RefreshToken.generate(sessionId);
 
 		if (repository.rotate(sessionId, presented.hash(), next.hash()) == 1) {
@@ -101,8 +129,11 @@ public class AuthTokenService {
 			}
 			IssuedAccessToken access = accessTokenIssuer.issue(session.getActorType(), session.actorId(), sessionId,
 					adminRole);
+			// 유지 여부는 로그인 때 정한 세션 길이로 안다 (12시간보다 길면 "로그인 상태 유지")
+			boolean persistent = session.getActorType() == ActorType.MEMBER
+					&& Duration.between(session.getCreatedAt(), session.getExpiresAt()).compareTo(props.sessionRefreshTtl()) > 0;
 			return new IssuedTokens(sessionId, access.value(), access.expiresAt(),
-					next.value(), toInstant(session.getExpiresAt()));
+					next.value(), toInstant(session.getExpiresAt()), session.getActorType(), persistent);
 		}
 
 		// 회전 실패: 원인 확인
@@ -129,8 +160,18 @@ public class AuthTokenService {
 	/**
 	 * 발급 결과. refreshToken은 쿠키로만 내보내고 응답 본문·로그에 넣지 않습니다.
 	 */
+	/**
+	 * @param actorType  쿠키 이름·경로를 정함 (회원 jejari_rt, 관리자 jejari_art)
+	 * @param persistent 브라우저를 닫아도 남는 쿠키인가 (회원이 "로그인 상태 유지"를 골랐을 때만)
+	 */
 	public record IssuedTokens(String sessionId, String accessToken, Instant accessExpiresAt,
-			String refreshToken, Instant refreshExpiresAt) {
+			String refreshToken, Instant refreshExpiresAt, ActorType actorType, boolean persistent) {
+
+		/** 회원·유지 쿠키 (예전 모양) */
+		public IssuedTokens(String sessionId, String accessToken, Instant accessExpiresAt, String refreshToken,
+				Instant refreshExpiresAt) {
+			this(sessionId, accessToken, accessExpiresAt, refreshToken, refreshExpiresAt, ActorType.MEMBER, true);
+		}
 
 		@Override
 		public String toString() {

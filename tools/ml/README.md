@@ -130,12 +130,36 @@ python3 tools/ml/score.py data/ml/model/model.pkl data/ml/contest-<태그>/featu
 - 이 리허설을 하면서 고친 것: 화면이 검색을 비회원으로 기록하던 버그, setup.sh 판매 오픈 시각 9시간 오차,
   모델의 가짜 신호(가입 기간·IP·첫 이벤트 기준 오픈 시각)
 
+## 김성원 모델과 대회 로그 비교 (`compare_dl.py`)
+
+```bash
+git fetch origin SeongWon
+tools/ml/export_live.sh <태그> data/ml/contest-<태그>
+python3 tools/ml/compare_dl.py data/ml/contest-<태그>      # → data/ml/contest-<태그>/compare.md
+```
+
+- 두 모델(`tools/ml` · 김성원 `tools/dl-defense`)을 같은 대회 로그에 돌려 표 한 장과 **미리 정한 판정 기준**에 따른 결과를 낸다. 학습은 하지 않는다
+- 김성원 모델은 main에 없다. 실행할 때만 `origin/SeongWon`에서 꺼내 임시 폴더에서 돌린다 (블라인드 공격자가 탐지 방법을 읽지 않게). 다른 위치면 `--dl-dir`
+- 김성원 모델에 넣기 전에 화면 자동 조회(`meta.auto`)를 뺀다. 그 모델의 `realdata.py`가 빼지 않아 실제 사람을 봇으로 보기 때문
+- 모델을 만든 사람의 봇은 그 모델의 탐지율에서 뺀다 (tools/ml → botc·botx, dl-defense → bota)
+- 배경과 생성 데이터 교차 시험 결과: [`docs/강동균/모델-비교-김성원-20261119.md`](../../docs/강동균/모델-비교-김성원-20261119.md)
+
 ## 실제 사람 데이터로 맞춘 것 (`human_calibration.json`)
 
 캐글은 로그인 키가 필요하고 이 환경의 네트워크가 막아, 공개 데이터 중 받을 수 있는 것을 썼다:
 **UCI Online Shoppers Purchasing Intention** (Sakar et al. 2019, CC BY 4.0) — 실제 쇼핑몰 세션 12,330개 중 구매로 끝난 1,908개.
 쇼핑몰과 예매는 도메인이 달라 절대값은 쓰지 않고 **사람 사이의 퍼짐**만 생성기에 입혔다:
 사람마다 속도 차이(로그 표준편차 0.53), 둘러보는 양의 차이(0.99). 원본 CSV는 저장소에 넣지 않는다.
+
+## 실험 스위치 (기본 꺼짐)
+
+| 환경 변수 | 무엇 | 왜 꺼 두나 |
+|---|---|---|
+| `ML_STAGE=1` | `features.py`에 단계별 속도 특징 7개(`STAGE`)를 더한다 | 대회 전 모델은 이 특징 없이 학습했다 |
+| `ML_PICK_FLOOR=1` | `generate.py`의 사람이 좌석표를 보고 고르기까지 최소 1초 (`PICK_FLOOR_S`·`PICK_MED_S`, [가정]) | 꺼 두면 g7~g9가 예전과 같은 파일로 나온다 |
+
+- 두 스위치를 같이 켜야 효과가 있다 (생성기 사람이 봇보다 빠르면 단계 특징이 배울 게 없다). 결과·재현 명령: [`docs/강동균/모델-비교-김성원-20261119.md`](../../docs/강동균/모델-비교-김성원-20261119.md) "단계별 속도 실험"
+- `score.py`는 모델에 저장된 특징 이름으로 열을 읽는다. 단계 특징으로 학습한 모델이면 `features.py`도 `ML_STAGE=1`로 돌려야 한다 (없으면 알려 주고 멈춘다)
 
 ## 아직 없는 것
 

@@ -1,9 +1,10 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v26)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v28)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
 
 -- 시퀀스
+CREATE SEQUENCE train_run_seq START WITH 100000 INCREMENT BY 1 MAXVALUE 399999 NOCYCLE CACHE 50;
 CREATE SEQUENCE member_seq;
 CREATE SEQUENCE payment_method_seq;
 CREATE SEQUENCE reservation_seq CACHE 100;

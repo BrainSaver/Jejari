@@ -94,8 +94,12 @@ def main():
     from compare import load
     with open(sys.argv[1], "rb") as f:
         model = pickle.load(f)
-    rows, X = load(sys.argv[2])
-    X = X[:, model["cols"]]   # 학습 때 쓴 특징만 (features.py 순서 기준)
+    rows, _ = load(sys.argv[2])
+    # 학습 때 쓴 특징을 이름으로 꺼낸다 (ML_STAGE 같은 환경 변수가 학습 때와 달라도 열이 어긋나지 않게)
+    missing = [c for c in model["features"] if c not in rows[0]] if rows else []
+    if missing:
+        sys.exit(f"features.csv에 모델이 쓰는 특징이 없음: {', '.join(missing)} (학습 때와 같은 ML_STAGE로 features.py를 다시 돌리세요)")
+    X = np.array([[float(r[c]) if r[c] not in ("", "nan") else np.nan for c in model["features"]] for r in rows])
     seq, why = gru_scores(model, sys.argv[1], rows, os.path.dirname(sys.argv[2]))
     P = parts(model, X, seq)
     s = np.maximum.reduce(list(P.values()))

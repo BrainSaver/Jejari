@@ -2,6 +2,7 @@ package com.jejari.auth.admin;
 
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -32,6 +33,8 @@ import com.jejari.auth.AdminRole;
 import com.jejari.auth.AuthErrorCode;
 import com.jejari.auth.jwt.AccessTokenIssuer;
 import com.jejari.auth.session.AuthTokenService.IssuedTokens;
+import com.jejari.auth.web.TokenResponses;
+import com.jejari.auth.session.AuthTokenService;
 import com.jejari.common.error.BusinessException;
 import com.jejari.common.hmac.HmacConfig;
 import com.jejari.member.web.ClientIpResolver;
@@ -61,6 +64,8 @@ class AdminAuthWebTest {
 	MutableClock clock;
 
 	@MockitoBean
+	AuthTokenService authTokenService;
+	@MockitoBean
 	AdminLoginService adminLoginService;
 
 	@BeforeEach
@@ -76,15 +81,15 @@ class AdminAuthWebTest {
 	void 관리자_로그인은_토큰_없이_열려_있고_회원과_같은_응답_형식() throws Exception {
 		when(adminLoginService.login(eq("admin"), eq("Correct-Horse-9"), anyString(), any()))
 				.thenReturn(new IssuedTokens(SID, "admin-access", clock.instant().plus(Duration.ofMinutes(15)),
-						"admin-rt", clock.instant().plus(Duration.ofDays(14))));
+						"admin-rt", clock.instant().plus(Duration.ofHours(8)), ActorType.ADMIN, false));
 
 		mvc.perform(post("/api/v1/admin/auth/login").contentType(MediaType.APPLICATION_JSON).content(BODY))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.accessToken").value("admin-access"))
 				.andExpect(jsonPath("$.refreshToken").doesNotExist())
 				.andExpect(header().string(HttpHeaders.SET_COOKIE, allOf(
-						containsString("jejari_rt=admin-rt"), containsString("HttpOnly"),
-						containsString("Path=/api/v1/auth"))));
+						containsString("jejari_art=admin-rt"), containsString("HttpOnly"),
+						containsString("Path=/api/v1/admin/auth"), not(containsString("Max-Age")))));
 	}
 
 	@Test
@@ -97,6 +102,21 @@ class AdminAuthWebTest {
 		mvc.perform(post("/api/v1/admin/auth/login").header(HttpHeaders.AUTHORIZATION, expired)
 						.contentType(MediaType.APPLICATION_JSON).content(BODY))
 				.andExpect(status().isOk());
+	}
+
+	@Test
+	void 관리자_재발급은_관리자_쿠키로만_토큰_없이_열려_있다() throws Exception {
+		when(authTokenService.refresh("admin-rt", ActorType.ADMIN)).thenReturn(new IssuedTokens(SID, "admin-access-2",
+				clock.instant().plus(Duration.ofMinutes(15)), "admin-rt-2", clock.instant().plus(Duration.ofHours(7)),
+				ActorType.ADMIN, false));
+		mvc.perform(post("/api/v1/admin/auth/refresh")
+						.cookie(new jakarta.servlet.http.Cookie(TokenResponses.ADMIN_REFRESH_COOKIE, "admin-rt")))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.accessToken").value("admin-access-2"))
+				.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("jejari_art=admin-rt-2")));
+		// 회원 쿠키만 있으면 관리자 재발급은 쿠키가 없는 것과 같다
+		mvc.perform(post("/api/v1/admin/auth/refresh")
+						.cookie(new jakarta.servlet.http.Cookie(TokenResponses.REFRESH_COOKIE, "member-rt")))
+				.andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("AUTH_REFRESH_INVALID"));
 	}
 
 	@Test

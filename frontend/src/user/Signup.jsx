@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import { post } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
 import { safeNext } from './Login.jsx';
+import { BUSY_MESSAGE, isBusy } from '../lib/busy.js';
 
 /**
  * U-02 회원가입·모의 본인인증 (AUTH-01·02). 두 단계:
@@ -34,7 +35,8 @@ export default function Signup() {
       setVerified({ token: r.verificationToken, expiresIn: r.expiresIn });
       setStep(2);
     } catch (err) {
-      setError(err.code === 'AUTH_VERIFY_FAILED' ? '본인인증에 실패했어요. 이름(한글·영문 2자 이상)과 휴대폰 번호를 확인해 주세요.' : err.message);
+      setError(isBusy(err) ? BUSY_MESSAGE
+        : err.code === 'AUTH_VERIFY_FAILED' ? '본인인증에 실패했어요. 이름(한글·영문 2자 이상)과 휴대폰 번호를 확인해 주세요.' : err.message);
     } finally {
       setBusy(false);
     }
@@ -57,7 +59,7 @@ export default function Signup() {
       else if (err.code === 'AUTH_VERIFY_FAILED') {
         setError('본인인증 시간이 지났어요. 처음부터 다시 해 주세요.');
         setStep(1);
-      } else setError(err.message);
+      } else setError(isBusy(err) ? BUSY_MESSAGE : err.message); // 바쁠 때는 인증 토큰도 그대로라 다시 누르면 됨
     } finally {
       setBusy(false);
     }

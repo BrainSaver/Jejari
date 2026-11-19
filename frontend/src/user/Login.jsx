@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { memberLogin } from '../api/client.js';
 import Icon, { Seal } from '../admin/Icon.jsx';
 import { useMember } from './useMember.js';
+import { BUSY_MESSAGE, isBusy } from '../lib/busy.js';
 
 /**
  * U-01 로그인 (AUTH-03). POST /api/v1/auth/login → 액세스 토큰(메모리) + 리프레시 토큰(httpOnly 쿠키)
@@ -23,6 +24,7 @@ export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState(params.get('email') || '');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(false); // 공용 PC를 생각해 기본은 끔
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const pwRef = useRef(null);
@@ -34,12 +36,16 @@ export default function Login() {
     setBusy(true);
     setError(null);
     try {
-      await memberLogin(email.trim(), password);
+      await memberLogin(email.trim(), password, remember);
       navigate(next, { replace: true });
     } catch (err) {
-      setError(MESSAGES[err.code] || err.message);
-      setPassword('');
-      pwRef.current?.focus();
+      if (isBusy(err)) {
+        setError(BUSY_MESSAGE); // 서버가 바쁜 것 → 비밀번호를 다시 치게 하지 않는다
+      } else {
+        setError(MESSAGES[err.code] || err.message);
+        setPassword('');
+        pwRef.current?.focus();
+      }
     } finally {
       setBusy(false);
     }
@@ -67,6 +73,10 @@ export default function Login() {
           <label htmlFor="pw">비밀번호</label>
           <input id="pw" ref={pwRef} type="password" autoComplete="current-password" placeholder="비밀번호" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </div>
+        <label className="row" style={{ gap: 8, fontSize: 14, margin: '0 0 12px', cursor: 'pointer' }}>
+          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} style={{ width: 18, minHeight: 18 }} />
+          <span>로그인 상태 유지 <span className="mut" style={{ fontSize: 13 }}>(내 기기에서만. 끄면 브라우저를 닫을 때 로그아웃)</span></span>
+        </label>
         <button className="btn" type="submit" disabled={busy}>{busy ? '확인하는 중…' : '로그인'}</button>
       </form>
       <p className="mut" style={{ textAlign: 'center', margin: '6px 0 0', fontSize: 14 }}>
