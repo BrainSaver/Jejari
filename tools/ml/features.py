@@ -181,7 +181,8 @@ def build(folder: str) -> list[dict]:
         seats_of = {(e.get("meta") or {}).get("reservationId"): (e.get("meta") or {}).get("seatCount") or 0
                     for e in holds if e["response_status"] < 300}
         paid_at = {(e.get("meta") or {}).get("reservationId"): ts(e["ts"]) for e in pays}
-        after = [(ts(c["ts"]) - paid_at[r]).total_seconds() / 60
+        # 0 아래로 자르기: 앱 2대의 시계가 몇 ms 어긋나면 취소가 결제보다 앞서 찍힐 수 있다 (log1p 음수 → 오류)
+        after = [max(0.0, (ts(c["ts"]) - paid_at[r]).total_seconds() / 60)
                  for c in cancels if (r := (c.get("meta") or {}).get("reservationId")) in paid_at]
         seats_paid = sum(seats_of.get((e.get("meta") or {}).get("reservationId"), 0) for e in pays)
         seats_cancel = sum(seats_of.get((e.get("meta") or {}).get("reservationId"), 0) for e in cancels)
