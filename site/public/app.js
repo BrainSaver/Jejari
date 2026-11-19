@@ -503,6 +503,11 @@ async function projectBundle() {
 function pageHomeAnon() {
   main.innerHTML = `<div class="wrap"><h1 class="page">제자리 설계 문서</h1>
     <p class="page-sub">명절 열차 공정 예매 시스템의 설계 문서예요.${S.me ? '' : ' 팀원은 오른쪽 위에서 로그인하면 문서를 고칠 수 있어요.'}</p>
+    <div class="svc-links">
+      <a class="svc-main" href="https://jejari.duckdns.org/" target="_blank" rel="noopener"><span class="svc-ico" aria-hidden="true">🚆</span><span><b>이용자 사이트</b><small>jejari.duckdns.org</small></span><span class="svc-arrow" aria-hidden="true">↗</span></a>
+      <a class="svc-main" href="https://jejari.duckdns.org/admin" target="_blank" rel="noopener"><span class="svc-ico" aria-hidden="true">🛠️</span><span><b>관리자 사이트</b><small>jejari.duckdns.org/admin</small></span><span class="svc-arrow" aria-hidden="true">↗</span></a>
+      <a class="svc-sub" href="https://jejari.duckdns.org/grafana/login" target="_blank" rel="noopener" title="Grafana 에러·지표 확인"><span aria-hidden="true">📈</span> 에러 확인 (Grafana)</a>
+    </div>
     <div class="cards">
       <a class="card" href="#/roadmap"><h3>로드맵</h3><p>기능 영역별 보드, A~E 파트별 했다·안 했다, 개발자에게 남길 말</p></a>
       <a class="card" href="#/doc/plan"><h3>기획서</h3><p>프로젝트 목표, 팀 역할, 일정, 기술 선택 이유</p></a>

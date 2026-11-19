@@ -764,3 +764,15 @@ mark.sr-hit{background:var(--warn);color:var(--warn-fg);border-radius:3px;paddin
 mark.sr-hit.fade{outline-color:transparent}
 .rm-matrix td.dim,.rm-matrix tr.dimrow th{opacity:.3}
 .rm-matrix td.hl{background:var(--accent-soft)}
+
+/* 홈 상단 서비스 링크 */
+.svc-links{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 22px}
+.svc-main{display:inline-flex;align-items:center;gap:12px;padding:12px 18px;border:2px solid var(--accent);border-radius:12px;background:var(--accent-soft);color:var(--fg)}
+.svc-main:hover{background:var(--accent);color:var(--accent-fg);text-decoration:none}
+.svc-main b{display:block;font-size:17px}
+.svc-main small{display:block;font-size:12.5px;color:inherit;opacity:.75}
+.svc-ico{font-size:22px}
+.svc-arrow{font-size:18px;font-weight:700}
+.svc-sub{display:inline-flex;align-items:center;gap:4px;font-size:13px;padding:5px 10px;border:1px solid var(--line2);border-radius:8px;color:var(--muted);background:var(--bg2)}
+.svc-sub:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
+@media (max-width:480px){.svc-main{flex:1 1 100%}}
