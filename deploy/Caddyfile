@@ -12,6 +12,17 @@
 	}
 	respond @actuatorPrivate 404
 
+	# 보안 헤더. 앱(Spring)은 Caddy 뒤에서 http로 보여 HSTS를 붙이지 않으므로 여기서 붙입니다.
+	# CSP는 먼저 Report-Only(차단 없이 브라우저 콘솔에만 위반 표시)로 둡니다. 배포한 화면에서
+	# 콘솔에 위반이 없는 것을 확인한 뒤 헤더 이름을 Content-Security-Policy로 바꿔 강제합니다.
+	# script-src 'self': 인라인·외부 스크립트 차단(XSS 방어선). style은 React 인라인 스타일 때문에 'unsafe-inline',
+	# 글꼴은 index.html의 Google Fonts. 화면에 외부 주소를 추가하면 여기 허용 목록도 함께 고칩니다.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	}
+
 	# 모니터링 (Grafana 로그인 필요, 팀원은 보기 전용 계정). Grafana가 /grafana 아래에서 직접 응답하므로 경로를 자르지 않음
 	@grafana path /grafana /grafana/*
 	reverse_proxy @grafana 127.0.0.1:3000

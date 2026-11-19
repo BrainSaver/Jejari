@@ -9,6 +9,8 @@ import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
@@ -19,6 +21,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.jejari.common.error.BusinessException;
 import com.jejari.common.error.CommonErrorCode;
 import com.jejari.common.error.ErrorCode;
+import com.jejari.common.policy.PolicyBounds;
+import com.jejari.common.policy.PolicyBounds.Range;
 
 /**
  * ADM-08 운영 설정 (화면 A-07). {@code app_policy} 값을 보고 바꾼다.
@@ -29,6 +33,8 @@ import com.jejari.common.error.ErrorCode;
  *   <li><b>이력</b>: 같은 트랜잭션에서 {@code app_policy_history}에 이전 값 → 새 값을 남긴다 (INSERT만 하는 표).</li>
  *   <li><b>반영</b>: 앱은 Redis {@code policy:cache} → Oracle 순으로 읽는다. 그래서 커밋 뒤 캐시 해시도 같은 값으로 바꾼다.
  *       캐시를 먼저 바꾸면 롤백됐을 때 DB와 어긋난다. 각 앱의 메모리 캐시(최대 1초) 뒤 모든 대에 반영된다.</li>
+ *   <li><b>범위</b>: 값을 읽는 모듈이 {@link PolicyBounds}로 알려 준 범위 밖이면 저장하지 않는다. 모듈은 범위 밖 값을
+ *       조용히 기본값으로 바꾸므로, 저장해 버리면 관리자는 바뀐 줄 알지만 실제로는 그대로다.</li>
  * </ul>
  */
 @Service
@@ -43,11 +49,23 @@ public class PolicyAdminService {
 	private final JdbcTemplate jdbc;
 	private final TransactionTemplate tx;
 	private final StringRedisTemplate redis;
+	private final Map<String, Range> bounds;
 
-	public PolicyAdminService(JdbcTemplate jdbc, TransactionTemplate tx, StringRedisTemplate redis) {
+	@Autowired
+	public PolicyAdminService(JdbcTemplate jdbc, TransactionTemplate tx, StringRedisTemplate redis,
+			ObjectProvider<PolicyBounds> modules) {
+		this(jdbc, tx, redis, modules.orderedStream().toList());
+	}
+
+	PolicyAdminService(JdbcTemplate jdbc, TransactionTemplate tx, StringRedisTemplate redis, List<PolicyBounds> modules) {
 		this.jdbc = jdbc;
 		this.tx = tx;
 		this.redis = redis;
+		Map<String, Range> all = new HashMap<>();
+		for (PolicyBounds m : modules) {
+			all.putAll(m.bounds());
+		}
+		this.bounds = Map.copyOf(all);
 	}
 
 	/**
@@ -101,6 +119,7 @@ public class PolicyAdminService {
 		}
 		String value = c.value() == null ? "" : c.value().trim();
 		check(cur.valueType(), value);
+		checkRange(key, value, bounds.get(key));
 		tx.executeWithoutResult(s -> {
 			int n = jdbc.update("""
 					UPDATE app_policy SET policy_value = ?, version = version + 1, updated_by = ?, updated_at = SYSTIMESTAMP
@@ -166,6 +185,23 @@ public class PolicyAdminService {
 		}
 		if (type.equals("NUMBER") && new BigDecimal(value).signum() < 0) {
 			throw new BusinessException(CommonErrorCode.INVALID_REQUEST, "음수는 넣을 수 없습니다.");
+		}
+	}
+
+	/** 모듈이 알려 준 범위 밖이면 거절. 모듈은 정수로 읽으므로 소수도 거절한다 */
+	static void checkRange(String key, String value, Range r) {
+		if (r == null) {
+			return;
+		}
+		long n;
+		try {
+			n = Long.parseLong(value);
+		} catch (NumberFormatException e) {
+			throw new BusinessException(CommonErrorCode.INVALID_REQUEST, key + "는 정수만 넣을 수 있습니다 (" + r.min() + "~" + r.max() + ").");
+		}
+		if (n < r.min() || n > r.max()) {
+			throw new BusinessException(CommonErrorCode.INVALID_REQUEST,
+					key + "는 " + r.min() + "~" + r.max() + " 사이만 넣을 수 있습니다. 범위 밖 값은 앱이 무시하고 기본값을 씁니다.");
 		}
 	}
 

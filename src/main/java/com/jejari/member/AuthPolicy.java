@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import com.jejari.common.policy.PolicyBounds;
 import com.jejari.queue.redis.QueueKeys;
 
 /**
@@ -18,7 +19,7 @@ import com.jejari.queue.redis.QueueKeys;
  */
 @Component
 @MemberAuthEnabled
-public class AuthPolicy {
+public class AuthPolicy implements PolicyBounds {
 	private static final Logger log = LoggerFactory.getLogger(AuthPolicy.class);
 	private static final long CACHE_NANOS = 1_000_000_000L;
 
@@ -51,6 +52,14 @@ public class AuthPolicy {
 
 	public AuthPolicy(StringRedisTemplate redis) {
 		this.redis = redis;
+	}
+
+	/** 관리자 화면(ADM-08)이 저장 전에 같은 범위로 거절하도록 알려 준다 (읽을 때 쓰는 NUMBERS와 같은 값) */
+	@Override
+	public Map<String, Range> bounds() {
+		Map<String, Range> out = new java.util.HashMap<>();
+		NUMBERS.forEach((k, spec) -> out.put(k, new Range(spec[1], spec[2])));
+		return out;
 	}
 
 	public long number(String key) {
