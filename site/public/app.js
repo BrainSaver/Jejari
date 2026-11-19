@@ -1649,11 +1649,13 @@ function rmPartStrip() {
     const mine = items.filter((x) => x.roles && x.roles[p]);
     const done = mine.filter((x) => x.roles[p].done).length;
     const pct = mine.length ? Math.round((done / mine.length) * 100) : 0;
-    const msgs = (RM.data.msgs || []).filter((m) => m.to === p).length;
+    // 내 파트는 받은 말함에서 아직 확인 안 한 말 수
+    const own = p === myPart() && RM.data.inbox;
+    const msgs = own ? ibNew().length : (RM.data.msgs || []).filter((m) => m.to === p).length;
     return `<button class="rm-part${RM.f.part === p ? ' on' : ''}" data-fpart="${p}" style="--pc:${partColor(p)}" title="누르면 모든 탭에서 ${esc(partName(p))} 것만 보여요 (다시 누르면 풀림)" aria-pressed="${RM.f.part === p}">
       <span class="rm-part-head"><b>${esc(partName(p))}</b><span class="muted">${esc(RM.data.parts[p].label)}</span></span>
       <span class="rm-bar"><i style="width:${pct}%"></i></span>
-      <span class="rm-part-nums"><b>${pct}%</b><span>${done}/${mine.length} 했음</span>${RM.f.part === p ? '<span class="rm-part-on" title="다시 누르면 풀려요">선택됨</span>' : ''}${msgs ? `<span class="rm-to">${svgI('msg', 14)} 받은 말 ${msgs}</span>` : ''}</span>
+      <span class="rm-part-nums"><b>${pct}%</b><span>${done}/${mine.length} 했음</span>${RM.f.part === p ? '<span class="rm-part-on" title="다시 누르면 풀려요">선택됨</span>' : ''}${msgs ? `<span class="rm-to">${svgI('msg', 14)} ${own ? '새로 받은 말' : '받은 말'} ${msgs}</span>` : ''}</span>
     </button>`;
   }).join('')}</div>`;
 }
@@ -1699,7 +1701,7 @@ function rmPartsView(by) {
     const todo = RM.data.items.filter((x) => x.roles && x.roles[p] && !x.roles[p].done).sort(sortItems);
     const msgs = (RM.data.msgs || []).filter((m) => m.to === p).slice(0, 8);
     return `<section class="rm-partcol${mineOn() ? (p === focusPart() ? ' mine' : ' dim') : ''}" style="--pc:${partColor(p)}"><div class="rm-partcol-head"><b>${esc(partName(p))}</b> <span class="muted">남은 ${todo.length}개</span></div>
-      ${msgs.length ? `<div class="rm-inbox"><div class="rm-rel-h">${svgI('msg', 14)} 받은 말</div>${msgs.map((m) => `<button class="rm-msg" data-open="${m.item}"><span class="muted">${rmWho(m.who)} · ${ago(m.at)} · ${esc(m.code || m.title || '')}</span><span>${esc((m.text || '(사진)').slice(0, 120))}</span></button>`).join('')}</div>` : ''}
+      ${msgs.length ? `<div class="rm-inbox"><div class="rm-rel-h">${svgI('msg', 14)} 받은 말${p === myPart() ? ' <a href="#/roadmap/inbox" class="ib-more">받은 말함에서 보기</a>' : ''}</div>${msgs.map((m) => `<button class="rm-msg" data-open="${m.item}"><span class="muted">${rmWho(m.who)} · ${ago(m.at)} · ${esc(m.code || m.title || '')}</span><span>${esc((m.text || '(사진)').slice(0, 120))}</span></button>`).join('')}</div>` : ''}
       ${todo.map((x) => { const w = waitingOn(x, by); return `<div class="rm-todo" data-open="${x.id}">${roleChip(x, p)}<span class="rm-todo-t"><b>${esc(x.code)}</b> ${esc(x.title)}<small class="muted">${esc(areaLabel(x.area))}${x.week ? ` · ${x.week}주차` : ''}${w.length ? ` · 기다림 ${w.length}` : ''}</small></span></div>`; }).join('') || '<p class="muted">다 했어요.</p>'}
     </section>`;
   }).join('')}</div>`;
@@ -2281,7 +2283,7 @@ function rmAsk(k) {
 }
 
 async function pageRoadmap(view) {
-  RM.view = ['flow', 'order', 'board', 'parts', 'deps', 'log'].includes(view) ? view : 'flow';
+  RM.view = ['flow', 'order', 'board', 'parts', 'inbox', 'deps', 'log'].includes(view) ? view : 'flow';
   // 이름 칸 선택은 보드·할 순서에서만 쓰므로 다른 탭으로 가면 푼다
   if (RM.data) {
     // 탭을 옮기거나 다시 열 때는 가진 것으로 바로 그리고, 오래됐으면 뒤에서 새로 받아 바뀐 경우만 다시 그린다
@@ -2327,7 +2329,7 @@ async function searchIndex() {
   const PAGES = [
     ['홈', '#/', '첫 화면 최근 수정'], ['로드맵', '#/roadmap', '할 일 진행 보드 roadmap'],
     ['로드맵 · 흐름도', '#/roadmap/flow', '다이어그램 흐름 따라가기 시뮬레이션 지금 하는 일'], ['로드맵 · 할 순서', '#/roadmap/order', '단계 순서 먼저 끝나야 하는 일'],
-    ['로드맵 · 보드', '#/roadmap/board', '카드 체크 기능 영역'], ['로드맵 · 파트별 할 일·받은 말', '#/roadmap/parts', '받은 말 메시지 파트 A B C D E'],
+    ['로드맵 · 보드', '#/roadmap/board', '카드 체크 기능 영역'], ['로드맵 · 파트별 할 일·받은 말', '#/roadmap/parts', '받은 말 메시지 파트 A B C D E'], ['로드맵 · 받은 말함', '#/roadmap/inbox', '받은 말 확인한 말 메시지 알림 inbox'],
     ['로드맵 · 의존 관계', '#/roadmap/deps', '선행 작업 기다림 표'], ['로드맵 · 최근 변경', '#/roadmap/log', '기록 로그 히스토리'],
     ['기획서', '#/doc/plan', 'README 프로젝트 개요 역할'], ['기능설계', '#/doc/func', '기능설계서 API 상태 전이'],
     ['DB설계 · DB설계서', '#/db/doc', '테이블 저장소'], ['DB설계 · ERD', '#/db/erd', 'ERD 편집기 스키마 테이블 관계'],
@@ -2464,6 +2466,7 @@ function rmRender() {
   else if (RM.view === 'board') body = rmBoard(list, by);
   else if (RM.view === 'order') body = rmOrderView(by);
   else if (RM.view === 'parts') body = rmPartsView(by);
+  else if (RM.view === 'inbox') body = rmInboxView(by);
   else if (RM.view === 'deps') body = rmDepsView(by);
   else {
     const fp = RM.f.part;
@@ -2479,11 +2482,11 @@ function rmRender() {
   main.innerHTML = `<div class="wide rm">
     <div class="rm-head"><div><h1 class="page">로드맵</h1>
       <p class="page-sub" style="margin:0">카드 ${items.length}장 중 <b>${cardsDone}장 끝</b> · 파트 칸 ${checks}개 중 ${checked}개 체크 (${checks ? Math.round(checked / checks * 100) : 0}%). ${S.me ? '카드 안 A~E 칸을 누르면 했다·안 했다가 바뀌어요.' : '로그인하면 체크하고 할 일을 추가할 수 있어요.'}</p></div>
-      <div class="rm-head-acts">${S.me ? `<button class="btn" data-add="">${svgI('plus', 16)} 할 일 추가</button>` : '<button class="btn" data-login>로그인</button>'}</div></div>
+      <div class="rm-head-acts">${S.me && RM.view !== 'inbox' ? `<a class="btn plain ib-open" href="#/roadmap/inbox" title="나에게 온 말 모아 보기">${svgI('msg', 16)} 받은 말함${ibNew().length ? ` <span class="ib-badge">${ibNew().length}</span>` : ''}</a>` : ''}${S.me ? `<button class="btn" data-add="">${svgI('plus', 16)} 할 일 추가</button>` : '<button class="btn" data-login>로그인</button>'}</div></div>
     ${rmPartStrip()}
     ${mineOn() ? (() => { const mi = items.filter((x) => mineOf(x)); const d = mi.filter((x) => mineOf(x) === 'done').length; return `<div class="rm-minesum" style="--pc:${partColor(focusPart())}"><b>${esc(partName(focusPart()))}</b> ${esc(focusWho())} 칸 ${mi.length}개 중 <b>${d}개 했음</b> · <b>${mi.length - d}개 남음</b><span class="muted">진하게 보이는 게 ${esc(focusWho())} 것, 흐린 건 다른 파트 것이에요. 이름 박스를 다시 누르면 풀려요.</span></div>`; })() : ''}
-    <div class="tabs">${[['flow', '흐름도'], ['order', '할 순서'], ['board', '보드'], ['parts', '파트별 할 일·받은 말'], ['deps', '의존 관계'], ['log', '최근 변경']].map(([k, l]) => `<button data-v="${k}" class="${RM.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-    ${RM.view !== 'flow' ? `<div class="rm-tools">${askBtn('')}${mineBtn()}</div>` : ''}
+    <div class="tabs">${[['flow', '흐름도'], ['order', '할 순서'], ['board', '보드'], ['parts', '파트별 할 일·받은 말'], ...(S.me ? [['inbox', '받은 말함']] : []), ['deps', '의존 관계'], ['log', '최근 변경']].map(([k, l]) => `<button data-v="${k}" class="${RM.view === k ? 'on' : ''}">${l}${k === 'inbox' && ibNew().length ? ` <span class="ib-badge">${ibNew().length}</span>` : ''}</button>`).join('')}</div>
+    ${RM.view !== 'flow' && RM.view !== 'inbox' ? `<div class="rm-tools">${askBtn('')}${mineBtn()}</div>` : ''}
     ${RM.view === 'board' ? `<div class="filters rm-filters">
       <input type="search" id="rmQ" placeholder="코드·제목 검색" value="${esc(f.q)}">
       <select id="rmPart"><option value="">모든 파트</option>${RM_PARTS.map((p) => `<option value="${p}"${f.part === p ? ' selected' : ''}>${esc(partName(p))}</option>`).join('')}</select>
@@ -2494,6 +2497,7 @@ function rmRender() {
     ${body}</div>`;
   rmBind(main);
   if (RM.view === 'flow') bindFlow(main);
+  if (RM.view === 'inbox') ibBind(main);
 }
 
 function rmBind(root) {
@@ -2529,6 +2533,85 @@ function rmBind(root) {
     $('#rmPrio', root).addEventListener('change', (e) => { RM.f.prio = e.target.value; save(); rmRender(); });
     $('#rmHide', root).addEventListener('change', (e) => { RM.f.hideDone = e.target.checked; save(); rmRender(); });
   }
+}
+
+// ---------- 받은 말함: 나에게 온 말을 골라 읽고, 확인 체크하면 "확인한 말"로 옮긴다 (사람마다 따로, D1 roadmap_read) ----------
+RM.ib = { tab: 'new', sel: null };
+const ibAll = () => (RM.data && RM.data.inbox ? RM.data.inbox.list : []);
+const ibNew = () => ibAll().filter((m) => !m.readAt);
+const ibDone = () => ibAll().filter((m) => m.readAt).sort((a, b) => b.readAt - a.readAt);
+const ibNarrow = () => window.matchMedia('(max-width: 760px)').matches;
+function rmInboxView(by) {
+  if (!S.me) return '<p class="empty">로그인하면 받은 말함을 볼 수 있어요. <button class="btn sm" data-iblogin>로그인</button></p>';
+  if (!RM.data.inbox || !RM.data.inbox.part) return '<p class="empty">맡은 파트가 없어 받은 말이 없어요.</p>';
+  const ib = RM.ib;
+  const list = ib.tab === 'done' ? ibDone() : ibNew();
+  if (!list.some((m) => m.seq === ib.sel)) ib.sel = !ibNarrow() && list.length ? list[0].seq : null;
+  const cur = list.find((m) => m.seq === ib.sel);
+  const row = (m) => `<div class="ib-row${m.seq === ib.sel ? ' on' : ''}" data-ibsel="${m.seq}" role="button" tabindex="0">
+      <button class="ib-chk${m.readAt ? ' on' : ''}" data-ibchk="${m.seq}" title="${m.readAt ? '받은 말로 되돌리기' : '확인했어요 (받은 말에서 빼기)'}" aria-label="${m.readAt ? '확인 풀기' : '확인'}">${m.readAt ? svgI('check', 14) : ''}</button>
+      <span class="ib-row-t"><span class="ib-row-h"><span class="dot" style="background:${colorOf(m.who)}"></span><b>${rmWho(m.who)}</b><span class="ib-scope${m.to ? ' me' : ''}">${m.to ? '나에게' : '모두에게'}</span><span class="muted ib-ago">${ago(m.at)}</span></span>
+        <span class="ib-row-card">${esc(m.code || '')} ${esc(m.title || '')}</span>
+        <span class="ib-row-txt">${m.text ? esc(m.text.slice(0, 90)) : '<span class="muted">(사진)</span>'}${m.img && m.text ? ' <span class="muted">· 사진</span>' : ''}</span></span>
+    </div>`;
+  const it = cur && by.get(cur.item);
+  const view = cur ? `<div class="ib-view-h"><button class="btn sm plain ib-back" data-ibback>← 목록</button>
+        <span class="dot" style="background:${colorOf(cur.who)}"></span><b>${rmWho(cur.who)}</b><span class="ib-scope${cur.to ? ' me' : ''}">${cur.to ? `→ ${esc(partName(cur.to))}` : '→ 모두'}</span>
+        <span class="muted">${kst(new Date(cur.at).toISOString())}${cur.edited ? ' (수정됨)' : ''}</span></div>
+      ${it ? `<button class="ib-card" data-open="${it.id}" title="카드 열기">${svgI('doc', 16)}<span class="ib-card-t"><b>${esc(it.code)}</b> ${esc(it.title)}</span>${stPill(it)}<span class="muted ib-card-go">카드 열기 →</span></button>` : `<p class="muted">${esc(cur.code || '')} ${esc(cur.title || '')} (지워진 카드)</p>`}
+      ${cur.text ? `<div class="ib-body">${esc(cur.text)}</div>` : ''}
+      ${cur.img ? `<a href="/api/roadmap/img?id=${cur.img}" target="_blank" rel="noopener"><img class="rm-img" src="/api/roadmap/img?id=${cur.img}" alt="${rmWho(cur.who)}의 스크린샷"></a>` : ''}
+      <div class="ib-acts">${cur.readAt
+        ? `<span class="muted">${ago(cur.readAt)} 확인함</span><span style="flex:1"></span><button class="btn plain" data-ibchk="${cur.seq}">${svgI('undo', 16)} 받은 말로 되돌리기</button>`
+        : `<span style="flex:1"></span><button class="btn" data-ibchk="${cur.seq}">${svgI('check', 16)} 확인했어요</button>`}</div>`
+    : `<p class="empty">${list.length ? '목록에서 말을 고르면 여기에 열려요.' : ib.tab === 'done' ? '아직 확인한 말이 없어요.' : '새로 받은 말이 없어요. 다 확인했어요.'}</p>`;
+  const nN = ibNew().length, nD = ibDone().length;
+  return `<div class="ib${cur ? ' has-sel' : ''}">
+    <aside class="ib-side">
+      <div class="ib-tabs"><button data-ibtab="new" class="${ib.tab === 'new' ? 'on' : ''}">받은 말 <b>${nN}</b></button><button data-ibtab="done" class="${ib.tab === 'done' ? 'on' : ''}">확인한 말 <b>${nD}</b></button></div>
+      <p class="muted ib-help">${ib.tab === 'new' ? `${esc(partName(RM.data.inbox.part))} 파트에게 온 말과, 내 칸이 있는 카드에 "모두"에게 남긴 말이에요. 네모를 체크하면 확인한 말로 옮겨져요.` : '체크한 말이에요. 체크를 풀면 받은 말로 돌아가요.'}</p>
+      ${ib.tab === 'new' && nN > 1 ? `<button class="btn sm plain ib-allbtn" id="ibAll">${svgI('check', 14)} 모두 확인 (${nN})</button>` : ''}
+      <div class="ib-list">${list.map(row).join('') || '<p class="muted ib-none">없어요.</p>'}</div>
+    </aside>
+    <section class="ib-view">${view}</section>
+  </div>`;
+}
+async function ibMark(seqs, read) {
+  const list = ibAll().filter((m) => seqs.includes(m.seq));
+  const before = list.map((m) => m.readAt);
+  // 지금 연 말을 체크하면 같은 목록의 다음 말을 연다
+  const tabList = RM.ib.tab === 'done' ? ibDone() : ibNew();
+  if (seqs.includes(RM.ib.sel)) {
+    const i = tabList.findIndex((m) => m.seq === RM.ib.sel);
+    const next = tabList.slice(i + 1).concat(tabList.slice(0, i).reverse()).find((m) => !seqs.includes(m.seq));
+    RM.ib.sel = next && !ibNarrow() ? next.seq : null;
+  }
+  const now = Date.now();
+  list.forEach((m) => { m.readAt = read ? now : null; });
+  ibRender();
+  try { await api('/roadmap/read', { body: { seqs, read } }); if (seqs.length > 1) toast(`${seqs.length}개를 확인한 말로 옮겼어요.`); }
+  catch (x) { list.forEach((m, i) => { m.readAt = before[i]; }); ibRender(); toast(x.error === 'LOGIN' ? '다시 로그인해 주세요.' : x.message); }
+}
+// 목록 스크롤을 지키며 다시 그린다
+function ibRender() {
+  const l = $('.ib-list'); const top = l ? l.scrollTop : 0;
+  rmRender();
+  const n = $('.ib-list'); if (n) n.scrollTop = top;
+}
+function ibBind(root) {
+  const lg = $('[data-iblogin]', root); if (lg) lg.addEventListener('click', () => loginModal(() => rmLoad().then(rmRender)));
+  $$('[data-ibtab]', root).forEach((b) => b.addEventListener('click', () => { RM.ib.tab = b.dataset.ibtab; RM.ib.sel = null; rmRender(); }));
+  $$('[data-ibsel]', root).forEach((r) => {
+    const pick = () => { RM.ib.sel = Number(r.dataset.ibsel); ibRender(); if (ibNarrow()) { const v = $('.ib-view'); if (v) v.scrollIntoView({ block: 'start' }); } };
+    r.addEventListener('click', pick);
+    r.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === r) { e.preventDefault(); pick(); } });
+  });
+  $$('[data-ibchk]', root).forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const m = ibAll().find((x) => x.seq === Number(b.dataset.ibchk)); if (m) ibMark([m.seq], !m.readAt);
+  }));
+  const bk = $('[data-ibback]', root); if (bk) bk.addEventListener('click', () => { RM.ib.sel = null; ibRender(); });
+  const all = $('#ibAll', root); if (all) twoStep(all, '한 번 더 누르면 모두 확인', () => ibMark(ibNew().map((m) => m.seq), true));
 }
 
 async function rmCheck(id, p) {

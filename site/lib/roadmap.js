@@ -3,6 +3,7 @@
 //   roadmap_log   누가 언제 무엇을 바꿨는지 + 개발자에게 남긴 말(사진 포함). 가장 큰 seq가 보드 전체 버전(rev)
 //   roadmap_img   메모에 붙인 사진 (브라우저에서 줄여 보낸 base64)
 //   roadmap_meta  처음 카드를 넣었는지 등
+//   roadmap_read  받은 말함에서 사람마다 확인 체크한 말
 // 보드 = 기능 영역(area)별 칸, 카드 = 할 일, 카드 안 체크 = 맡은 파트(A~E)별 했다/안 했다.
 import { MEMBERS } from './config.js';
 import { SEED } from './roadmap-seed.js';
@@ -77,6 +78,8 @@ const SCHEMA = [
   'CREATE TABLE IF NOT EXISTS roadmap_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)',
   // 흐름도 칸(영역)마다 파트별 "지금 하는 일" 한 줄
   'CREATE TABLE IF NOT EXISTS roadmap_now (area TEXT NOT NULL, part TEXT NOT NULL, text TEXT NOT NULL, who TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (area, part))',
+  // 받은 말함: 사람마다 "확인했음" 표시한 남긴 말 (seq = roadmap_log.seq). 말이 지워지면 표시는 그냥 안 쓰인다
+  'CREATE TABLE IF NOT EXISTS roadmap_read (who TEXT NOT NULL, seq INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (who, seq))',
 ];
 
 const rid = (p) => p + [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(36).padStart(2, '0')).join('').slice(0, 10);
@@ -250,14 +253,15 @@ export function roadmap(env) {
   }
 
   return {
-    async all() {
+    async all(me) {
       await init(db);
-      const [items, logs, r, notes, now] = await Promise.all([
+      const [items, logs, r, notes, now, reads] = await Promise.all([
         db.prepare('SELECT v, data FROM roadmap_item').all(),
         db.prepare(`SELECT seq, at, who, item, act, data FROM roadmap_log WHERE act NOT IN ('unnote', 'hide') AND NOT (act = 'check' AND at > ?1) ORDER BY seq DESC LIMIT ${LOG_LIMIT}`).bind(Date.now() - QUIET_MS).all(),
         rev(db),
         db.prepare("SELECT seq, at, who, item, data FROM roadmap_log WHERE act = 'note' ORDER BY seq").all(),
         db.prepare('SELECT area, part, text, who, at FROM roadmap_now').all(),
+        me ? db.prepare('SELECT seq, at FROM roadmap_read WHERE who = ?1').bind(me).all() : null,
       ]);
       // 카드마다 남긴 말 수, 파트별로 받은 말 수
       const flow = await getFlow();
@@ -269,9 +273,11 @@ export function roadmap(env) {
         c.n++; if (d.to) c.to[d.to] = (c.to[d.to] || 0) + 1;
         nc.set(x.item, c);
       }
+      const list = (items.results || []).map(rowItem).filter(Boolean);
       return {
         rev: r, parts: PARTS, areas: areasOf(flow), flow,
-        items: (items.results || []).map(rowItem).filter(Boolean).map((it) => ({ ...it, notes: (nc.get(it.id) || {}).n || 0, notesTo: (nc.get(it.id) || {}).to || {} })),
+        items: list.map((it) => ({ ...it, notes: (nc.get(it.id) || {}).n || 0, notesTo: (nc.get(it.id) || {}).to || {} })),
+        inbox: me ? inboxOf(me, notes.results || [], list, reads ? reads.results || [] : []) : null,
         log: (logs.results || []).map(rowLog),
         msgs: msgs.reverse().slice(0, 60),
         now: now.results || [],
@@ -400,6 +406,18 @@ export function roadmap(env) {
       return { ok: true };
     },
 
+    // 받은 말함: 확인 체크(read=true) / 풀기. seqs는 남긴 말 번호 목록 (모두 확인용으로 여러 개)
+    async markRead(me, seqs, read) {
+      await init(db);
+      const list = [...new Set((Array.isArray(seqs) ? seqs : [seqs]).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+      if (!list.length || list.length > 500) return { error: 'BAD_READ', status: 400, message: '확인할 말을 골라 주세요.' };
+      const now = Date.now();
+      await db.batch(list.map((seq) => (read
+        ? db.prepare('INSERT OR IGNORE INTO roadmap_read (who, seq, at) VALUES (?1, ?2, ?3)').bind(me, seq, now)
+        : db.prepare('DELETE FROM roadmap_read WHERE who = ?1 AND seq = ?2').bind(me, seq))));
+      return { ok: true, at: read ? now : null };
+    },
+
     // 개발자에게 남기는 말 (to: 받는 파트 A~E, 없으면 모두에게). img는 data:image/...;base64,...
     async note(me, id, text, img, to) {
       await init(db);
@@ -463,6 +481,23 @@ export function roadmap(env) {
   };
 }
 
+
+// 받은 말함: 내 파트로 온 말 + "모두"에게 남긴 말 중 내 파트 칸이 있는 카드의 말 (내가 쓴 건 빼고). 새 것부터
+function inboxOf(me, notes, items, reads) {
+  const part = Object.keys(PARTS).find((p) => PARTS[p].owner === me);
+  if (!part) return { part: '', list: [] };
+  const roles = new Map(items.map((it) => [it.id, it.roles || {}]));
+  const readAt = new Map(reads.map((x) => [x.seq, x.at]));
+  const list = [];
+  for (const x of notes) {
+    if (x.who === me) continue;
+    const d = parse(x.data) || {};
+    const mine = d.to ? d.to === part : !!(roles.get(x.item) || {})[part];
+    if (!mine) continue;
+    list.push({ seq: x.seq, at: x.at, who: x.who, item: x.item, to: d.to || '', text: d.text || '', img: d.img || null, title: d.title, code: d.code, edited: !!d.editedBy, readAt: readAt.get(x.seq) || null });
+  }
+  return { part, list: list.reverse().slice(0, 400) };
+}
 
 // ---------- 할 순서 (선행 작업을 따라 단계 나누기) ----------
 // 안 끝난 카드만 센다. 1단계 = 기다리는 일이 없어 지금 바로 시작할 수 있는 것, n단계 = 안 끝난 선행 작업 중 가장 늦은 단계 + 1

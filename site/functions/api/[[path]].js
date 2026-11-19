@@ -444,11 +444,11 @@ export async function onRequest(ctx) {
 
       // 로드맵 (보기는 누구나, 바꾸기·사진은 로그인)
       case 'GET /roadmap': case 'GET /roadmap/rev': case 'GET /roadmap/item-log': case 'GET /roadmap/img': case 'GET /roadmap/flow-default':
-      case 'POST /roadmap/save': case 'POST /roadmap/delete': case 'POST /roadmap/note': case 'POST /roadmap/note-delete': case 'POST /roadmap/check': case 'POST /roadmap/now': case 'POST /roadmap/flow': case 'POST /roadmap/log-delete': case 'POST /roadmap/log-edit': {
+      case 'POST /roadmap/save': case 'POST /roadmap/delete': case 'POST /roadmap/note': case 'POST /roadmap/note-delete': case 'POST /roadmap/check': case 'POST /roadmap/now': case 'POST /roadmap/flow': case 'POST /roadmap/log-delete': case 'POST /roadmap/log-edit': case 'POST /roadmap/read': {
         const rm = roadmap(env);
         if (!rm) return fail(500, 'NO_D1', 'D1 바인딩 AI_DB가 없어 로드맵을 저장할 수 없어요.');
         const out = (r) => (r.error ? json(r, r.status) : json(r));
-        if (route === 'GET /roadmap') return json({ ...(await rm.all()), me });
+        if (route === 'GET /roadmap') return json({ ...(await rm.all(me)), me });
         if (route === 'GET /roadmap/rev') return json({ rev: await rm.rev() });
         if (route === 'GET /roadmap/flow-default') return json({ flow: DEFAULT_FLOW });
         if (route === 'GET /roadmap/item-log') return json({ log: await rm.itemLog(String(q.get('id') || '')) });
@@ -464,6 +464,7 @@ export async function onRequest(ctx) {
         if (route === 'POST /roadmap/note') return out(await rm.note(me, String(body.id || ''), body.text, body.img, body.to));
         if (route === 'POST /roadmap/flow') return out(await rm.saveFlow(me, body.flow, body.v));
         if (route === 'POST /roadmap/now') return out(await rm.setNow(me, String(body.area || ''), String(body.part || ''), body.text));
+        if (route === 'POST /roadmap/read') return out(await rm.markRead(me, body.seqs, body.read !== false));
         if (route === 'POST /roadmap/check') return out(await rm.check(me, String(body.id || ''), String(body.part || ''), !!body.done));
         const admin = me === adminOf(env);
         if (route === 'POST /roadmap/log-delete' || route === 'POST /roadmap/log-edit') {
