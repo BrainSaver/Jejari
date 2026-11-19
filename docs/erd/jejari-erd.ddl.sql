@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v30)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v31)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -1224,6 +1224,7 @@ CREATE INDEX ix_app_policy_history_1jzu2w ON app_policy_history (changed_by);
 INSERT INTO model_run (model_version, algorithm, params, train_source, trained_at, threshold, decay_half_life_days, is_active) VALUES ('rule-2026.11-01', 'RULE', '{"weights":"risk_score 신호별 가중치"}', 'synthetic v1', TIMESTAMP '2026-11-18 10:00:00', 80, 30, 'Y');
 INSERT INTO model_run (model_version, algorithm, params, train_source, trained_at, threshold, decay_half_life_days, is_active) VALUES ('iforest-2026.11-01', 'IFOREST', '{"n_estimators":200,"contamination":0.05}', 'synthetic v1 + ext_web_access_log', TIMESTAMP '2026-11-18 10:00:00', 80, 30, 'N');
 INSERT INTO model_run (model_version, algorithm, params, train_source, trained_at, threshold, is_active) VALUES ('ens-2026.11-01', 'ENSEMBLE', '{"models":["gbm","iforest","gru x5"],"dropped":["account_age_days_log","accounts_on_ip","distinct_ips","min_sync_gap_ip_s_log"]}', 'tools/ml generate.py 18000계정', TIMESTAMP '2026-11-18 10:52:00', 97.6, 'N');
+INSERT INTO model_run (model_version, algorithm, params, train_source, trained_at, threshold, is_active) VALUES ('ens-2026.11-02', 'ENSEMBLE', '{"dir":"data/ml/model-next","models":["gbm","iforest","gru x5"],"stage":true,"pick_floor_s":1.0}', 'tools/ml generate.py g7~g9 (ML_PICK_FLOOR=1, ML_STAGE=1)', TIMESTAMP '2026-11-19 03:55:00', 98.2, 'N');
 INSERT INTO sale_event (sale_event_id, name, holiday_from, holiday_to, sale_open_at, priority_open_at, status) VALUES (1, '2026 추석 (예시)', DATE '2026-09-24', DATE '2026-09-27', TIMESTAMP '2026-09-08 07:00:00', TIMESTAMP '2026-09-07 07:00:00', 'PLANNED');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('inventory.segment_mode', 'OFF', 1, 'STRING', '구간 재고 사용 여부 (OFF면 segment_no=0). 2주차 말 결정');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('queue.admit_per_sec', '200', 1, 'NUMBER', '초당 대기열 입장 허용 인원');

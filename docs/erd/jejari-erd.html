@@ -1129,7 +1129,8 @@ const DOCS = {
   ['v27','train_run_seq 시퀀스 추가. 생성되는 날짜별 운행의 run_id를 산식(날짜 인코딩)이 아니라 시퀀스로 받고, 중복 판정은 자연키 (train_id, run_date)로 한다. 시드·스케줄러(700000+)와 실제 시간표 적재(400000+) 대역이 겹칠 수 있던 것을 없앴다. 기존 DB는 db/patch/v27.sql'],
   ['v28','CCTV 녹화(ADM-11)를 구현과 맞춤 (강다인 요청): replay_event를 시계열 → 일반 컬렉션 + UNIQUE(session_id, seq) (시계열은 유니크 인덱스를 만들 수 없어 Kafka 재전달 중복을 막지 못한다), 쓰지 않는 칸 두 개(서버 응답·도메인 이벤트) 삭제 — 재생할 때 같은 세션의 behavior_log를 함께 읽어 같은 것을 두 번 저장하지 않는다, 실제로 저장하는 expire_at·label·boxes 추가. Oracle 변경 없음 — Mongo 인덱스는 docker/mongo/mongo-init.js'],
   ['v29','model_score에 닮은 유형 type(SPEED / RETRY / MULTI_ACCOUNT / EVASIVE / CANCEL / HOARD)·type_prob 추가 — 별도 유형 모델(tools/ml/train_type.py)의 추정, 관리자 화면은 봇 쪽으로 본 계정에만 표시. Mongo라 기존 DB 패치 없음'],
-  ['v30','notification.type CHECK에 CONFIRMED 추가 — 예매 완료 알림 (RESERVATION_CONFIRMED 이벤트 → "예매가 완료됐어요"). 기존 DB는 db/patch/v30.sql을 먼저 넣고 나서 알림 코드를 합친다']]}
+  ['v30','notification.type CHECK에 CONFIRMED 추가 — 예매 완료 알림 (RESERVATION_CONFIRMED 이벤트 → "예매가 완료됐어요"). 기존 DB는 db/patch/v30.sql을 먼저 넣고 나서 알림 코드를 합친다'],
+  ['v31','model_run 예시에 두 번째 합성 모델 ens-2026.11-02 (data/ml/model-next, 꺼짐) — 모델 관리 화면(A-09)에서 지금 버전과 비교. 기존 DB는 db/patch/v31.sql']]}
 };
 // ===== 스키마 v5: 팀 검토 12건 반영 (2026-11-06) =====
 const V5_TABLES = [
@@ -1639,7 +1640,15 @@ const V30_OPS = [
   // 그 이벤트가 계속 재시도돼 알림 처리기가 막히므로, 이 패치가 DB에 들어간 뒤에 코드를 합친다
   ['set','notification','type',{desc:'WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED / CONFIRMED',reason:'취소표 건너뜀(매수 한도 초과)·환불 완료·예매 완료 안내'}],
 ];
-const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS}, {v:24,tables:V24_TABLES,ops:V24_OPS}, {v:25,tables:V25_TABLES,ops:V25_OPS}, {v:26,tables:V26_TABLES,ops:V26_OPS}, {v:27,tables:V27_TABLES,ops:V27_OPS}, {v:28,tables:V28_TABLES,ops:V28_OPS}, {v:29,tables:V29_TABLES,ops:V29_OPS}, {v:30,tables:V30_TABLES,ops:V30_OPS} ];
+const V31_TABLES = [];
+const V31_OPS = [
+  // 모델 관리 화면(A-09)에서 비교할 두 번째 합성 모델 (2026-11-19 강동균). data/ml/model-next =
+  // 사람 고르기 하한 1초[가정] + 단계별 속도 특징 + GRU. 꺼진 채(N)로 등록하고, 서버 작업이 두 버전 모두 점수를 매기면
+  // 관리자가 A-09에서 비교해 켠다. 문턱은 그 모델의 report.txt (사람 검증 세트 오탐 5%)
+  ['samples+','model_run',[
+    {model_version:'ens-2026.11-02',algorithm:'ENSEMBLE',params:'{"dir":"data/ml/model-next","models":["gbm","iforest","gru x5"],"stage":true,"pick_floor_s":1.0}',train_source:'tools/ml generate.py g7~g9 (ML_PICK_FLOOR=1, ML_STAGE=1)',trained_at:'2026-11-19 03:55',threshold:98.2,is_active:'N'}]],
+];
+const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS}, {v:24,tables:V24_TABLES,ops:V24_OPS}, {v:25,tables:V25_TABLES,ops:V25_OPS}, {v:26,tables:V26_TABLES,ops:V26_OPS}, {v:27,tables:V27_TABLES,ops:V27_OPS}, {v:28,tables:V28_TABLES,ops:V28_OPS}, {v:29,tables:V29_TABLES,ops:V29_OPS}, {v:30,tables:V30_TABLES,ops:V30_OPS}, {v:31,tables:V31_TABLES,ops:V31_OPS} ];
 const SEED_VERSION = Math.max(2,...PATCHES.map(p=>p.v));
 const LAYOUT = [
  ['station','route','route_station','fare','common_code'],

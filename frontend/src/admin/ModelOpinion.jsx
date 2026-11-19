@@ -8,7 +8,7 @@ import { get } from '../api/client.js';
  */
 const BY = { GBM: '부스팅', IF: 'Isolation Forest', GRU: '행동 순서(GRU)' };
 // 닮은 유형 (ERD v29 model_score.type, tools/ml/train_type.py). 별도 모델의 추정이라 "봇 쪽으로 봄"인 계정에만 서버가 내려 준다
-const TYPE = {
+export const TYPE = {
   SPEED: ['빠른 반복 매크로', '연타·일정 간격·판매 오픈 순간 요청'],
   RETRY: ['같은 좌석 반복 시도', '이미 잡힌 좌석을 계속 다시 누름'],
   MULTI_ACCOUNT: ['다계정', '명의·기기·카드를 여러 개 돌려 씀'],

@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v30 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
+> 스키마 v31 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -1637,6 +1637,7 @@ Oracle
 | rule-2026.11-01 | RULE | {"weights":"risk_score 신호별 가중치"} | synthetic v1 | 2026-11-18 10:00 | 80 | 30 | Y |
 | iforest-2026.11-01 | IFOREST | {"n_estimators":200,"contamination":0.05} | synthetic v1 + ext_web_access_log | 2026-11-18 10:00 | 80 | 30 | N |
 | ens-2026.11-01 | ENSEMBLE | {"models":["gbm","iforest","gru x5"],"dropped":["account_age_days_log","accounts_on_ip","distinct_ips","min_sync_gap_ip_s_log"]} | tools/ml generate.py 18000계정 | 2026-11-18 10:52 | 97.6 | null | N |
+| ens-2026.11-02 | ENSEMBLE | {"dir":"data/ml/model-next","models":["gbm","iforest","gru x5"],"stage":true,"pick_floor_s":1.0} | tools/ml generate.py g7~g9 (ML_PICK_FLOOR=1, ML_STAGE=1) | 2026-11-19 03:55 | 98.2 | null | N |
 
 <a id="model-score"></a>
 #### `model_score` 모델 보조 의견 점수
@@ -2395,6 +2396,7 @@ Oracle
 | v28 | CCTV 녹화(ADM-11)를 구현과 맞춤 (강다인 요청): replay_event를 시계열 → 일반 컬렉션 + UNIQUE(session_id, seq) (시계열은 유니크 인덱스를 만들 수 없어 Kafka 재전달 중복을 막지 못한다), 쓰지 않는 칸 두 개(서버 응답·도메인 이벤트) 삭제 — 재생할 때 같은 세션의 behavior_log를 함께 읽어 같은 것을 두 번 저장하지 않는다, 실제로 저장하는 expire_at·label·boxes 추가. Oracle 변경 없음 — Mongo 인덱스는 docker/mongo/mongo-init.js |
 | v29 | model_score에 닮은 유형 type(SPEED / RETRY / MULTI_ACCOUNT / EVASIVE / CANCEL / HOARD)·type_prob 추가 — 별도 유형 모델(tools/ml/train_type.py)의 추정, 관리자 화면은 봇 쪽으로 본 계정에만 표시. Mongo라 기존 DB 패치 없음 |
 | v30 | notification.type CHECK에 CONFIRMED 추가 — 예매 완료 알림 (RESERVATION_CONFIRMED 이벤트 → "예매가 완료됐어요"). 기존 DB는 db/patch/v30.sql을 먼저 넣고 나서 알림 코드를 합친다 |
+| v31 | model_run 예시에 두 번째 합성 모델 ens-2026.11-02 (data/ml/model-next, 꺼짐) — 모델 관리 화면(A-09)에서 지금 버전과 비교. 기존 DB는 db/patch/v31.sql |
 
 ## 참고 자료
 
