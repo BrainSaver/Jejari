@@ -115,7 +115,9 @@ jejari:
   jwt:
     issuer: jejari
     access-ttl: 15m
-    refresh-ttl: 14d          # 로그인 시점부터 고정. 재발급해도 늘지 않음
+    refresh-ttl: 14d          # 회원이 "로그인 상태 유지"를 골랐을 때. 로그인 시점부터 고정, 재발급해도 늘지 않음
+    session-refresh-ttl: 12h  # 고르지 않았을 때 (쿠키는 브라우저를 닫으면 사라짐)
+    admin-refresh-ttl: 8h     # 관리자 (마스킹 해제·강제 취소 권한, 쿠키는 브라우저를 닫으면 사라짐)
     clock-skew: 30s
     active-kid: ${JWT_ACTIVE_KID:k1}
     secrets:                  # kid: Base64 키(32바이트 이상). 키 교체 방법은 JwtProperties 주석

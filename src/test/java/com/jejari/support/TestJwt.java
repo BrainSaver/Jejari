@@ -19,7 +19,7 @@ public final class TestJwt {
 
 	public static JwtProperties props(String activeKid, Map<String, String> secrets) {
 		return new JwtProperties("jejari", Duration.ofMinutes(15), Duration.ofDays(14), Duration.ofSeconds(30),
-				activeKid, new LinkedHashMap<>(secrets), true);
+				activeKid, new LinkedHashMap<>(secrets), true, Duration.ofHours(8), Duration.ofHours(12));
 	}
 
 	public static JwtProperties props() {

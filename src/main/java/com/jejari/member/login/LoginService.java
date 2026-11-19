@@ -68,6 +68,11 @@ public class LoginService {
 	}
 
 	public IssuedTokens login(String rawEmail, String password, String ipHash, String userAgent) {
+		return login(rawEmail, password, ipHash, userAgent, false);
+	}
+
+	/** @param remember "로그인 상태 유지" (고르면 14일·브라우저를 닫아도 유지, 아니면 12시간·닫으면 로그아웃) */
+	public IssuedTokens login(String rawEmail, String password, String ipHash, String userAgent, boolean remember) {
 		if (limiter.hit(AuthLimiter.loginRateKey(ipHash), Duration.ofMinutes(1))
 				> policy.number(AuthPolicy.LOGIN_RATE_PER_MIN)) {
 			attempts.record(null, null, Result.RATE_LIMITED, ipHash, userAgent, null, null);
@@ -119,7 +124,8 @@ public class LoginService {
 
 		limiter.clearFailures(emailHash);
 		markSuccess(account, password);
-		IssuedTokens issued = tokens.issue(ActorType.MEMBER, account.memberId, new ClientInfo(null, ipHash, userAgent));
+		IssuedTokens issued = tokens.issue(ActorType.MEMBER, account.memberId, new ClientInfo(null, ipHash, userAgent),
+				remember);
 		attempts.record(account.memberId, emailHash, Result.SUCCESS, ipHash, userAgent, issued.sessionId(), verifyMs);
 		return issued;
 	}
