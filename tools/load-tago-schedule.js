@@ -16,6 +16,7 @@
 //   train      train_id = 10000 + 열차번호, train_no는 시드와 같은 5자리('00103'), train_kind 'KTX'(운임표와 같게), 좌석 배치는 열차 1을 복사
 //              시드(train_id < 10000)에 같은 열차 번호가 있으면 그 편은 넣지 않는다 (시드가 이미 매일 운행을 깔아 둠).
 //              예전에 넣어 둔 같은 편의 운행은 예약·대기·좌석 행이 없으면 지운다 (검색에 같은 열차가 두 번 나오던 것)
+//              운행이 하나도 안 남은 그 열차는 좌석·객차와 함께 지운다
 //   train_run  run_id = 400000 + 연중일 × 1000 + 열차번호 (시드 1001~9003, 관리자 1,000,000~ 와 안 겹침)
 //              지난 날은 DEPARTED, 나머지는 ON_SALE. 판매 마감 = 출발 시각
 //   train_stop 서울·광명·대전·동대구·부산 중 실제로 서는 역만. stop_order는 진행 방향 노선 순서 (건너뛴 역은 빈 번호)
@@ -200,6 +201,14 @@ async function main() {
      AND NOT EXISTS (SELECT 1 FROM seat_inventory x WHERE x.run_id = r.run_id)`;
   sql.push(`DELETE FROM train_stop WHERE run_id IN (${shadowRuns});`);
   sql.push(`DELETE FROM train_run WHERE run_id IN (${shadowRuns});`);
+  // 운행이 하나도 안 남은 겹친 열차는 좌석·객차와 함께 지운다 (관리자 열차 목록에 옛 표기 '103'으로 남지 않게)
+  const shadowTrains = `SELECT t.train_id FROM train t
+   WHERE t.train_id ${TAGO_IDS}
+     AND EXISTS (SELECT 1 FROM train o WHERE o.train_id NOT ${TAGO_IDS} AND LPAD(o.train_no, 5, '0') = LPAD(t.train_no, 5, '0'))
+     AND NOT EXISTS (SELECT 1 FROM train_run r WHERE r.train_id = t.train_id)`;
+  sql.push(`DELETE FROM seat WHERE train_id IN (${shadowTrains});`);
+  sql.push(`DELETE FROM train_car WHERE train_id IN (${shadowTrains});`);
+  sql.push(`DELETE FROM train WHERE train_id IN (${shadowTrains});`);
   sql.push('');
 
   // 열차 (번호 표기는 시드와 같은 5자리로 맞춘다)
