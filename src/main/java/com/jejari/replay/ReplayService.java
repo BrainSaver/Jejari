@@ -27,7 +27,8 @@ import com.jejari.risk.cache.RiskScoreCache;
 @Service
 public class ReplayService {
 
-	public record Config(boolean enabled, String mode, long batchSec, long maxPathPoints) {
+	/** @param maxPathPoints 이 모드의 궤적 묶음당 점 수 · pathSampleMs 마우스 위치를 재는 간격 */
+	public record Config(boolean enabled, String mode, long batchSec, long maxPathPoints, long pathSampleMs) {
 	}
 
 	private final AppPolicy policy;
@@ -47,8 +48,10 @@ public class ReplayService {
 
 	public Config config(long memberId, String sessionId) {
 		boolean enabled = publisher.getIfAvailable() != null && sessionId != null;
-		return new Config(enabled, enabled ? mode(memberId, sessionId) : "OFF", policy.getLong(AppPolicy.REPLAY_BATCH_SEC),
-				policy.getLong(AppPolicy.REPLAY_MAX_PATH_POINTS));
+		String mode = enabled ? mode(memberId, sessionId) : "OFF";
+		return new Config(enabled, mode, policy.getLong(AppPolicy.REPLAY_BATCH_SEC),
+				ReplayBatch.pathPoints(mode, (int) policy.getLong(AppPolicy.REPLAY_MAX_PATH_POINTS)),
+				ReplayBatch.pathSampleMs(mode));
 	}
 
 	/** @return 받은(남긴) 이벤트 수 */

@@ -5,7 +5,8 @@ import { get, post, subscribeAuth, tokenClaims } from '../api/client.js';
  *
  *   PAGE_VIEW  화면 이동 (주소의 숫자는 :id로 바꿔 화면 ID로)
  *   CLICK      클릭 위치(화면 비율 0~1000)와 요소 ID (data-rec > id > 태그.클래스)
- *   MOUSE_PATH 마우스 궤적 [[dt, x, y], …] (FULL 녹화일 때만. 사람은 곡선·가감속, 매크로는 직선·순간이동)
+ *   MOUSE_PATH 마우스 궤적 [[dt, x, y], …] (사람은 곡선·가감속, 매크로는 직선·순간이동).
+ *              FULL은 0.05초마다, 평소(SAMPLED)는 0.15초마다 — 간격·점 수는 서버가 정해 준다(config)
  *   SCROLL / VISIBILITY / INPUT(길이만. 입력값은 절대 보내지 않음)
  *   LAYOUT     그 순간 화면의 뼈대: 버튼·입력 칸·탭·제목·좌석 상자의 위치·종류(+좌석 상태). 재생 배경이 된다.
  *              화면 글자는 담지 않고, 버튼 문구만 "숫자 없는 짧은 글자"일 때 담는다 (결제하기, 열차 찾기)
@@ -14,10 +15,10 @@ import { get, post, subscribeAuth, tokenClaims } from '../api/client.js';
  * 세션은 로그인 세션(토큰의 sid)이라 새로고침해도 이어진다. seq는 "지금 시각 × 1000"부터 늘려 새로고침 뒤에도 겹치지 않게.
  */
 const MAX_BUFFER = 500;
-const PATH_SAMPLE_MS = 50;
+const PATH_SAMPLE_MS = 150; // 서버 설정이 오기 전 기본값
 
 let started = false;
-let config = null; // {enabled, mode, batchSec, maxPathPoints}
+let config = null; // {enabled, mode, batchSec, maxPathPoints, pathSampleMs}
 let sid = null;
 let buffer = [];
 let lastSeq = 0;
@@ -191,13 +192,13 @@ function captureLayout() {
 }
 
 function onMove(ev) {
-  if (!recording() || config.mode !== 'FULL') return;
+  if (!recording()) return;
   const now = performance.now();
-  if (now - lastMove < PATH_SAMPLE_MS) return;
+  if (now - lastMove < (config.pathSampleMs || PATH_SAMPLE_MS)) return;
   lastMove = now;
   if (!path.length) pathStart = now;
   path.push([Math.round(now - pathStart), nx(ev.clientX), ny(ev.clientY)]);
-  if (path.length >= (config.maxPathPoints || 50)) flushPath();
+  if (path.length >= (config.maxPathPoints || 16)) flushPath();
 }
 
 function flushPath() {

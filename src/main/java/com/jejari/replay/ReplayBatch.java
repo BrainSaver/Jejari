@@ -26,8 +26,11 @@ public final class ReplayBatch {
 
 	public static final Set<String> TYPES = Set.of("PAGE_VIEW", "CLICK", "INPUT", "SCROLL", "MOUSE_PATH", "VISIBILITY",
 			"LAYOUT");
-	/** SAMPLED 녹화에서도 남기는 것 (마우스 궤적만 뺀다 → 저장량의 대부분) */
-	public static final Set<String> SAMPLED_TYPES = Set.of("PAGE_VIEW", "CLICK", "INPUT", "SCROLL", "VISIBILITY", "LAYOUT");
+	/**
+	 * SAMPLED(평소)도 마우스 궤적을 남긴다 — 궤적이 없으면 사람인지 매크로인지 재생으로 알 수 없다 (다인 님, 11-19).
+	 * 대신 저장량의 대부분이 궤적이라 성기게: 0.15초마다({@link #pathSampleMs}), 묶음당 1/3 ({@link #pathPoints}).
+	 */
+	public static final Set<String> SAMPLED_TYPES = TYPES;
 	static final int MAX_EVENTS_PER_REQUEST = 500;
 	static final int MAX_BOXES = 400;
 	/** 버튼 문구: 한글·영문·공백·가운뎃점만 20자. 숫자·@가 없어 전화·카드·이메일·좌석 번호가 들어오지 못한다 */
@@ -70,6 +73,7 @@ public final class ReplayBatch {
 	 * @return 남길 이벤트. 형식이 틀린 이벤트는 하나씩 버린다 (한 건 때문에 묶음 전체를 잃지 않게)
 	 */
 	public static List<Event> sanitize(List<In> in, String mode, int maxPathPoints, Instant now) {
+		maxPathPoints = pathPoints(mode, maxPathPoints);
 		if (in == null) {
 			throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
 		}
@@ -112,6 +116,16 @@ public final class ReplayBatch {
 					inputLen, runId, label(e.label()), boxes));
 		}
 		return out;
+	}
+
+	/** 모드별 궤적 점 상한: FULL은 정책값(replay.max_path_points), SAMPLED는 그 1/3 (최소 5) */
+	public static int pathPoints(String mode, int fullMax) {
+		return "FULL".equals(mode) ? fullMax : Math.max(5, fullMax / 3);
+	}
+
+	/** 모드별 마우스 위치를 재는 간격(ms). 클라이언트가 이 간격으로 점을 찍는다 */
+	public static int pathSampleMs(String mode) {
+		return "FULL".equals(mode) ? 50 : 150;
 	}
 
 	static String label(String s) {
