@@ -11,5 +11,7 @@ public enum NotificationType {
 	/** 매수 한도 초과로 제안 건너뜀. 강동균의 제안 트랜잭션이 직접 INSERT */
 	WAITLIST_SKIPPED,
 	/** 환불 완료. REFUND_COMPLETED 이벤트 */
-	REFUNDED
+	REFUNDED,
+	/** 예매 완료(결제 승인 → 예약 확정). RESERVATION_CONFIRMED 이벤트. 화면이 열차·시각·좌석을 붙여 보여 줌 (강다인) */
+	CONFIRMED
 }
