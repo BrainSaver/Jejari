@@ -9,6 +9,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,6 +20,9 @@ import com.jejari.common.error.CommonErrorCode;
 import com.jejari.risk.model.ModelAdminService;
 import com.jejari.risk.model.ModelAdminService.Comparison;
 import com.jejari.risk.model.ModelAdminService.ModelVersion;
+import com.jejari.risk.model.ModelAuditService;
+import com.jejari.risk.model.ModelAuditService.AuditResult;
+import com.jejari.risk.model.ModelAuditService.AuditStats;
 
 /**
  * A-09 모델 관리. 보기는 VIEWER, 사용 중 버전 바꾸기는 SUPERVISOR.
@@ -27,6 +31,8 @@ import com.jejari.risk.model.ModelAdminService.ModelVersion;
  * GET  /api/v1/admin/models                      버전 목록 (점수 수·봇 쪽으로 본 수·유형별·관리자 판정과 맞은 수)
  * GET  /api/v1/admin/models/compare?a=…&amp;b=…      두 버전이 다르게 본 계정
  * POST /api/v1/admin/models/{version}/activate   관리자 화면에 보여 줄 버전으로 (점수가 없으면 409)
+ * GET  /api/v1/admin/models/audit                무작위 점검 표본: 판정 대기·끝 수
+ * POST /api/v1/admin/models/audit-sample         {count} 무작위 점검 표본을 케이스로 열기 (REVIEWER)
  * </pre>
  */
 @RestController
@@ -35,9 +41,29 @@ import com.jejari.risk.model.ModelAdminService.ModelVersion;
 public class ModelAdminController {
 
 	private final ModelAdminService service;
+	private final ModelAuditService audit;
 
-	public ModelAdminController(ModelAdminService service) {
+	public ModelAdminController(ModelAdminService service, ModelAuditService audit) {
 		this.service = service;
+		this.audit = audit;
+	}
+
+	public record SampleCommand(Integer count) {
+	}
+
+	@GetMapping("/audit")
+	public ResponseEntity<AuditStats> audit() {
+		return noStore(audit.stats());
+	}
+
+	/** 판정하는 사람(REVIEWER) 이상이 연다 — 연 케이스를 판정하는 것도 그 사람들이라서 */
+	@PostMapping("/audit-sample")
+	@PreAuthorize("hasAuthority('ADMIN_REVIEWER')")
+	public AuditResult sample(@AuthenticationPrincipal AuthPrincipal me, @RequestBody SampleCommand body) {
+		if (body == null || body.count() == null) {
+			throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
+		}
+		return audit.sample(me.actorId(), body.count());
 	}
 
 	@GetMapping

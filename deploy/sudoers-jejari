@@ -12,5 +12,6 @@ Cmnd_Alias JEJARI_UNITS = \
   /usr/bin/systemctl start --no-block jejari-autodeploy.service, \
   /usr/bin/systemctl enable --now jejari-autodeploy.timer, /usr/bin/systemctl disable --now jejari-autodeploy.timer, \
   /usr/bin/systemctl start jejari-tago, /usr/bin/systemctl start jejari-tago.service, \
-  /usr/bin/systemctl start jejari-model, /usr/bin/systemctl start jejari-model.service
+  /usr/bin/systemctl start jejari-model, /usr/bin/systemctl start jejari-model.service, \
+  /usr/bin/systemctl start jejari-model-retrain, /usr/bin/systemctl start jejari-model-retrain.service
 __USER__ ALL=(root) NOPASSWD: JEJARI_UNITS

@@ -59,7 +59,8 @@ public class ModelAdminService {
 	 * @param verdicts     관리자 판정이 있는 계정 기준 맞힌 수
 	 */
 	public record ModelVersion(String version, String trainSource, Instant trainedAt, BigDecimal threshold, boolean active,
-			long scored, long flagged, Instant lastScoredAt, Map<String, Long> types, Verdicts verdicts) {
+			long scored, long flagged, Instant lastScoredAt, Map<String, Long> types, Verdicts verdicts,
+			BigDecimal precision, BigDecimal recall, String params) {
 	}
 
 	/** 판정으로 봇인 계정 bots 중 봇 쪽으로 본 수, 판정으로 사람인 계정 humans 중 봇 쪽으로 본 수(= 오탐) */
@@ -74,7 +75,9 @@ public class ModelAdminService {
 			List<Diff> onlyBList) {
 	}
 
-	private record Run(String version, String trainSource, Instant trainedAt, BigDecimal threshold, boolean active) {
+	/** params = model_run.params JSON 앞부분 (주간 재학습 후보면 dir·mode·gate 자동 시험 결과) */
+	private record Run(String version, String trainSource, Instant trainedAt, BigDecimal threshold, boolean active,
+			BigDecimal precision, BigDecimal recall, String params) {
 	}
 
 	private record Score(double score, String type) {
@@ -115,7 +118,8 @@ public class ModelAdminService {
 					.sort(Sorts.descending("scored_at")).limit(1).first();
 			Date at = last == null ? null : last.getDate("scored_at");
 			out.add(new ModelVersion(r.version(), r.trainSource(), r.trainedAt(), r.threshold(), r.active(), scored, flagged,
-					at == null ? null : at.toInstant(), types, new Verdicts(bots, botsFlagged, humans, humansFlagged)));
+					at == null ? null : at.toInstant(), types, new Verdicts(bots, botsFlagged, humans, humansFlagged),
+					r.precision(), r.recall(), r.params()));
 		}
 		return out;
 	}
@@ -175,11 +179,12 @@ public class ModelAdminService {
 
 	private List<Run> runs() {
 		return jdbc.query("""
-				SELECT model_version, train_source, trained_at, threshold, is_active FROM model_run
-				 WHERE algorithm = 'ENSEMBLE' ORDER BY trained_at DESC, model_version""",
+				SELECT model_version, train_source, trained_at, threshold, is_active, precision_score, recall_score,
+				       DBMS_LOB.SUBSTR(params, 3000, 1)
+				  FROM model_run WHERE algorithm = 'ENSEMBLE' ORDER BY trained_at DESC, model_version""",
 				(rs, i) -> new Run(rs.getString(1), rs.getString(2),
 						rs.getTimestamp(3) == null ? null : rs.getTimestamp(3).toInstant(), rs.getBigDecimal(4),
-						"Y".equals(rs.getString(5))));
+						"Y".equals(rs.getString(5)), rs.getBigDecimal(6), rs.getBigDecimal(7), rs.getString(8)));
 	}
 
 	private Run run(String version) {

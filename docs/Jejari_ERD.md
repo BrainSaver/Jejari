@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v31 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
+> 스키마 v32 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -1626,7 +1626,7 @@ Oracle
 | `decay_half_life_days` | NUMBER(4) |  | 시스템 | 점수 반감기 (일) | 기간 경과 시 점수 감소 파라미터 |
 | `is_active` | CHAR(1) | NN | 시스템 | 운영 적용 여부 |  |
 
-> **제약·비고** is_active = Y는 algorithm별로 하나 (RULE과 ENSEMBLE은 동시에 켤 수 있음) · threshold는 RULE이면 케이스 자동 생성 기준, ENSEMBLE이면 화면 표시 기준(사람 검증 세트 오탐 5%)
+> **제약·비고** is_active = Y는 algorithm별로 하나 (RULE과 ENSEMBLE은 동시에 켤 수 있음) · threshold는 RULE이면 케이스 자동 생성 기준, ENSEMBLE이면 화면 표시 기준(사람 검증 세트 오탐 5%) ·  · params JSON: dir(모델 폴더 — 서버 채점 deploy/model-refresh.sh·재학습이 읽음), gate(주간 재학습 자동 시험 결과). 주간 재학습 후보(ens-w…)는 꺼진 채 등록하고 관리자가 A-09에서 켬. precision·recall·f1 = 판정 시험 몫 기준
 
 **관계** [`risk_score`](#risk-score).model_version → 이 테이블 · [`risk_feature`](#risk-feature).model_version → 이 테이블 · [`model_score`](#model-score).model_version → 이 테이블
 
@@ -1818,7 +1818,7 @@ Oracle
 | `opened_at` | TIMESTAMP | NN | 시스템 |  |  |
 | `closed_at` | TIMESTAMP |  | 시스템 |  | 처리 소요 시간 |
 
-> **제약·비고** CREATE SEQUENCE suspicious_case_seq; · 대상당 열린 케이스는 1건: CREATE UNIQUE INDEX ux_case_open_subject ON suspicious_case (CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_type END, CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_hash END); 같은 대상에 케이스가 겹쳐 열리는 것을 DB가 막는다 (닫힌 케이스는 인덱스에 들어가지 않아 다시 열 수 있음)
+> **제약·비고** CREATE SEQUENCE suspicious_case_seq; · 대상당 열린 케이스는 1건: CREATE UNIQUE INDEX ux_case_open_subject ON suspicious_case (CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_type END, CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_hash END); 같은 대상에 케이스가 겹쳐 열리는 것을 DB가 막는다 (닫힌 케이스는 인덱스에 들어가지 않아 다시 열 수 있음) ·  · trigger_type = ADMIN이고 trigger_detail이 "무작위 점검 표본"으로 시작하면 모델 학습용 무작위 점검(A-09) — 의심 근거 아님, 그 판정이 치우침 없는 학습 정답
 
 **관계** assignee_id → [`admin_user`](#admin-user) · admin_action_id → [`admin_action`](#admin-action) · [`case_session`](#case-session).case_id → 이 테이블 · [`case_marker`](#case-marker).case_id → 이 테이블 · [`evidence_snapshot`](#evidence-snapshot).case_id → 이 테이블 · [`replay_access_log`](#replay-access-log).case_id → 이 테이블
 
@@ -2397,6 +2397,7 @@ Oracle
 | v29 | model_score에 닮은 유형 type(SPEED / RETRY / MULTI_ACCOUNT / EVASIVE / CANCEL / HOARD)·type_prob 추가 — 별도 유형 모델(tools/ml/train_type.py)의 추정, 관리자 화면은 봇 쪽으로 본 계정에만 표시. Mongo라 기존 DB 패치 없음 |
 | v30 | notification.type CHECK에 CONFIRMED 추가 — 예매 완료 알림 (RESERVATION_CONFIRMED 이벤트 → "예매가 완료됐어요"). 기존 DB는 db/patch/v30.sql을 먼저 넣고 나서 알림 코드를 합친다 |
 | v31 | model_run 예시에 두 번째 합성 모델 ens-2026.11-02 (data/ml/model-next, 꺼짐) — 모델 관리 화면(A-09)에서 지금 버전과 비교. 기존 DB는 db/patch/v31.sql |
+| v32 | 비고만: model_run.params(dir·gate)와 주간 재학습 후보, suspicious_case의 무작위 점검 표본 표시 약속 (사용자가 많아질수록 똑똑해지는 순환). DB 변경 없음 |
 
 ## 참고 자료
 

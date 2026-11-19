@@ -95,7 +95,11 @@ def main():
     for p in paths:
         r, x = load(p)
         folders += [os.path.dirname(p)] * len(r)
-        bad = {row.get("source", "") for row in r} - {"generator"}
+        # 기본은 생성 데이터만. 주간 재학습(retrain.py)은 관리자 판정이 붙은 실제 계정(source = real:…)을 더한다 (ML_ALLOW_REAL=1)
+        allowed = {"generator"}
+        bad = {row.get("source", "") for row in r} - allowed
+        if os.environ.get("ML_ALLOW_REAL") == "1":
+            bad = {b for b in bad if not b.startswith("real:")}
         if bad:
             sys.exit(f"{p}: 생성 데이터만 학습에 쓴다 (source={bad}). 대회 데이터는 score.py로 적용만 하세요")
         for row in r:  # 파일이 여러 개면 묶음 번호가 겹치지 않게

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useOutletContext } from 'react-router';
+import { Link, useOutletContext } from 'react-router';
 import { get, post } from '../api/client.js';
 import { Who } from './AdminLayout.jsx';
 import { TYPE } from './ModelOpinion.jsx';
@@ -12,12 +12,25 @@ import { hasRole } from './useAdminAuth.js';
  *   GET  /api/v1/admin/models                     버전 목록
  *   GET  /api/v1/admin/models/compare?a=&b=       두 버전이 다르게 본 계정
  *   POST /api/v1/admin/models/{version}/activate  사용 중으로 (SUPERVISOR)
+ *   GET  /api/v1/admin/models/audit               무작위 점검 표본 현황
+ *   POST /api/v1/admin/models/audit-sample        {count} 무작위 점검 표본을 케이스로 열기 (REVIEWER)
+ *
+ * 사용자가 많아질수록 똑똑해지는 순환: 매주 일요일 새벽 서버가 실데이터로 사람 기준을 다시 맞추고(①), 관리자 판정(②)이 충분하면
+ * 다시 학습해, 자동 시험(③)을 통과한 것만 "꺼진 후보"로 올린다 (deploy/model-retrain.sh). 켜는 것은 여기서 사람이 한다.
  *
  * 학습은 이 화면에서 하지 않는다. 점수는 서버의 매시간 작업이 등록된 버전마다 매겨 둔다 (deploy/model-refresh.sh).
  * 정답이 없는 실데이터라 "맞힘"은 관리자 판정이 있는 계정으로만 센다.
  */
 const pct = (n, d) => (d ? `${Math.round((100 * n) / d)}%` : '—');
 const when = (t) => (t ? t.replace('T', ' ').slice(0, 16) : '—');
+const parse = (p) => {
+  try {
+    return p ? JSON.parse(p) : {};
+  } catch {
+    return {}; // 3000자에서 잘린 params 등
+  }
+};
+const p1 = (v) => (v == null ? '—' : `${(v * 100).toFixed(1)}%`);
 
 export default function Models() {
   const claims = useOutletContext();
@@ -53,6 +66,8 @@ export default function Models() {
       <ErrorBox error={error} onClose={() => setError(null)} />
       {done && <div className="alert go">{done}을(를) 사용 중으로 바꿨어요. 케이스 화면에 바로 반영돼요.</div>}
 
+      <Audit claims={claims} />
+
       <section className="panel">
         <h2><span className="grow">버전 {list?.length ?? ''}개</span>{active && <span className="faint" style={{ fontSize: 12.5 }}>사용 중 {active.version}</span>}</h2>
         {list && !list.length && <p className="mut">등록된 합성 모델이 없어요 (model_run, algorithm = ENSEMBLE).</p>}
@@ -78,7 +93,10 @@ export default function Models() {
                       </div>
                     )}
                   </td>
-                  <td className="mut" style={{ fontSize: 12.5 }}>{when(m.trainedAt)}<div className="faint">{m.trainSource}</div></td>
+                  <td className="mut" style={{ fontSize: 12.5, minWidth: 230 }}>
+                    {when(m.trainedAt)}
+                    {parse(m.params).gate ? <Gate m={m} /> : <div className="faint">{m.trainSource}</div>}
+                  </td>
                   <td className="n num">{m.threshold ?? '—'}</td>
                   <td className="n num">{m.scored.toLocaleString()}</td>
                   <td className="n num">{m.flagged.toLocaleString()} <span className="faint">({pct(m.flagged, m.scored)})</span></td>
@@ -107,6 +125,89 @@ export default function Models() {
       {list && list.length >= 2 && <Compare list={list} />}
       <RequestLog filter={(r) => r.path.includes('/admin/models')} rows={5} />
     </>
+  );
+}
+
+/** 주간 재학습 후보면 자동 시험 결과 (params.gate, deploy/model-retrain.sh) */
+function Gate({ m }) {
+  const p = parse(m.params);
+  if (!p.gate) return null;
+  return (
+    <div style={{ marginTop: 4 }}>
+      <span className={'st plain ' + (p.gate.passed ? 'go' : 'stop')}>자동 시험 {p.gate.passed ? '통과' : '탈락'}</span>
+      <div className="faint">주간 재학습 · {p.mode}{p.base ? ` · 기준 ${p.base}` : ''}
+        {p.gate.labels ? ` · 판정 학습 ${p.gate.labels.train} / 시험 사람 ${p.gate.labels.test_humans}·봇 ${p.gate.labels.test_bots}` : ''}</div>
+      <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
+        {(p.gate.checks || []).map((c) => (
+          <li key={c.name} className={c.ok ? 'faint' : ''}>
+            {c.ok ? '✓' : '✗'} {c.name} {p1(c.base)} → {p1(c.cand)}
+          </li>
+        ))}
+      </ul>
+      {(m.precision != null || m.recall != null) && (
+        <div className="faint">판정 시험 몫 정밀도 {p1(m.precision)} · 재현율 {p1(m.recall)}</div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * ② 무작위 점검 표본: 의심과 상관없이 최근 활동 계정을 골라 케이스로 연다. 그 판정이 치우침 없는 정답이 되어
+ * 주간 재학습의 오탐·탐지 시험에 쓰인다 (판정이 규칙·모델이 연 케이스에만 붙으면 "이미 잡던 봇"만 더 잘 잡게 됨)
+ */
+function Audit({ claims }) {
+  const canSample = hasRole(claims, 'REVIEWER');
+  const [stats, setStats] = useState(null);
+  const [count, setCount] = useState(5);
+  const [res, setRes] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    get('/api/v1/admin/models/audit').then(setStats).catch(setError);
+  }, []);
+  const sample = async () => {
+    setError(null);
+    try {
+      const r = await post('/api/v1/admin/models/audit-sample', { count: Number(count) });
+      setRes(r);
+      setStats(r.stats);
+    } catch (e) {
+      setError(e);
+    }
+  };
+  return (
+    <section className="panel">
+      <h2>무작위 점검 표본</h2>
+      <p className="sub" style={{ fontSize: 13 }}>
+        최근 7일에 활동한 계정 중 <b>무작위로</b> 골라 케이스로 열어요. 의심 근거가 아니라 모델 학습용 판정을 받기 위한 것이라,
+        케이스를 여는 것만으로는 제한·순번에 아무 영향이 없어요. 케이스 화면에서 평소처럼 봇·사람으로 판정해 주세요.
+      </p>
+      <ErrorBox error={error} onClose={() => setError(null)} />
+      {stats && (
+        <div className="row" style={{ gap: 14, flexWrap: 'wrap', fontSize: 13.5, marginBottom: 8 }}>
+          <span>판정 대기 <b className="num">{stats.open}</b></span>
+          <span>판정 끝 <b className="num">{stats.judged}</b> <span className="faint">(봇 {stats.bots} · 사람 {stats.humans})</span></span>
+        </div>
+      )}
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <label className="row" style={{ gap: 6, alignItems: 'center', fontSize: 13 }}>
+          계정
+          <input type="number" min={1} max={20} value={count} onChange={(e) => setCount(e.target.value)}
+            style={{ width: 70, minHeight: 32 }} aria-label="뽑을 계정 수" />
+          명
+        </label>
+        <ConfirmButton confirm={`한 번 더 누르면 ${count}명을 케이스로 열어요`} onConfirm={sample}
+          disabled={!canSample || !(count >= 1 && count <= 20)}>
+          표본 뽑기
+        </ConfirmButton>
+        {!canSample && <span className="faint" style={{ fontSize: 12.5 }}>REVIEWER 이상</span>}
+      </div>
+      {res && (
+        <p style={{ fontSize: 13, marginTop: 8 }}>
+          케이스 {res.opened.length}건 열림{res.skipped ? ` (이미 열린 케이스 등 ${res.skipped}건 건너뜀)` : ''}:{' '}
+          {res.opened.map((id) => <Link key={id} className="link" to={`/admin/cases/${id}`} style={{ marginRight: 6 }}>#{id}</Link>)}
+        </p>
+      )}
+    </section>
   );
 }
 

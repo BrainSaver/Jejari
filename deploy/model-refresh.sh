@@ -6,17 +6,17 @@
 #   2) 컨테이너(jejari-ml, deploy/ml/Dockerfile)에서 features.py(단계 특징까지) → 버전마다 score.py (GRU 포함)
 #   3) tools/ml/load_scores.sh → model_score (버전·계정마다 1건, 같은 버전은 덮어씀)
 #
-# 버전 목록: MODELS="버전=모델 폴더 …" (기본 아래). 모든 버전에 점수를 매겨 두면 관리자 화면 A-09(모델 관리)에서
-# 비교하고 사용 중 버전을 고른다. 사용 중인 ENSEMBLE이 하나도 없을 때만(첫 실행) 첫 번째 버전을 켠다.
+# 버전 목록은 DB(model_run, ENSEMBLE)에서: 사용 중 + 꺼진 후보 최근 3개 (deploy/model-lib.sh). 주간 재학습
+# (model-retrain.sh)이 등록한 후보도 여기서 같이 채점되어, 관리자가 A-09(모델 관리)에서 비교하고 켠다.
+# 사용 중인 ENSEMBLE이 하나도 없을 때만(첫 실행) 맨 앞(ens-2026.11-01) 버전을 켠다.
 #
 # 모델 점수는 관리자에게 보여 주는 보조 의견뿐이다. 대기열 순번·이용 제한·케이스 열기에는 쓰지 않는다 (RISK-05).
 # 먼저 필요: DB에 v25 패치(db/patch/v25.sql — model_run의 ens-2026.11-01 행), 이미지 빌드(아래 자동)
 set -uo pipefail
 cd "$(dirname "$0")/.."
-export COMPOSE_FILE=compose.yaml:deploy/compose.server.yaml
+source deploy/model-lib.sh
 DAYS="${MODEL_DAYS:-1}"
-# model_run 행(ERD v25·v31)과 모델 폴더의 짝. 첫 번째가 기본(처음 켜는) 버전
-MODELS="${MODELS:-ens-2026.11-01=data/ml/model ens-2026.11-02=data/ml/model-next}"
+FIRST_VERSION=ens-2026.11-01   # 사용 중인 버전이 없을 때(처음) 켤 버전
 OUT=build/ml/recent
 
 push() { # $1 = 1(성공) / 0(실패), $2 = 점수를 매긴 계정 수
@@ -46,25 +46,24 @@ ml() { docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/w" jeja
 ml "ML_STAGE=1 python -I tools/ml/features.py $OUT" > /tmp/jejari-model.log 2>&1 \
   || { tail -5 /tmp/jejari-model.log; fail "특징 만들기 실패: /tmp/jejari-model.log"; }
 
-# 사용 중인 ENSEMBLE이 없으면(처음) 첫 번째 버전을 켠다. 그 뒤로는 관리자가 A-09에서 고른다
-OP=$(grep '^ORACLE_APP_PASSWORD=' .env | cut -d= -f2-)
-active=$(printf "SET HEADING OFF FEEDBACK OFF PAGESIZE 0\nSELECT COUNT(*) FROM model_run WHERE algorithm = 'ENSEMBLE' AND is_active = 'Y';\n" \
-  | docker compose exec -T oracle bash -lc "sqlplus -S -L jejari/$OP@localhost:1521/FREEPDB1" | tr -d '[:space:]')
+# 사용 중인 ENSEMBLE이 없으면(처음) FIRST_VERSION을 켠다. 그 뒤로는 관리자가 A-09에서 고른다
+VERSIONS=$(model_versions 3)
+[[ -n "$VERSIONS" ]] || fail "model_run에 ENSEMBLE 버전이 없습니다 (db/patch/v25.sql·v31.sql)"
+grep -q ' Y ' <<<"$VERSIONS" && active=1 || active=0
 
-total=0; first=1
-for pair in $MODELS; do
-  ver="${pair%%=*}"; dir="${pair#*=}"
+total=0
+while read -r ver dir _ _; do
   [[ -f "$dir/model.pkl" ]] || { echo "건너뜀: $ver ($dir/model.pkl 없음)"; continue; }
   # 3) 점수 — 버전마다 따로 폴더 (score.py가 features.csv 옆에 scores.csv를 쓰고, GRU는 옆의 events.jsonl을 읽는다)
   w="$OUT/$ver"; mkdir -p "$w"; cp "$OUT"/features.csv "$OUT"/events.jsonl "$OUT"/members.jsonl "$w"/; cp "$OUT"/runs.jsonl "$w"/ 2>/dev/null || true
   ml "python tools/ml/score.py $dir/model.pkl $w/features.csv" > "/tmp/jejari-model-$ver.log" 2>&1 \
     || { tail -5 "/tmp/jejari-model-$ver.log"; fail "점수 매기기 실패 ($ver): /tmp/jejari-model-$ver.log"; }
   grep -q "GRU" "/tmp/jejari-model-$ver.log" || echo "주의: $ver GRU 없이 매김 (torch·events.jsonl 확인)"
-  act=(); [[ "$first" == 1 && "$active" == "0" ]] && act=(--activate)
+  act=(); [[ "$active" == "0" && "$ver" == "$FIRST_VERSION" ]] && act=(--activate)
   # 4) 적재
   bash tools/ml/load_scores.sh "$w/scores.csv" "$ver" --source "live:recent${DAYS}d" "${act[@]}" \
     > "/tmp/jejari-model-load-$ver.log" 2>&1 || { tail -5 "/tmp/jejari-model-load-$ver.log"; fail "적재 실패 ($ver): /tmp/jejari-model-load-$ver.log"; }
-  n=$(($(wc -l < "$w/scores.csv") - 1)); total=$((total + n)); first=0
+  n=$(($(wc -l < "$w/scores.csv") - 1)); total=$((total + n))
   echo "모델 점수 갱신: ${n}개 계정 · ${ver}${act:+ (처음이라 사용 중으로)}"
-done
+done <<<"$VERSIONS"
 push 1 "$total"

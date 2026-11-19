@@ -1,0 +1,15 @@
+# 위험 점수 모델 주간 재학습 + 자동 시험 한 번 (jejari-model-retrain.timer가 부름). setup-server.sh가 __USER__·__HOME__을 채워 설치
+[Unit]
+Description=Jejari 위험 점수 모델 주간 재학습 (판정·실데이터 → 꺼진 후보)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__HOME__/Jejari
+Environment=LANG=C.UTF-8
+Environment=TZ=Asia/Seoul
+Nice=10
+ExecStart=/bin/bash __HOME__/Jejari/deploy/model-retrain.sh
+TimeoutStartSec=3h

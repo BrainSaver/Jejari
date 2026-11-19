@@ -21,6 +21,7 @@ VM 1대(e2-standard-4, 서울)에 로컬과 같은 `compose.yaml`을 올리고, 
 | `auto-deploy.sh` · `jejari-autodeploy.{service,timer}` | **자동 배포**: 20분마다 (관리자 화면 "배포" 버튼으로 바로도), CI 성공 + DB·인프라 변경 없음일 때만 `deploy.sh` |
 | `tago-refresh.sh` · `jejari-tago.{service,timer}` | 실제 KTX 시간표(앞뒤 7일) 매일 갱신 |
 | `model-refresh.sh` · `jejari-model.{service,timer}` · `ml/Dockerfile` | 위험 점수 모델 보조 의견 매시간 갱신 (최근 행동 로그 → `model_score`) |
+| `model-retrain.sh` · `jejari-model-retrain.{service,timer}` · `model-lib.sh` | 위험 점수 모델 주간 재학습 + 자동 시험 (일요일 새벽, 통과하면 꺼진 후보 → A-09) |
 | `grafana-alerting/` · `grafana-team-user.sh` · `sudoers-jejari` | Discord 경보 · Grafana 팀 계정 · 앱 주인의 좁은 sudo |
 
 ## 강동균 님 문서와 다른 점 (이유)
@@ -194,6 +195,7 @@ journalctl -u jejari-autodeploy -n 50 --no-pager     # 자동 배포 로그
 | `FAILED` (앱이 안 뜸) | `journalctl -u jejari@8080 -n 200` (TZ·`.env` 키 누락이 흔함). 고친 커밋이 main에 오면 자동으로 다시 시도 |
 | 실제 시간표 지금 다시 넣기 | `sudo systemctl start jejari-tago` → `journalctl -u jejari-tago -n 20` |
 | 모델 보조 의견 지금 다시 매기기 | `sudo systemctl start jejari-model` → `journalctl -u jejari-model -n 20` |
+| 모델 재학습 지금 한 번 | `sudo systemctl start jejari-model-retrain` → `journalctl -u jejari-model-retrain -n 30` (학습이라 몇십 분, 판매 없는 시간에) |
 
 ### BLOCKED 풀기 (한 단계씩)
 

@@ -134,6 +134,44 @@ class ModelAdminInfraTest {
 		org.junit.jupiter.api.Assertions.assertEquals(1, on);
 	}
 
+	@Test
+	void 무작위_점검_표본은_최근_활동_계정을_ADMIN_케이스로_열고_보기_권한은_못_연다() throws Exception {
+		List<Long> members = new ArrayList<>();
+		for (int i = 0; i < 3; i++) {
+			long m = member();
+			members.add(m);
+			mongo.getCollection("behavior_log").insertOne(new Document("member_id", m).append("event_type", "VIEW_TRAIN")
+					.append("ts", new Date()).append("session_id", UUID.randomUUID().toString()).append("ci_hash", String.format("%064x", m)));
+		}
+		try {
+			mvc.perform(post("/api/v1/admin/models/audit-sample").header("Authorization", token(AdminRole.VIEWER))
+					.contentType("application/json").content("{\"count\":2}")).andExpect(status().isForbidden());
+			mvc.perform(post("/api/v1/admin/models/audit-sample").header("Authorization", token(AdminRole.REVIEWER))
+					.contentType("application/json").content("{\"count\":99}")).andExpect(status().isBadRequest());
+			String body = mvc.perform(post("/api/v1/admin/models/audit-sample").header("Authorization", token(AdminRole.REVIEWER))
+					.contentType("application/json").content("{\"count\":2}"))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.opened.length()").value(2))
+					.andReturn().getResponse().getContentAsString();
+			for (String id : body.replaceAll(".*\"opened\":\\[([0-9,]*)\\].*", "$1").split(",")) {
+				cases.add(Long.parseLong(id));
+			}
+			for (long c : cases) {
+				org.junit.jupiter.api.Assertions.assertEquals("ADMIN",
+						jdbc.queryForObject("SELECT trigger_type FROM suspicious_case WHERE case_id = ?", String.class, c));
+				org.junit.jupiter.api.Assertions.assertTrue(jdbc.queryForObject(
+						"SELECT trigger_detail FROM suspicious_case WHERE case_id = ?", String.class, c).startsWith("무작위 점검"));
+			}
+			mvc.perform(get("/api/v1/admin/models/audit").header("Authorization", token(AdminRole.VIEWER)))
+					.andExpect(status().isOk()).andExpect(jsonPath("$.open").isNumber());
+		} finally {
+			mongo.getCollection("behavior_log").deleteMany(new Document("member_id", new Document("$in", members)));
+			for (long c : cases) {
+				jdbc.update("DELETE FROM case_marker WHERE case_id = ?", c);
+			}
+		}
+	}
+
 	void score(String version, long memberId, double score, String type) {
 		mongo.getCollection("model_score").insertOne(new Document("member_id", memberId).append("model_version", version)
 				.append("score", score).append("by", "GBM").append("reasons", List.of()).append("scored_at", new Date())

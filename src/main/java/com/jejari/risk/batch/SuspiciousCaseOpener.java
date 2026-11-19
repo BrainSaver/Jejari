@@ -139,7 +139,7 @@ public class SuspiciousCaseOpener {
 	 * 대상에 연결된 계정(위험 점수와 같은 기준, {@link RiskInputReader#membersOf})이 의심 구간 안에서 쓴 로그인 세션.
 	 * 케이스를 열 때 {@code case_session}에 박아 두어, 나중에 기기 연결이 바뀌어도 "조사 시점에 누가 왜 묶였나"가 남는다.
 	 */
-	List<LinkedSession> linkedSessions(RiskSubject s, Instant from, Instant to) {
+	public List<LinkedSession> linkedSessions(RiskSubject s, Instant from, Instant to) {
 		List<Long> members = jdbc.queryForList(RiskInputReader.membersOf(s.type()), Long.class, s.hash());
 		if (members.isEmpty()) {
 			return List.of();

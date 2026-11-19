@@ -165,6 +165,25 @@ python tools/ml/train_next.py --quick                   # GRU 없이 약 1분, �
   `python tools/ml/compare_dl.py data/ml/contest-<태그> --next data/ml/model-next-local/model.pkl`
 - 리허설 로그(`data/ml/contest-r1118*`)는 저장소에 없어서 다른 PC에서는 생성 데이터로만 시험한다
 
+## 사용자가 많아질수록 똑똑해지는 순환 (`recalibrate.py` · `export_labels.sh` · `retrain.py`)
+
+| 단계 | 무엇 | 파일 |
+|---|---|---|
+| ① 사람 기준 갱신 | 실데이터로 "사람이면 보통 이 정도"(백분위 기준·문턱·근거 범위)를 다시 맞춘다. 다시 학습하지 않음 | `recalibrate.py` |
+| ② 판정 모으기 | 케이스 판정을 학습 정답으로 꺼낸다. A-09 "무작위 점검 표본"으로 연 케이스의 판정은 치우침 없는 정답 (`audit: true`) | `export_labels.sh` · 서버 `ModelAuditService` |
+| ③ 주간 재학습 + 자동 시험 | 판정이 20명 이상이면 생성 데이터 + 판정 붙은 실제 계정으로 다시 학습 → ① → 지금 모델과 같은 데이터로 시험(관문). 통과하면 꺼진 후보로 등록 | `retrain.py` · `deploy/model-retrain.sh` (일요일 새벽) |
+
+- **켜는 것은 사람이 한다.** 후보는 매시간 지금 모델과 나란히 채점되고, 관리자가 A-09에서 비교해 켠다
+- ① 사람 기준에는 "기준 모델이 사람 쪽으로 본 계정 + 관리자가 사람으로 판정한 계정"만 넣는다. 봇이 20% 섞인 시험에서 단순히 위 2%만 뺐더니 봇을 평범한 사람으로 배워 탐지가 98 → 12%로 무너졌다
+- 김성원 v3 세계(지금 모델이 사람 98.5%를 봇으로 보는 다른 세계)에서 계정 5%에만 판정을 붙여 시험: ①만으로 판정 안 받은 사람 오탐 98.5 → 0.4~1.8%, 대신 봇 탐지 99.8 → 40% → ③ 재학습이 판정 봇으로 되살린다 (시험 몫: 사람 오탐 95 → 22%, 봇 탐지 86 → 100%. 그래도 오탐 22%라 관문에서 탈락 — 의도대로)
+- 관문 기준: 판정 사람 오탐 ≤ 5% · 판정 봇 탐지 기준 이상 · 생성 시험 탐지 기준 −10%p 이내 · 실데이터 봇 쪽 비율 ≤ 10% 또는 기준 이하. 판정이 모자라 앞의 둘을 못 재면 "판정 부족 — 관리자 확인"
+
+```bash
+tools/ml/export_labels.sh data/ml/labels.jsonl
+python3 tools/ml/recalibrate.py data/ml/model <실데이터 폴더> <출력> --labels data/ml/labels.jsonl
+python3 tools/ml/retrain.py --base data/ml/model --real <실데이터> --labels data/ml/labels.jsonl --gen g7 g8 g9 --gen-test g99 --out <출력>
+```
+
 ## 닮은 유형 (`train_type.py` → `type.pkl`)
 
 ```bash
