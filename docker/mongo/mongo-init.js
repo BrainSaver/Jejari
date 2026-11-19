@@ -59,4 +59,10 @@ ensure('replay_event', [
   [{ expire_at: 1 }, Object.assign({ name: 'ttl_expire_at' }, TTL)],
 ]);
 
+// 모델 보조 의견 (ERD v25, RISK-05). 오프라인 Python이 적재, 같은 버전 재적재는 upsert. TTL 없음 (발표 수치 근거)
+ensure('model_score', [
+  [{ member_id: 1, model_version: 1 }, { name: 'ux_member_version', unique: true }],
+  [{ model_version: 1, score: -1 }, { name: 'ix_version_score' }], // A-05 목록 (높은 점수 순)
+]);
+
 print('jejari mongo init done');
