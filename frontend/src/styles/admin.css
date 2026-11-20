@@ -132,7 +132,7 @@
 .admin .tr-tip b{display:block;margin-bottom:4px}
 .admin .tr-tip div{display:flex;justify-content:space-between;gap:14px;font-weight:600}
 .admin .tr-tip i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
-.admin .tr-meters{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:18px}
+.admin .tr-meters{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:18px}
 .admin .tr-meter .row{font-size:13px;font-weight:800;margin-bottom:6px}
 .admin .tr-meter b.ok{color:var(--go)}.admin .tr-meter b.warn{color:var(--amber-d)}.admin .tr-meter b.crit{color:var(--stop)}
 .admin .tr-bar{position:relative;height:10px;background:var(--line2);border-radius:5px}

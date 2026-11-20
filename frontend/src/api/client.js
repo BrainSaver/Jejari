@@ -13,9 +13,10 @@ const authListeners = new Set();
 
 /** 서버 오류 응답 {code, message, traceId}를 담는다 */
 export class ApiError extends Error {
-  constructor(status, body, traceId) {
+  constructor(status, body, traceId, retryAfter = null) {
     super(body?.message || `요청이 실패했어요 (${status})`);
     this.status = status;
+    this.retryAfter = retryAfter; // 서버가 Retry-After로 알려 준 "몇 초 뒤 다시" (로그인 대기실이 가득 찼을 때 등)
     this.code = body?.code || 'HTTP_' + status;
     this.traceId = body?.traceId || traceId || null;
   }
@@ -91,11 +92,23 @@ export async function adminLogin(loginId, password) {
 /**
  * 회원 로그인 (U-01). 관리자와 쿠키가 달라 한 브라우저에서 회원·관리자를 오가도 서로 덮어쓰지 않는다.
  * @param remember "로그인 상태 유지" — 고르면 14일, 아니면 브라우저를 닫으면 로그아웃(최대 12시간)
+ * @param onWait   로그인이 몰려 서버가 "N초 뒤 다시"(429 AUTH_LOGIN_BUSY + Retry-After)라고 하면 onWait(N)을 부르고
+ *                 그만큼 기다렸다가 자동으로 다시 보낸다 (최대 LOGIN_RETRY번). 사용자는 다시 누를 필요가 없다
  */
-export async function memberLogin(email, password, remember = false) {
-  const r = await send('POST', '/api/v1/auth/login', { email, password, remember }, { auth: false });
-  setToken(r.accessToken);
-  return tokenClaims();
+const LOGIN_RETRY = 20;
+export async function memberLogin(email, password, remember = false, onWait = null) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const r = await send('POST', '/api/v1/auth/login', { email, password, remember }, { auth: false });
+      setToken(r.accessToken);
+      return tokenClaims();
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.code !== 'AUTH_LOGIN_BUSY' || !e.retryAfter || attempt >= LOGIN_RETRY) throw e;
+      const sec = Math.round(e.retryAfter * (0.8 + Math.random() * 0.4)) || 1; // 모두 같은 순간에 다시 몰리지 않게 ±20%
+      onWait?.(sec);
+      await new Promise((ok) => setTimeout(ok, sec * 1000));
+    }
+  }
 }
 
 export async function logout() {
@@ -157,7 +170,10 @@ async function send(method, path, body, { auth = true, extra } = {}) {
 
   const text = await res.text();
   const data = text ? safeJson(text) : null;
-  if (!res.ok) throw new ApiError(res.status, data, traceId);
+  if (!res.ok) {
+    const after = Number(res.headers.get('Retry-After'));
+    throw new ApiError(res.status, data, traceId, after > 0 ? after : null);
+  }
   return data;
 }
 

@@ -32,6 +32,7 @@ const THINK_SEC = Math.max(0, Number(__ENV.THINK_SEC || 3));       // 한 바퀴
 // 단계가 오를 때 새로 들어온 사람들의 첫 로그인을 이 시간 안에 흩뜨린다. 0이면 전원이 같은 순간에 로그인 (로그인 폭주 시험).
 // 로그인은 Argon2id(일부러 느림)라 한꺼번에 몰리면 그것만으로 서버가 멈출 수 있다 — 두 경우를 따로 재려고
 const LOGIN_SPREAD_SEC = Math.max(0, Number(__ENV.LOGIN_SPREAD_SEC ?? 30));
+const LOGIN_RETRY = Math.max(0, Number(__ENV.LOGIN_RETRY || 10));
 const QUEUE_WAIT_SEC = Math.max(5, Number(__ENV.QUEUE_WAIT_SEC || 60));
 const BOOK = (__ENV.BOOK || 'no') === 'hold';
 const FROM = __ENV.FROM || '3900023';                               // 서울 (시드)
@@ -53,6 +54,8 @@ http.setResponseCallback(http.expectedStatuses({ min: 200, max: 499 }));
 const roundOk = new Rate('round_ok');             // 한 바퀴를 끝까지 마쳤나 (사용자 체감)
 const rounds = new Counter('rounds');              // 한 바퀴를 끝낸 수
 const queueWait = new Trend('queue_wait_sec');
+const loginSec = new Trend('login_sec');          // 첫 로그인 시도 → 토큰을 받기까지 (대기실에서 기다리고 다시 보낸 시간 포함)
+const loginBusy = new Counter('login_busy');      // 429 + Retry-After를 받고 다시 보낸 횟수
 const roundFail = new Counter('round_failed');
 
 // 단계마다 따로 잰다: 단계 = k6 시나리오 하나 (startTime을 이어 붙임). 태그 scenario로 단계별 값이 나뉜다
@@ -62,10 +65,12 @@ STEPS.forEach((n, i) => {
   const name = stepName(n);
   scenarios[name] = { executor: 'constant-vus', vus: n, duration: `${STEP_SEC}s`, startTime: `${i * STEP_SEC}s`, gracefulStop: '10s' };
   // 판정용(넘어도 계속) + 안전장치(넘으면 멈춤). 하위 지표에 문턱이 있어야 요약에 단계별 값이 나온다
-  thresholds[`http_req_duration{scenario:${name}}`] = [
+  // 판정·안전장치는 로그인을 뺀 요청(phase:api)으로. 로그인은 몰리면 대기실에서 기다리는 것이 정상 동작이라 따로 잰다(login_sec)
+  thresholds[`http_req_duration{scenario:${name},phase:api}`] = [
     `p(95)<${P95_MS}`,
     { threshold: `p(95)<${ABORT_P95_MS}`, abortOnFail: true, delayAbortEval: '20s' },
   ];
+  thresholds[`http_req_duration{scenario:${name},phase:login}`] = ['p(95)>=0'];
   thresholds[`http_req_failed{scenario:${name}}`] = [
     `rate<${ERR_PCT / 100}`,
     { threshold: `rate<${ABORT_ERR_PCT / 100}`, abortOnFail: true, delayAbortEval: '20s' },
@@ -74,6 +79,8 @@ STEPS.forEach((n, i) => {
   thresholds[`http_reqs{scenario:${name}}`] = ['count>=0'];
   thresholds[`rounds{scenario:${name}}`] = ['count>=0'];
   thresholds[`queue_wait_sec{scenario:${name}}`] = ['avg>=0'];
+  thresholds[`login_sec{scenario:${name}}`] = ['avg>=0'];
+  thresholds[`login_busy{scenario:${name}}`] = ['count>=0'];
 });
 
 export const options = {
@@ -121,12 +128,31 @@ function ensureLogin(data, i) {
     sleep(Math.random() * LOGIN_SPREAD_SEC);
   }
   const id = identity(data.tag, seqOf(i));
-  const l = login(id.email, id.password, { ip: fakeIp(60000 + i), tag: 'login' });
-  token = l.status === 200 ? (safeJson(l) || {}).accessToken : null;
+  // 실제 로그인 화면처럼: 429 + Retry-After(로그인 대기실이 가득 참)면 그 초만큼 기다렸다 다시 (최대 LOGIN_RETRY번)
+  const started = Date.now();
+  exec.vu.tags.phase = 'login';
+  try {
+  for (let attempt = 0; attempt <= LOGIN_RETRY; attempt++) {
+    const l = login(id.email, id.password, { ip: fakeIp(60000 + i), tag: 'login' });
+    if (l.status === 200) {
+      token = (safeJson(l) || {}).accessToken;
+      loginSec.add((Date.now() - started) / 1000);
+      return token;
+    }
+    const after = Number(l.headers['Retry-After']);
+    if (l.status !== 429 || !after) break;
+    loginBusy.add(1);
+    sleep(after * (0.8 + Math.random() * 0.4)); // 모두 같은 순간에 다시 몰리지 않게 ±20%
+  }
+  token = null;
   return token;
+  } finally {
+    exec.vu.tags.phase = 'api';
+  }
 }
 
 export default function (data) {
+  if (!exec.vu.tags.phase) exec.vu.tags.phase = 'api';
   const i = (exec.vu.idInTest - 1) % MAX_USERS; // 단계가 바뀌어도 같은 VU 번호면 같은 계정
   const t = ensureLogin(data, i);
   if (!t) {
@@ -177,28 +203,33 @@ export function handleSummary(data) {
   const rows = STEPS.map((n) => {
     const s = stepName(n);
     const reqs = m(`http_reqs{scenario:${s}}`, 'count') || 0;
-    const p95 = m(`http_req_duration{scenario:${s}}`, 'p(95)');
+    const p95 = m(`http_req_duration{scenario:${s},phase:api}`, 'p(95)');
     const err = m(`http_req_failed{scenario:${s}}`, 'rate');
     const okRate = m(`round_ok{scenario:${s}}`, 'rate');
     const done = m(`rounds{scenario:${s}}`, 'count') || 0;
     const wait = m(`queue_wait_sec{scenario:${s}}`, 'avg');
+    const lsec = m(`login_sec{scenario:${s}}`, 'avg');
+    const busyN = m(`login_busy{scenario:${s}}`, 'count') || 0;
     const ran = reqs > 0;
     if (!ran) {
-      return { users: n, ran, ok: false, rps: null, p95Ms: null, errPct: null, roundFailPct: null, roundsPerSec: null, queueWaitSec: null };
+      return { users: n, ran, ok: false, rps: null, p95Ms: null, errPct: null, roundFailPct: null, roundsPerSec: null, queueWaitSec: null,
+        loginSec: null, loginBusy: null };
     }
     const ok = ran && p95 != null && p95 < P95_MS && (err || 0) * 100 < ERR_PCT;
     return { users: n, ran, ok, rps: reqs / STEP_SEC, p95Ms: p95, errPct: err == null ? null : err * 100,
-      roundFailPct: okRate == null ? null : (1 - okRate) * 100, roundsPerSec: done / STEP_SEC, queueWaitSec: wait };
+      roundFailPct: okRate == null ? null : (1 - okRate) * 100, roundsPerSec: done / STEP_SEC, queueWaitSec: wait,
+      loginSec: lsec, loginBusy: busyN };
   });
   const passed = rows.filter((r) => r.ok);
   const best = passed.length ? passed[passed.length - 1] : null;
   const firstFail = rows.find((r) => r.ran && !r.ok);
   const f = (v, d = 0) => (v == null ? '—' : Number(v).toFixed(d));
   let text = '\n용량 시험 결과 (' + BASE_URL + ')\n';
-  text += '  사용자 |  초당 요청 |   p95(ms) |  5xx(%) | 바퀴 실패(%) | 바퀴/초 | 입장 대기(초) | 판정\n';
+  text += '  사용자 |  초당 요청 |   p95(ms) |  5xx(%) | 바퀴 실패(%) | 바퀴/초 | 입장 대기(초) | 로그인(초) | 다시 보냄 | 판정\n';
   for (const r of rows) {
     text += `  ${String(r.users).padStart(6)} | ${f(r.rps, 1).padStart(10)} | ${f(r.p95Ms).padStart(9)} | ${f(r.errPct, 2).padStart(7)} | `
       + `${f(r.roundFailPct, 1).padStart(12)} | ${f(r.roundsPerSec, 1).padStart(7)} | ${f(r.queueWaitSec, 1).padStart(13)} | `
+      + `${f(r.loginSec, 1).padStart(10)} | ${f(r.loginBusy).padStart(9)} | `
       + `${!r.ran ? '안 돎(앞에서 멈춤)' : r.ok ? '버팀' : '넘음'}\n`;
   }
   if (!rows.some((r) => r.ran)) {
@@ -211,7 +242,7 @@ export function handleSummary(data) {
   if (firstFail) {
     text += `처음 넘은 단계: 동시 ${firstFail.users}명 (p95 ${f(firstFail.p95Ms)}ms, 5xx ${f(firstFail.errPct, 2)}%) — 이 사이가 한계\n`;
   }
-  text += `기준: p95 < ${P95_MS}ms, 5xx < ${ERR_PCT}% (A-10 "주의" 문턱과 같음)\n`;
+  text += `기준: 로그인 뺀 요청의 p95 < ${P95_MS}ms, 5xx < ${ERR_PCT}% (A-10 "주의" 문턱과 같음). 로그인은 몰리면 대기실에서 기다리므로 "로그인(초)"로 따로\n`;
   const result = { target: BASE_URL, startedAt: data.setup_data ? data.setup_data.startedAt : null, stepSec: STEP_SEC,
     loginSpreadSec: LOGIN_SPREAD_SEC,
     thinkSec: THINK_SEC, book: BOOK, criteria: { p95Ms: P95_MS, errPct: ERR_PCT }, steps: rows,

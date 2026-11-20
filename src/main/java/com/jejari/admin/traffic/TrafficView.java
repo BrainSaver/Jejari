@@ -31,7 +31,8 @@ public record TrafficView(boolean available, String reason, long at, String rang
 	public record Now(Double rps, Double baselineRps, Double surge, Double peakRps, Double p50Ms, Double p95Ms, Double p99Ms,
 			Double errorPct, Double rejectPct, Double clientErrorPct, Double conflictPerSec, Double reservePerSec, Double payPerSec,
 			Double queueWaiting, Double queueActive, Double cpuPct, Double heapPct, Double dbPoolPct, Double dbPending,
-			Double tomcatPct, Double redisMemPct, int instancesUp, int instancesTotal) {
+			Double tomcatPct, Double redisMemPct, Double loginQueue, Double loginQueuePct, Double loginBusy5m,
+			int instancesUp, int instancesTotal) {
 	}
 
 	/** unit: rps · ms · pct · people */

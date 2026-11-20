@@ -253,6 +253,10 @@ public class TrafficService {
 		var pOutbox = prom.instant("max(jejari_outbox_pending{" + APP + "})", nowSec);
 		var pOutboxFail = prom.instant("max(jejari_outbox_failed{" + APP + "})", nowSec);
 		var pOutboxAge = prom.instant("max(jejari_outbox_oldest_seconds{" + APP + "})", nowSec);
+		// 로그인 대기실 (member/login/LoginGate): 몰리면 줄을 서고, 가득 차면 "N초 뒤 다시"(429)로 돌려보낸다
+		var lQueue = prom.instant("max(jejari_login_queue_size{" + APP + "})", nowSec);
+		var lQueuePct = prom.instant("max(jejari_login_queue_size{" + APP + "} / jejari_login_queue_capacity{" + APP + "}) * 100", nowSec);
+		var lBusy5 = prom.instant("sum(increase(jejari_login_busy_total{" + APP + "}[5m]))", nowSec);
 		var pLagOk = prom.instant("min(jejari_kafka_lag_measured{" + APP + "})", nowSec);
 		var pLag = prom.instant("max by (group) (jejari_kafka_consumer_lag{" + APP + "})", nowSec);
 		var rSent = prom.range("sum(rate(jejari_behavior_sent_total{" + APP + "}" + w + "))", start, end, step);
@@ -266,7 +270,7 @@ public class TrafficService {
 		try {
 			CompletableFuture.allOf(byStatus, p50, p95, p99, waiting, active, cpu, heap, db, tomcat, redis, up, pending, baseline,
 					yesterday, starts, nowStatus, now50, now95, now99, epCount, epErr, epErr4, epP95, pSent, pDropRate, pFailRate, pDrop5,
-					pFail5, pQueue, pOutbox, pOutboxFail, pOutboxAge, pLag, rSent, rDrop, rFail, rLag, pStored, pSkip5, pStored5, rStored, rSkip, pLagOk).get(PrometheusClient.TIMEOUT.toMillis() + 1000, TimeUnit.MILLISECONDS);
+					pFail5, pQueue, pOutbox, pOutboxFail, pOutboxAge, pLag, rSent, rDrop, rFail, rLag, pStored, pSkip5, pStored5, rStored, rSkip, pLagOk, lQueue, lQueuePct, lBusy5).get(PrometheusClient.TIMEOUT.toMillis() + 1000, TimeUnit.MILLISECONDS);
 		} catch (Exception e) {
 			return TrafficView.unavailable(why(e), nowSec, range);
 		}
@@ -364,6 +368,7 @@ public class TrafficService {
 		Now now = new Now(rps, base, surge, peak, scalar(now50.join()), scalar(now95.join()), scalar(now99.join()),
 				has ? ratio(m[1], m[0]) : null, has ? ratio(m[2], m[0]) : null, has ? ratio(m[4], m[0]) : null, has ? m[3] : null,
 				has ? m[5] : null, has ? m[6] : null, last(qw), last(qa), last(rc), last(rh), last(rd), scalar(pending.join()), last(rt), last(rr),
+				scalar(lQueue.join()), scalar(lQueuePct.join()), scalar(lBusy5.join()),
 				upCount, upTotal);
 		return new TrafficView(true, null, nowSec, range, step, health(now, pipeline), now, t, charts,
 				endpoints(epCount.join(), epErr.join(), epErr4.join(), epP95.join()), restarts(starts.join(), start, end), pipeline);
@@ -403,6 +408,14 @@ public class TrafficService {
 		level(rs, "redis", n.redisMemPct(), 80, 90, v -> "Redis 메모리 " + Math.round(v) + "% (noeviction이라 다 차면 쓰기 실패)");
 		if (p != null) {
 			pipelineReasons(rs, p);
+		}
+		// 로그인 대기실은 설계대로 동작하는 것이라 "알림" (대기열·조회는 영향 없음). 사람들이 로그인에 오래 기다린다는 뜻
+		if (n.loginQueuePct() != null && n.loginQueuePct() >= 50) {
+			rs.add(new Reason("INFO", "loginQueue", "로그인 대기 " + Math.round(n.loginQueue() == null ? 0 : n.loginQueue())
+					+ "명 (대기실 " + Math.round(n.loginQueuePct()) + "%) — 로그인이 몰림, 다른 API는 영향 없음"));
+		}
+		if (n.loginBusy5m() != null && n.loginBusy5m() >= 1) {
+			rs.add(new Reason("INFO", "loginBusy", "로그인 " + Math.round(n.loginBusy5m()) + "건을 \"잠시 뒤 자동 재시도\"로 돌려보냄 (최근 5분, 대기실 가득)"));
 		}
 		if (n.surge() != null && n.surge() >= 3 && n.rps() != null && n.rps() >= 5) {
 			rs.add(new Reason("INFO", "surge", "트래픽 급증 — 평소의 " + fmt(n.surge()) + "배"));

@@ -18,6 +18,8 @@ public enum AuthErrorCode implements ErrorCode {
 	AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."),
 	AUTH_LOCKED(HttpStatus.LOCKED, "로그인 시도가 많아 잠시 잠겼습니다. 잠시 후 다시 시도해 주세요."),
 	AUTH_RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요."),
+	/** 로그인 대기실이 가득 참 (LoginGate). Retry-After 헤더의 초만큼 뒤 자동으로 다시 */
+	AUTH_LOGIN_BUSY(HttpStatus.TOO_MANY_REQUESTS, "로그인하는 사람이 많아 잠시 기다려 주세요. 곧 자동으로 다시 시도합니다."),
 	AUTH_BANNED(HttpStatus.FORBIDDEN, "이용이 정지된 계정입니다."),
 
 	/** 액세스 토큰 만료. 클라이언트는 /auth/refresh로 재발급 후 다시 요청합니다. */

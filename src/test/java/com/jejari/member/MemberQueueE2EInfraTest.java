@@ -68,7 +68,11 @@ class MemberQueueE2EInfraTest {
 		if (bearer != null) {
 			req.header("Authorization", "Bearer " + bearer);
 		}
-		return mvc.perform(req).andReturn();
+		MvcResult r = mvc.perform(req).andReturn();
+		// 로그인은 로그인 대기실(LoginGate)이 비동기로 처리한다 → 결과를 한 번 더 받아 온다
+		return r.getRequest().isAsyncStarted()
+				? mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(r)).andReturn()
+				: r;
 	}
 
 	static JsonNode json(MvcResult r) throws Exception {
