@@ -30,6 +30,8 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li>행동 로그 전용 프로듀서. 팀 공용 프로듀서(acks=all·멱등, 예약 이벤트용)와 설정을 섞지 않는다:
  *       메타데이터 대기 {@code max.block.ms}=2초, 전송 제한 10초, 묶어 보내기(linger 20ms)·lz4 압축.</li>
  *   <li>중복 전송(재시도)은 적재 컨슈머가 event_id 유니크 인덱스로 걸러 내므로 acks=1로 충분하다.</li>
+ *   <li>전송에 실패하면 큐 뒤에 다시 넣어 최대 {@value #MAX_RETRY}번 더 보낸다 (Kafka가 잠깐 끊긴 동안의 로그를 살리려고.
+ *       Kafka 40초 정지 실측에서 재시도 없이 약 0.4%를 잃었다). 큐가 80% 넘게 찼으면 새 로그를 위해 다시 넣지 않고 실패로 센다.</li>
  * </ul>
  */
 @Component
@@ -38,6 +40,7 @@ public class BehaviorPublisher implements DisposableBean {
 	private static final Logger log = LoggerFactory.getLogger(BehaviorPublisher.class);
 
 	static final int QUEUE_CAPACITY = 50_000;
+	static final int MAX_RETRY = 3;
 	private static final long WARN_INTERVAL_MS = 10_000;
 
 	private final KafkaTemplate<String, String> kafka;
@@ -47,6 +50,7 @@ public class BehaviorPublisher implements DisposableBean {
 	private final AtomicLong dropped = new AtomicLong();
 	private final AtomicLong failed = new AtomicLong();
 	private final AtomicLong sent = new AtomicLong();
+	private final AtomicLong retried = new AtomicLong();
 	private final AtomicLong lastWarnAt = new AtomicLong();
 
 	public BehaviorPublisher(@Value("${spring.kafka.bootstrap-servers}") String bootstrap, JsonMapper json) {
@@ -77,25 +81,44 @@ public class BehaviorPublisher implements DisposableBean {
 	/** 바로 돌아온다 */
 	public void publish(BehaviorEvent e) {
 		try {
-			sender.execute(() -> send(e));
+			sender.execute(() -> send(e, 0));
 		} catch (RejectedExecutionException ex) {
 			warn(dropped, "행동 로그를 버림 (종료 중)");
 		}
 	}
 
-	private void send(BehaviorEvent e) {
+	private void send(BehaviorEvent e, int attempt) {
 		try {
 			kafka.send(BehaviorEvent.TOPIC, e.key(), json.writeValueAsString(e)).whenComplete((r, ex) -> {
 				if (ex != null) {
-					warn(failed, "행동 로그 Kafka 전송 실패: " + ex.getClass().getSimpleName());
+					retryOrFail(e, attempt, ex);
 				} else {
 					sent.incrementAndGet();
 				}
 			});
 		} catch (RuntimeException ex) {
 			// 메타데이터를 못 받거나(Kafka 다운, 2초) 버퍼가 가득
-			warn(failed, "행동 로그 Kafka 전송 실패: " + ex.getClass().getSimpleName());
+			retryOrFail(e, attempt, ex);
 		}
+	}
+
+	/** 큐 뒤에 다시 넣는다 (앞의 로그들이 빠지는 동안 자연히 시간이 흐름). 횟수를 넘었거나 큐가 많이 찼으면 실패로 센다 */
+	private void retryOrFail(BehaviorEvent e, int attempt, Throwable ex) {
+		if (attempt < MAX_RETRY && sender.getQueue().remainingCapacity() > QUEUE_CAPACITY / 5) {
+			try {
+				sender.execute(() -> send(e, attempt + 1));
+				retried.incrementAndGet();
+				return;
+			} catch (RejectedExecutionException rejected) {
+				// 종료 중이거나 그 사이 가득 참 → 실패로
+			}
+		}
+		warn(failed, "행동 로그 Kafka 전송 실패: " + ex.getClass().getSimpleName());
+	}
+
+	/** 실패 뒤 다시 보낸 횟수 (A-10 지표) */
+	public long retriedCount() {
+		return retried.get();
 	}
 
 	private void warn(AtomicLong counter, String msg) {

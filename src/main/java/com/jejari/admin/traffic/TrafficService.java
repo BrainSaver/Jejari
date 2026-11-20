@@ -257,6 +257,10 @@ public class TrafficService {
 		var lQueue = prom.instant("max(jejari_login_queue_size{" + APP + "})", nowSec);
 		var lQueuePct = prom.instant("max(jejari_login_queue_size{" + APP + "} / jejari_login_queue_capacity{" + APP + "}) * 100", nowSec);
 		var lBusy5 = prom.instant("sum(increase(jejari_login_busy_total{" + APP + "}[5m]))", nowSec);
+		// 격리 보관함 (event/dlq/DeadLetters): 소비자가 포기·건너뛴 메시지
+		var dlq5 = prom.instant("sum(increase(jejari_dead_letter_total{" + APP + "}[5m]))", nowSec);
+		var dlq1h = prom.instant("sum(increase(jejari_dead_letter_total{" + APP + "}[1h]))", nowSec);
+		var dlqBy = prom.instant("sum by (group, reason) (increase(jejari_dead_letter_total{" + APP + "}[1h])) > 0", nowSec);
 		var pLagOk = prom.instant("min(jejari_kafka_lag_measured{" + APP + "})", nowSec);
 		var pLag = prom.instant("max by (group) (jejari_kafka_consumer_lag{" + APP + "})", nowSec);
 		var rSent = prom.range("sum(rate(jejari_behavior_sent_total{" + APP + "}" + w + "))", start, end, step);
@@ -270,7 +274,7 @@ public class TrafficService {
 		try {
 			CompletableFuture.allOf(byStatus, p50, p95, p99, waiting, active, cpu, heap, db, tomcat, redis, up, pending, baseline,
 					yesterday, starts, nowStatus, now50, now95, now99, epCount, epErr, epErr4, epP95, pSent, pDropRate, pFailRate, pDrop5,
-					pFail5, pQueue, pOutbox, pOutboxFail, pOutboxAge, pLag, rSent, rDrop, rFail, rLag, pStored, pSkip5, pStored5, rStored, rSkip, pLagOk, lQueue, lQueuePct, lBusy5).get(PrometheusClient.TIMEOUT.toMillis() + 1000, TimeUnit.MILLISECONDS);
+					pFail5, pQueue, pOutbox, pOutboxFail, pOutboxAge, pLag, rSent, rDrop, rFail, rLag, pStored, pSkip5, pStored5, rStored, rSkip, pLagOk, lQueue, lQueuePct, lBusy5, dlq5, dlq1h, dlqBy).get(PrometheusClient.TIMEOUT.toMillis() + 1000, TimeUnit.MILLISECONDS);
 		} catch (Exception e) {
 			return TrafficView.unavailable(why(e), nowSec, range);
 		}
@@ -350,7 +354,10 @@ public class TrafficService {
 		charts.add(new Chart("lag", "Kafka 소비 밀림 (건)", "count", lagLines));
 		Pipeline pipeline = new Pipeline(scalar(pSent.join()), scalar(pStored.join()), scalar(pDropRate.join()), scalar(pFailRate.join()),
 				scalar(pDrop5.join()), scalar(pFail5.join()), scalar(pSkip5.join()), scalar(pStored5.join()), scalar(pQueue.join()), scalar(pOutbox.join()), scalar(pOutboxFail.join()),
-				scalar(pOutboxAge.join()), lags(pLag.join()), scalar(pLagOk.join()) == null ? null : scalar(pLagOk.join()) >= 1);
+				scalar(pOutboxAge.join()), lags(pLag.join()), scalar(pLagOk.join()) == null ? null : scalar(pLagOk.join()) >= 1,
+				scalar(dlq5.join()), scalar(dlq1h.join()), dlqBy.join().stream()
+						.map(x -> new TrafficView.DeadLetterCount(x.label("group"), x.label("reason"), x.v()[0] == null ? 0 : x.v()[0]))
+						.sorted(Comparator.comparingDouble(TrafficView.DeadLetterCount::count).reversed()).toList());
 
 		int[] u = upCount(up.join());
 		int upCount = u[0], upTotal = u[1];
@@ -454,6 +461,10 @@ public class TrafficService {
 					+ "건 형식 오류로 적재 안 됨 (최근 5분" + (most ? ", 저장 " + Math.round(stored) + "건보다 많음" : "") + ") — 밀림에도 안 잡히는 유실"));
 		}
 		level(rs, "behaviorQueue", p.queuePct(), 50, 90, v -> "행동 로그 보내기 큐 " + Math.round(v) + "% 찼음 (다 차면 버림)");
+		if (p.deadLetters5m() != null && p.deadLetters5m() >= 1) {
+			rs.add(new Reason("WARN", "deadLetters", "격리 보관 " + Math.round(p.deadLetters5m())
+					+ "건 (최근 5분, 소비자가 처리하지 못한 메시지) — tools/dlq.sh list로 원인 확인 후 다시 넣기"));
+		}
 		if (Boolean.FALSE.equals(p.lagMeasured())) {
 			rs.add(new Reason("WARN", "lagUnknown", "Kafka 소비 밀림을 잴 수 없음 (Kafka 연결 실패 — 이벤트·행동 로그가 멈췄을 수 있음)"));
 		}

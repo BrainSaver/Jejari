@@ -50,7 +50,12 @@ public record TrafficView(boolean available, String reason, long at, String rang
 	 */
 	public record Pipeline(Double behaviorPerSec, Double storedPerSec, Double droppedPerSec, Double failedPerSec, Double dropped5m,
 			Double failed5m, Double skipped5m, Double stored5m,
-			Double queuePct, Double outboxPending, Double outboxFailed, Double outboxOldestSec, List<Lag> lags, Boolean lagMeasured) {
+			Double queuePct, Double outboxPending, Double outboxFailed, Double outboxOldestSec, List<Lag> lags, Boolean lagMeasured,
+			Double deadLetters5m, Double deadLetters1h, List<DeadLetterCount> deadLetters) {
+	}
+
+	/** 격리 보관함(DLT)에 옮긴 메시지 수 (최근 1시간). group: 소비 그룹, reason: malformed · retries_exhausted · handler_failed */
+	public record DeadLetterCount(String group, String reason, double count) {
 	}
 
 	/** Kafka 소비 그룹 하나의 밀림. level: OK · WARN · CRIT (값이 없으면 null) */

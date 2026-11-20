@@ -16,4 +16,11 @@ create jejari.waitlist 6
 create jejari.behavior 12
 create jejari.replay 6   # P2
 
+# 격리 보관함 (소비자가 포기·건너뛴 메시지, event/dlq/DeadLetters). 30일 보관 — 원인을 고친 뒤 tools/dlq.sh로 다시 넣는다.
+# 앱도 뜰 때 없으면 만든다 (DeadLetterConfig)
+for t in jejari.reservation.DLT jejari.behavior.DLT jejari.replay.DLT; do
+  "$TOPICS" --bootstrap-server "$BOOTSTRAP" --create --if-not-exists --topic "$t" --partitions 1 --replication-factor 1 \
+    --config retention.ms=2592000000
+done
+
 "$TOPICS" --bootstrap-server "$BOOTSTRAP" --list

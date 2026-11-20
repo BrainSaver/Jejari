@@ -79,16 +79,32 @@ public class ReplaySink {
 				m = json.readValue(r.value(), ReplayMessage.class);
 			} catch (RuntimeException e) {
 				skipped++;
+				park(r, e);
 				continue;
 			}
 			if (m.sessionId() == null || m.events() == null || m.events().isEmpty()) {
 				skipped++;
+				park(r, null);
 				continue;
 			}
 			store(m);
 		}
 		if (skipped > 0) {
 			log.warn("녹화 메시지 형식 오류 {}건을 건너뜀", skipped);
+		}
+	}
+
+	private com.jejari.event.dlq.DeadLetters deadLetters;   // 없으면(단위 시험) 예전처럼 로그만
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setDeadLetters(com.jejari.event.dlq.DeadLetters deadLetters) {
+		this.deadLetters = deadLetters;
+	}
+
+	/** 형식이 깨진 녹화 메시지를 버리지 않고 격리 보관함(jejari.replay.DLT)에 */
+	private void park(ConsumerRecord<String, String> r, Throwable cause) {
+		if (deadLetters != null) {
+			deadLetters.park("replay-sink", r, com.jejari.event.dlq.DeadLetters.MALFORMED, cause);
 		}
 	}
 

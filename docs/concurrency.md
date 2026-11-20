@@ -603,6 +603,23 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | `seat-release` | `RESERVATION_CANCELED`, `RESERVATION_EXPIRED` | Redis 보상 보장 경로 + 취소표 제안 (§9) |
 | 알림·로그 등 | 각자 | 각 기능 문서 |
 
+### 12.1 처리하지 못한 메시지 — 격리 보관함 (DLQ)
+
+메시지 하나 때문에 뒤의 메시지가 모두 멈추지 않도록, 소비자는 아래 경우 그 메시지를 **건너뛰되 버리지 않고** `<원래 토픽>.DLT`에 옮깁니다 (`event/dlq/DeadLetters`). 옮기기에 실패하면 예외를 던져 오프셋을 커밋하지 않습니다 (보관함마저 안 되면 버리지 않고 멈춤).
+
+| 이유 (`dlt-reason`) | 언제 | 소비 그룹 |
+|---|---|---|
+| `malformed` | 형식이 깨짐 (JSON 오류·필수 값 없음) — 다시 해도 안 됨 | 모두 |
+| `retries_exhausted` | 1초 간격 3번 다시 해도 실패 | `notification` |
+| `handler_failed` | 처리 중 실패 (묶음 소비라 다시 던지면 뒤의 메시지가 모두 막힘) | `seat-release` |
+
+Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함으로 보내지 않고 5초마다 무한히 다시 시도합니다 (`seat-release`의 Redis 보상 앞단·`risk-signal`·적재 컨슈머). 그동안 소비 밀림이 쌓이고 A-10에 보입니다.
+
+- 헤더: `dlt-group`·`dlt-reason`·`dlt-error`·`dlt-source`(토픽-파티션@오프셋)·`dlt-at`. 키·값은 원본 그대로
+- 보관 30일 (원래 토픽 7일보다 길게: 원인을 고치고 다시 넣을 시간)
+- 다시 넣기: `tools/dlq.sh replay <토픽> <그룹> [이유]` → 원래 토픽에 헤더 `dlt-replay-for=<그룹>`을 붙여 넣고, **다른 그룹은 건너뜁니다** (`DeadLetters.notForMe`). 같은 키라 같은 파티션 → 같은 예약의 순서 유지. Inbox(위)·`event_id` 유니크로 두 번 처리돼도 결과가 같습니다. 이유를 안 주면 `malformed`는 뺍니다 (코드를 고치기 전에는 또 보관함으로 옴)
+- 지표 `jejari_dead_letter_total{group, reason}` → A-10 "데이터 놓침·밀림"에 건수, 최근 5분에 1건이라도 있으면 주의
+
 ---
 
 ## §13 MongoDB 적재·보관

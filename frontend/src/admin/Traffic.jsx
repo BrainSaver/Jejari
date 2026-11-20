@@ -245,6 +245,8 @@ const UNIT = { rps: '/초', ms: 'ms', pct: '%', people: '명', count: '건' };
  * 데이터 놓침·밀림: 사람이 몰릴 때 봇 탐지 재료(행동 로그)를 버리거나, 이벤트 처리가 밀리는지.
  * 문턱은 서버 TrafficService.pipelineReasons와 같다 (버림·실패는 1건부터 주의)
  */
+const REASON = { malformed: '형식 오류', retries_exhausted: '재시도 소진', handler_failed: '처리 실패' };
+
 function DataLoss({ p }) {
   const n0 = (v) => (v == null ? '—' : Math.round(v).toLocaleString());
   const qLv = p.queuePct == null ? '' : p.queuePct >= 90 ? 'crit' : p.queuePct >= 50 ? 'warn' : 'ok';
@@ -256,6 +258,9 @@ function DataLoss({ p }) {
     ['버림 (최근 5분)', `${n0(p.dropped5m)}건`, `보내기 큐가 넘쳐서 · 지금 ${fmt(p.droppedPerSec)}/초`, p.dropped5m >= 1000 ? 'crit' : p.dropped5m >= 1 ? 'warn' : 'ok'],
     ['전송 실패 (최근 5분)', `${n0(p.failed5m)}건`, 'Kafka가 받지 못함', p.failed5m >= 1000 ? 'crit' : p.failed5m >= 1 ? 'warn' : 'ok'],
     ['보내기 큐', p.queuePct == null ? '—' : `${fmt(p.queuePct)}%`, '5만 건이 차면 버리기 시작', qLv],
+    ['격리 보관 (최근 1시간)', `${n0(p.deadLetters1h)}건`,
+      p.deadLetters1h ? (p.deadLetters || []).slice(0, 2).map((d) => `${d.group} ${REASON[d.reason] || d.reason} ${Math.round(d.count)}`).join(' · ')
+        : '소비자가 포기한 메시지 없음', p.deadLetters5m >= 1 ? 'warn' : 'ok'],
     ['예약 이벤트 미발행', `${n0(p.outboxPending)}건`,
       p.outboxPending ? `가장 오래 ${n0(p.outboxOldestSec)}초째${p.outboxFailed ? ` · 실패 ${n0(p.outboxFailed)}` : ''}` : 'outbox → Kafka 밀림 없음', oLv],
   ];

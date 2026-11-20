@@ -86,6 +86,10 @@ public class BehaviorSink {
 			Parsed p = BehaviorDocuments.parse(r.value(), json);
 			if (p == null) {
 				skipped++;
+				// 형식 오류는 다시 해도 안 되므로 건너뛰되, 버리지 않고 격리 보관함(jejari.behavior.DLT)에 — 형식을 고친 뒤 다시 넣을 수 있게
+				if (deadLetters != null) {
+					deadLetters.park(BehaviorSinkConfig.GROUP_ID, r, com.jejari.event.dlq.DeadLetters.MALFORMED, null);
+				}
 				continue;
 			}
 			parsed.add(p);
@@ -224,6 +228,13 @@ public class BehaviorSink {
 				args);
 	}
 
+
+	private com.jejari.event.dlq.DeadLetters deadLetters;   // 없으면(단위 시험) 예전처럼 건너뛰기만
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setDeadLetters(com.jejari.event.dlq.DeadLetters deadLetters) {
+		this.deadLetters = deadLetters;
+	}
 
 	/** 형식 검사에서 건너뛴 누적 건수 */
 	public long skippedCount() {

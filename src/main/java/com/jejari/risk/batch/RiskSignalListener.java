@@ -61,7 +61,18 @@ public class RiskSignalListener {
 	public void consume(List<ConsumerRecord<String, String>> records) {
 		List<Long> reservationIds = new ArrayList<>();
 		for (ConsumerRecord<String, String> r : records) {
-			Long id = reservationId(r.value());
+			if (com.jejari.event.dlq.DeadLetters.notForMe(r, EventTopics.GROUP_RISK_SIGNAL)) {
+				continue;   // 다른 그룹 몫으로 다시 넣은 메시지
+			}
+			Long id;
+			try {
+				id = reservationIdStrict(r.value());
+			} catch (com.jejari.event.dlq.DeadLetters.Malformed m) {
+				if (deadLetters != null) {
+					deadLetters.park(EventTopics.GROUP_RISK_SIGNAL, r, com.jejari.event.dlq.DeadLetters.MALFORMED, m);
+				}
+				continue;
+			}
 			if (id != null) {
 				reservationIds.add(id);
 			}
@@ -73,10 +84,26 @@ public class RiskSignalListener {
 		dirty.markAll(subjects);
 	}
 
+	private com.jejari.event.dlq.DeadLetters deadLetters;   // 없으면(단위 시험) 예전처럼 로그만
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setDeadLetters(com.jejari.event.dlq.DeadLetters deadLetters) {
+		this.deadLetters = deadLetters;
+	}
+
 	/** 확정·취소 이벤트면 예약 ID, 아니면(다른 이벤트·깨진 메시지) null */
 	Long reservationId(String value) {
-		if (value == null || value.length() > 65_536) {
+		try {
+			return reservationIdStrict(value);
+		} catch (com.jejari.event.dlq.DeadLetters.Malformed m) {
 			return null;
+		}
+	}
+
+	/** 확정·취소 이벤트면 예약 ID, 다른 이벤트면 null, 깨졌으면 Malformed (격리 보관 대상) */
+	Long reservationIdStrict(String value) {
+		if (value == null || value.length() > 65_536) {
+			throw new com.jejari.event.dlq.DeadLetters.Malformed(value == null ? "값 없음" : "너무 큼");
 		}
 		try {
 			EventEnvelope e = EventEnvelope.parse(json, value);
@@ -87,8 +114,8 @@ public class RiskSignalListener {
 			long id = Long.parseLong(e.aggregateId());
 			return id > 0 ? id : null;
 		} catch (RuntimeException ex) { // JSON 오류(JacksonException)·숫자 아님 등
-			log.warn("risk-signal: 형식이 틀린 예약 이벤트를 건너뜀");
-			return null;
+			log.warn("risk-signal: 형식이 틀린 예약 이벤트 → 격리 보관");
+			throw new com.jejari.event.dlq.DeadLetters.Malformed(ex.getClass().getSimpleName());
 		}
 	}
 

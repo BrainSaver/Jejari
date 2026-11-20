@@ -159,10 +159,11 @@ class BehaviorInterceptorTest {
 				real.publish(e);
 			}
 			assertThat((System.nanoTime() - t) / 1_000_000).as("1000건 ms").isLessThan(500);
-			for (int w = 0; w < 50 && real.failedCount() == 0; w++) {
-				Thread.sleep(100); // 메타데이터 대기 2초 뒤 실패로 집계
+			// 메타데이터 대기 2초 뒤 실패 → 처음 몇 번은 큐 뒤에 다시 넣어 재시도(retried), 그래도 안 되면 실패(failed)로 집계
+			for (int w = 0; w < 50 && real.failedCount() + real.retriedCount() == 0; w++) {
+				Thread.sleep(100);
 			}
-			assertThat(real.failedCount()).isPositive();
+			assertThat(real.failedCount() + real.retriedCount()).isPositive();
 		} finally {
 			Thread t = new Thread(() -> {
 				try {
