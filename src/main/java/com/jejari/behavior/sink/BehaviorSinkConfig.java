@@ -29,7 +29,7 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li>자동 커밋 끔 → 리스너가 성공한 뒤에만 커밋 (AckMode.BATCH)</li>
  *   <li>실패하면(MongoDB 장애) 5초마다 무한 재시도. 형식 오류 메시지는 리스너가 걸러 내므로 여기서 막히지 않는다</li>
  *   <li>스레드 3개 (토픽 파티션 12개). 늘려도 빨라지지 않고 DB 커넥션만 더 쥔다 (2026-11-20 실측: 3개 초당 약 2.8만, 6개 2.5만, 12개 2.8만·커넥션 12개)</li>
- *   <li>적재 속도 상한 초당 5,000 ({@link SinkPacer}): 밀린 로그를 최대 속도로 따라잡으면 CPU를 다 써서 예매가 느려진다</li>
+ *   <li>적재 속도 상한 초당 2,000 ({@link SinkPacer}): 밀린 로그를 최대 속도로 따라잡으면 CPU를 다 써서 예매가 약 3배 느려진다</li>
  * </ul>
  */
 @Configuration
@@ -46,7 +46,7 @@ public class BehaviorSinkConfig {
 
 	@Bean
 	BehaviorSink behaviorSink(MongoTemplate mongo, JdbcTemplate jdbc, JsonMapper json, BehaviorPolicy policy,
-			RiskDirtyQueue riskDirty, @Value("${jejari.behavior.sink-max-per-sec:5000}") int maxPerSec) {
+			RiskDirtyQueue riskDirty, @Value("${jejari.behavior.sink-max-per-sec:2000}") int maxPerSec) {
 		return new BehaviorSink(mongo, jdbc, json, policy, riskDirty, new SinkPacer(maxPerSec));
 	}
 
