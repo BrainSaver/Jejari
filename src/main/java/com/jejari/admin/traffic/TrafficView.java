@@ -9,11 +9,11 @@ import java.util.List;
  * @param t         그래프 공통 시각 (초). 모든 {@link Chart}의 점이 이 시각에 맞춰 있다
  */
 public record TrafficView(boolean available, String reason, long at, String range, int stepSec, Health health, Now now,
-		long[] t, List<Chart> charts, List<Endpoint> endpoints, List<Long> restarts) {
+		long[] t, List<Chart> charts, List<Endpoint> endpoints, List<Long> restarts, Pipeline pipeline) {
 
 	static TrafficView unavailable(String reason, long at, String range) {
 		return new TrafficView(false, reason, at, range, 0, new Health("UNKNOWN", List.of()), null, new long[0], List.of(),
-				List.of(), List.of());
+				List.of(), List.of(), null);
 	}
 
 	/** level: OK · WARN · CRIT · UNKNOWN. reasons는 심각한 것부터 */
@@ -40,6 +40,20 @@ public record TrafficView(boolean available, String reason, long at, String rang
 
 	/** v[i]는 {@link TrafficView#t}[i] 시각의 값 */
 	public record Line(String name, Double[] v) {
+	}
+
+	/**
+	 * 데이터 놓침·밀림 (admin/traffic/PipelineMetrics). 초당 값은 최근 30초, 건수는 최근 5분.
+	 *
+	 * @param queuePct 행동 로그 보내기 큐 사용률 (최대 5만 건 대비 %)
+	 */
+	public record Pipeline(Double behaviorPerSec, Double storedPerSec, Double droppedPerSec, Double failedPerSec, Double dropped5m,
+			Double failed5m, Double skipped5m, Double stored5m,
+			Double queuePct, Double outboxPending, Double outboxFailed, Double outboxOldestSec, List<Lag> lags, Boolean lagMeasured) {
+	}
+
+	/** Kafka 소비 그룹 하나의 밀림. level: OK · WARN · CRIT (값이 없으면 null) */
+	public record Lag(String group, String name, Double lag, String level) {
 	}
 
 	/** 최근 1분 기준 요청 많은 순 */

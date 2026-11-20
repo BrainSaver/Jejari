@@ -46,6 +46,7 @@ public class BehaviorPublisher implements DisposableBean {
 	private final ThreadPoolExecutor sender;
 	private final AtomicLong dropped = new AtomicLong();
 	private final AtomicLong failed = new AtomicLong();
+	private final AtomicLong sent = new AtomicLong();
 	private final AtomicLong lastWarnAt = new AtomicLong();
 
 	public BehaviorPublisher(@Value("${spring.kafka.bootstrap-servers}") String bootstrap, JsonMapper json) {
@@ -87,6 +88,8 @@ public class BehaviorPublisher implements DisposableBean {
 			kafka.send(BehaviorEvent.TOPIC, e.key(), json.writeValueAsString(e)).whenComplete((r, ex) -> {
 				if (ex != null) {
 					warn(failed, "행동 로그 Kafka 전송 실패: " + ex.getClass().getSimpleName());
+				} else {
+					sent.incrementAndGet();
 				}
 			});
 		} catch (RuntimeException ex) {
@@ -110,6 +113,16 @@ public class BehaviorPublisher implements DisposableBean {
 
 	public long failedCount() {
 		return failed.get();
+	}
+
+	/** Kafka가 받았다고 답한 건수 (A-10 트래픽 관제 지표, admin/traffic/PipelineMetrics) */
+	public long sentCount() {
+		return sent.get();
+	}
+
+	/** 보내기 큐에 쌓여 있는 건수 (최대 {@value #QUEUE_CAPACITY}) */
+	public int queueSize() {
+		return sender.getQueue().size();
 	}
 
 	@Override

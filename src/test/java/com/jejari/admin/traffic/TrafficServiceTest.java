@@ -28,7 +28,8 @@ class TrafficServiceTest {
 	HttpServer server;
 	final List<String> queries = new ArrayList<>();
 	volatile boolean down;
-	volatile boolean recovered;   // 최근 30초는 깨끗하고 그래프(1분 창)에는 아직 오류가 남은 상태
+	volatile boolean recovered;
+	volatile boolean pipelineTrouble;   // 행동 로그 버림 · 좌석 정리 밀림 · outbox 멈춤   // 최근 30초는 깨끗하고 그래프(1분 창)에는 아직 오류가 남은 상태
 
 	@BeforeEach
 	void start() throws IOException {
@@ -93,6 +94,30 @@ class TrafficServiceTest {
 						+ end() + ",\"" + (end() - 90000) + "\"]]}");
 			}
 			return ok("matrix");
+		}
+		if (pipelineTrouble && q.contains("increase(jejari_behavior_dropped_total")) {
+			return ok("vector", vec("", 12));
+		}
+		if (pipelineTrouble && q.contains("increase(jejari_behavior_skipped_total")) {
+			return ok("vector", vec("", 900));
+		}
+		if (pipelineTrouble && q.contains("increase(jejari_behavior_stored_total")) {
+			return ok("vector", vec("", 300));
+		}
+		if (q.contains("jejari_kafka_lag_measured")) {
+			return ok("vector", vec("", pipelineTrouble ? 0 : 1));
+		}
+		if (pipelineTrouble && q.contains("rate(jejari_behavior_dropped_total")) {
+			return ok("vector", vec("", 0.4));
+		}
+		if (q.contains("max by (group) (jejari_kafka_consumer_lag")) {
+			return ok("vector", vec("\"group\":\"behavior-sink\"", 50), vec("\"group\":\"seat-release\"", pipelineTrouble ? 250 : 0));
+		}
+		if (q.contains("jejari_outbox_oldest_seconds")) {
+			return ok("vector", vec("", pipelineTrouble ? 150 : 0));
+		}
+		if (q.contains("jejari_outbox_pending")) {
+			return ok("vector", vec("", pipelineTrouble ? 37 : 0));
 		}
 		if (q.contains("up{")) {
 			return ok("vector", vec("\"instance\":\"app-1\"", 1), vec("\"instance\":\"app-2\"", 0));
@@ -227,6 +252,47 @@ class TrafficServiceTest {
 		assertThat(v.charts().get(3).lines().get(0).v()[120]).isGreaterThan(0);
 		assertThat(v.now().errorPct()).isZero();
 		assertThat(v.health().reasons()).extracting(TrafficView.Reason::metric).doesNotContain("error", "client");
+	}
+
+	@Test
+	void 데이터를_놓치거나_밀리면_이유와_함께_알린다() {
+		pipelineTrouble = true;
+		TrafficView v = service().view("1h");
+		var p = v.pipeline();
+		assertThat(p.dropped5m()).isEqualTo(12.0);
+		assertThat(p.outboxPending()).isEqualTo(37.0);
+		assertThat(p.lags()).extracting(TrafficView.Lag::group).startsWith("behavior-sink", "replay-sink", "seat-release");
+		assertThat(p.lags().get(0).level()).isEqualTo("OK");        // 대량 적재 50건은 정상
+		assertThat(p.lags().get(1).lag()).isNull();                 // 재생 기록: 값 없음
+		assertThat(p.lags().get(2).level()).isEqualTo("WARN");      // 좌석 정리 250건 (예약 흐름은 100건부터 주의)
+		assertThat(v.health().reasons()).extracting(TrafficView.Reason::metric)
+				.contains("behaviorDropped", "behaviorSkipped", "lagUnknown", "lag:seat-release", "outboxAge");
+		// 건너뛴 것(900)이 저장한 것(300)보다 많으면 형식이 통째로 깨진 것 → 위험
+		assertThat(v.health().reasons()).filteredOn(r -> r.metric().equals("behaviorSkipped")).first()
+				.extracting(TrafficView.Reason::level).isEqualTo("CRIT");
+		assertThat(v.health().reasons()).filteredOn(r -> r.metric().equals("outboxAge")).first()
+				.extracting(TrafficView.Reason::level).isEqualTo("CRIT");   // 2분 넘게 멈춤
+		assertThat(v.charts()).extracting(TrafficView.Chart::key).contains("behavior", "lag");
+
+		TrafficFlow f = service().flow();
+		var kafka = f.stores().get(3);
+		assertThat(kafka.level()).isEqualTo("WARN");
+		assertThat(kafka.note()).contains("밀림 300건").contains("행동 로그 버림");
+	}
+
+	@Test
+	void 받는데_저장이_멈추면_적재_멈춤() {
+		assertThat(TrafficService.stalled(20.0, 0.0)).isTrue();      // MongoDB 정지 실측: 받음 20/초, 저장 0/초
+		assertThat(TrafficService.stalled(20.0, 19.0)).isFalse();
+		assertThat(TrafficService.stalled(0.5, 0.0)).isFalse();      // 거의 안 들어올 때는 판단하지 않음
+		assertThat(TrafficService.stalled(20.0, null)).isFalse();    // 지표 없음
+	}
+
+	@Test
+	void 평소에는_데이터_항목이_상태를_흔들지_않는다() {
+		TrafficView v = service().view("1h");
+		assertThat(v.health().reasons()).extracting(TrafficView.Reason::metric)
+				.noneMatch(m -> m.startsWith("behavior") || m.startsWith("lag:") || m.startsWith("outbox"));
 	}
 
 	@Test

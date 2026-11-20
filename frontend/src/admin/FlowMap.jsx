@@ -378,8 +378,10 @@ function drawNodes(ctx, L, f, groups, stores) {
   const appLv = !live ? 'idle' : f.instancesUp === 0 ? 'crit' : f.instancesUp < f.instancesTotal ? 'warn' : 'ok';
   circle(L.nodes.app, appLv, '앱 서버', live ? `${f.instancesUp}/${f.instancesTotal}대 응답` : '');
   stores.forEach((s, i) => {
-    const sub = s.ops == null ? '지표 없음' : `${STORE_UNIT[s.key] || ''} ${fmt(s.ops)}/초`;
-    circle(L.nodes['s' + i], !live ? 'idle' : s.ops == null ? 'idle' : 'ok', s.name, L.narrow ? (s.ops == null ? '—' : fmt(s.ops)) : sub, 'right');
+    // Kafka는 소비 밀림·행동 로그 버림을 테두리 색과 이름표로 (서버가 판정해 level·note로 보냄)
+    const sub = (s.ops == null ? '지표 없음' : `${STORE_UNIT[s.key] || ''} ${fmt(s.ops)}/초`) + (s.note ? ` · ${s.note}` : '');
+    const lv = !live || s.ops == null ? 'idle' : s.level === 'CRIT' ? 'crit' : s.level === 'WARN' ? 'warn' : 'ok';
+    circle(L.nodes['s' + i], lv, s.name, L.narrow ? (s.ops == null ? '—' : fmt(s.ops)) : sub, 'right');
   });
 }
 
@@ -400,6 +402,7 @@ function Tip({ hover, flow, groups, stores }) {
     const s = stores[+hover.id.slice(1)];
     title = s.name;
     rows = [[`${STORE_UNIT[s.key] || '작업'}/초`, fmt(s.ops)]];
+    if (s.note) rows.push(['상태', s.note]);
   }
   return (
     <div className={'tr-tip' + (hover.y < 200 ? ' down' : '')} style={{ left: hover.x, top: hover.y }} role="tooltip">

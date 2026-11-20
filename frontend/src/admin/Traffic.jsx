@@ -108,6 +108,7 @@ export default function Traffic() {
       {v?.available && (
         <div className={viewStale ? 'tr-stale' : undefined}>
           <Kpis n={v.now} charts={v.charts} />
+          {v.pipeline && <DataLoss p={v.pipeline} />}
           <Meters n={v.now} />
           <div className="tr-grid">
             {v.charts.map((c) => (
@@ -236,7 +237,63 @@ function Meters({ n }) {
   );
 }
 
-const UNIT = { rps: '/초', ms: 'ms', pct: '%', people: '명' };
+const UNIT = { rps: '/초', ms: 'ms', pct: '%', people: '명', count: '건' };
+
+/**
+ * 데이터 놓침·밀림: 사람이 몰릴 때 봇 탐지 재료(행동 로그)를 버리거나, 이벤트 처리가 밀리는지.
+ * 문턱은 서버 TrafficService.pipelineReasons와 같다 (버림·실패는 1건부터 주의)
+ */
+function DataLoss({ p }) {
+  const n0 = (v) => (v == null ? '—' : Math.round(v).toLocaleString());
+  const qLv = p.queuePct == null ? '' : p.queuePct >= 90 ? 'crit' : p.queuePct >= 50 ? 'warn' : 'ok';
+  const oLv = p.outboxOldestSec == null ? '' : p.outboxOldestSec >= 120 ? 'crit' : p.outboxOldestSec >= 30 ? 'warn' : 'ok';
+  const cells = [
+    ['행동 로그 수집', p.behaviorPerSec == null ? '—' : `${fmt(p.behaviorPerSec)}/초`, 'Kafka가 받은 것', 'ok'],
+    ['MongoDB 적재', p.storedPerSec == null ? '—' : `${fmt(p.storedPerSec)}/초`, '수집과 비슷해야 정상', p.behaviorPerSec > 1 && (p.storedPerSec ?? 0) < p.behaviorPerSec * 0.5 ? 'warn' : 'ok'],
+    ['형식 오류 (최근 5분)', `${n0(p.skipped5m)}건`, '적재 안 됨 · 밀림에도 안 잡힘', p.skipped5m >= 1 ? (p.skipped5m >= (p.stored5m ?? 0) ? 'crit' : 'warn') : 'ok'],
+    ['버림 (최근 5분)', `${n0(p.dropped5m)}건`, `보내기 큐가 넘쳐서 · 지금 ${fmt(p.droppedPerSec)}/초`, p.dropped5m >= 1000 ? 'crit' : p.dropped5m >= 1 ? 'warn' : 'ok'],
+    ['전송 실패 (최근 5분)', `${n0(p.failed5m)}건`, 'Kafka가 받지 못함', p.failed5m >= 1000 ? 'crit' : p.failed5m >= 1 ? 'warn' : 'ok'],
+    ['보내기 큐', p.queuePct == null ? '—' : `${fmt(p.queuePct)}%`, '5만 건이 차면 버리기 시작', qLv],
+    ['예약 이벤트 미발행', `${n0(p.outboxPending)}건`,
+      p.outboxPending ? `가장 오래 ${n0(p.outboxOldestSec)}초째${p.outboxFailed ? ` · 실패 ${n0(p.outboxFailed)}` : ''}` : 'outbox → Kafka 밀림 없음', oLv],
+  ];
+  const lagMax = Math.max(1, ...p.lags.map((l) => l.lag ?? 0));
+  return (
+    <section className="panel">
+      <h2>데이터 놓침 · 밀림 <span className="mut tr-h-sub">몰릴 때 봇 탐지 재료를 버리거나 이벤트 처리가 늦어지는지</span></h2>
+      <div className="tr-data">
+        {cells.map(([l, v, d, lv]) => (
+          <div key={l} className={`tr-dcell ${lv}`}>
+            <div className="l">{l}</div>
+            <div className="n num">{v}</div>
+            <div className="d">{d}</div>
+          </div>
+        ))}
+      </div>
+      {p.lagMeasured === false && (
+        <div className="alert amber">Kafka에 닿지 못해 소비 밀림을 잴 수 없어요. 이벤트·행동 로그가 멈췄을 수 있어요.</div>
+      )}
+      <table className="tr-lag">
+        <thead>
+          <tr><th>Kafka 소비 그룹</th><th className="n">밀린 메시지</th><th className="tr-opt">　</th><th>상태</th></tr>
+        </thead>
+        <tbody>
+          {p.lags.map((l) => (
+            <tr key={l.group}>
+              <td>{l.name} <span className="faint mono-s">{l.group}</span></td>
+              <td className="n">{n0(l.lag)}</td>
+              <td className="tr-opt"><span className="tr-share wide"><i className={(l.level || '').toLowerCase()} style={{ width: `${((l.lag ?? 0) / lagMax) * 100}%` }} /></span></td>
+              <td>
+                {l.level == null ? <span className="faint">소비 기록 없음</span>
+                  : <span className={`st ${l.level === 'CRIT' ? 'stop' : l.level === 'WARN' ? 'amber' : 'go'}`}>{l.level === 'CRIT' ? '위험' : l.level === 'WARN' ? '주의' : '정상'}</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
 
 /** 선 그래프: 범례 + 끝 값 이름표(4개 이하) + 마우스 십자선·툴팁. 축 하나, 선 2px */
 const REF = '어제 같은 시각'; // 비교용 기준선은 회색 점선 (색 순서를 쓰지 않음)

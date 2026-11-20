@@ -60,6 +60,8 @@ tasks.named('test') {
 tasks.withType(Test).configureEach {
 	systemProperty 'jejari.notification.consumer-enabled', 'false'
 	systemProperty 'jejari.notification.reminder-enabled', 'false'
+	// 데이터 놓침·밀림 지표(PipelineMetrics)도 끈다: 테스트 중 15초마다 Kafka AdminClient·outbox 집계가 돌면 로그만 시끄럽다
+	systemProperty 'jejari.ops.pipeline-metrics-enabled', 'false'
 	// 환불 재시도 배치(CNL-03)도 끈다. 켜 두면 다른 테스트가 일부러 만든 FAILED 환불을 테스트 도중에 DONE으로 바꾼다
 	systemProperty 'jejari.refund.retry-enabled', 'false'
 	// 재판매 집계 배치(CNL-04)도 끈다. 테스트가 운행을 잠깐 DEPARTED로 바꿀 때 다른 취소를 Y로 바꾸지 않게 (run()을 직접 부름)

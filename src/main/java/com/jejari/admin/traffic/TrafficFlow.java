@@ -20,7 +20,10 @@ public record TrafficFlow(boolean available, String reason, long at, List<Group>
 	public record Group(String name, double rps, double err5, double rejected, double conflict, double err4, Double avgMs) {
 	}
 
-	/** key: redis · oracle · mongo · kafka. ops = 초당 작업 수 (값 없으면 null — 그 지표가 수집되지 않음) */
-	public record Store(String key, String name, Double ops) {
+	/**
+	 * key: redis · oracle · mongo · kafka. ops = 초당 작업 수 (값 없으면 null — 그 지표가 수집되지 않음).
+	 * Kafka는 level·note에 소비 밀림·행동 로그 버림을 싣는다 (level OK · WARN · CRIT, 없으면 null)
+	 */
+	public record Store(String key, String name, Double ops, String level, String note) {
 	}
 }

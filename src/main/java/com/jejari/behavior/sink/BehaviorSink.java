@@ -63,6 +63,9 @@ public class BehaviorSink {
 	private final IntervalTracker intervals = new IntervalTracker(200_000);
 	private final Map<Long, String> ciCache = new ConcurrentHashMap<>();
 	private volatile boolean indexesReady;
+	// A-10 트래픽 관제 지표 (admin/traffic/PipelineMetrics). 형식 오류로 건너뛴 것은 커밋되어 다시 오지 않는 유실이라 따로 센다
+	private final java.util.concurrent.atomic.AtomicLong skippedTotal = new java.util.concurrent.atomic.AtomicLong();
+	private final java.util.concurrent.atomic.AtomicLong storedTotal = new java.util.concurrent.atomic.AtomicLong();
 
 	public BehaviorSink(MongoTemplate mongo, JdbcTemplate jdbc, JsonMapper json, BehaviorPolicy policy,
 			RiskDirtyQueue riskDirty) {
@@ -88,6 +91,7 @@ public class BehaviorSink {
 			parsed.add(p);
 		}
 		if (skipped > 0) {
+			skippedTotal.addAndGet(skipped);
 			// 값은 남기지 않는다 (누가 넣었는지 모르는 데이터)
 			log.warn("행동 로그 형식 오류 {}건을 건너뜀 (토픽 {})", skipped, BehaviorEvent.TOPIC);
 		}
@@ -107,6 +111,7 @@ public class BehaviorSink {
 		}
 		recordDevices(docs); // Mongo 저장보다 먼저: 이벤트가 보일 때는 연결도 이미 있게 (MERGE라 재시도해도 같음)
 		insert(docs);
+		storedTotal.addAndGet(docs.size());
 		markRiskSubjects(docs);
 		batch.commit(); // 저장에 성공한 뒤에만 (재시도 때 간격이 0으로 바뀌지 않게)
 	}
@@ -219,6 +224,16 @@ public class BehaviorSink {
 				args);
 	}
 
+
+	/** 형식 검사에서 건너뛴 누적 건수 */
+	public long skippedCount() {
+		return skippedTotal.get();
+	}
+
+	/** MongoDB 저장에 성공한 누적 건수 (재전달 중복 포함) */
+	public long storedCount() {
+		return storedTotal.get();
+	}
 
 	void insert(List<Document> docs) {
 		try {
