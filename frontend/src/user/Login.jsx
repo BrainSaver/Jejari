@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { memberLogin } from '../api/client.js';
 import Icon, { Seal } from '../admin/Icon.jsx';
@@ -27,7 +27,10 @@ export default function Login() {
   const [remember, setRemember] = useState(false); // 공용 PC를 생각해 기본은 끔
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [wait, setWait] = useState(null); // 로그인 대기실이 가득 차 자동으로 다시 보낼 때까지 남은 초
   const pwRef = useRef(null);
+  const timer = useRef(null);
+  useEffect(() => () => clearInterval(timer.current), []);
 
   if (!checking && member) return <Navigate to={next} replace />;
 
@@ -36,7 +39,12 @@ export default function Login() {
     setBusy(true);
     setError(null);
     try {
-      await memberLogin(email.trim(), password, remember);
+      await memberLogin(email.trim(), password, remember, (sec) => {
+        // 서버가 "N초 뒤 다시"라고 하면 남은 시간을 보여 주고 자동으로 다시 보낸다 (memberLogin이 기다림)
+        clearInterval(timer.current);
+        setWait(sec);
+        timer.current = setInterval(() => setWait((w) => (w > 1 ? w - 1 : w)), 1000);
+      });
       navigate(next, { replace: true });
     } catch (err) {
       if (isBusy(err)) {
@@ -47,6 +55,8 @@ export default function Login() {
         pwRef.current?.focus();
       }
     } finally {
+      clearInterval(timer.current);
+      setWait(null);
       setBusy(false);
     }
   };
@@ -64,6 +74,12 @@ export default function Login() {
         <div className="alert go"><Icon name="info" /><span>가입했어요. 방금 정한 비밀번호로 로그인해 주세요.</span></div>
       )}
       {error && <div className="alert stop" role="alert"><Icon name="info" /><span>{error}</span></div>}
+      {wait != null && (
+        <div className="alert amber" role="status" aria-live="polite">
+          <Icon name="clock" />
+          <span>지금 로그인하는 사람이 많아 줄을 서는 중이에요. <b>{wait}초 뒤 자동으로 다시 시도해요.</b> 창을 닫거나 다시 누르지 않아도 돼요.</span>
+        </div>
+      )}
       <form onSubmit={submit} className="stack" style={{ gap: 0 }}>
         <div className="field">
           <label htmlFor="em">이메일</label>
@@ -77,7 +93,7 @@ export default function Login() {
           <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} style={{ width: 18, minHeight: 18 }} />
           <span>로그인 상태 유지 <span className="mut" style={{ fontSize: 13 }}>(내 기기에서만. 끄면 브라우저를 닫을 때 로그아웃)</span></span>
         </label>
-        <button className="btn" type="submit" disabled={busy}>{busy ? '확인하는 중…' : '로그인'}</button>
+        <button className="btn" type="submit" disabled={busy}>{wait != null ? '줄 서는 중…' : busy ? '확인하는 중…' : '로그인'}</button>
       </form>
       <p className="mut" style={{ textAlign: 'center', margin: '6px 0 0', fontSize: 14 }}>
         처음이신가요? <Link className="link" to={`/signup?next=${encodeURIComponent(next)}`}>회원가입</Link>

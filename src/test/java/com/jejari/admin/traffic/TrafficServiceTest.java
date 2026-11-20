@@ -104,6 +104,15 @@ class TrafficServiceTest {
 		if (pipelineTrouble && q.contains("increase(jejari_behavior_stored_total")) {
 			return ok("vector", vec("", 300));
 		}
+		if (pipelineTrouble && q.contains("jejari_login_queue_size{job=\"jejari-app\"} / ")) {
+			return ok("vector", vec("", 75));
+		}
+		if (pipelineTrouble && q.contains("max(jejari_login_queue_size")) {
+			return ok("vector", vec("", 150));
+		}
+		if (pipelineTrouble && q.contains("jejari_login_busy_total")) {
+			return ok("vector", vec("", 40));
+		}
 		if (q.contains("jejari_kafka_lag_measured")) {
 			return ok("vector", vec("", pipelineTrouble ? 0 : 1));
 		}
@@ -266,7 +275,10 @@ class TrafficServiceTest {
 		assertThat(p.lags().get(1).lag()).isNull();                 // 재생 기록: 값 없음
 		assertThat(p.lags().get(2).level()).isEqualTo("WARN");      // 좌석 정리 250건 (예약 흐름은 100건부터 주의)
 		assertThat(v.health().reasons()).extracting(TrafficView.Reason::metric)
-				.contains("behaviorDropped", "behaviorSkipped", "lagUnknown", "lag:seat-release", "outboxAge");
+				.contains("behaviorDropped", "behaviorSkipped", "lagUnknown", "lag:seat-release", "outboxAge", "loginQueue", "loginBusy");
+		assertThat(v.now().loginQueue()).isEqualTo(150.0);
+		assertThat(v.health().reasons()).filteredOn(r -> r.metric().startsWith("login"))
+				.allMatch(r -> r.level().equals("INFO"));   // 대기실은 설계대로 도는 것 — 장애가 아니라 알림
 		// 건너뛴 것(900)이 저장한 것(300)보다 많으면 형식이 통째로 깨진 것 → 위험
 		assertThat(v.health().reasons()).filteredOn(r -> r.metric().equals("behaviorSkipped")).first()
 				.extracting(TrafficView.Reason::level).isEqualTo("CRIT");

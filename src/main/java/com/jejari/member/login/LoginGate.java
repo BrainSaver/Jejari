@@ -68,6 +68,8 @@ public class LoginGate implements DisposableBean {
 				}, new ThreadPoolExecutor.AbortPolicy());
 		Gauge.builder("jejari.login.queue.size", workers, w -> w.getQueue().size())
 				.description("로그인 대기실에서 기다리는 요청 수").register(meters);
+		Gauge.builder("jejari.login.queue.capacity", workers, w -> w.getQueue().size() + w.getQueue().remainingCapacity())
+				.description("로그인 대기실 크기").register(meters);
 		FunctionCounter.builder("jejari.login.busy", busy, AtomicLong::get)
 				.description("로그인 대기실이 가득 차거나 너무 오래 기다려 429로 돌려보낸 수").register(meters);
 		log.info("로그인 대기실: 일꾼 {}명 (= 해시 자리), 줄 {}개, 최대 대기 {}ms", threads, capacity, maxWaitMs);

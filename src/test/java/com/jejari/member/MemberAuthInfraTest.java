@@ -92,8 +92,12 @@ class MemberAuthInfraTest {
 	// ---- 호출 도우미 ----
 
 	MvcResult call(String path, Object body) throws Exception {
-		return mvc.perform(post("/api/v1/auth/" + path).contentType(MediaType.APPLICATION_JSON)
+		MvcResult r = mvc.perform(post("/api/v1/auth/" + path).contentType(MediaType.APPLICATION_JSON)
 				.content(JSON.writeValueAsString(body))).andReturn();
+		// 로그인은 로그인 대기실(LoginGate)이 비동기로 처리한다 → 결과를 한 번 더 받아 온다
+		return r.getRequest().isAsyncStarted()
+				? mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(r)).andReturn()
+				: r;
 	}
 
 	static JsonNode json(MvcResult r) throws Exception {

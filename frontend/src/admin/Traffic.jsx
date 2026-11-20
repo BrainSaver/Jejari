@@ -210,6 +210,8 @@ function Meters({ n }) {
     ['DB 커넥션', n.dbPoolPct, 80, 95, n.dbPending ? `대기 ${fmt(n.dbPending, 0)}` : null],
     ['Tomcat 스레드', n.tomcatPct, 80, 95],
     ['Redis 메모리', n.redisMemPct, 80, 90],
+    // 로그인 대기실 (LoginGate): 몰리면 줄을 서고 다 차면 "N초 뒤 자동 재시도". 다른 API에는 영향 없음
+    ['로그인 대기실', n.loginQueuePct, 50, 90, n.loginQueue ? `${fmt(n.loginQueue, 0)}명` : null],
   ];
   return (
     <section className="panel">
