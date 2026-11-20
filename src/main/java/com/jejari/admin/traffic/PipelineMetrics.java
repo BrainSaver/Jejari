@@ -42,7 +42,7 @@ import io.micrometer.core.instrument.MeterRegistry;
  *       {@link BehaviorPublisher}는 예매 응답을 지키려고 몰릴 때 로그를 버리게 짜여 있다. 버리는 것 자체는 설계지만, <b>얼마나 버렸는지가
  *       보이지 않으면</b> 정작 봇이 몰리는 순간의 재료가 빠진 것을 모른다</li>
  *   <li><b>행동 로그 적재</b>: {@code jejari_behavior_stored_total}(MongoDB 저장) · {@code _skipped_total}(형식 오류로 건너뜀).
- *       건너뛴 것은 오프셋이 커밋되어 <b>밀림(lag)에도 안 잡히는 조용한 유실</b>이다 (dev 모드의 "dev-session"처럼 UUID가 아닌
+ *       건너뛴 것은 오프셋이 커밋되어 <b>밀림(lag)에도 안 잡히는 조용한 유실</b>이다 (예전 dev 모드의 "dev-session"처럼 UUID가 아닌
  *       세션 ID가 오면 전부 건너뛰는 것을 실측에서 확인)</li>
  *   <li><b>Kafka 소비 밀림</b>: {@code jejari_kafka_consumer_lag{group}} = 파티션마다 (끝 오프셋 − 커밋한 오프셋)의 합.
  *       Spring Kafka는 이 값을 내지 않아 15초마다 AdminClient로 잰다. 밀림이 커지면 적재·좌석 정리·알림이 늦는 것</li>
