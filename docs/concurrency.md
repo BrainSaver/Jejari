@@ -554,6 +554,15 @@ VALUES (:uuid, outbox_seq.NEXTVAL, :type, :aggId, :pkey, ORA_HASH(TO_CHAR(:pkey)
 
 ### 11.3 조회와 발행
 
+회차마다 먼저 **보낼 것이 있는 샤드만** 찾고, 그 샤드만 아래 절차로 처리합니다. 보낼 것이 없을 때 16개 샤드에 트랜잭션을 하나씩 여는 낭비를 막습니다 (2026-11-20 실측: 아무도 안 쓸 때 커넥션 빌림 초당 약 76번 → 회차당 1번).
+
+```sql
+SELECT DISTINCT CASE WHEN status IN ('PENDING', 'FAILED') THEN shard_no END FROM outbox_event
+ WHERE CASE WHEN status IN ('PENDING', 'FAILED') THEN shard_no END >= 0   -- ix_outbox_pending만 읽음 (IS NOT NULL이면 전체 읽기)
+```
+
+- 이 확인이 실패하면 16개를 모두 봅니다. 확인과 처리 사이에 새로 들어온 행은 다음 회차(0.2초 뒤)에 잡힙니다.
+
 Oracle은 `SELECT … FOR UPDATE` 커서를 **여는 순간 조건에 맞는 행 전체**를 잠급니다. fetch 건수로 줄지 않으므로, 적체가 수만 건이면 수만 행이 잠깁니다. 그래서 먼저 맨 앞 N개의 rowid만 뽑고 그 행만 잠급니다.
 
 ```sql

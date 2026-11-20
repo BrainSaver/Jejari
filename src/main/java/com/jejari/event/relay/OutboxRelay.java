@@ -66,10 +66,16 @@ public class OutboxRelay {
 		this.json = json;
 	}
 
-	/** 샤드 0~15를 한 바퀴 돕니다. 한 샤드의 문제는 다른 샤드를 막지 않습니다. */
+	/**
+	 * 보낼 것이 있는 샤드만 한 바퀴 돕니다. 한 샤드의 문제는 다른 샤드를 막지 않습니다.
+	 *
+	 * <p>먼저 쿼리 한 번으로 PENDING·FAILED가 있는 샤드를 찾습니다 (concurrency.md §11.3). 전에는 보낼 것이 없어도 0.2초마다
+	 * 16개 샤드에 트랜잭션을 하나씩 열어, 아무도 안 쓸 때도 Oracle 커넥션을 초당 약 76번 빌렸습니다 (전체의 93%, 2026-11-20 실측.
+	 * A-10 흐름도에서 사용자가 없는데 웹 서버 → Oracle 점이 계속 흐르던 원인).
+	 */
 	public int relayAll() {
 		int total = 0;
-		for (int shard = 0; shard <= OutboxRecorder.MAX_SHARD; shard++) {
+		for (int shard : shardsWithWork()) {
 			try {
 				total += relayShard(shard).published();
 			} catch (DataAccessException e) {
@@ -77,6 +83,24 @@ public class OutboxRelay {
 			}
 		}
 		return total;
+	}
+
+	/**
+	 * PENDING·FAILED 행이 있는 샤드 번호. 인덱스 ix_outbox_pending의 첫 식과 같은 식이라 그 인덱스만 읽습니다
+	 * (PUBLISHED 행은 두 식이 모두 NULL이라 인덱스에 없음 → 쌓인 발행 완료 행 수와 상관없이 가볍다).
+	 * 조건을 {@code IS NOT NULL}로 쓰면 Oracle이 테이블 전체를 읽는다 → 범위 조건 {@code >= 0}이라야 INDEX RANGE SCAN (실행 계획 확인).
+	 * 이 확인이 실패하면 예전처럼 16개를 모두 봅니다 (한 번 못 본다고 발행을 건너뛰지 않게).
+	 */
+	List<Integer> shardsWithWork() {
+		try {
+			return jdbc.queryForList("""
+					SELECT DISTINCT CASE WHEN status IN ('PENDING', 'FAILED') THEN shard_no END
+					  FROM outbox_event
+					 WHERE CASE WHEN status IN ('PENDING', 'FAILED') THEN shard_no END >= 0""", Integer.class);
+		} catch (DataAccessException e) {
+			log.warn("outbox 보낼 샤드 확인 실패, 16개를 모두 봅니다: {}", e.toString());
+			return java.util.stream.IntStream.rangeClosed(0, OutboxRecorder.MAX_SHARD).boxed().toList();
+		}
 	}
 
 	/** 한 샤드의 맨 앞 N개를 한 트랜잭션에서 처리하고 커밋합니다 (실패로 멈출 때도 그때까지 한 것은 커밋). */
