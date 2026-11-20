@@ -40,7 +40,7 @@ import tools.jackson.databind.json.JsonMapper;
  * 행동 로그 적재 컨슈머 (RISK-01). Kafka {@code jejari.behavior} → MongoDB {@code behavior_log}.
  *
  * <pre>
- * poll(최대 behavior.batch_size건) → 형식 검사(깨진 메시지는 건너뜀) → ci_hash 붙이기 → interval_ms 계산
+ * poll(최대 behavior.batch_size건) → 형식 검사(깨진 메시지는 건너뜀) → 속도 상한(SinkPacer) → ci_hash 붙이기 → interval_ms 계산
  *   → 회원↔기기 연결(member_device) → insertMany(ordered:false) → CI·기기를 위험 점수 재계산 대상(risk:dirty)으로 표시
  *   → 성공하면 오프셋 커밋
  * </pre>
@@ -67,8 +67,16 @@ public class BehaviorSink {
 	private final java.util.concurrent.atomic.AtomicLong skippedTotal = new java.util.concurrent.atomic.AtomicLong();
 	private final java.util.concurrent.atomic.AtomicLong storedTotal = new java.util.concurrent.atomic.AtomicLong();
 
+	private final SinkPacer pacer;
+
 	public BehaviorSink(MongoTemplate mongo, JdbcTemplate jdbc, JsonMapper json, BehaviorPolicy policy,
 			RiskDirtyQueue riskDirty) {
+		this(mongo, jdbc, json, policy, riskDirty, new SinkPacer(0));
+	}
+
+	public BehaviorSink(MongoTemplate mongo, JdbcTemplate jdbc, JsonMapper json, BehaviorPolicy policy,
+			RiskDirtyQueue riskDirty, SinkPacer pacer) {
+		this.pacer = pacer;
 		this.mongo = mongo;
 		this.jdbc = jdbc;
 		this.json = json;
@@ -101,6 +109,12 @@ public class BehaviorSink {
 		}
 		if (parsed.isEmpty()) {
 			return;
+		}
+		try {
+			pacer.acquire(parsed.size()); // 밀린 것을 따라잡을 때 CPU를 다 쓰지 않게 (SinkPacer)
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("행동 로그 적재 대기 중 중단 (이 묶음은 다시 처리)", e);
 		}
 		ensureIndexes();
 		Map<Long, String> ci = ciHashes(parsed);
