@@ -177,6 +177,9 @@ class BookingFlowE2EInfraTest {
 			req.header("Authorization", "Bearer " + access);
 		}
 		MvcResult r = mvc.perform(req).andReturn();
+		if (r.getRequest().isAsyncStarted()) { // 로그인은 로그인 대기실(LoginGate)이 비동기로 처리한다
+			r = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(r)).andReturn();
+		}
 		assertThat(r.getResponse().getStatus())
 				.as("%s %s → %s", r.getRequest().getMethod(), r.getRequest().getRequestURI(),
 						r.getResponse().getContentAsString())
