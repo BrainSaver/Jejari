@@ -5,7 +5,7 @@
     python tools/ml/train_next.py                  # → data/ml/model-next-local/ (30분~1시간, CPU 4코어 기준)
     python tools/ml/train_next.py --out data/ml/model-next-dg --quick   # GRU 없이 1분 (흐름 확인용)
 
-하는 일 (docs/강동균/모델-비교-김성원-20261119.md "단계별 속도 실험")
+하는 일 (docs/강동균/features/모델-비교-김성원-20261119.md "단계별 속도 실험")
   1. 생성 데이터 시드 7·8·9 (각 6,000명) — 사람 고르기 하한을 켠 생성기 (ML_PICK_FLOOR=1)
   2. 특징 — 단계별 속도 특징 포함 (ML_STAGE=1)
   3. 학습 — 부스팅 + Isolation Forest + GRU 5개 (--quick이면 GRU 없이)

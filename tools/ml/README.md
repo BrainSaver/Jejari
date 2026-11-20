@@ -142,7 +142,7 @@ python3 tools/ml/compare_dl.py data/ml/contest-<태그>      # → data/ml/conte
 - 김성원 모델은 main에 없다. 실행할 때만 `origin/SeongWon`에서 꺼내 임시 폴더에서 돌린다 (블라인드 공격자가 탐지 방법을 읽지 않게). 다른 위치면 `--dl-dir`
 - 김성원 모델에 넣기 전에 화면 자동 조회(`meta.auto`)를 뺀다. 그 모델의 `realdata.py`가 빼지 않아 실제 사람을 봇으로 보기 때문
 - 모델을 만든 사람의 봇은 그 모델의 탐지율에서 뺀다 (tools/ml → botc·botx, dl-defense → bota)
-- 배경과 생성 데이터 교차 시험 결과: [`docs/강동균/모델-비교-김성원-20261119.md`](../../docs/강동균/모델-비교-김성원-20261119.md)
+- 배경과 생성 데이터 교차 시험 결과: [`docs/강동균/features/모델-비교-김성원-20261119.md`](../../docs/강동균/features/모델-비교-김성원-20261119.md)
 
 ## 실제 사람 데이터로 맞춘 것 (`human_calibration.json`)
 
@@ -201,7 +201,7 @@ python3 tools/ml/train_type.py data/ml/model data/ml/g7/features.csv data/ml/g8/
 | `ML_STAGE=1` | `features.py`에 단계별 속도 특징 7개(`STAGE`)를 더한다 | 대회 전 모델은 이 특징 없이 학습했다 |
 | `ML_PICK_FLOOR=1` | `generate.py`의 사람이 좌석표를 보고 고르기까지 최소 1초 (`PICK_FLOOR_S`·`PICK_MED_S`, [가정]) | 꺼 두면 g7~g9가 예전과 같은 파일로 나온다 |
 
-- 두 스위치를 같이 켜야 효과가 있다 (생성기 사람이 봇보다 빠르면 단계 특징이 배울 게 없다). 결과·재현 명령: [`docs/강동균/모델-비교-김성원-20261119.md`](../../docs/강동균/모델-비교-김성원-20261119.md) "단계별 속도 실험"
+- 두 스위치를 같이 켜야 효과가 있다 (생성기 사람이 봇보다 빠르면 단계 특징이 배울 게 없다). 결과·재현 명령: [`docs/강동균/features/모델-비교-김성원-20261119.md`](../../docs/강동균/features/모델-비교-김성원-20261119.md) "단계별 속도 실험"
 - `score.py`는 모델에 저장된 특징 이름으로 열을 읽는다. 단계 특징으로 학습한 모델이면 `features.py`도 `ML_STAGE=1`로 돌려야 한다 (없으면 알려 주고 멈춘다)
 
 ## 아직 없는 것

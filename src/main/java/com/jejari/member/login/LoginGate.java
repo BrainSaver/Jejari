@@ -31,7 +31,7 @@ import io.micrometer.core.instrument.MeterRegistry;
  * <p>왜: 비밀번호 확인(Argon2id)은 일부러 느리고 동시에 {@code auth.max_concurrent_hash}개(서버 4개)만 계산한다. 예전에는 자리를
  * 못 받은 로그인이 <b>Tomcat 요청 스레드를 붙잡은 채</b> 최대 3초 기다려서, 200명이 한꺼번에 로그인하면 스레드 200개가 다 차고
  * 로그인과 상관없는 대기열 폴링·좌석 조회까지 멈췄다 (해시 4개로 로컬 실측: 동시 200명에서 초당 10건, 5xx 24%,
- * docs/강동균/용량-시험-안내.md). 지금은
+ * docs/강동균/features/용량-시험-안내.md). 지금은
  * <ul>
  *   <li>일꾼 수 = 해시 자리 수. 일꾼이 해시 자리를 기다릴 일이 없고, 로그인이 아무리 몰려도 CPU를 해시 N개 이상 쓰지 않는다</li>
  *   <li>요청 스레드는 줄에 넣자마자 풀려나 다른 API를 처리한다 (컨트롤러가 CompletableFuture를 돌려줌 — 서블릿 비동기)</li>

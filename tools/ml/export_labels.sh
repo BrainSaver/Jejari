@@ -6,7 +6,7 @@
 # 정답 = 케이스 판정(suspicious_case.verdict)이 붙은 케이스에 묶인 계정(case_session.member_id).
 #   RESELLER · MACRO · CANCEL_ABUSE → 봇,  NORMAL → 사람.  한 계정에 둘 다 있으면 봇.
 #   audit = true: 무작위 점검 표본(A-09 "점검 표본 뽑기")으로 연 케이스의 판정. 규칙·모델이 고른 케이스가 아니라
-#   치우침이 없는 정답이다 (자기 확신 고리 막기, docs/강동균/모델-비교-김성원-20261119.md "사용자가 많아질수록")
+#   치우침이 없는 정답이다 (자기 확신 고리 막기, docs/강동균/features/모델-비교-김성원-20261119.md "사용자가 많아질수록")
 # 개인정보는 없다 (회원 번호·판정만).
 set -euo pipefail
 export MSYS_NO_PATHCONV=1

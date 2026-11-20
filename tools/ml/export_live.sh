@@ -28,7 +28,7 @@ else
   fi
 fi
 # 운영 모드는 부하 시험 계정(@loadtest.example.com, loadtest/lib/auth.js)을 뺀다. 서버에서 용량 시험을 돌리면 그 계정의 행동이
-# "실제 사람"으로 섞여 사람 기준(recalibrate.py)과 재학습이 오염된다 (docs/강동균/용량-시험-안내.md)
+# "실제 사람"으로 섞여 사람 기준(recalibrate.py)과 재학습이 오염된다 (docs/강동균/features/용량-시험-안내.md)
 if [[ -n "$RECENT" ]]; then MEMBER_WHERE="m.email NOT LIKE '%@loadtest.example.com'"; else MEMBER_WHERE="m.email LIKE 'lt${TAG}.%'"; fi
 mkdir -p "$OUT"
 
