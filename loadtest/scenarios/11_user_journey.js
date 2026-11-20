@@ -117,8 +117,12 @@ export default function (data) {
     journeyOk.add(false);
   };
 
-  // 1) 로그인
-  const l = login(id.email, id.password, { ip, tag: 'login' });
+  // 1) 로그인. 실제 로그인 화면처럼 429 + Retry-After(로그인 대기실이 가득 참)면 그 초만큼 기다렸다 다시 (최대 10번)
+  let l = login(id.email, id.password, { ip, tag: 'login' });
+  for (let k = 0; k < 10 && l.status === 429 && Number(l.headers['Retry-After']) > 0; k++) {
+    sleep(Number(l.headers['Retry-After']) * (0.8 + Math.random() * 0.4));
+    l = login(id.email, id.password, { ip, tag: 'login' });
+  }
   if (!check(l, { '로그인 200': (r) => r.status === 200 })) return stop('login');
   const token = (safeJson(l) || {}).accessToken;
 
