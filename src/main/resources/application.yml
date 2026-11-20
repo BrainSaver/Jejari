@@ -9,6 +9,12 @@ spring:
     # 기본 인메모리 사용자(기동 로그에 비밀번호 출력)를 만들지 않습니다. 인증은 JWT로 직접 구성합니다
     exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
 
+  # 종료 단계마다 기다리는 최대 시간 (기본 30초 → 10초). Kafka가 멈춘 채 종료하면 Kafka 소비자 단계가 30초를 다 써서
+  # 종료가 47초 걸렸다 (2026-11-20 실측) → 서버의 강제 종료(TimeoutStopSec 40초)에 걸려 행동 로그를 디스크에 적기 전에 죽는다.
+  # 요청은 길어야 몇 초(Redis·Mongo 2초, DB 연결 5초 제한)라 10초면 마무리된다. 계산은 BehaviorPublisher.destroy 주석
+  lifecycle:
+    timeout-per-shutdown-phase: 10s
+
   # ── 정기 작업(@Scheduled) 스레드 ──
   # 기본값은 1개라 모든 정기 작업이 한 스레드를 나눠 씁니다. 대기열 입장 처리(1초 주기)가 1초를 넘기자
   # 좌석 선점 만료·Outbox 발행·결제 재확인이 그만큼 늦게 시작될 수 있었습니다 (공용 서버 2026-11-18 실측).

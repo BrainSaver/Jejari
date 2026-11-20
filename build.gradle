@@ -70,6 +70,8 @@ tasks.withType(Test).configureEach {
 	systemProperty 'jejari.refund.retry-enabled', 'false'
 	// 재판매 집계 배치(CNL-04)도 끈다. 테스트가 운행을 잠깐 DEPARTED로 바꿀 때 다른 취소를 Y로 바꾸지 않게 (run()을 직접 부름)
 	systemProperty 'jejari.resale.batch-enabled', 'false'
+	// 행동 로그 디스크 버퍼를 빌드 폴더에 (사용자 홈 ~/.jejari에 테스트 로그가 남지 않게)
+	systemProperty 'jejari.behavior.spill-dir', layout.buildDirectory.dir('behavior-spill').get().asFile.path
 }
 
 tasks.register('infraTest', Test) {

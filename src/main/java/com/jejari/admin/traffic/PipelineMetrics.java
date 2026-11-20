@@ -95,6 +95,13 @@ public class PipelineMetrics implements DisposableBean {
 				.description("행동 로그: Kafka 전송 실패 건수 (다시 보내기까지 실패한 것)").register(meters);
 		FunctionCounter.builder("jejari.behavior.retried", this, m -> m.pub(BehaviorPublisher::retriedCount))
 				.description("행동 로그: 전송 실패 뒤 다시 보낸 횟수").register(meters);
+		// 디스크 버퍼 (유실 아님: Kafka가 받을 때 다시 보냄). 적은 것(spilled)과 다시 넣은 것(replayed)이 벌어진 채로 있으면 아직 밀린 것
+		FunctionCounter.builder("jejari.behavior.spilled", this, m -> m.pub(BehaviorPublisher::spilledCount))
+				.description("행동 로그: Kafka로 못 보내 디스크 버퍼에 적은 건수").register(meters);
+		FunctionCounter.builder("jejari.behavior.replayed", this, m -> m.pub(BehaviorPublisher::replayedCount))
+				.description("행동 로그: 디스크 버퍼에서 다시 보낸 건수").register(meters);
+		Gauge.builder("jejari.behavior.spill.bytes", this, m -> m.pub(BehaviorPublisher::spillPendingBytes))
+				.description("행동 로그 디스크 버퍼에 남은 바이트").baseUnit("bytes").register(meters);
 		// 적재 쪽 (Kafka → MongoDB). 받음(sent)과 적재(stored)가 벌어지면 어딘가에서 새고 있다
 		FunctionCounter.builder("jejari.behavior.stored", this, m -> m.sinkCount(BehaviorSink::storedCount))
 				.description("행동 로그: MongoDB에 저장된 건수").register(meters);
