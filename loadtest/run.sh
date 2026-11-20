@@ -18,11 +18,12 @@ declare -A MAP=(
   [10]=10_auth_oracle [auth]=10_auth_oracle
   [11]=11_user_journey [journey]=11_user_journey
   [12]=12_bot_detection [botdetect]=12_bot_detection
+  [13]=13_capacity [capacity]=13_capacity
 )
 
 key="${1:-}"
 if [[ -z "$key" || -z "${MAP[$key]:-}" ]]; then
-  echo "사용법: $0 <1-12|open|race|payment|idem|waitlist|bypass|bot|entry|penalty|auth|journey|botdetect> [k6 인자...]"
+  echo "사용법: $0 <1-13|open|race|payment|idem|waitlist|bypass|bot|entry|penalty|auth|journey|botdetect|capacity> [k6 인자...]"
   exit 1
 fi
 shift

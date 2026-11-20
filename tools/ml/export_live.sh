@@ -27,7 +27,9 @@ else
     echo "사용법: $0 <실행 태그> <출력 폴더>   또는   $0 --recent <일수> <출력 폴더>"; exit 1
   fi
 fi
-if [[ -n "$RECENT" ]]; then MEMBER_WHERE="1 = 1"; else MEMBER_WHERE="m.email LIKE 'lt${TAG}.%'"; fi
+# 운영 모드는 부하 시험 계정(@loadtest.example.com, loadtest/lib/auth.js)을 뺀다. 서버에서 용량 시험을 돌리면 그 계정의 행동이
+# "실제 사람"으로 섞여 사람 기준(recalibrate.py)과 재학습이 오염된다 (docs/강동균/용량-시험-안내.md)
+if [[ -n "$RECENT" ]]; then MEMBER_WHERE="m.email NOT LIKE '%@loadtest.example.com'"; else MEMBER_WHERE="m.email LIKE 'lt${TAG}.%'"; fi
 mkdir -p "$OUT"
 
 sql() {
@@ -77,6 +79,26 @@ db.behavior_log.find(${EVENT_FILTER}, { _id: 0, expire_at: 0, user_agent: 0 })
   .sort({ member_id: 1, ts: 1 })
   .forEach(d => { d.ts = d.ts.toISOString(); print(EJSON.stringify(d, null, 0, { relaxed: true })); })" \
   | tr -d '\r' | grep '^{' > "$OUT/events.jsonl"
+
+# 운영 모드는 기간으로만 꺼내므로, 위에서 고른 회원(부하 시험 계정 제외)의 이벤트만 남긴다
+if [[ -n "$RECENT" ]]; then
+  python3 -I - "$OUT" <<'PY'
+import json, os, sys
+out = sys.argv[1]
+keep = {json.loads(l)["member_id"] for l in open(os.path.join(out, "members.jsonl"), encoding="utf-8") if l.strip()}
+src = os.path.join(out, "events.jsonl")
+kept = dropped = 0
+with open(src, encoding="utf-8") as f, open(src + ".tmp", "w", encoding="utf-8") as w:
+    for line in f:
+        if json.loads(line).get("member_id") in keep:
+            w.write(line); kept += 1
+        else:
+            dropped += 1
+os.replace(src + ".tmp", src)
+if dropped:
+    print(f"부하 시험 계정 등 회원 목록 밖 이벤트 {dropped}건 뺌 (남김 {kept})")
+PY
+fi
 
 # ── 운행의 실제 판매 오픈 시각 (features.py가 "오픈 뒤 첫 선점" 기준으로 쓴다) ──────
 runs=$(python3 -I -c "import json,sys; print(','.join(sorted({str(json.loads(l)['run_id']) for l in open(sys.argv[1]) if json.loads(l).get('run_id') is not None})))" "$OUT/events.jsonl")
