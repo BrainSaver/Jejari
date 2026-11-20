@@ -59,7 +59,15 @@ class DeadLettersTest {
 		when(kafka.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.failedFuture(new RuntimeException("kafka down")));
 		var rec = new ConsumerRecord<>("jejari.behavior", 0, 1L, "k", "v");
 		assertThatThrownBy(() -> dl.park("behavior-sink", rec, DeadLetters.MALFORMED, null)).isInstanceOf(IllegalStateException.class);
-		assertThat(meters.find("jejari.dead.letter").counter()).isNull();   // 옮기지 못했으면 세지 않음
+		// 옮기지 못했으면 세지 않음 (미리 만든 0 그대로)
+		assertThat(meters.counter("jejari.dead.letter", "group", "behavior-sink", "reason", "malformed").count()).isZero();
+	}
+
+	@Test
+	void 지표를_0으로_미리_만들어_첫_1건도_경보에_잡힌다() {
+		// Prometheus increase()는 1에서 시작한 시계열의 첫 1건을 못 본다 → 앱이 뜰 때 0으로
+		assertThat(meters.find("jejari.dead.letter").counters()).hasSize(7);
+		assertThat(meters.counter("jejari.dead.letter", "group", "notification", "reason", "retries_exhausted").count()).isZero();
 	}
 
 	@Test

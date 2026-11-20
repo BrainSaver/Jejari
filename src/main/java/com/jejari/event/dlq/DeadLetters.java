@@ -52,10 +52,26 @@ public class DeadLetters {
 	private final MeterRegistry meters;
 	private final Clock clock;
 
+	/** 보관함을 쓰는 소비 그룹과 이유. 지표를 0으로 미리 만들어 둔다 (아래 생성자) */
+	static final java.util.Map<String, java.util.List<String>> KNOWN = java.util.Map.of(
+			"notification", java.util.List.of(MALFORMED, RETRIES_EXHAUSTED),
+			"seat-release", java.util.List.of(MALFORMED, HANDLER_FAILED),
+			"risk-signal", java.util.List.of(MALFORMED),
+			"behavior-sink", java.util.List.of(MALFORMED),
+			"replay-sink", java.util.List.of(MALFORMED));
+
 	public DeadLetters(KafkaTemplate<String, String> kafka, MeterRegistry meters, Clock clock) {
 		this.kafka = kafka;
 		this.meters = meters;
 		this.clock = clock;
+		// 카운터를 처음 옮길 때 만들면 시계열이 1에서 시작해 Prometheus increase()가 첫 1건을 0으로 본다 → 첫 장애에 경보가
+		// 울리지 않았다 (로컬 경보 시험에서 확인). 앱이 뜰 때 0으로 만들어 두면 0 → 1이 보인다
+		KNOWN.forEach((group, reasons) -> reasons.forEach(reason -> counter(group, reason)));
+	}
+
+	private Counter counter(String group, String reason) {
+		return Counter.builder("jejari.dead.letter").tag("group", group).tag("reason", reason)
+				.description("소비자가 포기·건너뛰어 격리 보관함(DLT)에 옮긴 메시지").register(meters);
 	}
 
 	/** 형식이 깨진 메시지 (다시 해도 안 됨). 소비자의 parse가 던지면 consume이 잡아 {@link #park}로 */
@@ -88,8 +104,7 @@ public class DeadLetters {
 			// 보관함에도 못 넣으면 버리지 않는다: 던져서 오프셋을 커밋하지 않게 (원래 소비자의 재시도로)
 			throw new IllegalStateException("격리 보관함(" + out.topic() + ")에 넣지 못함", e);
 		}
-		Counter.builder("jejari.dead.letter").tag("group", group).tag("reason", reason)
-				.description("소비자가 포기·건너뛰어 격리 보관함(DLT)에 옮긴 메시지").register(meters).increment();
+		counter(group, reason).increment();
 		log.warn("격리 보관: {} {} ({}-{}@{}){}", group, reason, rec.topic(), rec.partition(), rec.offset(),
 				cause == null ? "" : " — " + cause.getClass().getSimpleName());
 	}

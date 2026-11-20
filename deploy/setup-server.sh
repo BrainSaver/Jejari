@@ -40,7 +40,7 @@ else
 fi
 
 # 3) systemd 템플릿 (실제 사용자·홈으로 채움)
-for unit in jejari@.service jejari-autodeploy.service jejari-autodeploy.timer jejari-tago.service jejari-tago.timer jejari-model.service jejari-model.timer jejari-model-retrain.service jejari-model-retrain.timer; do
+for unit in jejari@.service jejari-autodeploy.service jejari-autodeploy.timer jejari-tago.service jejari-tago.timer jejari-model.service jejari-model.timer jejari-model-retrain.service jejari-model-retrain.timer jejari-integrity.service jejari-integrity.timer; do
   sed -e "s#__USER__#${USER}#g" -e "s#__HOME__#${HOME}#g" "deploy/$unit" \
     | sudo tee "/etc/systemd/system/$unit" >/dev/null
 done
@@ -60,6 +60,8 @@ sudo systemctl enable --now jejari-tago.timer >/dev/null
 sudo systemctl enable --now jejari-model.timer >/dev/null
 # 위험 점수 모델 주간 재학습 + 자동 시험 (일요일 새벽, 통과하면 꺼진 후보로 등록 → A-09에서 켬). 지금 한 번: sudo systemctl start jejari-model-retrain
 sudo systemctl enable --now jejari-model-retrain.timer >/dev/null
+# 예매 정합성 점검 매시간 (돈·좌석·이벤트·알림 어긋남 → Discord 경보). 지금 한 번: sudo systemctl start jejari-integrity
+sudo systemctl enable --now jejari-integrity.timer >/dev/null
 
 echo "준비 끝. 주소: https://${DOMAIN}"
 echo "다음: docker compose -f compose.yaml -f deploy/compose.server.yaml up -d  → Oracle healthy 대기 → bash deploy/deploy.sh"

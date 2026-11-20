@@ -122,6 +122,17 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
   | CI 대기가 1시간 넘게 이어짐 | main 새 커밋이 CI를 못 통과 | GitHub Actions 확인 |
   | 실제 KTX 시간표 갱신 실패 | 마지막 갱신 실패 또는 26시간 넘게 안 돎 | `journalctl -u jejari-tago -n 50`, 서비스 키 확인 → `sudo systemctl start jejari-tago` |
   | 앱 한 대가 응답하지 않음 | `up{job="jejari-app"}`이 2분 넘게 0 | `journalctl -u jejari@8080` |
+  | **예매 정합성: 돈·좌석이 어긋남** (critical, 11-20~) | 매시간 점검에서 결제했는데 표 없음·표 있는데 결제 없음·좌석과 예약 상태 어긋남 1건↑ | `bash loadtest/tools/check_booking.sh all 120` 으로 어느 예약인지 → 결제·예약 담당. 관리자 강제 취소·환불로 바로잡기 |
+  | 예매 정합성: 이벤트·알림·행동 로그가 빠짐 | 같은 점검에서 안 풀린 선점·발행 안 된 이벤트·확정 알림 빠짐·행동 로그 빠짐 1건↑ | 위 명령 → 알림이면 `tools/dlq.sh list` |
+  | 예매 정합성 점검이 돌지 않음 | 3시간 넘게 안 돎 또는 DB를 못 읽음 | `journalctl -u jejari-integrity -n 50` |
+  | 소비자가 처리하지 못한 메시지가 격리 보관함에 들어감 | 최근 10분 격리 보관 1건↑ | `tools/dlq.sh list` → 원인 해결 → `tools/dlq.sh replay <토픽> <그룹>` (concurrency.md §12.1) |
+  | 예약 이벤트 발행이 멈춤 (critical) | outbox 가장 오래 기다린 것 2분↑ 또는 FAILED | Kafka 상태, FAILED면 concurrency.md §11.4 |
+  | Kafka 소비가 밀림 | 예약 흐름 그룹 1000건↑·대량 적재 10만 건↑ 5분 | A-10 데이터 놓침·밀림에서 그룹 확인 → 앱 로그 |
+  | Kafka 소비 밀림을 잴 수 없음 | 앱이 Kafka에 5분 넘게 못 닿음 | `docker compose ps kafka` |
+  | 행동 로그(봇 탐지 재료)를 버림 | 최근 10분 큐 넘침·전송 실패·형식 오류 1건↑ | A-10 → 형식 오류면 `tools/dlq.sh list` |
+  | 행동 로그 적재가 멈춤 | 받는데 MongoDB 저장이 10% 미만 5분 | `docker compose ps mongo` (복구하면 따라잡음) |
+
+  매시간 정합성 점검: `deploy/integrity-check.sh` (매시간 41분 `jejari-integrity.timer`, 읽기만, 몇 초) → Pushgateway `jejari_integrity_*`. 지금 한 번 `sudo systemctl start jejari-integrity`
 
 - **위험 점수 모델 보조 의견** (11-19~, `deploy/model-refresh.sh`, 매시간 17분 `jejari-model.timer`): 최근 1일 행동 로그가 있는 회원을 꺼내(`tools/ml/export_live.sh --recent 1`) 컨테이너(`deploy/ml/Dockerfile`, 서버에 파이썬 라이브러리를 깔지 않음)에서 `data/ml/model`로 점수를 매기고 `tools/ml/load_scores.sh`로 MongoDB `model_score`에 넣는다. **등록된 버전마다** 따로 매긴다 (`MODELS`, 기본 `ens-2026.11-01=data/ml/model ens-2026.11-02=data/ml/model-next`). 어느 버전을 보여 줄지는 관리자 화면 **A-09 모델 관리**에서 비교해 고른다 (처음 한 번, 사용 중인 버전이 없을 때만 첫 번째를 켬). 관리자 케이스 화면(A-06)의 "모델 보조 의견" 카드에 나온다. **보조 의견뿐 — 대기열 순번·이용 제한·케이스 열기에는 쓰지 않는다.** 처음 한 번 필요: DB에 `db/patch/v25.sql`·`v31.sql`(model_run 행), 그리고 `bash deploy/setup-server.sh`(타이머 설치) 또는 아래 수동 설치. 첫 실행은 이미지 빌드(torch CPU) 때문에 몇 분 걸림. 숨기려면 앱 설정 `jejari.model.show=false`
 - **실제 KTX 시간표** (11-18~, `deploy/tago-refresh.sh`, 매일 새벽 4:30 `jejari-tago.timer`): 시드 운행은 "넣은 날 + 3일" 하루뿐이라, 길동현 님 `tools/load-tago-schedule.js`(공공데이터포털 TAGO)로 **오늘 기준 앞뒤 7일** 실제 KTX를 매일 다시 넣음 (MERGE라 중복 없음, run_id 400000~). 서버에 Node 없이 Node 22 컨테이너로. **`.env`의 `DATA_GO_KR_KEY_DEC` 또는 `DATA_GO_KR_KEY`(공공데이터포털 서비스 키) 필요**. 지금 한 번: `sudo systemctl start jejari-tago`, 결과: `journalctl -u jejari-tago -n 20`

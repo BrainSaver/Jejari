@@ -125,3 +125,219 @@ groups:
           summary: '공용 서버 앱 {{ $labels.instance }}이 2분 넘게 응답하지 않습니다'
           description: 11-19부터 앱 1대라 이 경보면 사이트가 멈춘 것. journalctl -u jejari@8080 -n 200 로 원인 확인
         labels: { severity: critical }
+
+      # ── 예매 정합성 (deploy/integrity-check.sh → Pushgateway, 매시간 41분) ─────────────────────
+      # check 이름: paid_no_ticket·ticket_no_payment·sold_mismatch·hold_mismatch·confirmed_missing_seats (돈·좌석 = critical)
+      #            stale_hold·outbox_unpublished·missing_confirm_notification·behavior_hold_missing·behavior_pay_missing (warning)
+
+      - uid: jejari-integrity-money-seat
+        title: '예매 정합성: 돈·좌석이 어긋남'
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: 'max by (check) (jejari_integrity_fail{check=~"paid_no_ticket|ticket_no_payment|sold_mismatch|hold_mismatch|confirmed_missing_seats"}) > 0' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [0] } }]
+        noDataState: OK
+        execErrState: Error
+        for: 0m
+        annotations:
+          summary: '예매 정합성 점검에서 {{ $labels.check }} {{ printf "%.0f" $values.A.Value }}건 — 돈이나 좌석이 예약과 어긋남'
+          description: 'loadtest/tools/check_booking.sh all 120 으로 어느 예약인지 확인. paid_no_ticket(결제했는데 표 없음)이 가장 급함 → 결제·예약 담당에게. 관리자 강제 취소·환불로 바로잡기'
+        labels: { severity: critical }
+
+      - uid: jejari-integrity-pipeline
+        title: '예매 정합성: 이벤트·알림·행동 로그가 빠짐'
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: 'max by (check) (jejari_integrity_fail{check=~"stale_hold|outbox_unpublished|missing_confirm_notification|behavior_hold_missing|behavior_pay_missing"}) > 0' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [0] } }]
+        noDataState: OK
+        execErrState: Error
+        for: 0m
+        annotations:
+          summary: '예매 정합성 점검에서 {{ $labels.check }} {{ printf "%.0f" $values.A.Value }}건'
+          description: 'check_booking.sh all 120 으로 확인. outbox_unpublished면 Kafka·릴레이, missing_confirm_notification이면 tools/dlq.sh list (격리 보관함), behavior_*면 A-10 데이터 놓침·밀림'
+        labels: { severity: warning }
+
+      - uid: jejari-integrity-stale
+        title: '예매 정합성 점검이 돌지 않음'
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            # 마지막 실행이 3시간 넘었거나, 마지막 실행이 Oracle·MongoDB를 못 읽음 (위 식에 값이 나오면 경보)
+            model: { refId: A, instant: true, expr: '(time() - max(jejari_integrity_last_run_timestamp_seconds) > 10800) or (max(jejari_integrity_read_ok) < 1)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [-1] } }]
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: '예매 정합성 점검이 3시간 넘게 돌지 않았거나 DB 값을 읽지 못했습니다'
+          description: 'journalctl -u jejari-integrity -n 50, systemctl list-timers jejari-integrity. 처음 설치 전이면 지표가 없어 조용함 (noData OK)'
+        labels: { severity: warning }
+
+      # ── 데이터 유실·밀림 (앱 지표, admin/traffic/PipelineMetrics · event/dlq/DeadLetters) ───────
+
+      - uid: jejari-dead-letters
+        title: '소비자가 처리하지 못한 메시지가 격리 보관함에 들어감'
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: 'sum by (group, reason) (increase(jejari_dead_letter_total{job="jejari-app"}[10m])) > 0' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [0] } }]
+        noDataState: OK
+        execErrState: Error
+        for: 0m
+        annotations:
+          summary: '{{ $labels.group }}가 메시지 {{ printf "%.0f" $values.A.Value }}건을 격리 보관함에 옮김 ({{ $labels.reason }}, 최근 10분)'
+          description: '서버에서 tools/dlq.sh list 로 원인 확인 → 원인 해결 → tools/dlq.sh replay <토픽> <그룹>. malformed는 코드를 고친 뒤 (docs/concurrency.md §12.1)'
+        labels: { severity: warning }
+
+      - uid: jejari-outbox-stuck
+        title: '예약 이벤트 발행이 멈춤 (outbox)'
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            # 릴레이는 1초 안팎으로 내보내므로 2분이면 멈춘 것
+            model: { refId: A, instant: true, expr: '(max(jejari_outbox_oldest_seconds{job="jejari-app"}) > 120) or (max(jejari_outbox_failed{job="jejari-app"}) > 0)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [-1] } }]
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: '예약 이벤트가 Kafka로 나가지 못하고 있습니다 (가장 오래 기다린 것 2분↑ 또는 FAILED)'
+          description: 'Kafka 상태(docker compose ps kafka) 확인. FAILED면 샤드가 멈춘 것 → 원인 해결 후 outbox_event를 PENDING·retry_count 0으로 (concurrency.md §11.4). 그동안 좌석 정리·알림이 늦음'
+        labels: { severity: critical }
+
+      - uid: jejari-consumer-lag
+        title: 'Kafka 소비가 밀림'
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: '(max by (group) (jejari_kafka_consumer_lag{job="jejari-app",group=~"seat-release|notification|risk-signal|refund"}) > 1000) or (max by (group) (jejari_kafka_consumer_lag{job="jejari-app",group=~"behavior-sink|replay-sink"}) > 100000)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [-1] } }]
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: 'Kafka 소비 그룹 {{ $labels.group }}이 {{ printf "%.0f" $values.A.Value }}건 밀림 (5분 넘게)'
+          description: '예약 흐름 그룹(좌석 정리·알림·위험 신호)은 1000건, 대량 적재(행동 로그·녹화)는 10만 건 기준. A-10 데이터 놓침·밀림에서 어느 그룹인지 보고 앱 로그(journalctl -u jejari@8080)에서 그 소비자의 오류 확인. MongoDB·Oracle 장애면 복구 후 따라잡음'
+        labels: { severity: warning }
+
+      - uid: jejari-lag-unmeasured
+        title: 'Kafka 소비 밀림을 잴 수 없음'
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: 'min(jejari_kafka_lag_measured{job="jejari-app"})' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: lt, params: [1] } }]
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: '앱이 Kafka에 닿지 못해 소비 밀림을 잴 수 없습니다 (5분 넘게)'
+          description: 'docker compose ps kafka. Kafka가 죽었으면 예약 이벤트는 outbox에 쌓이고(유실 없음) 행동 로그는 앱 큐에 쌓였다가 다시 보냄'
+        labels: { severity: warning }
+
+      - uid: jejari-behavior-loss
+        title: '행동 로그(봇 탐지 재료)를 버림'
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, instant: true, expr: '(sum(increase(jejari_behavior_dropped_total{job="jejari-app"}[10m])) > 0) or (sum(increase(jejari_behavior_failed_total{job="jejari-app"}[10m])) > 0) or (sum(increase(jejari_behavior_skipped_total{job="jejari-app"}[10m])) > 0)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [-1] } }]
+        noDataState: OK
+        execErrState: Error
+        for: 0m
+        annotations:
+          summary: '행동 로그를 {{ printf "%.0f" $values.A.Value }}건 버렸습니다 (최근 10분: 큐 넘침·전송 실패·형식 오류)'
+          description: 'A-10 데이터 놓침·밀림에서 어느 쪽인지 확인. 형식 오류면 tools/dlq.sh list (behavior 보관함) → 화면 배포 실수인지. 전송 실패면 Kafka'
+        labels: { severity: warning }
+
+      - uid: jejari-behavior-stalled
+        title: '행동 로그 적재가 멈춤'
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            # 받는 양이 초당 1건 넘는데 저장이 그 10% 미만
+            model: { refId: A, instant: true, expr: '(sum(rate(jejari_behavior_sent_total{job="jejari-app"}[5m])) > 1) and (sum(rate(jejari_behavior_stored_total{job="jejari-app"}[5m])) < 0.1 * sum(rate(jejari_behavior_sent_total{job="jejari-app"}[5m])))' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [-1] } }]
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: '행동 로그가 들어오는데 MongoDB에 저장되지 않습니다 (5분 넘게)'
+          description: 'docker compose ps mongo. MongoDB가 멈추면 적재 컨슈머가 5초마다 다시 시도하므로 복구하면 따라잡음 (유실 없음). 그동안 위험 점수가 늦음'
+        labels: { severity: warning }
