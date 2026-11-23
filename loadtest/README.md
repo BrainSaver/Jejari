@@ -148,6 +148,10 @@ docker compose ps
 | `journey_failed{stage}` | 어디서 멈췄는지 (`login`, `queue_RUN_NOT_ON_SALE`, `hold_LIMIT_PER_RUN`, `pay_…` 등) |
 | `journey_sold_out` | 빈 좌석이 없음 (반복 실행으로 좌석이 팔린 경우) |
 
+**계정 다시 쓰기 (`ACCOUNTS`)**: 기본(`create`)은 실행마다 USERS명을 새로 가입시킵니다. 공용 서버처럼 X-Forwarded-For를 믿지 않는 곳에서는
+모든 가입이 내 IP 하나로 잡혀 시간당 50명이 한도라, `RUN_TAG`를 고정하고 `ACCOUNTS=prepare`로 계정만 만든 뒤(이어서 만들기 가능)
+`ACCOUNTS=existing`으로 잽니다. 공용 서버 측정은 `tools/server_perf.sh`와 [체크리스트](../docs/강동균/features/공용서버-성능측정-체크리스트.md)를 쓰세요.
+
 **준비와 실행**은 시나리오 10과 같습니다 (실제 앱을 신뢰 프록시 옵션으로). 운행은 시드의 판매 중 운행 9001(서울 → 부산)이 기본입니다.
 
 ```bash

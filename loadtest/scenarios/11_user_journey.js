@@ -16,6 +16,13 @@
 //        ./gradlew bootRun --args="--jejari.auth.trusted-proxies=127.0.0.1,0:0:0:0:0:0:0:1"
 //   4) ./run.sh 11   (또는 ./run.sh journey -e USERS=100 -e SPREAD_SEC=30)
 //
+// 계정 (ACCOUNTS)
+//   create   (기본) 실행마다 USERS명을 새로 가입시킨다. 로컬처럼 X-Forwarded-For를 믿는 앱에서
+//   prepare  RUN_TAG를 고정해 계정만 만들고 끝낸다. 이미 로그인되는 계정은 건너뛰어 여러 번 나눠 돌려도 된다.
+//            공용 서버는 모든 요청이 내 IP 하나라 가입 제한(시간당 최대 100회, 본인인증·가입 각 1회 = 계정 50개)에 걸린다
+//            → 걸리면 몇 명까지 만들었는지와 할 일을 알려 주고 멈춘다 (loadtest/tools/server_perf.sh accounts)
+//   existing 같은 RUN_TAG로 prepare해 둔 계정을 쓴다. 가입을 하지 않아 측정 직전에 서버 CPU를 쓰지 않는다
+//
 // 끝나면: Oracle에 @loadtest.example.com 회원과 결제된 예약(좌석 SOLD)이 남는다. 반복해서 돌리면 빈 좌석이 줄어든다.
 // 깨끗이 다시 하려면 Oracle 볼륨을 초기화한다 (loadtest/README.md 시나리오 10의 "끝난 뒤").
 import { check, sleep } from 'k6';
@@ -37,6 +44,9 @@ const MAX_WAIT_SEC = Number(__ENV.MAX_WAIT_SEC || 120);
 const P95_MS = Number(__ENV.P95_MS || 1000);                         // 로그인 외 단계의 p95 기준
 const LOGIN_P95_MS = Number(__ENV.LOGIN_P95_MS || 2000);              // Argon2id는 일부러 느림
 const SUCCESS_RATE = Number(__ENV.SUCCESS_RATE || 0.95);
+const ACCOUNTS = (__ENV.ACCOUNTS || 'create').toLowerCase();
+if (!['create', 'prepare', 'existing'].includes(ACCOUNTS)) throw new Error(`ACCOUNTS는 create · prepare · existing 중 하나: ${ACCOUNTS}`);
+if (ACCOUNTS !== 'create' && !__ENV.RUN_TAG) throw new Error(`ACCOUNTS=${ACCOUNTS}에는 RUN_TAG를 고정해야 합니다 (같은 태그 = 같은 계정)`);
 
 // identity의 seq 영역 (0~9999). 시나리오 10과 같은 함수를 쓰지만 실행 태그가 달라 겹치지 않는다
 const SEQ_SMOKE = 999;   // authSmokeTest가 쓰는 번호. 사용자 번호는 0부터, 999를 건너뜀
@@ -54,12 +64,12 @@ export const options = {
   scenarios: {
     journey: {
       executor: 'per-vu-iterations',
-      vus: USERS,
+      vus: ACCOUNTS === 'prepare' ? 1 : USERS, // prepare는 setup에서 계정만 만들고 본 흐름은 돌지 않음
       iterations: 1,
       maxDuration: `${SPREAD_SEC + MAX_WAIT_SEC + 120}s`,
     },
   },
-  thresholds: {
+  thresholds: ACCOUNTS === 'prepare' ? {} : {
     journey_success: [`rate>=${SUCCESS_RATE}`],
     'http_req_duration{name:login}': [`p(95)<${LOGIN_P95_MS}`],
     'http_req_duration{name:queue_enter}': [`p(95)<${P95_MS}`],
@@ -71,16 +81,32 @@ export const options = {
 
 export function setup() {
   const tag = (__ENV.RUN_TAG || Math.random().toString(36).slice(2, 6)).toLowerCase();
-  authSmokeTest(tag); // 가입 → 로그인 한 번 (비밀값·Oracle·IP 제한 문제를 한 줄 원인으로)
-
-  // 사용자 계정 만들기 (본인인증 + 가입). 실패하면 이유와 함께 중단
-  for (let i = 0; i < USERS; i++) {
-    const id = identity(tag, seqOf(i));
-    const ip = fakeIp(100 + i);
-    const v = verify(id, { ip, tag: 'setup_verify' });
-    if (!v.token) fail(`계정 ${i + 1}/${USERS} 본인인증`, v.res);
-    const s = signup(v.token, id, { ip, tag: 'setup_signup' });
-    if (s.status !== 201) fail(`계정 ${i + 1}/${USERS} 가입`, s);
+  // 가입 → 로그인 한 번 (비밀값·Oracle·IP 제한 문제를 한 줄 원인으로).
+  // prepare·existing은 태그가 고정이라 같은 점검 계정이 이미 있어(409) 건너뛴다. 그 대신 계정 로그인을 먼저 해 본다
+  if (ACCOUNTS === 'create') {
+    authSmokeTest(tag);
+    // 사용자 계정 만들기 (본인인증 + 가입). 실패하면 이유와 함께 중단
+    for (let i = 0; i < USERS; i++) {
+      const id = identity(tag, seqOf(i));
+      const ip = fakeIp(100 + i);
+      const v = verify(id, { ip, tag: 'setup_verify' });
+      if (!v.token) fail(`계정 ${i + 1}/${USERS} 본인인증`, v.res);
+      const s = signup(v.token, id, { ip, tag: 'setup_signup' });
+      if (s.status !== 201) fail(`계정 ${i + 1}/${USERS} 가입`, s);
+    }
+  } else if (ACCOUNTS === 'prepare') {
+    prepareAccounts(tag);
+    return { tag, prepareOnly: true };
+  } else {
+    // existing: 처음·마지막 계정이 로그인되면 그 사이도 만들어져 있다고 본다 (prepare는 앞에서부터 차례로 만듦)
+    for (const i of [0, USERS - 1]) {
+      const id = identity(tag, seqOf(i));
+      const l = login(id.email, id.password, { ip: fakeIp(50001 + i), tag: 'setup_login' });
+      if (l.status !== 200) {
+        throw new Error(`계정 ${i + 1}/${USERS}(${id.email})로 로그인하지 못했습니다(${l.status}). `
+          + `먼저 같은 RUN_TAG=${tag}, USERS=${USERS}로 ACCOUNTS=prepare를 돌리세요.`);
+      }
+    }
   }
 
   // 대기열이 이 운행을 받는지 한 번 확인 (판매 중이 아니면 모든 VU가 같은 이유로 실패하므로 미리 알려 줌)
@@ -105,7 +131,50 @@ export function setup() {
   return { tag };
 }
 
+// 앞에서부터 차례로: 이미 로그인되면 건너뛰고, 아니면 본인인증 + 가입. 가입 제한(429)에 걸리면 진행 상황과 할 일을 알리고 멈춘다
+function prepareAccounts(tag) {
+  let made = 0;
+  let had = 0;
+  for (let i = 0; i < USERS; i++) {
+    const id = identity(tag, seqOf(i));
+    const ip = fakeIp(100 + i);
+    const l = loginPatiently(id, ip);
+    if (l.status === 200) {
+      had++;
+      continue;
+    }
+    if (l.status === 429) {
+      throw new Error(`로그인 제한(429)이 풀리지 않음: 계정 ${i}/${USERS}개까지 확인. 서버의 auth.login_rate_per_min을 600으로 올렸는지 확인하세요.`);
+    }
+    const v = verify(id, { ip, tag: 'setup_verify' });
+    const s = v.token ? signup(v.token, id, { ip, tag: 'setup_signup' }) : v.res;
+    if (s.status === 201 || s.status === 409) { // 409 = 이미 있음 (로그인이 다른 이유로 실패한 경우)
+      if (s.status === 201) made++;
+      else had++;
+      continue;
+    }
+    if (s.status === 429) {
+      throw new Error(`가입 제한(429)에 걸림: 계정 ${i}/${USERS}개까지 준비됨 (이번에 ${made}개 새로, ${had}개는 이미 있음). `
+        + '공용 서버는 모든 요청이 내 IP 하나라 시간당 계정 50개가 한도입니다. 서버에서 가입 제한 키를 지운 뒤(체크리스트 "계정 준비") '
+        + '같은 명령을 다시 돌리면 이어서 만듭니다.');
+    }
+    fail(`계정 ${i + 1}/${USERS} ${v.token ? '가입' : '본인인증'}`, s);
+  }
+  console.log(`계정 준비 끝: ${USERS}개 (새로 ${made}개, 이미 있던 것 ${had}개). RUN_TAG=${tag}`);
+}
+
+// 로그인 제한·로그인 대기실(429)이면 Retry-After만큼(없으면 5초) 기다렸다 다시. 계정 준비는 서두를 일이 없다
+function loginPatiently(id, ip) {
+  let l = login(id.email, id.password, { ip, tag: 'setup_login' });
+  for (let k = 0; k < 12 && l.status === 429; k++) {
+    sleep(Number(l.headers['Retry-After']) > 0 ? Number(l.headers['Retry-After']) : 5);
+    l = login(id.email, id.password, { ip, tag: 'setup_login' });
+  }
+  return l;
+}
+
 export default function (data) {
+  if (data.prepareOnly) return;
   const i = exec.vu.idInTest - 1;
   const id = identity(data.tag, seqOf(i));
   const ip = fakeIp(60000 + i);
