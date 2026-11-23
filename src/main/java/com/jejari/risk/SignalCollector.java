@@ -59,6 +59,12 @@ public final class SignalCollector {
     private long linkedAccounts;
     private Long accountAgeDays;
     private long mechanicalMouse;
+    private long headlessHolds;
+    private long queueEnters;
+    private long searches;
+    /** 선점한 로그인 세션 → 첫 선점 시각 (화면 녹화 확인용). 상한 있음 */
+    private final Map<String, Instant> holdSessions = new java.util.LinkedHashMap<>();
+    static final int MAX_HOLD_SESSIONS = 200;
 
     private record Hold(Instant ts, long memberId) {
     }
@@ -154,6 +160,36 @@ public final class SignalCollector {
         return this;
     }
 
+    /** 좌석 선점이 있었던 로그인 세션 (첫 선점 시각만 남김). 화면 녹화 확인은 읽는 쪽이 {@link #headlessHolds} */
+    public SignalCollector holdSession(String sessionId, Instant ts) {
+        if (sessionId != null && ts != null && (holdSessions.containsKey(sessionId) || holdSessions.size() < MAX_HOLD_SESSIONS)) {
+            holdSessions.merge(sessionId, ts, (a, b) -> a.isBefore(b) ? a : b);
+        }
+        return this;
+    }
+
+    public Map<String, Instant> holdSessions() {
+        return java.util.Collections.unmodifiableMap(holdSessions);
+    }
+
+    /** 화면 녹화가 0건인 선점 세션 수 */
+    public SignalCollector headlessHolds(long n) {
+        if (n < 0) throw new IllegalArgumentException("화면 없는 선점 세션 수가 음수입니다");
+        headlessHolds = n;
+        return this;
+    }
+
+    /** 사람이 직접 한 열차 조회 (자동 조회 meta.auto 제외) */
+    public SignalCollector search() {
+        searches++;
+        return this;
+    }
+
+    public SignalCollector queueEnter() {
+        queueEnters++;
+        return this;
+    }
+
     /** 이 대상에 연결된 계정 수 (자기 포함) */
     public SignalCollector linkedAccounts(long count) {
         if (count < 0) throw new IllegalArgumentException("연결 계정 수가 음수입니다");
@@ -176,6 +212,7 @@ public final class SignalCollector {
                 maxSameSeatFailures,
                 purchaseCount, totalSeats, maxSingle,
                 userCancels, fastCancels, lastMinuteCancels, avgCancel,
-                linkedAccounts, maxSync, accountAgeDays, seatRetryFailures, mechanicalMouse);
+                linkedAccounts, maxSync, accountAgeDays, seatRetryFailures, mechanicalMouse,
+                headlessHolds, queueEnters > 0 && searches == 0);
     }
 }

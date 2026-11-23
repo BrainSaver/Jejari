@@ -186,7 +186,7 @@ public class RiskInputReader {
 		int n = 0;
 		try (MongoCursor<Document> cur = coll.find(filter)
 				.projection(Projections.include("ts", "interval_ms", "event_type", "member_id", "response_status",
-						"meta.seatIds"))
+						"meta.seatIds", "meta.auto", "session_id"))
 				.sort(Sorts.ascending("ts")).limit(MAX_BEHAVIOR_EVENTS).batchSize(5000).iterator()) {
 			while (cur.hasNext()) {
 				apply(c, cur.next());
@@ -242,6 +242,51 @@ public class RiskInputReader {
 		}
 	}
 
+	/** 선점 뒤 이만큼 지나야 "녹화 없음"으로 본다. 녹화기는 5초(replay.batch_sec)마다 보내고 Kafka 적재가 조금 늦을 수 있다 */
+	static final java.time.Duration HEADLESS_GRACE = java.time.Duration.ofSeconds(15);
+	/** 녹화 장애 판단: 선점 시각 앞뒤 이 범위에 다른 세션의 녹화가 하나라도 있어야 센다 */
+	static final java.time.Duration HEALTH_WINDOW = java.time.Duration.ofMinutes(10);
+
+	/**
+	 * 화면 없이 선점 (HEADLESS_HOLD): {@link SignalCollector#holdSessions}의 세션마다 화면 녹화가 있는지 본다.
+	 * 사람은 화면으로만 좌석을 고르므로 그 로그인 세션에 녹화가 반드시 있다 (녹화기는 회원 화면 어디서나 돈다).
+	 * <ul>
+	 *   <li>선점한 지 {@link #HEADLESS_GRACE}가 안 된 세션은 아직 녹화가 도착하지 않았을 수 있어 세지 않는다</li>
+	 *   <li><b>녹화 장애 보호</b>: 같은 시간대(±{@link #HEALTH_WINDOW})에 <b>다른</b> 세션의 녹화가 하나도 없으면
+	 *       녹화가 꺼졌거나 고장 난 것 → 아무것도 세지 않는다 (Kafka 장애 때 전원 오탐 방지)</li>
+	 * </ul>
+	 */
+	public void headless(SignalCollector c, Instant now) {
+		var holds = c.holdSessions();
+		if (holds.isEmpty()) {
+			return;
+		}
+		Instant cutoff = now.minus(HEADLESS_GRACE);
+		List<String> due = holds.entrySet().stream().filter(e -> e.getValue().isBefore(cutoff)).map(e -> e.getKey())
+				.toList();
+		if (due.isEmpty()) {
+			return;
+		}
+		Instant first = due.stream().map(holds::get).min(Instant::compareTo).orElseThrow();
+		Instant last = due.stream().map(holds::get).max(Instant::compareTo).orElseThrow();
+		Document other = mongo.getCollection("replay_session").find(Filters.and(
+				Filters.nin("_id", new ArrayList<>(holds.keySet())),
+				Filters.gte("ended_at", Date.from(first.minus(HEALTH_WINDOW))),
+				Filters.lte("started_at", Date.from(last.plus(HEALTH_WINDOW)))))
+				.projection(Projections.include("_id")).limit(1).first();
+		if (other == null) {
+			return; // 녹화 장애로 보고 판단하지 않음
+		}
+		long headless = 0;
+		for (String sid : due) {
+			if (mongo.getCollection("replay_event").find(Filters.eq("session_id", sid))
+					.projection(Projections.include("_id")).limit(1).first() == null) {
+				headless++;
+			}
+		}
+		c.headlessHolds(headless);
+	}
+
 	/** 녹화 이벤트 하나 → 궤적 묶음 또는 마우스 클릭 자리. 형식이 이상한 값은 건너뛴다 */
 	static void readMouse(Document e, List<List<int[]>> paths, List<MouseMotion.Click> clicks) {
 		if ("CLICK".equals(e.getString("type"))) {
@@ -271,10 +316,25 @@ public class RiskInputReader {
 		if (interval instanceof Number num) {
 			c.interval(num.longValue());
 		}
-		if (!BehaviorType.SEAT_HOLD.name().equals(d.getString("event_type"))) {
+		String type = d.getString("event_type");
+		if (BehaviorType.VIEW_TRAIN.name().equals(type)) {
+			// 화면이 사람 조작 없이 스스로 부른 조회(meta.auto)는 사람이 직접 찾은 것이 아니다
+			if (!(d.get("meta") instanceof Document md && Boolean.TRUE.equals(md.get("auto")))) {
+				c.search();
+			}
+			return;
+		}
+		if (BehaviorType.QUEUE_ENTER.name().equals(type)) {
+			c.queueEnter();
+			return;
+		}
+		if (!BehaviorType.SEAT_HOLD.name().equals(type)) {
 			return;
 		}
 		Date ts = d.getDate("ts");
+		if (ts != null && d.get("session_id") instanceof String sid) {
+			c.holdSession(sid, ts.toInstant());
+		}
 		Object member = d.get("member_id");
 		if (ts != null && member instanceof Number m) {
 			c.seatHold(ts.toInstant(), m.longValue());

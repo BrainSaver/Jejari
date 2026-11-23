@@ -135,6 +135,22 @@ export function hold(token, passToken, { runId = RUN_ID, from, to, seatIds, idem
   );
 }
 
+/**
+ * 화면 녹화 한 묶음 (ADM-11 녹화기가 보내는 것과 같은 모양). 사람은 화면으로 좌석을 고르므로 그 로그인 세션에 녹화가 있다.
+ * 위험 점수의 HEADLESS_HOLD(선점했는데 녹화 0건 = 브라우저 없이 API만)가 k6 사용자를 봇으로 보지 않게, 선점 전에 부른다.
+ * 클릭은 키보드(pointer k)로 남겨 마우스 궤적 규칙(LINEAR_MOUSE)에는 들어가지 않게 한다. 실패해도 흐름은 그대로.
+ */
+let replaySeq = 0;
+export function recordScreen(token, runId = RUN_ID) {
+  const now = Date.now();
+  replaySeq = Math.max(replaySeq + 2, now * 1000);
+  const screen = 'runs/:id/seats';
+  return http.post(url('/api/v1/replay/events'), JSON.stringify({ events: [
+    { seq: replaySeq, ts: now, type: 'PAGE_VIEW', screen, runId: Number(runId) },
+    { seq: replaySeq + 1, ts: now, type: 'CLICK', screen, x: 500, y: 500, target: 'seat', pointer: 'k', runId: Number(runId) },
+  ] }), { headers: bearer(token), tags: { name: 'replay' } });
+}
+
 /** 결제 시작 → 모의 PG 승인까지 (카드 끝자리 0 거절, 8 결과 모름, 그 외 승인) */
 export function pay(token, reservationId, { cardNumber = '4111111111111111', idempotencyKey = uuid() } = {}) {
   return http.post(url(API.reservationPay(reservationId)), JSON.stringify({ cardNumber }), {

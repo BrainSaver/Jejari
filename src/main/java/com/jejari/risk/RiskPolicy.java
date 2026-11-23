@@ -28,6 +28,8 @@ import java.util.Map;
  * @param newAccountDays       가입 후 이 일수 미만이면 신규 계정
  * @param newAccountPoints     NEW_ACCOUNT 배점
  * @param linearMouse          화면 녹화의 기계적 마우스 이동 수 → LINEAR_MOUSE ({@link MouseMotion})
+ * @param headlessHold         화면 녹화 없이 선점한 세션 수 → HEADLESS_HOLD
+ * @param noSearchEntryPoints  조회 없이 대기열 진입 NO_SEARCH_ENTRY 배점 (LOW)
  * @param halfLifeDays         이전 점수 반감기 (일)
  * @param caseThreshold        최종 점수가 이 이상이면 케이스를 연다 (RISK_THRESHOLD)
  */
@@ -42,7 +44,7 @@ public record RiskPolicy(
         Tier bulkPurchase,
         Tier linkedAccounts,
         long newAccountDays, int newAccountPoints,
-        Tier linearMouse,
+        Tier linearMouse, Tier headlessHold, int noSearchEntryPoints,
         double halfLifeDays, int caseThreshold) {
 
     public RiskPolicy {
@@ -62,6 +64,7 @@ public record RiskPolicy(
         positive(lastMinuteMin, "lastMinuteMin");
         positive(newAccountDays, "newAccountDays");
         points(newAccountPoints, "newAccountPoints");
+        points(noSearchEntryPoints, "noSearchEntryPoints");
         if (!Double.isFinite(halfLifeDays) || halfLifeDays <= 0) {
             throw new IllegalArgumentException("halfLifeDays는 0보다 커야 합니다");
         }
@@ -69,7 +72,8 @@ public record RiskPolicy(
             throw new IllegalArgumentException("caseThreshold는 1~100이어야 합니다");
         }
         for (Tier t : new Tier[] {fastClick, sameSeatRetry, cancelAfterPay, multiAccountSync, cancelRatio,
-                lastMinuteCancel, bulkPurchase, linkedAccounts, linearMouse}) {
+                lastMinuteCancel, bulkPurchase, linkedAccounts, linearMouse,
+                headlessHold}) {
             if (t == null) throw new IllegalArgumentException("배점 단계가 비어 있습니다");
         }
         if (cancelRatio.highThreshold() > 1) {
@@ -95,6 +99,8 @@ public record RiskPolicy(
      * 기본값. 근거: 사람은 화면을 보고 누르므로 200ms 미만 간격이 20번 이상 나오기 어렵고,
      * 매진 좌석을 5번 넘게 다시 누르거나 30분 안에 두 번 이상 사고 무르는 일은 드물다.
      * k6 봇 시나리오(정답 라벨)로 탐지율 90%·오탐률 5%를 측정한 뒤 조정한다.
+     * HEADLESS_HOLD 1 / 3: 사람은 화면으로만 선점하므로 한 번이라도 화면 없이 잡으면 의심 (녹화 장애 보호는 읽는 쪽).
+     * NO_SEARCH_ENTRY 10 (LOW): 정상 경로로도 생겨 낮게.
      * LINEAR_MOUSE 8 / 20: 로컬 실측(2026-11-23) botb 세션마다 17~29, botc·사람 0~1
      */
     public static RiskPolicy defaults() {
@@ -110,6 +116,7 @@ public record RiskPolicy(
                 new Tier(2, 10, 4, 20),
                 7, 5,
                 new Tier(8, 25, 20, 40),
+                new Tier(1, 30, 3, 45), 10,
                 30, 80);
     }
 
@@ -134,6 +141,7 @@ public record RiskPolicy(
                 tier(p, "linked_accounts", d.linkedAccounts),
                 l(p, "new_account_days", d.newAccountDays), i(p, "new_account_points", d.newAccountPoints),
                 tier(p, "linear_mouse", d.linearMouse),
+                tier(p, "headless_hold", d.headlessHold), i(p, "no_search_entry_points", d.noSearchEntryPoints),
                 dbl(p, "half_life_days", d.halfLifeDays), i(p, "case_threshold", d.caseThreshold));
     }
 

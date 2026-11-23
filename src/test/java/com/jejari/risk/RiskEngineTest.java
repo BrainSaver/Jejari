@@ -26,7 +26,8 @@ class RiskEngineTest {
     static final class S {
         SubjectType type = SubjectType.CI;
         Instant from = FROM;
-        long intervals, fast, sameSeat, purchases, seats, maxSingle, cancels, fastCancels, lastMinute, linked, sync, mouse;
+        long intervals, fast, sameSeat, purchases, seats, maxSingle, cancels, fastCancels, lastMinute, linked, sync, mouse, headless;
+        boolean noSearch;
         double mean, sd;
         Long age;
 
@@ -39,12 +40,14 @@ class RiskEngineTest {
         S linked(long n) { linked = n; return this; }
         S sync(long n) { sync = n; return this; }
         S mouse(long n) { mouse = n; return this; }
+        S headless(long n) { headless = n; return this; }
+        S noSearch(boolean b) { noSearch = b; return this; }
         S age(Long d) { age = d; return this; }
         S from(Instant f) { from = f; return this; }
 
         RiskSignals build() {
             return new RiskSignals(type, H, from, intervals, fast, mean, sd, sameSeat, purchases, seats, maxSingle,
-                    cancels, fastCancels, lastMinute, cancels == 0 ? null : 10.0, linked, sync, age, 0, mouse);
+                    cancels, fastCancels, lastMinute, cancels == 0 ? null : 10.0, linked, sync, age, 0, mouse, headless, noSearch);
         }
     }
 
@@ -164,6 +167,25 @@ class RiskEngineTest {
             assertThat(r.reasons()).extracting(Reason::points).containsExactly(10);
             assertThatThrownBy(() -> RiskPolicy.fromMap(java.util.Map.of("risk.rule.linear_mouse.t1", "0")))
                     .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        void HEADLESS_HOLD_화면_없이_한_번만_잡아도_30점_세_번이면_45점_ERD_전까지_점수만() {
+            assertThat(score(s().headless(0)).reasons()).isEmpty();
+            RiskResult one = score(s().headless(1));
+            assertThat(one.reasons()).extracting(Reason::rule, Reason::points).containsExactly(
+                    org.assertj.core.groups.Tuple.tuple(RiskRule.HEADLESS_HOLD, 30));
+            assertThat(one.openCase()).isFalse(); // case_marker CHECK에 값이 생기면 marker로 올린다
+            assertThat(score(s().headless(3)).reasons().get(0).points()).isEqualTo(45);
+        }
+
+        @Test
+        void NO_SEARCH_ENTRY는_낮은_점수만() {
+            Reason r = score(s().noSearch(true)).reasons().get(0);
+            assertThat(r.rule()).isEqualTo(RiskRule.NO_SEARCH_ENTRY);
+            assertThat(r.points()).isEqualTo(10);
+            assertThat(r.severity()).isEqualTo(Severity.LOW);
+            assertThat(score(s().noSearch(true)).openCase()).isFalse();
         }
 
         @Test
@@ -318,6 +340,8 @@ class RiskEngineTest {
             s.sync(rnd.nextInt(6));
             s.age(rnd.nextBoolean() ? null : (long) rnd.nextInt(30));
             s.mouse(rnd.nextInt(40));
+            s.headless(rnd.nextInt(5));
+            s.noSearch(rnd.nextBoolean());
             return s;
         }
 
@@ -347,6 +371,8 @@ class RiskEngineTest {
                         x -> x.linked(x.linked + 1),
                         x -> x.sync(x.sync + 1),
                         x -> x.mouse(x.mouse + 1),
+                        x -> x.headless(x.headless + 1),
+                        x -> x.noSearch(true),
                         x -> x.age(x.age == null ? null : Math.max(0, x.age - 1)))) {
                     S copy = copyOf(base);
                     BigDecimal after = score(worse.apply(copy)).finalScore();
@@ -360,7 +386,7 @@ class RiskEngineTest {
             c.intervals(o.intervals, o.fast, o.mean, o.sd);
             c.sameSeat = o.sameSeat; c.purchases = o.purchases; c.seats = o.seats; c.maxSingle = o.maxSingle;
             c.cancels = o.cancels; c.fastCancels = o.fastCancels; c.lastMinute = o.lastMinute;
-            c.linked = o.linked; c.sync = o.sync; c.age = o.age; c.mouse = o.mouse;
+            c.linked = o.linked; c.sync = o.sync; c.age = o.age; c.mouse = o.mouse; c.headless = o.headless; c.noSearch = o.noSearch;
             return c;
         }
     }

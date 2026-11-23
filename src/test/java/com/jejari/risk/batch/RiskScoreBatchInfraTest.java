@@ -396,6 +396,43 @@ class RiskScoreBatchInfraTest {
 				.isZero();
 	}
 
+	/**
+	 * HEADLESS_HOLD (2026-11-23): 좌석을 선점한 로그인 세션에 화면 녹화가 0건 = 브라우저 없이 API만.
+	 * 같은 시간대 다른 세션은 녹화 중이어야 센다. 녹화가 있는 사람은 0점. 조회 없이 대기열 진입(NO_SEARCH_ENTRY)도 같이 본다.
+	 */
+	@Test
+	void 화면_녹화_없이_선점한_세션은_HEADLESS_HOLD_조회_없이_진입은_NO_SEARCH_ENTRY() {
+		Instant t = Instant.now().minusSeconds(120);
+		String botCi = hash();
+		long bot = member(botCi, Instant.now().minus(30, ChronoUnit.DAYS));
+		String botSid = UUID.randomUUID().toString();
+		mongo.getCollection("behavior_log").insertMany(List.of(
+				event("QUEUE_ENTER", bot, botCi, null, t, 5000, 200, null).append("session_id", botSid),
+				event("SEAT_HOLD", bot, botCi, null, t.plusSeconds(5), 5000, 201, List.of(1L)).append("session_id", botSid)));
+
+		String humanCi = hash();
+		long human = member(humanCi, Instant.now().minus(30, ChronoUnit.DAYS));
+		String humanSid = authSession(human);
+		mongo.getCollection("behavior_log").insertMany(List.of(
+				event("VIEW_TRAIN", human, humanCi, null, t.minusSeconds(30), null, 200, null).append("session_id", humanSid),
+				event("QUEUE_ENTER", human, humanCi, null, t, 5000, 200, null).append("session_id", humanSid),
+				event("SEAT_HOLD", human, humanCi, null, t.plusSeconds(5), 5000, 201, List.of(2L)).append("session_id", humanSid)));
+		replay(humanSid, human, humanCi, "m", 1); // 사람의 화면 녹화 (클릭 1번이라 마우스 규칙엔 안 걸림)
+
+		dirty.mark(new RiskSubject(SubjectType.CI, botCi));
+		dirty.mark(new RiskSubject(SubjectType.CI, humanCi));
+		batch.run();
+
+		String reasons = jdbc.queryForObject("SELECT reasons FROM risk_score WHERE subject_hash = ?", String.class, botCi);
+		assertThat(reasons).contains("HEADLESS_HOLD").contains("NO_SEARCH_ENTRY");
+		assertThat(finalScore(SubjectType.CI, botCi)).isEqualByComparingTo("40.00"); // 30 + 10
+		// 점수만: ERD case_marker CHECK에 값이 생기기 전까지 케이스는 열지 않는다
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM suspicious_case WHERE subject_hash = ?", Integer.class, botCi))
+				.isZero();
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_score WHERE subject_hash = ?", Integer.class, humanCi))
+				.isZero(); // 녹화도 있고 조회도 했다 → 0점
+	}
+
 	/** 녹화 세션 하나: 클릭 n번, 궤적 점은 클릭 자리에만 (중간 점 없음) */
 	void replay(String sid, long memberId, String ci, String pointer, int n) {
 		Date now = new Date();
