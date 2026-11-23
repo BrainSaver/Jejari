@@ -124,6 +124,11 @@ function fakeIp(key) {
   return `10.${b[0]}.${b[1]}.${1 + (b[2] % 250)}`;
 }
 
+function cardFor(key) {
+  const b = crypto.createHash('sha256').update(`${TAG}.card.${key}`).digest();
+  return '4' + [...b].slice(0, 14).map((x) => x % 10).join('') + '1';
+}
+
 function makeCtx(p, n) {
   const ownDev = crypto.randomBytes(12).toString('hex');
   const shared = crypto.createHash('sha256').update(`${TAG}.${p.kind}.dev`).digest('hex').slice(0, 24);
@@ -131,7 +136,8 @@ function makeCtx(p, n) {
     p, n, ua: p.ua, token: null, id: identity(p.kind, n, p.sameCi), seats: 0, errors: [],
     // IP: 봇은 프로필마다 하나(프록시 하나를 쓰는 운영자), 합성 사람은 사람마다 하나. 앱이 신뢰 프록시 모드일 때만 의미 있음
     ip: fakeIp(p.kind === 'human' ? `${p.kind}.${n}` : p.kind),
-    card: p.card === 'shared' ? '4111222233334441' : `41112222${String(1000 + n * 97).slice(-4)}${String(n % 9)}1`.slice(0, 16),
+    // 카드: 계정마다 다르게 (프로필·번호로 만든 15자리 + 끝자리 1 = 모의 PG 승인). botsharedcard만 프로필 안에서 하나를 같이 씀
+    card: cardFor(p.card === 'shared' ? `${p.kind}.shared` : `${p.kind}.${n}`),
     deviceFor() {
       if (p.device === 'none') return null;
       if (p.device === 'shared') return shared;
