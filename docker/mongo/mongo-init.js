@@ -25,7 +25,7 @@ function ensure(name, indexes) {
 // 행동 로그 (ts + 180일). 앱 → Kafka jejari.behavior → insertMany
 ensure('behavior_log', [
   [{ ci_hash: 1, ts: -1 }, { name: 'ix_ci_ts' }],
-  [{ run_id: 1, ts: 1 }, { name: 'ix_run_ts' }],
+  // { run_id: 1, ts: 1 } (ix_run_ts)는 ERD v33에서 뺌: 쓰는 곳이 운행별 정합성 점검뿐이고 그것도 _id 범위로 3ms, 빼면 쓰기 +12~18%
   [{ member_id: 1, ts: 1 }, { name: 'ix_member_ts' }], // 타임라인 ADM-05
   [{ device_hash: 1, ts: 1 }, { name: 'ix_device_ts' }], // 기기 단위 위험 점수 집계 (ERD v19)
   // Kafka 재전달 중복 방지 (ERD v16). event_id가 있는 문서만 유니크 — 없는 옛 문서끼리는 충돌하지 않게

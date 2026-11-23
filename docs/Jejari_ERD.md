@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v32 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
+> 스키마 v33 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-23
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -39,7 +39,7 @@
 | 테이블 | 61개 (운영 57 + 확장 예정 4) |
 | 저장소 | Oracle 44 · MongoDB 12 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 531개 |
+| 컬럼 | 534개 |
 | 관계 (FK) | 87개 (Oracle 제약 60 · 논리 참조 22) |
 
 | 영역 | 저장소 | 테이블 |
@@ -576,6 +576,9 @@ Oracle
 | auth.verify_token_ttl_sec | 600 | 1 | NUMBER | 본인인증 1회용 토큰 유효 시간(초) (verify:{tokenHash}) |
 | seatmap.cache_ms | 1000 | 1 | NUMBER | 좌석 배치도 캐시(seatmap:{runId}) 유지 시간(ms). 길수록 DB·Redis 부하는 줄고 화면은 늦게 바뀜 |
 | sale.open_interval_sec | 10 | 1 | NUMBER | 판매 오픈 스케줄러가 train_run.status를 훑는 주기(초). 짧으면 오픈이 정확해지고 길면 DB 부하가 줄어듦 |
+| guest.enabled | N | 1 | STRING | Y면 비회원(게스트) 예매 사용. 기능이 들어가기 전에는 N |
+| guest.retain_days_after_run | 30 | 1 | NUMBER | 게스트 개인정보 보관: 그 게스트의 마지막 운행일 + 이 일수 (조회·환불 문의 기간) |
+| guest.lookup_rate_per_hour | 10 | 1 | NUMBER | IP당 시간당 비회원 예약 조회 시도 한도 (rate:guest_lookup) |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -722,10 +725,12 @@ Oracle
 | `phone_hash` | VARCHAR2(64) |  | 생성 | 휴대폰 번호 HMAC | 암호문끼리는 비교 불가 → 중복 가입 탐지 |
 | `enc_key_id` | VARCHAR2(20) |  | 시스템 | phone_enc 암호화 키 버전 | 키 교체 시 어느 키로 복호화할지 판별 |
 | `status` | VARCHAR2(10) | NN | 시스템 | ACTIVE / RESTRICTED / BANNED | 관리자 조치 반영 |
+| `member_type` | VARCHAR2(10) |  | 시스템 | 회원 종류 (NULL = 일반 회원, GUEST = 비회원 예매) | 이용 제한·정지는 status가, 게스트 여부는 이 칸이. 게스트도 같은 CI 규칙(매수 제한·위험 점수)을 받는다 |
+| `guest_expires_at` | TIMESTAMP |  | 시스템 | 게스트 개인정보 삭제 시각 (마지막 운행일 + guest.retain_days_after_run) | 게스트가 표를 더 사면 늘린다. 진행 중 예약이 있으면 지우지 않는다. 일반 회원은 NULL |
 | `created_at` | TIMESTAMP |  | 생성 | 가입 시각 | 신규 계정 판별 (기본 신뢰도 낮음) |
 | `withdrawn_at` | TIMESTAMP |  | 시스템 | 탈퇴 시각 | 소프트 삭제. 위험 이력은 보존 기간 후 파기 |
 
-> **제약·비고** ci_hash는 UNIQUE를 걸지 않음. 다계정 어뷰저를 재현하려면 같은 CI가 여러 계정에 있어야 함. · ci_hash는 변경 불가 (본인인증 결과가 바뀌면 신규 회원으로 처리). 그래서 reservation.ci_hash 비정규화가 안전함 · CREATE SEQUENCE member_seq; · CREATE INDEX ix_member_ci_hash ON member (ci_hash);
+> **제약·비고** ci_hash는 UNIQUE를 걸지 않음. 다계정 어뷰저를 재현하려면 같은 CI가 여러 계정에 있어야 함. · ci_hash는 변경 불가 (본인인증 결과가 바뀌면 신규 회원으로 처리). 그래서 reservation.ci_hash 비정규화가 안전함 · CREATE SEQUENCE member_seq; · CREATE INDEX ix_member_ci_hash ON member (ci_hash); · CHECK(member_type IN ('MEMBER', 'GUEST')) · 게스트: 같은 CI는 게스트 행 하나를 다시 쓴다(다계정으로 잡히지 않게) · email은 guest-{member_id}@guest.invalid(NOT NULL·UNIQUE 유지) · member_credential 행 없음 · 로그인 세션(auth_session)은 회원처럼 만든다(행동 로그·녹화가 빠지지 않게) · 신규 계정 점수(NEW_ACCOUNT)도 회원과 같게 · 게스트 만료 배치는 guest_expires_at < 지금인 게스트의 이름·연락처를 지움 (게스트 수가 적어 인덱스 없이 오프피크 풀스캔)
 
 **관계** [`payment_method`](#payment-method).member_id → 이 테이블 · [`member_device`](#member-device).member_id → 이 테이블 · [`reservation`](#reservation).member_id → 이 테이블 · [`waitlist`](#waitlist).member_id → 이 테이블 · [`notification`](#notification).member_id → 이 테이블 · [`behavior_log`](#behavior-log).member_id → 이 테이블 · [`queue_log`](#queue-log).member_id → 이 테이블 · [`synthetic_label`](#synthetic-label).member_id → 이 테이블 · [`member_credential`](#member-credential).member_id → 이 테이블 · [`identity_verification`](#identity-verification).member_id → 이 테이블 · [`auth_session`](#auth-session).member_id → 이 테이블 · [`login_attempt`](#login-attempt).member_id → 이 테이블 · [`replay_session`](#replay-session).member_id → 이 테이블 · [`case_session`](#case-session).member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).from_member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).to_member_id → 이 테이블 · [`member_push_token`](#member-push-token).member_id → 이 테이블 · [`password_reset_token`](#password-reset-token).member_id → 이 테이블 · [`model_score`](#model-score).member_id → 이 테이블
 
@@ -1965,7 +1970,7 @@ MongoDB · 🅱 빅데이터
 | `response_status` | Int |  | 시스템 | HTTP 상태 | 차단·에러 분석 |
 | `meta` | Object |  | 시스템 | 이벤트별 추가 정보 | 스키마 변경 없이 필드 확장 |
 
-> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 }, { member_id: 1, ts: 1 } (타임라인 ADM-05) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13 · 유니크 { event_id: 1 }, partialFilterExpression: { event_id: { $type: "string" } } (재전달 중복 방지, 중복 키 오류는 무시. event_id가 없는 옛 문서끼리는 충돌하지 않게 부분 인덱스) · 인덱스 { device_hash: 1, ts: 1 } (기기 단위 집계·의심 구간 조회)
+> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { member_id: 1, ts: 1 } (타임라인 ADM-05) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13 · 유니크 { event_id: 1 }, partialFilterExpression: { event_id: { $type: "string" } } (재전달 중복 방지, 중복 키 오류는 무시. event_id가 없는 옛 문서끼리는 충돌하지 않게 부분 인덱스) · 인덱스 { device_hash: 1, ts: 1 } (기기 단위 집계·의심 구간 조회) · { run_id: 1, ts: 1 }은 v33에서 뺌 (운행별 조회는 _id 범위로, 쓰기 +12~18%)
 
 **관계** member_id → [`member`](#member) · session_id → [`auth_session`](#auth-session) · run_id → [`train_run`](#train-run)
 
@@ -2029,6 +2034,7 @@ Redis
 | `seatmap:{runId}` | HASH |  | 시스템 | seatId → 상태 (H 선점·대기자 보류 / S 판매). 빈 좌석은 필드 없음, 필드 _ 는 캐시가 있다는 표시 | 배치도·남은 좌석 수 조회를 DB에서 분리. 원천은 seat:hold 키(실시간)와 seat_inventory SOLD 행. 최종 판정은 선점 때 (concurrency.md §2). 유지 시간 app_policy seatmap.cache_ms |
 | `rate:login:{ipHash}` | STRING+TTL |  | 시스템 | IP당 분당 로그인 시도 수 | Argon2 연산 남용·크리덴셜 스터핑 차단. 한도 app_policy auth.login_rate_per_min, 넘으면 해시 계산 없이 AUTH_RATE_LIMITED |
 | `rate:signup:{ipHash}` | STRING+TTL |  | 시스템 | IP당 시간당 본인인증·가입 시도 수 | 가입 남용·대량 계정 생성 차단. 한도 app_policy auth.signup_rate_per_hour |
+| `rate:guest_lookup:{ipHash}` | STRING+TTL |  | 시스템 | IP당 시간당 비회원 예약 조회 시도 수 | 예약 번호 + 휴대폰으로 남의 예약을 맞혀 보는 것을 막음. 한도 app_policy guest.lookup_rate_per_hour |
 | `login:fail:{emailHash}` | STRING+TTL |  | 시스템 | 이메일별 연속 로그인 실패 수 | auth.lock_after_failures에 닿으면 auth.lock_minutes 동안 잠금(AUTH_LOCKED). 없는 이메일도 똑같이 세어 잠금 응답으로 계정 존재를 알 수 없게 |
 | `verify:{tokenHash}` | STRING+TTL |  | 시스템 | 본인인증 결과 (1회용, 휴대폰 번호는 AES-256-GCM 암호문) | 본인인증 → 가입을 잇는 토큰. 키는 토큰의 SHA-256 해시, 가입 때 GETDEL로 읽으며 삭제(두 번 가입 불가). 만료 auth.verify_token_ttl_sec |
 | `rate:api:{memberId}` | STRING+TTL |  | 시스템 | 초당 API 호출 수 | 매크로 요청 폭주 1차 차단 |
@@ -2254,6 +2260,7 @@ Oracle
 |---|---|---|
 | 회원가입·모의 본인인증 | member, member_credential, identity_verification | 같은 CI 다계정 생성 테스트 |
 | 로그인 (Argon2id) | member_credential, auth_session, login_attempt, rate:login | verify_ms p95, 잠금 동작 |
+| 비회원(게스트) 예매 | member(member_type = GUEST, guest_expires_at), identity_verification, auth_session, rate:guest_lookup, guest.* | 같은 CI 게스트 행 재사용 · 회원과 같은 매수 제한 · 예약 번호 + 휴대폰 조회 시도 제한 |
 | 열차 조회 | train, train_run, train_stop, fare, seatmap:{runId} | 캐시 적중률 |
 | 대기열·번호표 | queue:{runId}, queue:active, queue:pass, queue_log | 입장 토큰 없이 좌석 API 호출 시 거부 |
 | 좌석 예약·1인 매수 제한 | seat_inventory, reservation, reservation_seat, purchase_limit_policy, purchase_counter, sale_event, limit:* | 동시 선점 테스트 중복 0건, 같은 CI 동시 요청 한도 초과 0건 |
@@ -2398,6 +2405,7 @@ Oracle
 | v30 | notification.type CHECK에 CONFIRMED 추가 — 예매 완료 알림 (RESERVATION_CONFIRMED 이벤트 → "예매가 완료됐어요"). 기존 DB는 db/patch/v30.sql을 먼저 넣고 나서 알림 코드를 합친다 |
 | v31 | model_run 예시에 두 번째 합성 모델 ens-2026.11-02 (data/ml/model-next, 꺼짐) — 모델 관리 화면(A-09)에서 지금 버전과 비교. 기존 DB는 db/patch/v31.sql |
 | v32 | 비고만: model_run.params(dir·gate)와 주간 재학습 후보, suspicious_case의 무작위 점검 표본 표시 약속 (사용자가 많아질수록 똑똑해지는 순환). DB 변경 없음 |
+| v33 | 비회원(게스트) 예매 (김성원 요청, 팀장 범위 확정): member.member_type(NULL = 회원, GUEST)·guest_expires_at, Redis rate:guest_lookup, app_policy guest.enabled(N)·retain_days_after_run(30)·lookup_rate_per_hour(10). 게스트도 CI 규칙 그대로. behavior_log 인덱스 { run_id, ts } 뺌 (쓰기 +12~18%) |
 
 ## 참고 자료
 

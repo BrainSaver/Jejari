@@ -33,7 +33,7 @@ const NO_FK_OK = new Set(['reservation_history.event_id', 'payment.pg_tx_id', 'c
   'notification.ref_id', 'synthetic_label.group_id', 'member_credential.pepper_key_id', 'auth_session.token_family_id',
   'ext_bot_detection.session_id', 'admin_user.login_id', 'member.enc_key_id', 'purchase_counter.scope_ref_id', 'behavior_log.event_id']);
 // 값이 열려 있어 CHECK를 걸지 않는 코드성 컬럼
-const NO_CHECK_OK = new Set(['outbox_event.event_type', 'notification.type', 'ext_dataset.license', 'reservation_history.event_id', 'model_run.train_source', 'reservation_history.from_status' /* 비고의 CHECK로 처리 */]);
+const NO_CHECK_OK = new Set(['outbox_event.event_type', 'notification.type', 'ext_dataset.license', 'reservation_history.event_id', 'model_run.train_source', 'reservation_history.from_status', 'member.member_type' /* 비고의 CHECK로 처리 */]);
 const STATUSY = /(^|_)(status|type|result|role|scope|action|channel|source|severity|verdict|step|mode|algorithm|provider|platform)$/;
 
 // 1. 테이블·컬럼 구조

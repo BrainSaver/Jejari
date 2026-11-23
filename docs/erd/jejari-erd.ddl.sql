@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v32)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v33)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -251,11 +251,14 @@ CREATE TABLE member (
   phone_hash                 VARCHAR2(64),
   enc_key_id                 VARCHAR2(20),
   status                     VARCHAR2(10) NOT NULL,
+  member_type                VARCHAR2(10),
+  guest_expires_at           TIMESTAMP,
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   withdrawn_at               TIMESTAMP,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_member PRIMARY KEY (member_id),
   CONSTRAINT uq_member_email UNIQUE (email),
+  CONSTRAINT ck_member_r1 CHECK (member_type IN ('MEMBER', 'GUEST')),
   CONSTRAINT ck_member_status CHECK (status IN ('ACTIVE', 'RESTRICTED', 'BANNED'))
 );
 COMMENT ON TABLE member IS '회원 - 회원 계정. ci_hash가 위험 점수·매수 제한의 묶음 단위. 비밀번호는 member_credential로 분리.';
@@ -267,6 +270,8 @@ COMMENT ON COLUMN member.phone_enc IS '휴대폰 번호 암호문 (AES-256-GCM) 
 COMMENT ON COLUMN member.phone_hash IS '휴대폰 번호 HMAC / 암호문끼리는 비교 불가 → 중복 가입 탐지';
 COMMENT ON COLUMN member.enc_key_id IS 'phone_enc 암호화 키 버전 / 키 교체 시 어느 키로 복호화할지 판별';
 COMMENT ON COLUMN member.status IS 'ACTIVE / RESTRICTED / BANNED / 관리자 조치 반영';
+COMMENT ON COLUMN member.member_type IS '회원 종류 (NULL = 일반 회원, GUEST = 비회원 예매) / 이용 제한·정지는 status가, 게스트 여부는 이 칸이. 게스트도 같은 CI 규칙(매수 제한·위험 점수)을 받는다';
+COMMENT ON COLUMN member.guest_expires_at IS '게스트 개인정보 삭제 시각 (마지막 운행일 + guest.retain_days_after_run) / 게스트가 표를 더 사면 늘린다. 진행 중 예약이 있으면 지우지 않는다. 일반 회원은 NULL';
 COMMENT ON COLUMN member.created_at IS '가입 시각 / 신규 계정 판별 (기본 신뢰도 낮음)';
 COMMENT ON COLUMN member.withdrawn_at IS '탈퇴 시각 / 소프트 삭제. 위험 이력은 보존 기간 후 파기';
 COMMENT ON COLUMN member.updated_at IS '수정 시각';
@@ -1276,6 +1281,9 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.verify_token_ttl_sec', '600', 1, 'NUMBER', '본인인증 1회용 토큰 유효 시간(초) (verify:{tokenHash})');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('seatmap.cache_ms', '1000', 1, 'NUMBER', '좌석 배치도 캐시(seatmap:{runId}) 유지 시간(ms). 길수록 DB·Redis 부하는 줄고 화면은 늦게 바뀜');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('sale.open_interval_sec', '10', 1, 'NUMBER', '판매 오픈 스케줄러가 train_run.status를 훑는 주기(초). 짧으면 오픈이 정확해지고 길면 DB 부하가 줄어듦');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('guest.enabled', 'N', 1, 'STRING', 'Y면 비회원(게스트) 예매 사용. 기능이 들어가기 전에는 N');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('guest.retain_days_after_run', '30', 1, 'NUMBER', '게스트 개인정보 보관: 그 게스트의 마지막 운행일 + 이 일수 (조회·환불 문의 기간)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('guest.lookup_rate_per_hour', '10', 1, 'NUMBER', 'IP당 시간당 비회원 예약 조회 시도 한도 (rate:guest_lookup)');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (1, 1, 'PER_RESERVATION', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (2, 1, 'PER_RUN', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (3, 1, 'PER_HOLIDAY', 8, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');

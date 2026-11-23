@@ -65,9 +65,9 @@ sudo systemctl start jejari-integrity && journalctl -u jejari-integrity -n 15 --
 docker compose -f compose.yaml -f deploy/compose.server.yaml exec -T mongo bash -c 'mongosh --quiet -u "$MONGO_APP_USER" -p "$MONGO_APP_PASSWORD" --authenticationDatabase jejari jejari --eval "db.behavior_log.createIndex({ run_id: 1, ts: 1 }, { name: \"ix_run_ts\" })"'
 ```
 
-## 저장소 쪽 (강동균이 따로)
+## 저장소 쪽 — ✅ ERD v33에 반영 (2026-11-23)
 
-서버에서 지운 뒤, 새로 만드는 DB에도 이 색인이 생기지 않게 두 파일을 고칩니다. 둘 다 자동 배포를 멈추는 파일이라 **고친 커밋은 A-08 "막힌 커밋 승인"이 필요**합니다 (서버에서 따로 할 명령은 없음).
+새로 만드는 DB에도 이 색인이 생기지 않게 두 파일을 고쳤습니다 (비회원 예매 v33과 같은 커밋). 자동 배포를 멈추는 파일이라 **A-08 "막힌 커밋 승인"** 한 번이 필요하고, 서버 색인은 위 명령으로 따로 지웁니다.
 
 - ERD(`docs/erd/jejari-erd.html`) 새 패치: `behavior_log` 비고에서 `{ run_id: 1, ts: 1 }` 빼기 (ERD 담당)
 - `docker/mongo/mongo-init.js`: `ix_run_ts` 줄 빼기

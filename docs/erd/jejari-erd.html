@@ -1006,6 +1006,7 @@ const DOCS = {
  trace:{title:'기능 추적표',head:['기능','테이블·키','검증'],rows:[
   ['회원가입·모의 본인인증','member, member_credential, identity_verification','같은 CI 다계정 생성 테스트'],
   ['로그인 (Argon2id)','member_credential, auth_session, login_attempt, rate:login','verify_ms p95, 잠금 동작'],
+  ['비회원(게스트) 예매','member(member_type = GUEST, guest_expires_at), identity_verification, auth_session, rate:guest_lookup, guest.*','같은 CI 게스트 행 재사용 · 회원과 같은 매수 제한 · 예약 번호 + 휴대폰 조회 시도 제한'],
   ['열차 조회','train, train_run, train_stop, fare, seatmap:{runId}','캐시 적중률'],
   ['대기열·번호표','queue:{runId}, queue:active, queue:pass, queue_log','입장 토큰 없이 좌석 API 호출 시 거부'],
   ['좌석 예약·1인 매수 제한','seat_inventory, reservation, reservation_seat, purchase_limit_policy, purchase_counter, sale_event, limit:*','동시 선점 테스트 중복 0건, 같은 CI 동시 요청 한도 초과 0건'],
@@ -1131,7 +1132,8 @@ const DOCS = {
   ['v29','model_score에 닮은 유형 type(SPEED / RETRY / MULTI_ACCOUNT / EVASIVE / CANCEL / HOARD)·type_prob 추가 — 별도 유형 모델(tools/ml/train_type.py)의 추정, 관리자 화면은 봇 쪽으로 본 계정에만 표시. Mongo라 기존 DB 패치 없음'],
   ['v30','notification.type CHECK에 CONFIRMED 추가 — 예매 완료 알림 (RESERVATION_CONFIRMED 이벤트 → "예매가 완료됐어요"). 기존 DB는 db/patch/v30.sql을 먼저 넣고 나서 알림 코드를 합친다'],
   ['v31','model_run 예시에 두 번째 합성 모델 ens-2026.11-02 (data/ml/model-next, 꺼짐) — 모델 관리 화면(A-09)에서 지금 버전과 비교. 기존 DB는 db/patch/v31.sql'],
-  ['v32','비고만: model_run.params(dir·gate)와 주간 재학습 후보, suspicious_case의 무작위 점검 표본 표시 약속 (사용자가 많아질수록 똑똑해지는 순환). DB 변경 없음']]}
+  ['v32','비고만: model_run.params(dir·gate)와 주간 재학습 후보, suspicious_case의 무작위 점검 표본 표시 약속 (사용자가 많아질수록 똑똑해지는 순환). DB 변경 없음'],
+  ['v33','비회원(게스트) 예매 (김성원 요청, 팀장 범위 확정): member.member_type(NULL = 회원, GUEST)·guest_expires_at, Redis rate:guest_lookup, app_policy guest.enabled(N)·retain_days_after_run(30)·lookup_rate_per_hour(10). 게스트도 CI 규칙 그대로. behavior_log 인덱스 { run_id, ts } 뺌 (쓰기 +12~18%)']]}
 };
 // ===== 스키마 v5: 팀 검토 12건 반영 (2026-11-06) =====
 const V5_TABLES = [
@@ -1655,7 +1657,29 @@ const V32_OPS = [
   ['notes+','model_run',' · params JSON: dir(모델 폴더 — 서버 채점 deploy/model-refresh.sh·재학습이 읽음), gate(주간 재학습 자동 시험 결과). 주간 재학습 후보(ens-w…)는 꺼진 채 등록하고 관리자가 A-09에서 켬. precision·recall·f1 = 판정 시험 몫 기준'],
   ['notes+','suspicious_case',' · trigger_type = ADMIN이고 trigger_detail이 "무작위 점검 표본"으로 시작하면 모델 학습용 무작위 점검(A-09) — 의심 근거 아님, 그 판정이 치우침 없는 학습 정답'],
 ];
-const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS}, {v:24,tables:V24_TABLES,ops:V24_OPS}, {v:25,tables:V25_TABLES,ops:V25_OPS}, {v:26,tables:V26_TABLES,ops:V26_OPS}, {v:27,tables:V27_TABLES,ops:V27_OPS}, {v:28,tables:V28_TABLES,ops:V28_OPS}, {v:29,tables:V29_TABLES,ops:V29_OPS}, {v:30,tables:V30_TABLES,ops:V30_OPS}, {v:31,tables:V31_TABLES,ops:V31_OPS}, {v:32,tables:V32_TABLES,ops:V32_OPS} ];
+const V33_TABLES = [];
+const V33_OPS = [
+  // 비회원(게스트) 예매 (김성원 요청 ce7f02d, 강동균 검토 b0ba8b7, 팀장 범위 확정 2026-11-23).
+  // 게스트 = 비밀번호 없는 회원. 본인인증(CI)은 그대로 받아 매수 제한·위험 점수·이용 제한이 회원과 똑같이 걸린다.
+  // member_type은 NULL 허용: 기존 member INSERT(가입·합성 데이터·테스트 12곳)를 고치지 않으려고. NULL = 일반 회원,
+  // 게스트만 'GUEST'로 넣는다 (DDL 생성기는 일반 컬럼 DEFAULT를 만들지 않아 NOT NULL이면 새 DB에서 기존 INSERT가 깨짐).
+  // 허용값은 설명이 아니라 비고의 CHECK로 (설명을 "A / B"로 쓰면 v4 nn-auto가 다시 돌 때 NOT NULL이 붙는다)
+  ['add','member','status',[
+    ['member_type','VARCHAR2(10)','','시스템','회원 종류 (NULL = 일반 회원, GUEST = 비회원 예매)','이용 제한·정지는 status가, 게스트 여부는 이 칸이. 게스트도 같은 CI 규칙(매수 제한·위험 점수)을 받는다'],
+    ['guest_expires_at','TIMESTAMP','','시스템','게스트 개인정보 삭제 시각 (마지막 운행일 + guest.retain_days_after_run)','게스트가 표를 더 사면 늘린다. 진행 중 예약이 있으면 지우지 않는다. 일반 회원은 NULL']]],
+  ['notes+','member',"CHECK(member_type IN ('MEMBER', 'GUEST'))"],
+  ['notes+','member','게스트: 같은 CI는 게스트 행 하나를 다시 쓴다(다계정으로 잡히지 않게) · email은 guest-{member_id}@guest.invalid(NOT NULL·UNIQUE 유지) · member_credential 행 없음 · 로그인 세션(auth_session)은 회원처럼 만든다(행동 로그·녹화가 빠지지 않게) · 신규 계정 점수(NEW_ACCOUNT)도 회원과 같게 · 게스트 만료 배치는 guest_expires_at < 지금인 게스트의 이름·연락처를 지움 (게스트 수가 적어 인덱스 없이 오프피크 풀스캔)'],
+  ['add','redis_keys','rate:signup:{ipHash}',[
+    ['rate:guest_lookup:{ipHash}','STRING+TTL','','시스템','IP당 시간당 비회원 예약 조회 시도 수','예약 번호 + 휴대폰으로 남의 예약을 맞혀 보는 것을 막음. 한도 app_policy guest.lookup_rate_per_hour']]],
+  ['samples+','app_policy',[
+    {policy_key:'guest.enabled',policy_value:'N',version:1,value_type:'STRING',description:'Y면 비회원(게스트) 예매 사용. 기능이 들어가기 전에는 N'},
+    {policy_key:'guest.retain_days_after_run',policy_value:'30',version:1,value_type:'NUMBER',description:'게스트 개인정보 보관: 그 게스트의 마지막 운행일 + 이 일수 (조회·환불 문의 기간)'},
+    {policy_key:'guest.lookup_rate_per_hour',policy_value:'10',version:1,value_type:'NUMBER',description:'IP당 시간당 비회원 예약 조회 시도 한도 (rate:guest_lookup)'}]],
+  // 행동 로그 색인 ix_run_ts 제거 (2026-11-23 측정): 쓰는 곳이 운행별 정합성 점검 하나뿐이고, 빼면 행동 로그 쓰기 +12~18%.
+  // 그 점검은 _id(저장 시각) 범위로 3ms. 서버는 db.behavior_log.dropIndex("ix_run_ts") — docs/강동균/features/서버-요청-ix_run_ts-제거.md
+  ['notes','behavior_log','인덱스: { ci_hash: 1, ts: -1 }, { member_id: 1, ts: 1 } (타임라인 ADM-05) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13 · 유니크 { event_id: 1 }, partialFilterExpression: { event_id: { $type: "string" } } (재전달 중복 방지, 중복 키 오류는 무시. event_id가 없는 옛 문서끼리는 충돌하지 않게 부분 인덱스) · 인덱스 { device_hash: 1, ts: 1 } (기기 단위 집계·의심 구간 조회) · { run_id: 1, ts: 1 }은 v33에서 뺌 (운행별 조회는 _id 범위로, 쓰기 +12~18%)'],
+];
+const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS}, {v:24,tables:V24_TABLES,ops:V24_OPS}, {v:25,tables:V25_TABLES,ops:V25_OPS}, {v:26,tables:V26_TABLES,ops:V26_OPS}, {v:27,tables:V27_TABLES,ops:V27_OPS}, {v:28,tables:V28_TABLES,ops:V28_OPS}, {v:29,tables:V29_TABLES,ops:V29_OPS}, {v:30,tables:V30_TABLES,ops:V30_OPS}, {v:31,tables:V31_TABLES,ops:V31_OPS}, {v:32,tables:V32_TABLES,ops:V32_OPS}, {v:33,tables:V33_TABLES,ops:V33_OPS} ];
 const SEED_VERSION = Math.max(2,...PATCHES.map(p=>p.v));
 const LAYOUT = [
  ['station','route','route_station','fare','common_code'],
