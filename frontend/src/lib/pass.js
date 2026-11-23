@@ -2,18 +2,18 @@
 // 토큰 자체는 서버(Redis queue:pass)가 검증하므로 여기 값은 "화면에 남은 시간을 보여 주는" 용도다.
 const key = (runId) => `jejari-pass:${runId}`;
 
-export function savePass(runId, token, expiresAt) {
+export function savePass(runId, token, expiresAt, extended = false) {
   try {
-    sessionStorage.setItem(key(runId), JSON.stringify({ token, expiresAt }));
+    sessionStorage.setItem(key(runId), JSON.stringify({ token, expiresAt, extended }));
   } catch {
     /* 저장 못 하면 이 화면에서만 쓴다 */
   }
-  memory[runId] = { token, expiresAt };
+  memory[runId] = { token, expiresAt, extended };
 }
 
 const memory = {};
 
-/** @returns {{token: string, expiresAt: string} | null} 만료됐으면 null */
+/** @returns {{token: string, expiresAt: string, extended: boolean} | null} 만료됐으면 null */
 export function loadPass(runId) {
   let p = memory[runId];
   if (!p) {

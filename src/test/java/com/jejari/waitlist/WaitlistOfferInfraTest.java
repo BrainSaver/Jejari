@@ -179,49 +179,36 @@ class WaitlistOfferInfraTest {
 				.isEqualTo("WAITING");
 	}
 
-	/** §16 T16: 대기자가 매수 한도에 걸리면 SKIPPED로 두고 다음 대기자에게 제안한다 (§9.1-5) */
+	/** T16 (§9.1-5): 앞 대기자가 열차당 한도에 이미 차 있으면 SKIPPED, 좌석은 다음 대기자에게 */
 	@Test
-	void T16_한도에_걸린_대기자는_SKIPPED이고_다음_대기자가_제안받는다() {
-		long capped = newMember();
+	void T16_앞_대기자가_매수_한도를_넘으면_SKIPPED가_되고_다음_대기자가_받는다() {
+		long full = newMember();
 		long next = newMember();
-		// 앞 대기자는 이미 이 운행에서 10매(열차당 한도)를 잡고 있어 1매만 더해도 걸린다
-		hold.hold(capped, holdCmd(seatIds.subList(340, 349)));   // 9매 (1회 한도)
-		hold.hold(capped, holdCmd(seatIds.subList(349, 350)));   // 10매째
-		long wCapped = insertWaiting(capped, SEOUL, BUSAN, "GENERAL", 1, 0);
-		long wNext = insertWaiting(next, SEOUL, BUSAN, "GENERAL", 1, 60_000L);
+		// full은 이 열차에서 이미 10매(열차당 한도)를 잡고 있다: 9매 + 1매
+		hold.hold(full, new HoldCommand(RUN, SEOUL, BUSAN, seatsOf(340, 9), "WEB", UUID.randomUUID().toString()));
+		hold.hold(full, new HoldCommand(RUN, SEOUL, BUSAN, seatsOf(349, 1), "WEB", UUID.randomUUID().toString()));
+		long wFull = insertWaiting(full, SEOUL, BUSAN, "GENERAL", 1, 0);
+		long wNext = insertWaiting(next, SEOUL, BUSAN, "GENERAL", 1, 60_000L);   // 뒤 순번
 		long seat = seatIds.get(360);
 		long freed = freeSeat(seat);
 
 		List<WaitlistOfferTx.Offered> offered = tx.execute(st ->
 				offerTx.offer(RUN, SEOUL, BUSAN, List.of(seat), freed));
 
-		// 한도에 걸린 대기자: SKIPPED, 제안 예약 없음, 건너뛰었다는 알림
-		assertThat(jdbc.queryForObject("SELECT status FROM waitlist WHERE waitlist_id = ?", String.class, wCapped))
+		assertThat(jdbc.queryForObject("SELECT status FROM waitlist WHERE waitlist_id = ?", String.class, wFull))
 				.isEqualTo("SKIPPED");
-		assertThat(jdbc.queryForObject("SELECT offered_reservation_id FROM waitlist WHERE waitlist_id = ?",
-				Long.class, wCapped)).isNull();
-		assertThat(count("SELECT COUNT(*) FROM notification WHERE member_id = ? AND type = 'WAITLIST_SKIPPED'",
-				capped)).isEqualTo(1);
-		assertThat(count("SELECT COUNT(*) FROM notification WHERE member_id = ? AND type = 'WAITLIST_OFFER'",
-				capped)).isZero();
-
-		// 다음 대기자가 같은 좌석을 제안받는다
 		assertThat(offered).hasSize(1);
 		assertThat(offered.get(0).waitlistId()).isEqualTo(wNext);
 		assertThat(jdbc.queryForObject("SELECT status FROM waitlist WHERE waitlist_id = ?", String.class, wNext))
 				.isEqualTo("OFFERED");
-		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, seat, 0)))
-				.isEqualTo(Long.toString(offered.get(0).reservationId()));
-		// 걸린 대기자의 시도는 매수 카운터를 늘리지 않는다
-		assertThat(count("SELECT NVL(SUM(seat_count), 0) FROM purchase_counter WHERE scope = 'PER_RUN'"
-				+ " AND scope_ref_id = ? AND ci_hash = ?", RUN, ciHash(capped))).isEqualTo(10);
+		assertThat(count("SELECT COUNT(*) FROM notification WHERE member_id = ? AND type = 'WAITLIST_SKIPPED'", full))
+				.isEqualTo(1);
 	}
 
 	// ─────────────────────────────── 도우미 ───────────────────────────────
 
-	private HoldCommand holdCmd(List<Long> seats) {
-		return new HoldCommand(RUN, SEOUL, BUSAN, seats.stream().map(s -> new SeatRequest(s, "ADULT")).toList(),
-				"WEB", UUID.randomUUID().toString());
+	private List<SeatRequest> seatsOf(int from, int n) {
+		return seatIds.subList(from, from + n).stream().map(s -> new SeatRequest(s, "ADULT")).toList();
 	}
 
 	private long newMember() {

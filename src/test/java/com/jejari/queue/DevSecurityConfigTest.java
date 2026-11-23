@@ -43,7 +43,7 @@ class DevSecurityConfigTest {
 	static class Probe {
 		@GetMapping("/api/v1/probe/who")
 		java.util.Map<String, Object> who(@AuthenticationPrincipal AuthPrincipal me) {
-			return java.util.Map.of("memberId", me.memberId());
+			return java.util.Map.of("memberId", me.memberId(), "sessionId", me.sessionId());
 		}
 
 		@GetMapping("/api/v1/dev/ping")
@@ -57,6 +57,18 @@ class DevSecurityConfigTest {
 		mvc.perform(get("/api/v1/probe/who").header("X-Member-Id", "55"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.memberId").value(55));
+	}
+
+	@Test
+	void 세션_ID는_회원마다_고정된_UUID() throws Exception {
+		// 행동 로그 적재기는 UUID가 아닌 세션을 형식 오류로 버린다 (예전 "dev-session"이라 dev 모드 로그가 전부 버려졌음)
+		String uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+		String a = mvc.perform(get("/api/v1/probe/who").header("X-Member-Id", "55")).andReturn().getResponse().getContentAsString();
+		String b = mvc.perform(get("/api/v1/probe/who").header("X-Member-Id", "55")).andReturn().getResponse().getContentAsString();
+		String c = mvc.perform(get("/api/v1/probe/who").header("X-Member-Id", "56")).andReturn().getResponse().getContentAsString();
+		String sa = com.jayway.jsonpath.JsonPath.read(a, "$.sessionId"), sb = com.jayway.jsonpath.JsonPath.read(b, "$.sessionId"),
+				sc = com.jayway.jsonpath.JsonPath.read(c, "$.sessionId");
+		org.assertj.core.api.Assertions.assertThat(sa).matches(uuid).isEqualTo(sb).isNotEqualTo(sc);
 	}
 
 	@Test

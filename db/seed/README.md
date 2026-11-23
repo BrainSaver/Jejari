@@ -21,6 +21,45 @@ docker compose logs oracle | grep "jejari seed loaded"
 docker compose rm -sf oracle && docker volume rm jejari_oracle-data && docker compose up -d oracle
 ```
 
+### 시연 운행이 묵었으면 — 지우지 말고 04 → 05만 다시
+
+시드 운행의 날짜는 **"시드를 돌린 날" 기준 상대값**입니다. 오래 띄워 둔 DB에서는
+9001·9002가 이미 출발해 `DEPARTED`가 되고, **예매가 막혀 좌석 선점·결제·취소 테스트가
+통째로 깨집니다.** `99_verify.sql` **24번**이 이걸 잡습니다.
+
+날짜를 앞으로 밀기만 하면 되고, **지울 것은 없습니다** (회원·예약은 `run_id`로 매달려
+있어 열차와 함께 밀립니다):
+
+```bash
+docker compose exec -T oracle bash -lc '
+cd /seed
+for f in 04_regular_run.sql 05_train_stop_fare.sql; do
+  sqlplus -s "${APP_USER}/${APP_USER_PASSWORD}@//localhost:1521/FREEPDB1" <<SQL
+WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
+SET DEFINE OFF
+SET SQLBLANKLINES ON
+ALTER SESSION SET TIME_ZONE = '"'"'Asia/Seoul'"'"';
+@${f}
+EXIT
+SQL
+done'
+```
+
+`04`가 운행일·오픈·마감을, `05`가 정차 시각을 다시 계산해 덮어씁니다.
+04는 **예매 가능한 모든 날**(약 2개월)에 열차 2편씩 넣으므로, 다시 돌리면 그 창도 함께 밀립니다.
+운행 번호는 `train_run_seq`(ERD v27, 100000~399999)가 주고, 같은 날짜가 있는지는 번호가 아니라
+**자연키 `(train_id, run_date)`** 로 봅니다. 번호에 날짜를 넣는 산식을 쓰면 다른 생성기
+(길동현 님 `tools/load-tago-schedule.js`는 `400000 + 연중일 × 1000 + 열차번호`)와 대역이
+겹칠 수 있습니다. **기존 DB는 `db/patch/v27.sql`을 먼저 적용하세요** (없으면 ORA-02289).
+`04`·`05`가 보는 것은 **시드 열차 1·2뿐**입니다. 실제 KTX 시간표(`tools/load-tago-schedule.js`,
+`train_id 10000~`)와 관리자 화면에서 만든 운행은 각자 정차를 넣으므로 05를 다시 돌려도
+그대로입니다. 전에는 05가 경부선 전체를 봐서 실제 시간표를 시드 시각(09:28)으로 덮어썼습니다
+([조영준 님 트러블슈팅](../../docs/조영준/troubleshooting/20261118-시드05가-실제시간표-덮어씀.md)).
+
+`03`의 명절 운행은 `INSERT`만 하므로 이 방법으로 밀리지 않습니다 (지금은 +30~33일이라
+여유가 있습니다). 자세한 건
+[트러블슈팅](../../docs/강동균/troubleshooting/20261118-시연-운행이-출발해-예매가-막힘.md).
+
 아래는 compose 없이 직접 돌릴 때입니다.
 
 ## 실행 순서
@@ -37,7 +76,7 @@ sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @03_sale_event_run.sql
 sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @04_regular_run.sql
 sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @05_train_stop_fare.sql
 
-# 3. 검증 — 23개 항목이 모두 OK여야 합니다
+# 3. 검증 — 24개 항목이 모두 OK여야 합니다
 sqlplus -S jejari/비밀번호@localhost:1521/FREEPDB1 @99_verify.sql
 ```
 
@@ -55,14 +94,14 @@ FK 때문에 reset이 실패하므로 그 데이터를 먼저 지웁니다.
 | `route` | 1 | 경부선 (서울 → 부산) |
 | `route_station` | 5 | 순번 1~5, 서울 기준 누적거리 0 / 22.0 / 159.8 / 286.7 / 417.4 km (경부고속선) |
 | `car_type` | 2 | `50554101` 일반실 55석 `ABCD` · `60303101` 특실 30석 `ABC` |
-| `train` | 2 | 101 하행(서울→부산) · 102 상행(부산→서울) |
+| `train` | 2 | **00103** 하행(서울→부산) · **00026** 상행(부산→서울) — TAGO API의 실제 KTX 편명 |
 | `train_car` | 20 | 열차당 10량 (1호차 특실, 2~10호차 일반실) |
 | `seat` | 1,050 | 열차당 525석 (특실 30 + 일반 495) |
 | `sale_event` | 1 | id 2 「시연 명절」 연휴 = 실행일 + 30~33일, 예매 오픈 = 다음날 07:00 |
 | `purchase_limit_policy` | 7 | 행사 2 전용 4건(1회 4 · 열차당 4 · **1일 20** · 명절 8) + 상시 3건(1회 9 · 열차당 10 · 1일 20) |
 | `train_run` | 11 | 명절 8건(`SCHEDULED`) + 평시 3건(9001·9002 `ON_SALE`, 9003 내일 오픈) |
-| `train_stop` | 55 | 운행당 5역. 진행 방향 기준 `stop_order` 1~5 |
-| `fare` | 40 | 역 순서쌍 20 × 등급 2. 서울~부산 일반 55,000원 / 특실 77,000원 |
+| `train_stop` | 55 | 운행당 5역. 진행 방향 기준 `stop_order` 1~5. **시각은 TAGO API 실제 시각표** |
+| `fare` | 40 | 역 순서쌍 20 × 등급 2. **일반실은 TAGO API 실제 운임**(서울~부산 54,400원), 특실은 ×1.4(76,200원) |
 
 ## 값을 이렇게 정한 이유
 
@@ -106,7 +145,19 @@ FK 때문에 reset이 실패하므로 그 데이터를 먼저 지웁니다.
 그래서 실행일 기준으로 계산하고, 이미 있는 행사·운행의 날짜는 덮어쓰지 않습니다
 (날짜를 다시 잡으려면 `99_reset.sql`).
 
-## 적재 스크립트 (CSV → SQL)
+## 적재 스크립트 (CSV·API → SQL)
+
+원본은 두 가지입니다. **파일데이터(CSV)** 는 역·노선·거리·차량유형, **오픈 API** 는 시각표·운임입니다.
+
+```bash
+node tools/fetch-train-api.js             # API에서 받아 db/seed/data/tago-train-info.json 저장
+node tools/load-public-data.js            # 검사만. SQL이 원본과 다르면 종료코드 1
+node tools/load-public-data.js --write    # SQL의 값 블록을 다시 생성
+```
+
+`fetch-train-api.js`는 `.env`의 `DATA_GO_KR_KEY`를 씁니다 (커밋 금지). 한 번 받아 두면
+그 뒤로는 네트워크 없이 `load-public-data.js`만 돌면 됩니다 — CI도 그렇게 검사합니다.
+
 
 ```bash
 node tools/load-public-data.js            # 검사만. SQL이 CSV와 다르면 종료코드 1
@@ -122,6 +173,55 @@ node tools/load-public-data.js --write    # SQL의 값 블록을 다시 생성
 
 CI(`.github/workflows/ci.yml`)가 매 push마다 검사 모드로 돌려서, 시드가 CSV와 어긋나면
 빌드가 실패합니다.
+
+## 스키마가 바뀌면 각자 DB에도 넣어야 합니다
+
+**DDL은 Oracle 볼륨을 처음 만들 때만 돕니다.** 그래서 ERD가 올라가도 이미 띄워 둔 DB는
+예전 스키마 그대로입니다. 테이블은 다 있어서 겉으로는 멀쩡해 보이는데, CHECK 제약이나
+시퀀스가 없어 **통합 테스트가 엉뚱한 곳에서 깨집니다.**
+
+실제로 2026-11-18에 `RiskScoreBatchInfraTest` 2개가 "expected 1 but was 0"으로 실패했는데,
+원인은 `case_marker.rule_code` CHECK에 `REGULAR_INTERVAL`이 없어서(ERD v24) 마커가 저장되지
+않은 것이었습니다. 테스트 메시지만 봐서는 알 수 없습니다.
+
+```bash
+# 이미 데이터가 있어 볼륨을 지우고 싶지 않을 때 — 델타만 (다시 실행해도 안전)
+PW=$(grep '^ORACLE_APP_PASSWORD=' .env | cut -d= -f2)
+docker compose exec -T -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 oracle   bash -lc "sqlplus -S -L jejari/$PW@localhost:1521/FREEPDB1" < db/patch/v24.sql
+
+# 아니면 처음부터 (데이터 삭제됨)
+docker compose rm -sf oracle && docker volume rm jejari_oracle-data && docker compose up -d oracle
+```
+
+## 오픈 API 적용 (2026-11-18)
+
+역·노선·거리·차량유형은 **파일데이터(CSV)** 로 받아 쓰고 있었지만, **정차 시각과 운임은
+공공데이터가 아니라 우리 계산식**이었습니다 (거리÷2.7km/분 + 정차 2분, 2,800원 + 125원/km).
+국토교통부 (TAGO) 열차정보 오픈 API가 실제 시각표와 운임을 줘서 그 두 칸을 실제 값으로 바꿨습니다.
+
+| | 포털 ID | 가져온 것 | 들어간 곳 |
+|---|---|---|---|
+| 국토교통부_(TAGO)_열차정보 | [15098552](https://www.data.go.kr/data/15098552/openapi.do) | 열차번호 · 정차 시각 · 일반실 운임 | `train`, `train_stop`, `fare` |
+
+### 바뀐 값
+
+| | 전 (계산식) | 후 (API 실제값) |
+|---|---|---|
+| 열차 번호 | 101 · 102 (지어낸 값) | **00103 · 00026** |
+| 서울~부산 소요 | 2시간 52분 | **3시간 7분** (09:28 → 12:35) |
+| 서울~부산 일반실 | 55,000원 | **54,400원** |
+| 서울~광명 일반실 | 5,600원 | **7,500원** |
+
+### 어떻게 골랐나
+
+- **열차**: 5역에 모두 서는 순수 KTX 중 09시 이후 첫 편 (하행 00103, 상행 00026).
+  보기 좋은 시간대를 쓰려고 새벽 편(05시대)을 피했습니다.
+- **시각**: API가 **중간역 시각을 주지 않아서** 역 쌍을 돌며 모았습니다.
+  어떤 역의 도착은 (기점 → 그 역), 출발은 (그 역 → 종점) 조회에서 나옵니다.
+- **날짜**: 시·분만 쓰고 날짜는 각 운행의 `run_date`에서 붙입니다. 우리 운행일이
+  적재일 기준 상대값이라 조회한 날짜를 그대로 쓰면 맞지 않습니다.
+- **운임**: 같은 구간에 여러 편이 있으면 가장 많이 나온 값을 씁니다 (특별열차 운임에 끌려가지 않게).
+  **특실은 API가 주지 않아 일반실 × 1.4** 로 우리가 정합니다.
 
 ## 공공데이터 적용 (2026-11-16 완료)
 
@@ -173,3 +273,5 @@ CI(`.github/workflows/ci.yml`)가 매 push마다 검사 모드로 돌려서, 시
 | C 길동현 | `PER_DAY` scope를 `concurrency.md` §10에 넣었습니다 (구매일 기준). 절차 문서를 고쳤으니 봐 주세요 |
 | E 조영준 | Docker Compose에서 Oracle 컨테이너에 `TZ=Asia/Seoul`이 필요합니다 (동시성 §0.7, 검증 20번) |
 | A 김성원 | 대기열 테스트용 `ON_SALE` 운행은 `run_id = 9001`(하행)·`9002`(상행)입니다 |
+
+> 11-19 시험: `db/patch/v0.sql`은 관리자 화면 BLOCKED 승인 시험용 패치입니다 (DB 변경 없음).

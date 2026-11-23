@@ -69,6 +69,11 @@ export default function Risk() {
       <ErrorBox error={error} />
       <section className="panel">
         <h2>{data ? `${data.items.length}건` : '…'} <span className="mut" style={{ fontWeight: 500 }}>점수 높은 순</span></h2>
+        {data && !data.items.length && page === 0 && (f.minScore || f.status || f.type) && (
+          <p className="mut" style={{ fontSize: 14 }}>
+            이 조건에 맞는 대상이 없어요.{f.minScore ? ` ${f.minScore}점 이상이 없으면 점수 필터를 낮춰 보세요.` : ' 필터를 바꿔 보세요.'}
+          </p>
+        )}
         <table>
           <thead>
             <tr><th>대상</th><th>점수</th><th>근거</th><th className="n">연결 계정</th><th>검토</th><th>케이스</th><th>계산 시각</th></tr>

@@ -17,11 +17,13 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
   UNION ALL
   SELECT '4. 차량 유형 2개',                   CASE WHEN COUNT(*) = 2   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM car_type
   UNION ALL
-  SELECT '5. 열차 2편',                        CASE WHEN COUNT(*) = 2   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train
+  -- 5~7은 시드 열차(1·2)만 셉니다. 실제 시간표 열차(train_id 10000~, tools/load-tago-schedule.js)와
+  -- 관리자 화면에서 만든 열차는 편성·좌석을 각자 넣습니다 (13·14와 같은 범위)
+  SELECT '5. 시드 열차 2편',                   CASE WHEN COUNT(*) = 2   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train WHERE train_id IN (1, 2)
   UNION ALL
-  SELECT '6. 편성 20호차',                     CASE WHEN COUNT(*) = 20  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_car
+  SELECT '6. 시드 편성 20호차',                CASE WHEN COUNT(*) = 20  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_car WHERE train_id IN (1, 2)
   UNION ALL
-  SELECT '7. 좌석 1050석 (525 × 2)',           CASE WHEN COUNT(*) = 1050 THEN 1 ELSE 0 END,     '실제 ' || COUNT(*) FROM seat
+  SELECT '7. 시드 좌석 1050석 (525 × 2)',      CASE WHEN COUNT(*) = 1050 THEN 1 ELSE 0 END,     '실제 ' || COUNT(*) FROM seat WHERE train_id IN (1, 2)
   UNION ALL
   SELECT '8. 호차 좌석수 = car_type.seat_count', CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END,
          '어긋난 호차 ' || COUNT(*) || '건'
@@ -46,16 +48,28 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
                  <> CEIL(MAX(ct.seat_count) / LENGTH(MAX(ct.seat_columns)))
                   + FLOOR(MAX(ct.seat_count) / LENGTH(MAX(ct.seat_columns))))
   UNION ALL
-  SELECT '11. 운행 11건 (명절 8 + 평시 3)',    CASE WHEN COUNT(*) = 11  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_run
+  -- 평시 운행은 예매 가능 기간(약 2개월)을 날마다 덮어서 건수가 고정이 아니다. 그래서 명절만 센다
+  SELECT '11. 명절 운행 8건 (열차 2 × 4일)',    CASE WHEN COUNT(*) = 8   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
+    FROM train_run WHERE sale_event_id = 2
   UNION ALL
-  SELECT '12. ON_SALE 운행 2건 (9001·9002)',   CASE WHEN COUNT(*) = 2   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
+  -- 몇 건인지는 시간이 지나면 늘어난다 (오픈 시각이 지난 운행을 판매 오픈 스케줄러가 연다).
+  -- 그래서 "최소 1건"만 본다. 상태가 시각과 맞는지는 23번이 확인한다
+  SELECT '12. 지금 판매 중인 운행 있음',        CASE WHEN COUNT(*) >= 1  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
     FROM train_run WHERE status = 'ON_SALE'
   UNION ALL
-  SELECT '13. 정차 55건 (운행 11 × 역 5)',     CASE WHEN COUNT(*) = 55  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*) FROM train_stop
+  -- 시드 열차(1·2)만 봅니다. 실제 시간표 열차는 편마다 정차역이 2~5개로 달라서 5건이 아니고,
+  -- 그 정차는 tools/load-tago-schedule.js가 넣습니다 (시드 05의 대상도 열차 1·2뿐)
+  SELECT '13. 시드 운행마다 정차 5건',          CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,
+         '정차가 5건이 아닌 운행 ' || COUNT(*) || '건'
+    FROM train_run r JOIN train t ON t.train_id = r.train_id
+   WHERE t.train_id IN (1, 2)
+     AND (SELECT COUNT(*) FROM train_stop s WHERE s.run_id = r.run_id) <> 5
   UNION ALL
-  SELECT '14. 운행마다 stop_order 1~5',        CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,      '어긋난 운행 ' || COUNT(*) || '건'
-    FROM (SELECT run_id FROM train_stop GROUP BY run_id
-           HAVING MIN(stop_order) <> 1 OR MAX(stop_order) <> 5 OR COUNT(DISTINCT stop_order) <> 5)
+  SELECT '14. 시드 운행마다 stop_order 1~5',   CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,      '어긋난 운행 ' || COUNT(*) || '건'
+    FROM (SELECT s.run_id FROM train_stop s JOIN train_run r ON r.run_id = s.run_id
+           WHERE r.train_id IN (1, 2)
+           GROUP BY s.run_id
+          HAVING MIN(s.stop_order) <> 1 OR MAX(s.stop_order) <> 5 OR COUNT(DISTINCT s.stop_order) <> 5)
   UNION ALL
   SELECT '15. 정차 시각이 순번대로 증가',      CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,      '역전 ' || COUNT(*) || '건'
     FROM (SELECT run_id FROM (
@@ -102,18 +116,40 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
     FROM train_run
    WHERE (status = 'ON_SALE'   AND sale_open_at >  SYSTIMESTAMP)
       OR (status = 'SCHEDULED' AND sale_open_at <= SYSTIMESTAMP)
+  UNION ALL
+  -- 화면 검색은 운행일이 **정확히 일치**해야 찾는다 (TrainQueryService). 예매할 수 있는 날에
+  -- 운행이 빠져 있으면 그 날로 조회한 사람에게는 "조건에 맞는 열차가 없어요"만 나온다.
+  -- 운행일은 시드를 돌린 날 기준 상대값이라, 오래 띄워 둔 DB에서는 전부 빠져 있다.
+  -- 걸리면 DB를 지우지 말고 04 → 05 시드만 다시 돌린다 (날짜가 앞으로 밀린다).
+  -- 50일로 보는 이유: 2개월이 달에 따라 59~62일이라 끝자락은 아직 안 열렸을 수 있다
+  SELECT '24. 내일부터 50일 매일 판매 중',      CASE WHEN COUNT(*) = 0   THEN 1 ELSE 0 END,
+         '판매 중 운행 없는 날 ' || COUNT(*) || '일 → 04·05 다시 돌리세요'
+    FROM (SELECT TRUNC(SYSDATE) + LEVEL AS d FROM dual CONNECT BY LEVEL <= 50) x
+   WHERE NOT EXISTS (SELECT 1 FROM train_run r
+                      WHERE r.run_date = x.d AND r.status = 'ON_SALE')
 ) ORDER BY TO_NUMBER(REGEXP_SUBSTR(item, '^[0-9]+'));
 
--- 참고: 매수 제한 정책, 서울~부산 운임, 하행 101 정차 시각
+-- 참고: 매수 제한 정책, 서울~부산 운임, 하행 정차 시각 (TAGO 실제 시각표)
 SELECT NVL(TO_CHAR(sale_event_id), '상시') AS 행사, scope, max_seats AS 한도
   FROM purchase_limit_policy WHERE policy_id >= 4 ORDER BY sale_event_id NULLS LAST, scope;
 
+-- 운행은 예매 가능 기간만큼 날마다 있어 수가 많다. 상태별 요약과 시연 운행만 찍는다
+SELECT status, COUNT(*) AS 건수,
+       TO_CHAR(MIN(run_date), 'YYYY-MM-DD') AS 가장이른운행일,
+       TO_CHAR(MAX(run_date), 'YYYY-MM-DD') AS 가장늦은운행일
+  FROM train_run GROUP BY status ORDER BY status;
+
+-- 시퀀스(100000~)가 아닌 고정 번호 운행만. 꼬리 주석을 붙이면 SQLBLANKLINES ON 때문에
+-- sqlplus가 다음 문에 이어 붙여 ORA-03405를 냅니다 (02-seed.sh의 SET 꼬리 주석과 같은 함정)
 SELECT run_id, train_id, TO_CHAR(run_date, 'YYYY-MM-DD') AS 운행일,
        TO_CHAR(sale_open_at, 'YYYY-MM-DD HH24:MI') AS 예매오픈, status
-  FROM train_run ORDER BY run_id;
+  FROM train_run WHERE run_id < 100000 ORDER BY run_id;
 
-SELECT seat_grade, amount FROM fare
- WHERE from_station_id = '0001' AND to_station_id = '0020' ORDER BY seat_grade;
+SELECT a.station_name AS 출발, b.station_name AS 도착, f.seat_grade, f.amount
+  FROM fare f
+  JOIN station a ON a.station_id = f.from_station_id
+  JOIN station b ON b.station_id = f.to_station_id
+ WHERE a.station_name = '서울' AND b.station_name = '부산' ORDER BY f.seat_grade;
 
 SELECT s.stop_order, st.station_name,
        TO_CHAR(s.arrival_time, 'HH24:MI')   AS 도착,

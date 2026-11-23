@@ -501,22 +501,41 @@ async function projectBundle() {
 
 // ---------- 페이지 ----------
 function pageHomeAnon() {
-  main.innerHTML = `<div class="wrap"><h1 class="page">제자리 설계 문서</h1>
-    <p class="page-sub">명절 열차 공정 예매 시스템의 설계 문서예요.${S.me ? '' : ' 팀원은 오른쪽 위에서 로그인하면 문서를 고칠 수 있어요.'}</p>
-    <div class="cards">
-      <a class="card" href="#/roadmap"><h3>로드맵</h3><p>기능 영역별 보드, A~E 파트별 했다·안 했다, 개발자에게 남길 말</p></a>
-      <a class="card" href="#/doc/plan"><h3>기획서</h3><p>프로젝트 목표, 팀 역할, 일정, 기술 선택 이유</p></a>
-      <a class="card" href="#/doc/func"><h3>기능설계</h3><p>기능 목록, 상세, 상태 전이, API, Kafka, 에러 코드</p></a>
-      <a class="card" href="#/db"><h3>DB설계 · ERD</h3><p>Oracle·MongoDB·Redis·Kafka 역할, 테이블 정의, ERD</p></a>
-      <a class="card" href="#/ui"><h3>화면설계</h3><p>사용자 11개, 관리자 7개 화면을 눌러 보는 시안과 설명</p></a>
-      <a class="card" href="#/doc/conc"><h3>동시성</h3><p>트랜잭션 순서, SQL, Redis Lua, 락 순서, 테스트 목록</p></a>
-      <a class="card" href="#/people"><h3>팀원 문서</h3><p>팀원별 개발일지, 기능 문서, 트러블슈팅, 기여 정리</p></a>
+  const card = (href, icon, title, desc) => `<a class="hm-card" href="${href}"><span class="hm-ic">${svgI(icon, 20)}</span><span class="hm-txt"><b>${title}</b><span>${desc}</span></span></a>`;
+  const svc = (href, icon, title, url) => `<a class="hm-svc" href="${href}" target="_blank" rel="noopener"><span class="hm-svc-ic">${svgI(icon, 22)}</span><span class="hm-txt"><b>${title}</b><span>${url}</span></span><span class="hm-go" aria-hidden="true">↗</span></a>`;
+  main.innerHTML = `<div class="wrap hm">
+    <section class="hm-hero">
+      <div class="hm-head">
+        <div><h1 class="page">제자리 설계 문서</h1>
+        <p class="page-sub">명절 열차 공정 예매 시스템의 설계 문서예요.${S.me ? '' : ' 팀원은 오른쪽 위에서 로그인하면 문서를 고칠 수 있어요.'}</p></div>
+        <a class="hm-mon" href="https://jejari.duckdns.org/grafana/login" target="_blank" rel="noopener" title="Grafana에서 에러·지표 확인">${svgI('chart', 15)} 에러 확인 (Grafana) ↗</a>
+      </div>
+      <div class="hm-svcs">
+        ${svc('https://jejari.duckdns.org/', 'train', '이용자 사이트', 'jejari.duckdns.org')}
+        ${svc('https://jejari.duckdns.org/admin', 'gear', '관리자 사이트', 'jejari.duckdns.org/admin')}
+      </div>
+    </section>
+
+    <h2 class="hm-h">진행 상황</h2>
+    <div class="hm-grid two">
+      ${card('#/roadmap', 'map', '로드맵', '기능 영역별 보드, A~E 파트별 진행, 개발자에게 남길 말')}
+      ${card('#/doc/plan', 'doc', '기획서', '프로젝트 목표, 팀 역할, 일정, 기술 선택 이유')}
     </div>
-    <div class="llm-all">
-      <div><h3>프로젝트 전체를 LLM에 주기</h3>
-      <p class="muted">기획서·기능설계·동시성·DB설계·화면설계 설명을 한 덩어리로 복사해요. Claude·ChatGPT처럼 긴 글을 받는 곳에 붙여 넣고 질문하면 프로젝트 전체를 아는 상태로 답해요. 문서마다 위쪽의 "LLM용 전체 복사", 섹션마다 "LLM 복사", 글을 드래그하면 "AI에게 물어보기"도 있어요.</p></div>
-      <button class="btn" data-copyproject>프로젝트 전체 LLM용 복사</button>
-    </div></div>`;
+
+    <h2 class="hm-h">설계</h2>
+    <div class="hm-grid">
+      ${card('#/doc/func', 'ticket', '기능설계', '기능 목록, 상세, 상태 전이, API, Kafka, 에러 코드')}
+      ${card('#/db', 'database', 'DB설계 · ERD', 'Oracle·MongoDB·Redis·Kafka 역할, 테이블 정의, ERD')}
+      ${card('#/ui', 'monitor', '화면설계', '사용자 11개, 관리자 7개 화면 시안과 설명')}
+      ${card('#/doc/conc', 'cpu', '동시성', '트랜잭션 순서, SQL, Redis Lua, 락 순서, 테스트')}
+    </div>
+
+    <h2 class="hm-h">팀</h2>
+    <div class="hm-grid two">
+      ${card('#/people', 'user', '팀원 문서', '팀원별 개발일지, 기능 문서, 트러블슈팅, 기여 정리')}
+      <div class="hm-card hm-llm"><span class="hm-ic">${svgI('bot', 20)}</span><span class="hm-txt"><b>프로젝트 전체를 LLM에 주기</b><span>기획서·기능설계·동시성·DB설계·화면설계 설명을 한 번에 복사해 Claude·ChatGPT에 붙여 넣고 질문하세요.</span></span><button class="btn sm" data-copyproject>전체 복사</button></div>
+    </div>
+  </div>`;
   $('[data-copyproject]', main).addEventListener('click', () => copyLater(projectBundle, '프로젝트 문서 전체를 LLM용으로 복사했어요.'));
 }
 function pageLocked() {
@@ -1154,6 +1173,143 @@ $('[data-ai-new]', aiPanel).addEventListener('click', () => aiChat(newConv(null)
 $('[data-ai-list]', aiPanel).addEventListener('click', () => aiList());
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !aiPanel.hidden && $('#modalBack').hidden) aiClose(); });
 
+// ---- 오른쪽 아래 Actions 상황 (채팅 버튼 위) ----
+const acFab = document.createElement('button');
+acFab.className = 'ac-fab'; acFab.type = 'button'; acFab.title = 'GitHub Actions 실행 상황 보기';
+acFab.innerHTML = '<span class="ac-dot" data-st="unknown"></span><span class="ac-fab-t">Actions</span>';
+const acPanel = document.createElement('section');
+acPanel.className = 'ac-panel'; acPanel.hidden = true; acPanel.setAttribute('aria-label', 'GitHub Actions 상황');
+acPanel.innerHTML = `<header class="ai-head">
+    <button type="button" class="btn sm plain" data-ac-back hidden>← 목록</button>
+    <b class="ai-title ac-head-t">Actions 상황</b>
+    <span class="ac-live" title="자동으로 새로 읽는 중"><span class="ac-dot" data-st="run"></span>실시간</span>
+    <a class="btn sm plain" data-ac-gh href="https://github.com/BrainSaver/jejari/actions" target="_blank" rel="noopener">GitHub ↗</a>
+    <button type="button" class="ai-x" data-ac-x aria-label="닫기">✕</button>
+  </header>
+  <div class="ac-body"><p class="muted ac-pad">불러오는 중…</p></div>`;
+document.body.appendChild(acFab); document.body.appendChild(acPanel);
+const acBody = $('.ac-body', acPanel);
+const AC = { list: null, run: null, view: 'list', id: null, timer: null, busy: false };
+const acState = (r) => (r.status !== 'completed' ? (r.status === 'in_progress' ? 'run' : 'wait') : r.conclusion === 'success' ? 'ok' : r.conclusion === 'failure' || r.conclusion === 'timed_out' ? 'fail' : 'skip');
+const AC_LABEL = { ok: '성공', fail: '실패', run: '실행 중', wait: '대기 중', skip: '취소·건너뜀', unknown: '모름' };
+const AC_ICON = { ok: '✓', fail: '✕', run: '●', wait: '○', skip: '–', unknown: '?' };
+const acSec = (a, b) => { const x = Date.parse(a), y = b ? Date.parse(b) : Date.now(); return x && y >= x ? Math.round((y - x) / 1000) : null; };
+const acFmt = (s) => (s == null ? '' : s < 60 ? `${s}초` : s < 3600 ? `${Math.floor(s / 60)}분 ${s % 60}초` : `${Math.floor(s / 3600)}시간 ${Math.floor(s / 60) % 60}분`);
+// 실행 중이면 끝 시각 없이 보내서 1초마다 늘어나게
+const acDur = (at, end, running) => `<span class="ac-t" data-t0="${esc(at || '')}"${running ? '' : ` data-t1="${esc(end || '')}"`}>${acFmt(acSec(at, running ? null : end))}</span>`;
+const acRunning = (r) => !!r && r.status !== 'completed';
+const acSha = (r) => `<a class="ac-sha" href="${esc(r.commitUrl)}" target="_blank" rel="noopener" title="커밋 ${esc(r.sha)} 보기">${esc(String(r.sha || '').slice(0, 7))}</a>`;
+function acNow(r) {
+  // 실행 중인 job·step 한 줄 요약과 진행 막대
+  if (!r.jobs || !acRunning(r)) return '';
+  const steps = r.jobs.flatMap((j) => j.steps.map((st) => ({ ...st, job: j.name })));
+  const done = steps.filter((st) => st.status === 'completed').length;
+  const cur = steps.find((st) => st.status === 'in_progress') || steps.find((st) => st.status !== 'completed');
+  const pct = steps.length ? Math.round((done / steps.length) * 100) : 0;
+  return `<div class="ac-now">${cur ? `<span>지금: <b>${esc(cur.job)}</b> · ${esc(cur.name)}</span>` : '<span>준비 중</span>'}<span class="muted">${done}/${steps.length || '?'} 단계</span></div>
+    <div class="ac-bar"><i style="width:${pct}%"></i></div>`;
+}
+function acFails(r) {
+  if (!r.jobs || acState(r) !== 'fail') return '';
+  const f = r.jobs.filter((j) => j.conclusion === 'failure');
+  return f.length ? `<div class="ac-why">실패: ${f.map((j) => `${esc(j.name)}${j.steps.filter((st) => st.conclusion === 'failure').map((st) => ` · ${esc(st.name)}`).join('')}`).join(' / ')}</div>` : '';
+}
+function acHead() {
+  const det = AC.view === 'run';
+  $('[data-ac-back]', acPanel).hidden = !det;
+  $('.ac-head-t', acPanel).textContent = det && AC.run ? `${AC.run.name} #${AC.run.no}` : 'Actions 상황';
+  $('[data-ac-gh]', acPanel).href = det && AC.run ? AC.run.url : 'https://github.com/BrainSaver/jejari/actions';
+  const live = det ? acRunning(AC.run) : !!(AC.list && AC.list.runs.some(acRunning));
+  $('.ac-live', acPanel).hidden = !live;
+}
+function acRenderList() {
+  const runs = (AC.list && AC.list.runs) || [];
+  if (!runs.length) { acBody.innerHTML = '<p class="muted ac-pad">실행 기록이 없어요.</p>'; return; }
+  const last = runs.find((r) => r.branch === 'main') || runs[0]; const st = acState(last);
+  const running = runs.filter(acRunning).length; const fails = runs.filter((r) => acState(r) === 'fail').length;
+  const sum = `<div class="ac-sum st-${st}"><span class="ac-dot" data-st="${st}"></span><div><b>main 최근 실행: ${AC_LABEL[st]}</b>
+    <span class="muted">실행 중 ${running}개 · 최근 ${runs.length}개 중 실패 ${fails}개 · 눌러서 단계별로 보기</span></div></div>`;
+  const row = (r) => {
+    const s = acState(r);
+    return `<div class="ac-row st-${s}" role="button" tabindex="0" data-run="${r.id}" title="눌러서 단계별로 보기">
+      <span class="ac-dot" data-st="${s}"></span>
+      <span class="ac-main"><b class="ac-title">${esc(r.title || r.name)}</b>
+        <span class="muted">${esc(r.name)} #${r.no} · 커밋 ${acSha(r)} · ${esc(r.branch || '')} · ${esc(r.who || '')}</span>
+        <span class="muted">${ago(Date.parse(r.at))} 시작 · ${acRunning(r) ? '지금까지 ' : ''}${acDur(r.at, r.updated, acRunning(r))}</span>
+        ${acNow(r)}${acFails(r)}</span>
+      <span class="ac-tag">${AC_LABEL[s]}<span class="ac-go">›</span></span></div>`;
+  };
+  acBody.innerHTML = sum + `<div class="ac-list">${runs.map(row).join('')}</div>`;
+}
+function acRenderRun() {
+  const r = AC.run;
+  if (!r) { acBody.innerHTML = '<p class="muted ac-pad">불러오는 중…</p>'; return; }
+  const s = acState(r);
+  const job = (j) => {
+    const js = acState(j);
+    return `<div class="ac-job st-${js}"><div class="ac-job-h"><span class="ac-ico" data-st="${js}">${AC_ICON[js]}</span><b>${esc(j.name)}</b>
+      <span class="muted">${j.at ? acDur(j.at, j.end, acRunning(j)) : ''}</span><a class="ac-jlink" href="${esc(j.url)}" target="_blank" rel="noopener">로그 ↗</a></div>
+      <ol class="ac-steps">${(j.steps || []).map((st) => { const ss = acState(st); return `<li class="st-${ss}"><span class="ac-ico" data-st="${ss}">${AC_ICON[ss]}</span><span class="ac-sn">${esc(st.name)}</span><span class="muted">${st.at ? acDur(st.at, st.end, acRunning(st)) : ''}</span></li>`; }).join('')}</ol></div>`;
+  };
+  acBody.innerHTML = `<div class="ac-sum st-${s}"><span class="ac-dot" data-st="${s}"></span><div><b>${AC_LABEL[s]} · ${esc(r.title || r.name)}</b>
+      <span class="muted">커밋 ${acSha(r)} · ${esc(r.branch || '')} · ${esc(r.who || '')} · ${esc(r.event || '')}${r.attempt > 1 ? ` · ${r.attempt}번째 시도` : ''}</span>
+      <span class="muted">${kst(r.at)} 시작 · ${acRunning(r) ? '지금까지 ' : '걸린 시간 '}${acDur(r.at, r.updated, acRunning(r))}</span></div></div>
+    ${r.jobs ? acNow(r) : ''}
+    ${!r.jobs ? '<p class="muted ac-pad">단계 불러오는 중…</p>' : r.jobs.length ? r.jobs.map(job).join('') : '<p class="muted ac-pad">아직 job이 시작되지 않았어요.</p>'}
+    <a class="btn plain ac-full" href="${esc(r.url)}" target="_blank" rel="noopener">GitHub에서 이 실행 전체 보기 ↗</a>`;
+}
+function acRender() {
+  const runs = (AC.list && AC.list.runs) || [];
+  const last = runs.find((r) => r.branch === 'main') || runs[0];
+  $('.ac-dot', acFab).dataset.st = last ? acState(last) : 'unknown';
+  const nRun = runs.filter(acRunning).length;
+  $('.ac-fab-t', acFab).textContent = nRun ? `Actions 실행 중 ${nRun}` : 'Actions';
+  if (acPanel.hidden) return;
+  acHead();
+  const keep = acBody.scrollTop;
+  if (AC.view === 'run') acRenderRun(); else acRenderList();
+  acBody.scrollTop = keep;
+}
+function acSchedule() {
+  clearTimeout(AC.timer);
+  const anyRun = AC.view === 'run' && !acPanel.hidden ? acRunning(AC.run) : !!(AC.list && AC.list.runs.some(acRunning));
+  const ms = acPanel.hidden ? (anyRun ? 10000 : 60000) : (anyRun ? 3000 : 15000);
+  AC.timer = setTimeout(() => acLoad(), ms);
+}
+async function acLoad(fresh) {
+  if (AC.busy) return; AC.busy = true;
+  try {
+    if (document.hidden && acPanel.hidden) return;
+    const f = fresh ? '&fresh=1' : '';
+    if (!acPanel.hidden && AC.view === 'run') { const id = AC.id; const d = await apiRaw(`/actions/run?id=${encodeURIComponent(id)}${f}`); if (AC.view === 'run' && AC.id === id) AC.run = d.run; }
+    else AC.list = await apiRaw('/actions?v=2' + f);
+    acRender();
+  } catch (e) {
+    if (!acPanel.hidden) acBody.innerHTML = `<p class="muted ac-pad">불러오지 못했어요: ${esc(e.message)}</p>`;
+  } finally { AC.busy = false; acSchedule(); }
+}
+function acOpenRun(id) {
+  AC.view = 'run'; AC.id = id;
+  const r = ((AC.list && AC.list.runs) || []).find((x) => String(x.id) === String(id));
+  AC.run = r ? { ...r, jobs: r.jobs || null } : null;
+  acRender(); acBody.scrollTop = 0; AC.busy = false; acLoad(true);
+}
+function acOpen() { acPanel.hidden = false; acFab.hidden = true; acRender(); acLoad(true); }
+function acClose() { acPanel.hidden = true; acFab.hidden = false; AC.view = 'list'; AC.run = null; acRender(); acSchedule(); }
+acFab.addEventListener('click', acOpen);
+$('[data-ac-x]', acPanel).addEventListener('click', acClose);
+$('[data-ac-back]', acPanel).addEventListener('click', () => { AC.view = 'list'; AC.run = null; acRender(); acBody.scrollTop = 0; AC.busy = false; acLoad(true); });
+acBody.addEventListener('click', (e) => {
+  if (e.target.closest('a')) return;
+  const row = e.target.closest('[data-run]'); if (row) acOpenRun(row.dataset.run);
+});
+acBody.addEventListener('keydown', (e) => { const row = e.target.closest('[data-run]'); if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); acOpenRun(row.dataset.run); } });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !acPanel.hidden) acClose(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) acLoad(); });
+// 실행 중인 시간은 1초마다 늘어나게
+setInterval(() => { if (acPanel.hidden) return; $$('.ac-t', acPanel).forEach((el) => { if (!el.dataset.t1) el.textContent = acFmt(acSec(el.dataset.t0, null)); }); }, 1000);
+acLoad();
+
 const convTitle = (c) => ((c.messages.find((x) => x.role === 'user') || {}).content || c.selection || '새 채팅').slice(0, 80);
 
 async function aiList() {
@@ -1630,11 +1786,13 @@ function rmPartStrip() {
     const mine = items.filter((x) => x.roles && x.roles[p]);
     const done = mine.filter((x) => x.roles[p].done).length;
     const pct = mine.length ? Math.round((done / mine.length) * 100) : 0;
-    const msgs = (RM.data.msgs || []).filter((m) => m.to === p).length;
+    // 내 파트는 받은 말함에서 아직 확인 안 한 말 수
+    const own = p === myPart() && RM.data.inbox;
+    const msgs = own ? ibNew().length : (RM.data.msgs || []).filter((m) => m.to === p).length;
     return `<button class="rm-part${RM.f.part === p ? ' on' : ''}" data-fpart="${p}" style="--pc:${partColor(p)}" title="누르면 모든 탭에서 ${esc(partName(p))} 것만 보여요 (다시 누르면 풀림)" aria-pressed="${RM.f.part === p}">
       <span class="rm-part-head"><b>${esc(partName(p))}</b><span class="muted">${esc(RM.data.parts[p].label)}</span></span>
       <span class="rm-bar"><i style="width:${pct}%"></i></span>
-      <span class="rm-part-nums"><b>${pct}%</b><span>${done}/${mine.length} 했음</span>${RM.f.part === p ? '<span class="rm-part-on" title="다시 누르면 풀려요">선택됨</span>' : ''}${msgs ? `<span class="rm-to">${svgI('msg', 14)} 받은 말 ${msgs}</span>` : ''}</span>
+      <span class="rm-part-nums"><b>${pct}%</b><span>${done}/${mine.length} 했음</span>${RM.f.part === p ? '<span class="rm-part-on" title="다시 누르면 풀려요">선택됨</span>' : ''}${msgs ? `<span class="rm-to">${svgI('msg', 14)} ${own ? '새로 받은 말' : '받은 말'} ${msgs}</span>` : ''}</span>
     </button>`;
   }).join('')}</div>`;
 }
@@ -1680,7 +1838,7 @@ function rmPartsView(by) {
     const todo = RM.data.items.filter((x) => x.roles && x.roles[p] && !x.roles[p].done).sort(sortItems);
     const msgs = (RM.data.msgs || []).filter((m) => m.to === p).slice(0, 8);
     return `<section class="rm-partcol${mineOn() ? (p === focusPart() ? ' mine' : ' dim') : ''}" style="--pc:${partColor(p)}"><div class="rm-partcol-head"><b>${esc(partName(p))}</b> <span class="muted">남은 ${todo.length}개</span></div>
-      ${msgs.length ? `<div class="rm-inbox"><div class="rm-rel-h">${svgI('msg', 14)} 받은 말</div>${msgs.map((m) => `<button class="rm-msg" data-open="${m.item}"><span class="muted">${rmWho(m.who)} · ${ago(m.at)} · ${esc(m.code || m.title || '')}</span><span>${esc((m.text || '(사진)').slice(0, 120))}</span></button>`).join('')}</div>` : ''}
+      ${msgs.length ? `<div class="rm-inbox"><div class="rm-rel-h">${svgI('msg', 14)} 받은 말${p === myPart() ? ' <a href="#/roadmap/inbox" class="ib-more">받은 말함에서 보기</a>' : ''}</div>${msgs.map((m) => `<button class="rm-msg" data-open="${m.item}"><span class="muted">${rmWho(m.who)} · ${ago(m.at)} · ${esc(m.code || m.title || '')}</span><span>${esc((m.text || '(사진)').slice(0, 120))}</span></button>`).join('')}</div>` : ''}
       ${todo.map((x) => { const w = waitingOn(x, by); return `<div class="rm-todo" data-open="${x.id}">${roleChip(x, p)}<span class="rm-todo-t"><b>${esc(x.code)}</b> ${esc(x.title)}<small class="muted">${esc(areaLabel(x.area))}${x.week ? ` · ${x.week}주차` : ''}${w.length ? ` · 기다림 ${w.length}` : ''}</small></span></div>`; }).join('') || '<p class="muted">다 했어요.</p>'}
     </section>`;
   }).join('')}</div>`;
@@ -2262,7 +2420,7 @@ function rmAsk(k) {
 }
 
 async function pageRoadmap(view) {
-  RM.view = ['flow', 'order', 'board', 'parts', 'deps', 'log'].includes(view) ? view : 'flow';
+  RM.view = ['flow', 'order', 'board', 'parts', 'inbox', 'deps', 'log'].includes(view) ? view : 'flow';
   // 이름 칸 선택은 보드·할 순서에서만 쓰므로 다른 탭으로 가면 푼다
   if (RM.data) {
     // 탭을 옮기거나 다시 열 때는 가진 것으로 바로 그리고, 오래됐으면 뒤에서 새로 받아 바뀐 경우만 다시 그린다
@@ -2308,7 +2466,7 @@ async function searchIndex() {
   const PAGES = [
     ['홈', '#/', '첫 화면 최근 수정'], ['로드맵', '#/roadmap', '할 일 진행 보드 roadmap'],
     ['로드맵 · 흐름도', '#/roadmap/flow', '다이어그램 흐름 따라가기 시뮬레이션 지금 하는 일'], ['로드맵 · 할 순서', '#/roadmap/order', '단계 순서 먼저 끝나야 하는 일'],
-    ['로드맵 · 보드', '#/roadmap/board', '카드 체크 기능 영역'], ['로드맵 · 파트별 할 일·받은 말', '#/roadmap/parts', '받은 말 메시지 파트 A B C D E'],
+    ['로드맵 · 보드', '#/roadmap/board', '카드 체크 기능 영역'], ['로드맵 · 파트별 할 일·받은 말', '#/roadmap/parts', '받은 말 메시지 파트 A B C D E'], ['로드맵 · 받은 말함', '#/roadmap/inbox', '받은 말 확인한 말 메시지 알림 inbox'],
     ['로드맵 · 의존 관계', '#/roadmap/deps', '선행 작업 기다림 표'], ['로드맵 · 최근 변경', '#/roadmap/log', '기록 로그 히스토리'],
     ['기획서', '#/doc/plan', 'README 프로젝트 개요 역할'], ['기능설계', '#/doc/func', '기능설계서 API 상태 전이'],
     ['DB설계 · DB설계서', '#/db/doc', '테이블 저장소'], ['DB설계 · ERD', '#/db/erd', 'ERD 편집기 스키마 테이블 관계'],
@@ -2445,6 +2603,7 @@ function rmRender() {
   else if (RM.view === 'board') body = rmBoard(list, by);
   else if (RM.view === 'order') body = rmOrderView(by);
   else if (RM.view === 'parts') body = rmPartsView(by);
+  else if (RM.view === 'inbox') body = rmInboxView(by);
   else if (RM.view === 'deps') body = rmDepsView(by);
   else {
     const fp = RM.f.part;
@@ -2460,11 +2619,11 @@ function rmRender() {
   main.innerHTML = `<div class="wide rm">
     <div class="rm-head"><div><h1 class="page">로드맵</h1>
       <p class="page-sub" style="margin:0">카드 ${items.length}장 중 <b>${cardsDone}장 끝</b> · 파트 칸 ${checks}개 중 ${checked}개 체크 (${checks ? Math.round(checked / checks * 100) : 0}%). ${S.me ? '카드 안 A~E 칸을 누르면 했다·안 했다가 바뀌어요.' : '로그인하면 체크하고 할 일을 추가할 수 있어요.'}</p></div>
-      <div class="rm-head-acts">${S.me ? `<button class="btn" data-add="">${svgI('plus', 16)} 할 일 추가</button>` : '<button class="btn" data-login>로그인</button>'}</div></div>
+      <div class="rm-head-acts">${S.me && RM.view !== 'inbox' ? `<a class="btn plain ib-open" href="#/roadmap/inbox" title="나에게 온 말 모아 보기">${svgI('msg', 16)} 받은 말함${ibNew().length ? ` <span class="ib-badge">${ibNew().length}</span>` : ''}</a>` : ''}${S.me ? `<button class="btn" data-add="">${svgI('plus', 16)} 할 일 추가</button>` : '<button class="btn" data-login>로그인</button>'}</div></div>
     ${rmPartStrip()}
     ${mineOn() ? (() => { const mi = items.filter((x) => mineOf(x)); const d = mi.filter((x) => mineOf(x) === 'done').length; return `<div class="rm-minesum" style="--pc:${partColor(focusPart())}"><b>${esc(partName(focusPart()))}</b> ${esc(focusWho())} 칸 ${mi.length}개 중 <b>${d}개 했음</b> · <b>${mi.length - d}개 남음</b><span class="muted">진하게 보이는 게 ${esc(focusWho())} 것, 흐린 건 다른 파트 것이에요. 이름 박스를 다시 누르면 풀려요.</span></div>`; })() : ''}
-    <div class="tabs">${[['flow', '흐름도'], ['order', '할 순서'], ['board', '보드'], ['parts', '파트별 할 일·받은 말'], ['deps', '의존 관계'], ['log', '최근 변경']].map(([k, l]) => `<button data-v="${k}" class="${RM.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-    ${RM.view !== 'flow' ? `<div class="rm-tools">${askBtn('')}${mineBtn()}</div>` : ''}
+    <div class="tabs">${[['flow', '흐름도'], ['order', '할 순서'], ['board', '보드'], ['parts', '파트별 할 일·받은 말'], ...(S.me ? [['inbox', '받은 말함']] : []), ['deps', '의존 관계'], ['log', '최근 변경']].map(([k, l]) => `<button data-v="${k}" class="${RM.view === k ? 'on' : ''}">${l}${k === 'inbox' && ibNew().length ? ` <span class="ib-badge">${ibNew().length}</span>` : ''}</button>`).join('')}</div>
+    ${RM.view !== 'flow' && RM.view !== 'inbox' ? `<div class="rm-tools">${askBtn('')}${mineBtn()}</div>` : ''}
     ${RM.view === 'board' ? `<div class="filters rm-filters">
       <input type="search" id="rmQ" placeholder="코드·제목 검색" value="${esc(f.q)}">
       <select id="rmPart"><option value="">모든 파트</option>${RM_PARTS.map((p) => `<option value="${p}"${f.part === p ? ' selected' : ''}>${esc(partName(p))}</option>`).join('')}</select>
@@ -2475,6 +2634,7 @@ function rmRender() {
     ${body}</div>`;
   rmBind(main);
   if (RM.view === 'flow') bindFlow(main);
+  if (RM.view === 'inbox') ibBind(main);
 }
 
 function rmBind(root) {
@@ -2510,6 +2670,85 @@ function rmBind(root) {
     $('#rmPrio', root).addEventListener('change', (e) => { RM.f.prio = e.target.value; save(); rmRender(); });
     $('#rmHide', root).addEventListener('change', (e) => { RM.f.hideDone = e.target.checked; save(); rmRender(); });
   }
+}
+
+// ---------- 받은 말함: 나에게 온 말을 골라 읽고, 확인 체크하면 "확인한 말"로 옮긴다 (사람마다 따로, D1 roadmap_read) ----------
+RM.ib = { tab: 'new', sel: null };
+const ibAll = () => (RM.data && RM.data.inbox ? RM.data.inbox.list : []);
+const ibNew = () => ibAll().filter((m) => !m.readAt);
+const ibDone = () => ibAll().filter((m) => m.readAt).sort((a, b) => b.readAt - a.readAt);
+const ibNarrow = () => window.matchMedia('(max-width: 760px)').matches;
+function rmInboxView(by) {
+  if (!S.me) return '<p class="empty">로그인하면 받은 말함을 볼 수 있어요. <button class="btn sm" data-iblogin>로그인</button></p>';
+  if (!RM.data.inbox || !RM.data.inbox.part) return '<p class="empty">맡은 파트가 없어 받은 말이 없어요.</p>';
+  const ib = RM.ib;
+  const list = ib.tab === 'done' ? ibDone() : ibNew();
+  if (!list.some((m) => m.seq === ib.sel)) ib.sel = !ibNarrow() && list.length ? list[0].seq : null;
+  const cur = list.find((m) => m.seq === ib.sel);
+  const row = (m) => `<div class="ib-row${m.seq === ib.sel ? ' on' : ''}" data-ibsel="${m.seq}" role="button" tabindex="0">
+      <button class="ib-chk${m.readAt ? ' on' : ''}" data-ibchk="${m.seq}" title="${m.readAt ? '받은 말로 되돌리기' : '확인했어요 (받은 말에서 빼기)'}" aria-label="${m.readAt ? '확인 풀기' : '확인'}">${m.readAt ? svgI('check', 14) : ''}</button>
+      <span class="ib-row-t"><span class="ib-row-h"><span class="dot" style="background:${colorOf(m.who)}"></span><b>${rmWho(m.who)}</b><span class="ib-scope${m.to ? ' me' : ''}">${m.to ? '나에게' : '모두에게'}</span><span class="muted ib-ago">${ago(m.at)}</span></span>
+        <span class="ib-row-card">${esc(m.code || '')} ${esc(m.title || '')}</span>
+        <span class="ib-row-txt">${m.text ? esc(m.text.slice(0, 90)) : '<span class="muted">(사진)</span>'}${m.img && m.text ? ' <span class="muted">· 사진</span>' : ''}</span></span>
+    </div>`;
+  const it = cur && by.get(cur.item);
+  const view = cur ? `<div class="ib-view-h"><button class="btn sm plain ib-back" data-ibback>← 목록</button>
+        <span class="dot" style="background:${colorOf(cur.who)}"></span><b>${rmWho(cur.who)}</b><span class="ib-scope${cur.to ? ' me' : ''}">${cur.to ? `→ ${esc(partName(cur.to))}` : '→ 모두'}</span>
+        <span class="muted">${kst(new Date(cur.at).toISOString())}${cur.edited ? ' (수정됨)' : ''}</span></div>
+      ${it ? `<button class="ib-card" data-open="${it.id}" title="카드 열기">${svgI('doc', 16)}<span class="ib-card-t"><b>${esc(it.code)}</b> ${esc(it.title)}</span>${stPill(it)}<span class="muted ib-card-go">카드 열기 →</span></button>` : `<p class="muted">${esc(cur.code || '')} ${esc(cur.title || '')} (지워진 카드)</p>`}
+      ${cur.text ? `<div class="ib-body">${esc(cur.text)}</div>` : ''}
+      ${cur.img ? `<a href="/api/roadmap/img?id=${cur.img}" target="_blank" rel="noopener"><img class="rm-img" src="/api/roadmap/img?id=${cur.img}" alt="${rmWho(cur.who)}의 스크린샷"></a>` : ''}
+      <div class="ib-acts">${cur.readAt
+        ? `<span class="muted">${ago(cur.readAt)} 확인함</span><span style="flex:1"></span><button class="btn plain" data-ibchk="${cur.seq}">${svgI('undo', 16)} 받은 말로 되돌리기</button>`
+        : `<span style="flex:1"></span><button class="btn" data-ibchk="${cur.seq}">${svgI('check', 16)} 확인했어요</button>`}</div>`
+    : `<p class="empty">${list.length ? '목록에서 말을 고르면 여기에 열려요.' : ib.tab === 'done' ? '아직 확인한 말이 없어요.' : '새로 받은 말이 없어요. 다 확인했어요.'}</p>`;
+  const nN = ibNew().length, nD = ibDone().length;
+  return `<div class="ib${cur ? ' has-sel' : ''}">
+    <aside class="ib-side">
+      <div class="ib-tabs"><button data-ibtab="new" class="${ib.tab === 'new' ? 'on' : ''}">받은 말 <b>${nN}</b></button><button data-ibtab="done" class="${ib.tab === 'done' ? 'on' : ''}">확인한 말 <b>${nD}</b></button></div>
+      <p class="muted ib-help">${ib.tab === 'new' ? `${esc(partName(RM.data.inbox.part))} 파트에게 온 말과, 내 칸이 있는 카드에 "모두"에게 남긴 말이에요. 네모를 체크하면 확인한 말로 옮겨져요.` : '체크한 말이에요. 체크를 풀면 받은 말로 돌아가요.'}</p>
+      ${ib.tab === 'new' && nN > 1 ? `<button class="btn sm plain ib-allbtn" id="ibAll">${svgI('check', 14)} 모두 확인 (${nN})</button>` : ''}
+      <div class="ib-list">${list.map(row).join('') || '<p class="muted ib-none">없어요.</p>'}</div>
+    </aside>
+    <section class="ib-view">${view}</section>
+  </div>`;
+}
+async function ibMark(seqs, read) {
+  const list = ibAll().filter((m) => seqs.includes(m.seq));
+  const before = list.map((m) => m.readAt);
+  // 지금 연 말을 체크하면 같은 목록의 다음 말을 연다
+  const tabList = RM.ib.tab === 'done' ? ibDone() : ibNew();
+  if (seqs.includes(RM.ib.sel)) {
+    const i = tabList.findIndex((m) => m.seq === RM.ib.sel);
+    const next = tabList.slice(i + 1).concat(tabList.slice(0, i).reverse()).find((m) => !seqs.includes(m.seq));
+    RM.ib.sel = next && !ibNarrow() ? next.seq : null;
+  }
+  const now = Date.now();
+  list.forEach((m) => { m.readAt = read ? now : null; });
+  ibRender();
+  try { await api('/roadmap/read', { body: { seqs, read } }); if (seqs.length > 1) toast(`${seqs.length}개를 확인한 말로 옮겼어요.`); }
+  catch (x) { list.forEach((m, i) => { m.readAt = before[i]; }); ibRender(); toast(x.error === 'LOGIN' ? '다시 로그인해 주세요.' : x.message); }
+}
+// 목록 스크롤을 지키며 다시 그린다
+function ibRender() {
+  const l = $('.ib-list'); const top = l ? l.scrollTop : 0;
+  rmRender();
+  const n = $('.ib-list'); if (n) n.scrollTop = top;
+}
+function ibBind(root) {
+  const lg = $('[data-iblogin]', root); if (lg) lg.addEventListener('click', () => loginModal(() => rmLoad().then(rmRender)));
+  $$('[data-ibtab]', root).forEach((b) => b.addEventListener('click', () => { RM.ib.tab = b.dataset.ibtab; RM.ib.sel = null; rmRender(); }));
+  $$('[data-ibsel]', root).forEach((r) => {
+    const pick = () => { RM.ib.sel = Number(r.dataset.ibsel); ibRender(); if (ibNarrow()) { const v = $('.ib-view'); if (v) v.scrollIntoView({ block: 'start' }); } };
+    r.addEventListener('click', pick);
+    r.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === r) { e.preventDefault(); pick(); } });
+  });
+  $$('[data-ibchk]', root).forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const m = ibAll().find((x) => x.seq === Number(b.dataset.ibchk)); if (m) ibMark([m.seq], !m.readAt);
+  }));
+  const bk = $('[data-ibback]', root); if (bk) bk.addEventListener('click', () => { RM.ib.sel = null; ibRender(); });
+  const all = $('#ibAll', root); if (all) twoStep(all, '한 번 더 누르면 모두 확인', () => ibMark(ibNew().map((m) => m.seq), true));
 }
 
 async function rmCheck(id, p) {

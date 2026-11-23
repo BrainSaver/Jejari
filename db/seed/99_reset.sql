@@ -5,7 +5,8 @@
 
 DELETE FROM fare;
 DELETE FROM train_stop;
-DELETE FROM train_run        WHERE sale_event_id = 2 OR run_id IN (9001, 9002, 9003);
+DELETE FROM train_run        WHERE sale_event_id = 2 OR run_id IN (9001, 9002, 9003)
+                                OR (run_id >= 100000 AND run_id < 400000);  -- 날짜별 평시 운행 (train_run_seq)
 DELETE FROM purchase_limit_policy WHERE policy_id >= 4;
 DELETE FROM sale_event       WHERE sale_event_id = 2;
 DELETE FROM seat;

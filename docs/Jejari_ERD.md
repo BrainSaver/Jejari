@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v22 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-17
+> 스키마 v32 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-19
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -36,11 +36,11 @@
 
 | 항목 | 값 |
 |---|---|
-| 테이블 | 60개 (운영 56 + 확장 예정 4) |
-| 저장소 | Oracle 44 · MongoDB 11 · Redis 1 · 확장 예정 4 |
+| 테이블 | 61개 (운영 57 + 확장 예정 4) |
+| 저장소 | Oracle 44 · MongoDB 12 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 521개 |
-| 관계 (FK) | 85개 (Oracle 제약 60 · 논리 참조 20) |
+| 컬럼 | 531개 |
+| 관계 (FK) | 87개 (Oracle 제약 60 · 논리 참조 22) |
 
 | 영역 | 저장소 | 테이블 |
 |---|---|---|
@@ -50,7 +50,7 @@
 | 예약·결제 | Oracle | `seat_inventory`, `reservation`, `reservation_seat`, `reservation_history`, `payment`, `cancellation`, `cancel_fee_policy`, `ticket_transfer`(확장), `purchase_counter` |
 | 이벤트 신뢰성 | Oracle | `outbox_event`, `processed_event`, `saga_instance` |
 | 취소표 재배정 | Oracle | `waitlist`, `notification` |
-| 위험 점수·관리자 | Oracle | `risk_score`, `risk_score_history`, `admin_action`, `model_run` |
+| 위험 점수·관리자 | Oracle, MongoDB | `risk_score`, `risk_score_history`, `admin_action`, `model_run`, `model_score` |
 | CCTV 되돌아보기 | MongoDB, Oracle | `replay_session`, `replay_event`, `suspicious_case`, `case_session`, `case_marker`, `evidence_snapshot`, `replay_access_log` |
 | MongoDB 로그 | MongoDB | `behavior_log`, `queue_log` |
 | Redis | Redis | `redis_keys` |
@@ -137,7 +137,7 @@
 | Kafka 소비 | processed_event INSERT(중복이면 skip) → 업무 처리 → 커밋 → 오프셋 커밋 (§12) |
 | 로그 적재·보관 | behavior_log·replay_event는 Kafka → insertMany. expire_at TTL, legal_hold 세션은 컨슈머가 expire_at 없이 저장 (§13) |
 | 운영 설정 변경 | app_policy 값 변경 → version + 1 → app_policy_history 한 행 → policy:cache 갱신 → 각 서버가 version 비교 후 다시 로딩 |
-| 위험 점수 | behavior_log·replay_event·cancellation → risk_feature → model_run(활성 모델) → risk_score → risk:* 캐시 → 대기열 score 반영 |
+| 위험 점수 | behavior_log·replay_event·cancellation → risk_feature → model_run(활성 모델) → risk_score → risk:* 캐시 → 대기열 score 반영. 모델 보조 의견은 별도: tools/ml score.py → model_score → 관리자 화면만 |
 | CCTV | 임계 초과·규칙 적중 → suspicious_case → 같은 CI·기기·결제수단 세션 case_session → 자동 case_marker → evidence_snapshot 동결(조각+해시) → 관리자 재생·판정 → admin_action → replay_access_log에 열람 기록 |
 | Argon2 로그인 | rate:login 확인 → 세마포어 획득(auth.max_concurrent_hash) → Argon2id 검증(없는 계정도 더미 해시) → verify_ms 기록 → needs_rehash면 재해싱 → auth_session 발급 |
 
@@ -349,7 +349,7 @@ Oracle
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
 | `train_id` | NUMBER | PK | 생성 | 열차 ID |  |
-| `train_no` | VARCHAR2(10) | NN | 생성 | 열차 번호 (101, 103…) |  |
+| `train_no` | VARCHAR2(10) | NN | 생성 | 열차 번호, 앞을 0으로 채운 5자리 (예: 00103, 00026) | 코레일 표기와 같게. 같은 번호의 열차를 두 번 넣지 않도록 적재 스크립트가 이 값으로 비교 |
 | `train_kind` | VARCHAR2(20) | NN | 생성 | KTX / 새마을 등 | 운임 단가 구분 |
 | `route_id` | NUMBER | FK, NN → route | 생성 | 운행 노선 |  |
 | `direction` | VARCHAR2(4) | NN | 생성 | DOWN / UP | 상·하행 구분 |
@@ -406,9 +406,9 @@ Oracle
 | `run_date` | DATE | NN | 생성 | 운행일 | 명절 기간 |
 | `sale_open_at` | TIMESTAMP | NN | 생성 | 예매 오픈 시각 | 트래픽 폭증 시점. 부하 테스트 시나리오 기준. 일반은 출발 2개월 전 07:00, 명절은 행사 오픈 시각 |
 | `sale_close_at` | TIMESTAMP |  | 생성 | 판매 마감 |  |
-| `status` | VARCHAR2(10) | NN | 시스템 | SCHEDULED / ON_SALE / CLOSED / DEPARTED | 판매 가능 여부 판단. 전이는 판매 오픈 스케줄러가 한다 — sale_open_at이 지나면 ON_SALE, sale_close_at이 지나면 CLOSED. 주기 app_policy sale.open_interval_sec |
+| `status` | VARCHAR2(10) | NN | 시스템 | SCHEDULED / ON_SALE / CLOSED / DEPARTED | 판매 가능 여부 판단. 전이는 판매 오픈 스케줄러가 한다 — sale_open_at이 지나면 ON_SALE, sale_close_at이 지나면 CLOSED, 기점 출발 시각(MIN(train_stop.departure_time))이 지나면 DEPARTED. 출발은 판매 일정과 무관한 사실이라 DEPARTED가 아닌 모든 상태에서 바로 간다. 주기 app_policy sale.open_interval_sec |
 
-> **제약·비고** UNIQUE(train_id, run_date) · UNIQUE(run_id, train_id) — seat_inventory 복합 FK의 참조 대상 · 일반 예매 오픈은 코레일 규칙대로 출발일 2개월 전 07:00: sale_open_at = run_date - 2개월 + 07:00. 명절 운행은 sale_event.sale_open_at을 그대로 복사합니다 (특별예매 일괄 오픈)
+> **제약·비고** UNIQUE(train_id, run_date) · UNIQUE(run_id, train_id) — seat_inventory 복합 FK의 참조 대상 · 일반 예매 오픈은 코레일 규칙대로 출발일 2개월 전 07:00: sale_open_at = run_date - 2개월 + 07:00. 명절 운행은 sale_event.sale_open_at을 그대로 복사합니다 (특별예매 일괄 오픈) · 상태 전이 순서: 출발 → 마감 → 오픈 (센 것부터 봐서 뒤 단계가 앞 단계 결과를 건드리지 않게). 정차 정보가 없는 운행은 출발 시각을 알 수 없어 DEPARTED로 가지 않는다 ·  · CREATE SEQUENCE train_run_seq START WITH 100000 INCREMENT BY 1 MAXVALUE 399999 NOCYCLE CACHE 50;
 
 **관계** train_id → [`train`](#train) · sale_event_id → [`sale_event`](#sale-event) · [`train_stop`](#train-stop).run_id → 이 테이블 · [`seat_inventory`](#seat-inventory).run_id → 이 테이블 · [`reservation`](#reservation).run_id → 이 테이블 · [`waitlist`](#waitlist).run_id → 이 테이블 · [`behavior_log`](#behavior-log).run_id → 이 테이블 · [`queue_log`](#queue-log).run_id → 이 테이블
 
@@ -680,6 +680,9 @@ erDiagram
   password_reset_token {
     NUMBER token_id PK
   }
+  model_score {
+    ObjectId _id PK
+  }
   member ||--o{ payment_method : "member_id"
   member ||--o{ member_device : "member_id"
   member ||--o{ reservation : "member_id"
@@ -699,6 +702,7 @@ erDiagram
   member |o--o{ ticket_transfer : "to_member_id"
   member |o--o{ member_push_token : "member_id"
   member |o--o{ password_reset_token : "member_id"
+  member ||--o{ model_score : "member_id"
 ```
 
 <a id="member"></a>
@@ -723,7 +727,7 @@ Oracle
 
 > **제약·비고** ci_hash는 UNIQUE를 걸지 않음. 다계정 어뷰저를 재현하려면 같은 CI가 여러 계정에 있어야 함. · ci_hash는 변경 불가 (본인인증 결과가 바뀌면 신규 회원으로 처리). 그래서 reservation.ci_hash 비정규화가 안전함 · CREATE SEQUENCE member_seq; · CREATE INDEX ix_member_ci_hash ON member (ci_hash);
 
-**관계** [`payment_method`](#payment-method).member_id → 이 테이블 · [`member_device`](#member-device).member_id → 이 테이블 · [`reservation`](#reservation).member_id → 이 테이블 · [`waitlist`](#waitlist).member_id → 이 테이블 · [`notification`](#notification).member_id → 이 테이블 · [`behavior_log`](#behavior-log).member_id → 이 테이블 · [`queue_log`](#queue-log).member_id → 이 테이블 · [`synthetic_label`](#synthetic-label).member_id → 이 테이블 · [`member_credential`](#member-credential).member_id → 이 테이블 · [`identity_verification`](#identity-verification).member_id → 이 테이블 · [`auth_session`](#auth-session).member_id → 이 테이블 · [`login_attempt`](#login-attempt).member_id → 이 테이블 · [`replay_session`](#replay-session).member_id → 이 테이블 · [`case_session`](#case-session).member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).from_member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).to_member_id → 이 테이블 · [`member_push_token`](#member-push-token).member_id → 이 테이블 · [`password_reset_token`](#password-reset-token).member_id → 이 테이블
+**관계** [`payment_method`](#payment-method).member_id → 이 테이블 · [`member_device`](#member-device).member_id → 이 테이블 · [`reservation`](#reservation).member_id → 이 테이블 · [`waitlist`](#waitlist).member_id → 이 테이블 · [`notification`](#notification).member_id → 이 테이블 · [`behavior_log`](#behavior-log).member_id → 이 테이블 · [`queue_log`](#queue-log).member_id → 이 테이블 · [`synthetic_label`](#synthetic-label).member_id → 이 테이블 · [`member_credential`](#member-credential).member_id → 이 테이블 · [`identity_verification`](#identity-verification).member_id → 이 테이블 · [`auth_session`](#auth-session).member_id → 이 테이블 · [`login_attempt`](#login-attempt).member_id → 이 테이블 · [`replay_session`](#replay-session).member_id → 이 테이블 · [`case_session`](#case-session).member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).from_member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).to_member_id → 이 테이블 · [`member_push_token`](#member-push-token).member_id → 이 테이블 · [`password_reset_token`](#password-reset-token).member_id → 이 테이블 · [`model_score`](#model-score).member_id → 이 테이블
 
 <a id="payment-method"></a>
 #### `payment_method` 결제 수단
@@ -1475,7 +1479,7 @@ Oracle
 |---|---|---|---|---|---|
 | `notification_id` | NUMBER | PK | 시스템 |  |  |
 | `member_id` | NUMBER | FK, NN → member | 시스템 |  |  |
-| `type` | VARCHAR2(20) | NN | 시스템 | WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED | 취소표 건너뜀(매수 한도 초과)·환불 완료 안내 |
+| `type` | VARCHAR2(20) | NN | 시스템 | WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED / CONFIRMED | 취소표 건너뜀(매수 한도 초과)·환불 완료·예매 완료 안내 |
 | `ref_type` | VARCHAR2(20) | NN | 시스템 | RESERVATION / WAITLIST / CASE | ref_id가 어느 테이블을 가리키는지 |
 | `ref_id` | NUMBER |  | 시스템 | 관련 예약·대기 ID |  |
 | `channel` | VARCHAR2(10) | NN | 시스템 | PUSH / EMAIL / IN_APP | 채널 추가 확장 |
@@ -1506,6 +1510,11 @@ erDiagram
   model_run {
     VARCHAR2 model_version PK
   }
+  model_score {
+    ObjectId _id PK
+    Long member_id FK
+    String model_version FK
+  }
   admin_user {
     NUMBER admin_id PK
   }
@@ -1515,10 +1524,15 @@ erDiagram
   risk_feature {
     String subject_type PK
   }
+  member {
+    NUMBER member_id PK
+  }
   model_run |o--o{ risk_score : "model_version"
   admin_user ||--o{ admin_action : "admin_id"
   admin_action |o--o{ suspicious_case : "admin_action_id"
   model_run |o--o{ risk_feature : "model_version"
+  member ||--o{ model_score : "member_id"
+  model_run ||--o{ model_score : "model_version"
 ```
 
 <a id="risk-score"></a>
@@ -1541,7 +1555,6 @@ Oracle
 | `avg_request_interval_ms` | NUMBER |  | 시스템 | 평균 요청 간격 | 매크로 신호 |
 | `account_age_days` | NUMBER |  | 시스템 | 가장 오래된 계정 나이 | 신규 계정 기본 신뢰도 |
 | `rule_score` | NUMBER(5,2) |  | 시스템 | 규칙 기반 점수 |  |
-| `iforest_score` | NUMBER(5,2) |  | 시스템 | Isolation Forest 점수 | 두 방식 비교 |
 | `final_score` | NUMBER(5,2) | NN | 시스템 | 최종 점수 (0~100) | 대기열 순번 조정량 |
 | `reasons` | CLOB |  | 시스템 | 점수 근거 목록 (JSON) | 운영 원칙: 근거 기록 |
 | `model_version` | VARCHAR2(20) | FK → model_run | 시스템 | 산정 모델 버전 | 모델 교체 시 비교 |
@@ -1597,12 +1610,12 @@ Oracle
 
 Oracle
 
-규칙·Isolation Forest 모델 버전별 파라미터와 성능. 발표용 수치의 원천.
+규칙·모델 버전별 파라미터와 성능. 발표용 수치의 원천. 규칙(RULE)은 risk_score를, 합성 모델(ENSEMBLE)은 model_score를 낸다.
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
-| `model_version` | VARCHAR2(20) | PK | 시스템 | 예: iforest-2026.11-01 | risk_score.model_version이 참조 |
-| `algorithm` | VARCHAR2(20) | NN | 시스템 | RULE / IFOREST | 두 방식 비교 |
+| `model_version` | VARCHAR2(20) | PK | 시스템 | 예: rule-2026.11-01, ens-2026.11-01 | risk_score.model_version·model_score.model_version이 참조 |
+| `algorithm` | VARCHAR2(20) | NN | 시스템 | RULE / IFOREST / ENSEMBLE | 두 방식 비교. ENSEMBLE = 부스팅 + IF + GRU 합성 (tools/ml, 점수는 model_score) |
 | `params` | CLOB |  | 시스템 | contamination, n_estimators 등 (JSON) | 재현 |
 | `train_source` | VARCHAR2(100) |  | 시스템 | 학습 데이터 범위 |  |
 | `trained_at` | TIMESTAMP | NN | 시스템 |  |  |
@@ -1613,9 +1626,9 @@ Oracle
 | `decay_half_life_days` | NUMBER(4) |  | 시스템 | 점수 반감기 (일) | 기간 경과 시 점수 감소 파라미터 |
 | `is_active` | CHAR(1) | NN | 시스템 | 운영 적용 여부 |  |
 
-> **제약·비고** is_active = Y는 한 번에 하나
+> **제약·비고** is_active = Y는 algorithm별로 하나 (RULE과 ENSEMBLE은 동시에 켤 수 있음) · threshold는 RULE이면 케이스 자동 생성 기준, ENSEMBLE이면 화면 표시 기준(사람 검증 세트 오탐 5%) ·  · params JSON: dir(모델 폴더 — 서버 채점 deploy/model-refresh.sh·재학습이 읽음), gate(주간 재학습 자동 시험 결과). 주간 재학습 후보(ens-w…)는 꺼진 채 등록하고 관리자가 A-09에서 켬. precision·recall·f1 = 판정 시험 몫 기준
 
-**관계** [`risk_score`](#risk-score).model_version → 이 테이블 · [`risk_feature`](#risk-feature).model_version → 이 테이블
+**관계** [`risk_score`](#risk-score).model_version → 이 테이블 · [`risk_feature`](#risk-feature).model_version → 이 테이블 · [`model_score`](#model-score).model_version → 이 테이블
 
 **예시 데이터** (팀 확정 전 예시값)
 
@@ -1623,6 +1636,33 @@ Oracle
 |---|---|---|---|---|---|---|---|
 | rule-2026.11-01 | RULE | {"weights":"risk_score 신호별 가중치"} | synthetic v1 | 2026-11-18 10:00 | 80 | 30 | Y |
 | iforest-2026.11-01 | IFOREST | {"n_estimators":200,"contamination":0.05} | synthetic v1 + ext_web_access_log | 2026-11-18 10:00 | 80 | 30 | N |
+| ens-2026.11-01 | ENSEMBLE | {"models":["gbm","iforest","gru x5"],"dropped":["account_age_days_log","accounts_on_ip","distinct_ips","min_sync_gap_ip_s_log"]} | tools/ml generate.py 18000계정 | 2026-11-18 10:52 | 97.6 | null | N |
+| ens-2026.11-02 | ENSEMBLE | {"dir":"data/ml/model-next","models":["gbm","iforest","gru x5"],"stage":true,"pick_floor_s":1.0} | tools/ml generate.py g7~g9 (ML_PICK_FLOOR=1, ML_STAGE=1) | 2026-11-19 03:55 | 98.2 | null | N |
+
+<a id="model-score"></a>
+#### `model_score` 모델 보조 의견 점수
+
+MongoDB
+
+위험 점수 모델(부스팅 + Isolation Forest + GRU, tools/ml)이 계정마다 매긴 점수와 근거. 관리자 화면(A-05·A-06)에 보여 주는 보조 의견이며 대기열 순번·제한에는 쓰지 않는다.
+
+| 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
+|---|---|---|---|---|---|
+| `_id` | ObjectId | PK | 시스템 |  |  |
+| `member_id` | Long | FK, NN → member | 시스템 | 점수를 매긴 계정 | 모델이 계정 단위로 매김 |
+| `model_version` | String | FK, NN → model_run | 시스템 | 예: ens-2026.11-01 | 버전끼리 비교 |
+| `score` | Double | NN | 시스템 | 합성 점수 (0~100, 세 모델 백분위 중 최댓값) | 보조 의견. 문턱은 model_run.threshold |
+| `by` | String | NN | 시스템 | GBM / IF / GRU | 가장 높게 본 모델. GRU면 근거 숫자로 이유가 안 보여 화면 재생(CCTV)으로 안내 |
+| `scores` | Object |  | 시스템 | 모델별 점수 { gbm, if, gru } (GRU가 없으면 gru 없음) | 규칙과 모델이 다르게 볼 때 비교 |
+| `reasons` | Array |  | 시스템 | 근거 3개 (특징 이름·값 문자열) | 운영 원칙: 근거 기록. 개인정보 없음 |
+| `type` | String |  | 시스템 | SPEED / RETRY / MULTI_ACCOUNT / EVASIVE / CANCEL / HOARD | 가장 닮은 봇 수법 (추정). 빠른 반복 · 같은 좌석 반복 · 다계정 · 사람 흉내 · 취소·되팔기 · 사재기 |
+| `type_prob` | Double |  | 시스템 | 그 유형의 확률 (0~1) | 추정이 얼마나 분명한지 |
+| `source` | String |  | 시스템 | 점수를 매긴 데이터 (대회 태그 등) | 어느 데이터로 매겼는지 |
+| `scored_at` | Date | NN | 시스템 | 점수를 매긴 시각 |  |
+
+> **제약·비고** UNIQUE { member_id: 1, model_version: 1 } — 같은 버전을 다시 적재하면 덮어씀(upsert) · 인덱스 { model_version: 1, score: -1 } (A-05 목록) · 적재는 오프라인 Python(score.py → scores.csv)이 하고 정답 칸(label·strategy)은 넣지 않음. CSV는 헤더 이름으로 읽음 · 화면은 model_run에서 algorithm = ENSEMBLE AND is_active = Y인 버전만 · 케이스 대상(CI·기기·결제수단)에 묶인 계정은 서버가 조회 시 Oracle에서 찾아 최댓값을 보여 줌 (CI 해시 사본을 두지 않음) · risk_score(규칙 점수, 대기열이 읽음)와 섞지 않음 · 점선은 논리 참조
+
+**관계** member_id → [`member`](#member) · model_version → [`model_run`](#model-run)
 
 <a id="g-replay"></a>
 ### CCTV 되돌아보기
@@ -1714,12 +1754,12 @@ CCTV 녹화 단위. 로그인 세션과 1:1. 평시 샘플링, 위험 사용자�
 | `ended_at` | Date |  | 생성 | 녹화 종료 |  |
 | `event_count` | Int |  | 시스템 | 이벤트 수 | 재생 전 분량 확인 |
 | `run_ids` | Array |  | 생성 | 이 세션에서 본 운행 | 특정 열차 기준 세션 검색 |
-| `recording_mode` | String |  | 시스템 | SAMPLED / FULL | 평시 샘플링, 위험 시 전체 녹화 → 저장량 제어 |
+| `recording_mode` | String |  | 시스템 | SAMPLED / FULL | 평소는 SAMPLED(궤적을 성기게), 위험 점수 replay.full_record_score 이상 또는 세션 해시 표본 replay.full_record_ratio는 FULL → 저장량 제어 |
 | `risk_score_at_start` | Double |  | 시스템 | 시작 시점 점수 | 녹화 모드 결정 근거 |
 | `mask_policy_version` | String |  | 시스템 | 입력 마스킹 규칙 버전 | 어떤 규칙으로 가렸는지 추적 |
-| `retention_until` | Date |  | 시스템 | 보관 기한 (기본 90일) | 원래 보관 기한. legal_hold 중에도 지우지 않아 해제 때 기준이 됨. 개인정보 최소 보관 |
+| `retention_until` | Date |  | 시스템 | 보관 기한 (세션 시작 + replay.retention_days, 기본 90일) | 언제까지 두는지 기록. 삭제 보류 중에도 남긴다 |
 | `expire_at` | Date |  | 시스템 | 삭제 예정 시각 | TTL 기준. legal_hold면 필드 없음 |
-| `legal_hold` | Boolean |  | 시스템 | 삭제 보류 | true로 바꾸면 그 세션 expire_at을 $unset하고 캐시 TTL 뒤 한 번 더 (concurrency.md §13.2). 해제 시 expire_at = max(retention_until, 지금 + 1일) |
+| `legal_hold` | Boolean |  | 시스템 | 삭제 보류 여부 | 케이스가 열리면 true. 적재기는 저장 뒤 한 번 더 확인해 그 사이 걸린 것도 뺀다 |
 
 > **제약·비고** 점선은 논리 참조 · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 절차: concurrency.md §13
 
@@ -1730,26 +1770,26 @@ CCTV 녹화 단위. 로그인 세션과 1:1. 평시 샘플링, 위험 사용자�
 
 MongoDB · 🅱 빅데이터
 
-화면 행동과 서버 도메인 이벤트를 한 타임라인에 기록. 재생기가 화면을 다시 그린다. 일반 컬렉션.
+화면에서 한 행동을 시간순으로 기록한다. 재생기가 이것으로 화면을 다시 그린다. 서버 쪽 결과는 같은 세션의 behavior_log를 함께 읽는다.
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
-| `session_id` | String | PK, FK → replay_session | 시스템 | 녹화 세션 | session_id+seq 유니크로 재전송 중복 제거 |
-| `ts` | Date |  | 생성 | 이벤트 시각 (ms) | TTL 기준 |
+| `session_id` | String | PK, FK → replay_session | 시스템 | 녹화 세션 | 한 세션 재생 조회 (ux_session_seq 앞 칸) |
+| `ts` | Date |  | 생성 | 이벤트 시각 (ms) |  |
 | `expire_at` | Date |  | 시스템 | 삭제 예정 시각 | TTL 기준. 세션 시작 + replay.retention_days로 기록, legal_hold면 필드 제거 |
-| `seq` | Long | PK | 시스템 | 세션 내 순번 | 같은 ms 이벤트도 순서 보장 |
+| `seq` | Long | PK | 시스템 | 세션 내 순번 ("지금 ms × 1000"부터) | 같은 ms 이벤트도 순서 보장. session_id와 묶어 유니크 → 재전달 중복 방지 |
 | `t_offset_ms` | Long |  | 시스템 | 세션 시작부터 경과 시간 | 재생 타임라인 위치, 다중 세션 정렬 |
-| `type` | String |  | 생성 | PAGE_VIEW / CLICK / INPUT / SCROLL / MOUSE_PATH / VISIBILITY / API / DOMAIN |  |
+| `type` | String |  | 생성 | PAGE_VIEW / CLICK / INPUT / SCROLL / MOUSE_PATH / VISIBILITY / LAYOUT |  |
 | `screen` | String |  | 생성 | 화면 ID (queue, seat_map, payment) | 재생기가 화면을 다시 그리는 기준 |
 | `target` | String |  | 생성 | 요소 ID (seat-5A, btn-pay) | 어떤 좌석·버튼을 눌렀는지 |
 | `x` | Int |  | 생성 | 클릭 X (화면 비율 0~1000) | 해상도와 무관하게 재생 |
 | `y` | Int |  | 생성 | 클릭 Y (화면 비율 0~1000) |  |
-| `path` | Array |  | 생성 | 마우스 궤적 [[dt, x, y], …] | 사람은 곡선·가감속, 매크로는 직선·등속·순간이동 |
+| `path` | Array |  | 생성 | 마우스 궤적 [[dt, x, y], …] | 사람은 곡선·가감속, 매크로는 직선·등속·순간이동. 평소(SAMPLED)에도 성기게 남긴다 (0.15초·묶음당 16점) |
 | `input_masked` | String |  | 시스템 | 입력값 마스킹 (길이만) | 개인정보 미보관 |
-| `api` | Object |  | 시스템 | { method, path, status, latency_ms } | 화면 행동과 서버 응답을 같이 봄 |
-| `domain_event` | Object |  | 시스템 | { type, ref_id, kafka_event_id } | 클릭 → 좌석 선점 → 결제 → 취소가 한 줄로 |
+| `label` | String |  | 생성 | 버튼·링크 문구 ("결제하기") | 무엇을 눌렀는지. 숫자 없는 짧은 글자만 받아 개인정보가 섞이지 않게 |
+| `boxes` | Array |  | 생성 | 화면 뼈대 [{ k, x, y, w, h, id, label, off }] (LAYOUT 이벤트만) | 재생 배경. k = button / link / input / select / heading / tab / seat-free / seat-hold / seat-taken / seat-mine / seat-lost. 화면 글자는 label만 |
 
-> **제약·비고** UNIQUE { session_id: 1, seq: 1 } (재전송 중복 제거) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 적재 컨슈머는 저장 전 세션 legal_hold 확인 (보류 중이면 expire_at 없이 저장) · 상한: replay.max_path_points, replay.batch_sec, replay.max_events_per_session · 시계열 컬렉션은 metaField=session_id 버킷 문제와 unique 인덱스 불가로 제외 · DOM 녹화(rrweb)는 확장 과제 · 절차: concurrency.md §13
+> **제약·비고** 일반 컬렉션 · UNIQUE { session_id: 1, seq: 1 } (ux_session_seq) — 시계열 컬렉션은 유니크 인덱스를 만들 수 없어 Kafka 재전달 중복을 막지 못한다 · TTL { expire_at: 1 } expireAfterSeconds 0 · 케이스가 열리면 expire_at을 지워 삭제 보류 · DOM 녹화(rrweb)는 확장 과제 · 점선은 논리 참조
 
 **관계** session_id → [`replay_session`](#replay-session)
 
@@ -1778,7 +1818,7 @@ Oracle
 | `opened_at` | TIMESTAMP | NN | 시스템 |  |  |
 | `closed_at` | TIMESTAMP |  | 시스템 |  | 처리 소요 시간 |
 
-> **제약·비고** CREATE SEQUENCE suspicious_case_seq; · 대상당 열린 케이스는 1건: CREATE UNIQUE INDEX ux_case_open_subject ON suspicious_case (CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_type END, CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_hash END); 같은 대상에 케이스가 겹쳐 열리는 것을 DB가 막는다 (닫힌 케이스는 인덱스에 들어가지 않아 다시 열 수 있음)
+> **제약·비고** CREATE SEQUENCE suspicious_case_seq; · 대상당 열린 케이스는 1건: CREATE UNIQUE INDEX ux_case_open_subject ON suspicious_case (CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_type END, CASE WHEN status IN ('OPEN', 'REVIEWING') THEN subject_hash END); 같은 대상에 케이스가 겹쳐 열리는 것을 DB가 막는다 (닫힌 케이스는 인덱스에 들어가지 않아 다시 열 수 있음) ·  · trigger_type = ADMIN이고 trigger_detail이 "무작위 점검 표본"으로 시작하면 모델 학습용 무작위 점검(A-09) — 의심 근거 아님, 그 판정이 치우침 없는 학습 정답
 
 **관계** assignee_id → [`admin_user`](#admin-user) · admin_action_id → [`admin_action`](#admin-action) · [`case_session`](#case-session).case_id → 이 테이블 · [`case_marker`](#case-marker).case_id → 이 테이블 · [`evidence_snapshot`](#evidence-snapshot).case_id → 이 테이블 · [`replay_access_log`](#replay-access-log).case_id → 이 테이블
 
@@ -1813,7 +1853,7 @@ Oracle
 | `session_id` | VARCHAR2(36) | FK → auth_session | 시스템 | 표시할 세션 (없을 수 있음) | Oracle 기록만으로 찍는 마커(구매 직후 취소 등)는 녹화 세션이 없다. 세션이 있으면 재생기가 그 지점으로 이동 |
 | `at_ts` | TIMESTAMP | NN | 시스템 | 타임라인 위치 | 누르면 그 시점으로 이동 |
 | `marker_type` | VARCHAR2(10) | NN | 시스템 | AUTO / MANUAL | 시스템 탐지와 관리자 메모 구분 |
-| `rule_code` | VARCHAR2(30) | NN | 시스템 | FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / LINEAR_MOUSE | 어떤 규칙이 잡았는지 |
+| `rule_code` | VARCHAR2(30) | NN | 시스템 | FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / REGULAR_INTERVAL / LINEAR_MOUSE | 어떤 규칙이 잡았는지. 값은 RiskRule 중 마커 규칙(marker=true)과 같게 둔다 |
 | `label` | VARCHAR2(200) | NN | 시스템 | 예: 0.1초 간격 좌석 클릭 28회 |  |
 | `severity` | VARCHAR2(6) | NN | 시스템 | LOW / MID / HIGH |  |
 | `created_by` | NUMBER | FK → admin_user | 시스템 | 작성 관리자 (AUTO는 null) |  |
@@ -2223,6 +2263,7 @@ Oracle
 | 관리자: 열차·노선·좌석 등록 | route, route_station, train, train_car, seat, train_run | 좌석 자동 생성 수 = car_type.seat_count 합 |
 | 관리자: 실시간 현황 | Prometheus·Grafana + reservation 집계 | 대시보드 |
 | 관리자: 위험 사용자 조치 | risk_score, admin_action, admin_user, member.status | 조치 후 대기열 반영 |
+| 모델 보조 의견 (A-05·A-06) | model_score, model_run(ENSEMBLE) | 정답 칸 미적재, 대기열 순번이 모델 점수와 무관 |
 | CCTV 되돌아보기 | replay_session, replay_event, suspicious_case, case_session, case_marker, evidence_snapshot, replay_access_log | 증거 해시 재계산 일치 |
 | 운영 설정 | app_policy, app_policy_history, policy:cache | 값 변경 후 version 증가·이력·캐시 갱신 |
 | 빅데이터 분석 | ext_dataset, ext_hotel_booking, ext_web_access_log, ext_renfe_price, risk_feature, model_run | 정밀도·재현율·F1 |
@@ -2347,6 +2388,16 @@ Oracle
 | v20 | 취소표 구현 (WL-01~03): notification.notification_id 시퀀스. 제안·건너뜀 알림을 제안 트랜잭션과 같이 커밋하려면 ID가 필요 |
 | v21 | 상시 취소 수수료 정책 (강다인 요청): cancel_fee_policy 예시에 sale_event_id NULL 세트 5건. 기존 5건이 모두 지난 행사(1번)에 묶여 있어 평시 운행(9001·9002)에서 수수료가 계산되지 않고 "취소 불가"로 보였다 |
 | v22 | 취소표 행동 로그 (WL-01·02): behavior_log.event_type에 WAITLIST_APPLY·WAITLIST_CANCEL 추가. 취소표는 대기열 토큰 없이 들어오는 유일한 길인데 로그가 없어 FAST_CLICK·REGULAR_INTERVAL이 그 구간을 못 본다 |
+| v23 | train_run.status의 DEPARTED 전이 주체를 판매 오픈 스케줄러로 명시 (기점 출발 시각이 지나면). 지금까지 DEPARTED로 바꾸는 코드도 읽는 코드도 없어 CHECK 제약에만 살아 있던 값이다 |
+| v24 | case_marker.rule_code CHECK에 REGULAR_INTERVAL 추가 (강다인 요청). 일정 간격 매크로가 이 규칙에만 걸리는데 마커 규칙이 아니라 케이스가 열리지 않았다 (조영준 경계 측정). 기존 DB는 db/patch/v24.sql |
+| v25 | 모델 보조 의견 (RISK-05, 강다인 설계안): MongoDB model_score 추가(계정 단위 점수·근거, UNIQUE member_id+model_version), model_run.algorithm에 ENSEMBLE, is_active는 algorithm별 하나, risk_score의 Isolation Forest 점수 칸 삭제(쓰는 코드 없음). 기존 DB는 db/patch/v25.sql |
+| v26 | train.train_no 설명을 5자리 표기(00103)로. 시드가 실제 KTX 번호로 바뀐 뒤 시간표 적재가 같은 열차를 3자리 번호로 한 번 더 넣던 문제(길동현 11-19)와 표기를 맞춤. 기존 DB는 db/patch/v26.sql(주석만) |
+| v27 | train_run_seq 시퀀스 추가. 생성되는 날짜별 운행의 run_id를 산식(날짜 인코딩)이 아니라 시퀀스로 받고, 중복 판정은 자연키 (train_id, run_date)로 한다. 시드·스케줄러(700000+)와 실제 시간표 적재(400000+) 대역이 겹칠 수 있던 것을 없앴다. 기존 DB는 db/patch/v27.sql |
+| v28 | CCTV 녹화(ADM-11)를 구현과 맞춤 (강다인 요청): replay_event를 시계열 → 일반 컬렉션 + UNIQUE(session_id, seq) (시계열은 유니크 인덱스를 만들 수 없어 Kafka 재전달 중복을 막지 못한다), 쓰지 않는 칸 두 개(서버 응답·도메인 이벤트) 삭제 — 재생할 때 같은 세션의 behavior_log를 함께 읽어 같은 것을 두 번 저장하지 않는다, 실제로 저장하는 expire_at·label·boxes 추가. Oracle 변경 없음 — Mongo 인덱스는 docker/mongo/mongo-init.js |
+| v29 | model_score에 닮은 유형 type(SPEED / RETRY / MULTI_ACCOUNT / EVASIVE / CANCEL / HOARD)·type_prob 추가 — 별도 유형 모델(tools/ml/train_type.py)의 추정, 관리자 화면은 봇 쪽으로 본 계정에만 표시. Mongo라 기존 DB 패치 없음 |
+| v30 | notification.type CHECK에 CONFIRMED 추가 — 예매 완료 알림 (RESERVATION_CONFIRMED 이벤트 → "예매가 완료됐어요"). 기존 DB는 db/patch/v30.sql을 먼저 넣고 나서 알림 코드를 합친다 |
+| v31 | model_run 예시에 두 번째 합성 모델 ens-2026.11-02 (data/ml/model-next, 꺼짐) — 모델 관리 화면(A-09)에서 지금 버전과 비교. 기존 DB는 db/patch/v31.sql |
+| v32 | 비고만: model_run.params(dir·gate)와 주간 재학습 후보, suspicious_case의 무작위 점검 표본 표시 약속 (사용자가 많아질수록 똑똑해지는 순환). DB 변경 없음 |
 
 ## 참고 자료
 

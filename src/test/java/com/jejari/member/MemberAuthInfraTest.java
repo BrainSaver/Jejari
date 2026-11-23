@@ -92,8 +92,12 @@ class MemberAuthInfraTest {
 	// ---- 호출 도우미 ----
 
 	MvcResult call(String path, Object body) throws Exception {
-		return mvc.perform(post("/api/v1/auth/" + path).contentType(MediaType.APPLICATION_JSON)
+		MvcResult r = mvc.perform(post("/api/v1/auth/" + path).contentType(MediaType.APPLICATION_JSON)
 				.content(JSON.writeValueAsString(body))).andReturn();
+		// 로그인은 로그인 대기실(LoginGate)이 비동기로 처리한다 → 결과를 한 번 더 받아 온다
+		return r.getRequest().isAsyncStarted()
+				? mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch(r)).andReturn()
+				: r;
 	}
 
 	static JsonNode json(MvcResult r) throws Exception {
@@ -167,6 +171,16 @@ class MemberAuthInfraTest {
 	}
 
 	@Test
+	void 이미_가입된_이메일이면_토큰을_잃지_않고_다른_이메일로_이어서_가입() throws Exception {
+		String taken = signedUp("김철수", "01055556666");
+		String token = verify("홍길동", "01012345678");
+		MvcResult dup = signup(token, taken, PW);
+		assertThat(dup.getResponse().getStatus()).isEqualTo(409);
+		assertThat(code(dup)).isEqualTo("AUTH_EMAIL_DUPLICATED");
+		assertThat(signup(token, email(), PW).getResponse().getStatus()).isEqualTo(201); // 본인인증 다시 안 해도 됨
+	}
+
+	@Test
 	void 위조_토큰은_거절() throws Exception {
 		assertThat(code(signup("A".repeat(43), email(), PW))).isEqualTo("AUTH_VERIFY_FAILED");
 		assertThat(code(signup("not-a-token", email(), PW))).isEqualTo("AUTH_VERIFY_FAILED");
@@ -231,6 +245,45 @@ class MemberAuthInfraTest {
 		assertThat(d).isNotNull();
 		assertThat(d.toJson()).doesNotContain(e, PW);
 		assertThat(d.get("expire_at")).isNotNull();
+	}
+
+	@Test
+	void 로그인_상태_유지를_안_고르면_12시간_세션_쿠키_고르면_14일_유지_쿠키() throws Exception {
+		String e = signedUp("홍길동", "01012345678");
+		MvcResult plain = login(e, PW);
+		assertThat(plain.getResponse().getHeader("Set-Cookie")).contains("jejari_rt=", "Path=/api/v1/auth")
+				.doesNotContain("Max-Age"); // 브라우저를 닫으면 사라짐
+		MvcResult kept = call("login", java.util.Map.of("email", e, "password", PW, "remember", true));
+		assertThat(kept.getResponse().getHeader("Set-Cookie")).containsPattern("Max-Age=120(9600|959[0-9])"); // 14일 (응답까지 1초가 지날 수 있음)
+
+		long m = jdbc.queryForObject("SELECT member_id FROM member WHERE email = ?", Long.class, e);
+		List<Long> hours = jdbc.queryForList("""
+				SELECT ROUND((CAST(expires_at AS DATE) - CAST(created_at AS DATE)) * 24) FROM auth_session
+				 WHERE member_id = ? ORDER BY created_at""", Long.class, m);
+		assertThat(hours).containsExactly(12L, 336L); // 서버 세션도 12시간 / 14일
+	}
+
+	@Test
+	void 회원_재발급_입구는_관리자_세션을_받지_않고_관리자_세션도_망가뜨리지_않는다() throws Exception {
+		String e = signedUp("홍길동", "01012345678");
+		String rt = cookieValue(login(e, PW), "jejari_rt");
+		// 회원 쿠키는 회원 입구에서 정상 재발급
+		MvcResult ok = mvc.perform(post("/api/v1/auth/refresh").cookie(new jakarta.servlet.http.Cookie("jejari_rt", rt)))
+				.andReturn();
+		assertThat(ok.getResponse().getStatus()).isEqualTo(200);
+		// 회원 리프레시 토큰을 관리자 입구에 넣으면 거절, 회원 세션은 그대로 (폐기되지 않음)
+		String rt2 = cookieValue(ok, "jejari_rt");
+		MvcResult wrong = mvc.perform(post("/api/v1/admin/auth/refresh").cookie(new jakarta.servlet.http.Cookie("jejari_art", rt2)))
+				.andReturn();
+		assertThat(wrong.getResponse().getStatus()).isEqualTo(401);
+		assertThat(mvc.perform(post("/api/v1/auth/refresh").cookie(new jakarta.servlet.http.Cookie("jejari_rt", rt2)))
+				.andReturn().getResponse().getStatus()).isEqualTo(200);
+	}
+
+	static String cookieValue(MvcResult r, String name) {
+		String h = r.getResponse().getHeader("Set-Cookie");
+		assertThat(h).startsWith(name + "=");
+		return h.substring(name.length() + 1, h.indexOf(';'));
 	}
 
 	@Test

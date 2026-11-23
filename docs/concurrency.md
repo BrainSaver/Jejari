@@ -554,6 +554,15 @@ VALUES (:uuid, outbox_seq.NEXTVAL, :type, :aggId, :pkey, ORA_HASH(TO_CHAR(:pkey)
 
 ### 11.3 조회와 발행
 
+회차마다 먼저 **보낼 것이 있는 샤드만** 찾고, 그 샤드만 아래 절차로 처리합니다. 보낼 것이 없을 때 16개 샤드에 트랜잭션을 하나씩 여는 낭비를 막습니다 (2026-11-20 실측: 아무도 안 쓸 때 커넥션 빌림 초당 약 76번 → 회차당 1번).
+
+```sql
+SELECT DISTINCT CASE WHEN status IN ('PENDING', 'FAILED') THEN shard_no END FROM outbox_event
+ WHERE CASE WHEN status IN ('PENDING', 'FAILED') THEN shard_no END >= 0   -- ix_outbox_pending만 읽음 (IS NOT NULL이면 전체 읽기)
+```
+
+- 이 확인이 실패하면 16개를 모두 봅니다. 확인과 처리 사이에 새로 들어온 행은 다음 회차(0.2초 뒤)에 잡힙니다.
+
 Oracle은 `SELECT … FOR UPDATE` 커서를 **여는 순간 조건에 맞는 행 전체**를 잠급니다. fetch 건수로 줄지 않으므로, 적체가 수만 건이면 수만 행이 잠깁니다. 그래서 먼저 맨 앞 N개의 rowid만 뽑고 그 행만 잠급니다.
 
 ```sql
@@ -603,6 +612,23 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | `seat-release` | `RESERVATION_CANCELED`, `RESERVATION_EXPIRED` | Redis 보상 보장 경로 + 취소표 제안 (§9) |
 | 알림·로그 등 | 각자 | 각 기능 문서 |
 
+### 12.1 처리하지 못한 메시지 — 격리 보관함 (DLQ)
+
+메시지 하나 때문에 뒤의 메시지가 모두 멈추지 않도록, 소비자는 아래 경우 그 메시지를 **건너뛰되 버리지 않고** `<원래 토픽>.DLT`에 옮깁니다 (`event/dlq/DeadLetters`). 옮기기에 실패하면 예외를 던져 오프셋을 커밋하지 않습니다 (보관함마저 안 되면 버리지 않고 멈춤).
+
+| 이유 (`dlt-reason`) | 언제 | 소비 그룹 |
+|---|---|---|
+| `malformed` | 형식이 깨짐 (JSON 오류·필수 값 없음) — 다시 해도 안 됨 | 모두 |
+| `retries_exhausted` | 1초 간격 3번 다시 해도 실패 | `notification` |
+| `handler_failed` | 처리 중 실패 (묶음 소비라 다시 던지면 뒤의 메시지가 모두 막힘) | `seat-release` |
+
+Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함으로 보내지 않고 5초마다 무한히 다시 시도합니다 (`seat-release`의 Redis 보상 앞단·`risk-signal`·적재 컨슈머). 그동안 소비 밀림이 쌓이고 A-10에 보입니다.
+
+- 헤더: `dlt-group`·`dlt-reason`·`dlt-error`·`dlt-source`(토픽-파티션@오프셋)·`dlt-at`. 키·값은 원본 그대로
+- 보관 30일 (원래 토픽 7일보다 길게: 원인을 고치고 다시 넣을 시간)
+- 다시 넣기: `tools/dlq.sh replay <토픽> <그룹> [이유]` → 원래 토픽에 헤더 `dlt-replay-for=<그룹>`을 붙여 넣고, **다른 그룹은 건너뜁니다** (`DeadLetters.notForMe`). 같은 키라 같은 파티션 → 같은 예약의 순서 유지. Inbox(위)·`event_id` 유니크로 두 번 처리돼도 결과가 같습니다. 이유를 안 주면 `malformed`는 뺍니다 (코드를 고치기 전에는 또 보관함으로 옴)
+- 지표 `jejari_dead_letter_total{group, reason}` → A-10 "데이터 놓침·밀림"에 건수, 최근 5분에 1건이라도 있으면 주의
+
 ---
 
 ## §13 MongoDB 적재·보관
@@ -643,7 +669,10 @@ FAILED 행은 부분 인덱스에 남습니다. 다음 회차에 그 샤드의 �
 | `queue:{runId}`, `queue:seq:{runId}` | 대기 순번 ZSET (member = `{12자리 seq}:{memberId}`), 진입 시퀀스 | 운행 판매 마감 |
 | `queue:member:{memberId}`, `queue:ci:{ciHash}` | 회원당·CI당 동시 대기 1개. `queue:member` 값은 `{runId}\|{queue member}\|{ciHash}` | `queue.entry_ttl_sec` / 멤버별 score |
 | `queue:active:{runId}`, `queue:throughput:{runId}` | 입장한 회원 (score = 토큰 만료 시각), 초당 입장 수 | |
+| `queue:runs` | 줄 선 사람이나 입장 중인 사람이 있는 운행 ID 집합(SET). 입장 스케줄러는 이 집합의 운행만 처리한다. `enter.lua`가 넣고 `admit.lua`가 줄·입장자가 모두 비면 뺀다. `reconcile.lua`가 앱 시작·5분마다 판매 중 운행 중 빠진 것을 다시 넣는다 | |
+| `queue:adm:{runId}:{초}` | 그 운행에서 그 1초에 입장시킨 수. 앱이 여러 대여도 합쳐서 `queue.admit_per_sec`를 넘지 않게 `admit.lua`가 남은 만큼만 입장시킨다 | 3초 |
 | `queue:pass:{runId}:{memberId}` | 입장 토큰 | `queue.pass_ttl_sec` |
+| `queue:passext:{runId}:{memberId}` | 입장 토큰을 이미 한 번 연장했다는 표시 (`POST /runs/{runId}/queue/me/extend`, `extend.lua`가 PTTL 확인·표시·`PEXPIRE`를 원자적으로 처리. 연장분은 `queue.pass_extend_sec`, 기본 300초, 회원·운행당 1회) | 토큰과 함께 |
 | `seat:hold:{runId}:{seatId}:{segNo}` | `R`(HOLD), `SOLD:R`(확정), `REOFFER:R`(대기자 제안 대기) | `pay_deadline_at` / 운행 출발 시각 / `waitlist.reoffer_hold_sec` |
 | `limit:{runId}:{ciHash}`, `limit:event:{saleEventId}:{ciHash}` | 보유 매수 | 운행 출발·행사 종료 |
 | `limit:day:{yyyymmdd}:{ciHash}` | 그 날 구매한 매수 | 그 날 24:00 + 1시간 |

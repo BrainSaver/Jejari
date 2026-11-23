@@ -1,3 +1,5 @@
+import ModelOpinion from './ModelOpinion.jsx';
+import ReplayPlayer from './ReplayPlayer.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router';
 import { get, post } from '../api/client.js';
@@ -65,6 +67,9 @@ export function CaseList() {
   );
 }
 
+/** 왜 이 계정이 묶였나 (case_session.link_reason, 케이스를 열 때 박아 둔 값) */
+const LINK = { TRIGGER: '탐지된 세션', SAME_CI: '같은 명의', SAME_DEVICE: '같은 기기', SAME_PAYMENT: '같은 카드', SAME_IP: '같은 IP', AFTER_OPEN: '연 뒤 연결' };
+
 export default function CaseDetail() {
   const claims = useOutletContext();
   const { caseId } = useParams();
@@ -112,7 +117,7 @@ export default function CaseDetail() {
           <div className="kpi">
             <div className="l">같은 키로 묶인 계정</div>
             <div className="n">{d.accounts.length}</div>
-            <div className="d">{d.accounts.map((a) => `${a.label} ${a.maskedName}`).join(' · ')}</div>
+            <div className="d">{d.accounts.map((a) => `${a.label} ${a.maskedName}${LINK[a.linkReason] ? ` (${LINK[a.linkReason]})` : ''}`).join(' · ')}</div>
           </div>
           <div className="kpi">
             <div className="l">발동 규칙</div>
@@ -131,6 +136,8 @@ export default function CaseDetail() {
         <Timeline tl={tl} color={color} range={range} />
         {s && (
           <section className="panel">
+            <ModelOpinion caseId={caseId} />
+            <hr className="sep" />
             <Judge caseId={caseId} summary={s} claims={claims} onDone={load} />
             <hr className="sep" />
             <Unmask caseId={caseId} claims={claims} />
@@ -150,6 +157,7 @@ export default function CaseDetail() {
           </section>
         )}
       </div>
+      <ReplayPlayer caseId={caseId} markers={d?.markers} />
       <RequestLog filter={(r) => r.path.includes('/admin/cases')} rows={6} />
     </>
   );
@@ -176,7 +184,7 @@ function Timeline({ tl, color, range }) {
         <span className="grow">
           타임라인 <span className="mut" style={{ fontWeight: 500 }}>{tl ? `${time(tl.windowFrom)} ~ ${time(tl.windowTo)} 의심 구간 · ${tl.events.length}건` : ''}</span>
         </span>
-        <button className="btn ghost sm" type="button" disabled>재생 (P2)</button>
+        <a className="btn ghost sm" href="#replay">재생 ↓</a>
       </h2>
       <p className="sub">MongoDB 행동 로그. 빨간 줄이 의심 구간 안, 흐린 줄은 앞뒤 맥락이에요. {tl?.truncated ? '많아서 앞부분만 보여요.' : ''}
         {range?.cut ? ` 의심 구간이 24시간보다 길어 마지막 24시간만 보여요 (서버 조회 한도).` : ''}</p>

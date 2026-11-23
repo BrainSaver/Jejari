@@ -60,6 +60,18 @@ tasks.named('test') {
 tasks.withType(Test).configureEach {
 	systemProperty 'jejari.notification.consumer-enabled', 'false'
 	systemProperty 'jejari.notification.reminder-enabled', 'false'
+	// 데이터 놓침·밀림 지표(PipelineMetrics)도 끈다: 테스트 중 15초마다 Kafka AdminClient·outbox 집계가 돌면 로그만 시끄럽다
+	systemProperty 'jejari.ops.pipeline-metrics-enabled', 'false'
+	// 테스트는 Spring 컨텍스트를 여러 개(20여 개) 띄워 두므로 컨텍스트마다 커넥션을 적게. 운영 풀(20, 늘 20개 유지)을 그대로 쓰면
+	// 20 × 20여 개 > Oracle Free processes 200이라 통합 테스트가 연결을 못 얻는다 (ORA-17800)
+	systemProperty 'spring.datasource.hikari.maximum-pool-size', '10'
+	systemProperty 'spring.datasource.hikari.minimum-idle', '2'
+	// 환불 재시도 배치(CNL-03)도 끈다. 켜 두면 다른 테스트가 일부러 만든 FAILED 환불을 테스트 도중에 DONE으로 바꾼다
+	systemProperty 'jejari.refund.retry-enabled', 'false'
+	// 재판매 집계 배치(CNL-04)도 끈다. 테스트가 운행을 잠깐 DEPARTED로 바꿀 때 다른 취소를 Y로 바꾸지 않게 (run()을 직접 부름)
+	systemProperty 'jejari.resale.batch-enabled', 'false'
+	// 행동 로그 디스크 버퍼를 빌드 폴더에 (사용자 홈 ~/.jejari에 테스트 로그가 남지 않게)
+	systemProperty 'jejari.behavior.spill-dir', layout.buildDirectory.dir('behavior-spill').get().asFile.path
 }
 
 tasks.register('infraTest', Test) {

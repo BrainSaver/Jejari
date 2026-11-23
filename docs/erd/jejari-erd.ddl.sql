@@ -1,9 +1,10 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v22)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v32)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
 
 -- 시퀀스
+CREATE SEQUENCE train_run_seq START WITH 100000 INCREMENT BY 1 MAXVALUE 399999 NOCYCLE CACHE 50;
 CREATE SEQUENCE member_seq;
 CREATE SEQUENCE payment_method_seq;
 CREATE SEQUENCE reservation_seq CACHE 100;
@@ -103,7 +104,7 @@ CREATE TABLE train (
 );
 COMMENT ON TABLE train IS '열차 (정의) - 열차 번호·종류·노선. 날짜와 무관한 열차 정의.';
 COMMENT ON COLUMN train.train_id IS '열차 ID';
-COMMENT ON COLUMN train.train_no IS '열차 번호 (101, 103…)';
+COMMENT ON COLUMN train.train_no IS '열차 번호, 앞을 0으로 채운 5자리 (예: 00103, 00026) / 코레일 표기와 같게. 같은 번호의 열차를 두 번 넣지 않도록 적재 스크립트가 이 값으로 비교';
 COMMENT ON COLUMN train.train_kind IS 'KTX / 새마을 등 / 운임 단가 구분';
 COMMENT ON COLUMN train.route_id IS '운행 노선';
 COMMENT ON COLUMN train.direction IS 'DOWN / UP / 상·하행 구분';
@@ -172,7 +173,7 @@ COMMENT ON COLUMN train_run.sale_event_id IS '명절 예매 행사 / 오픈 일�
 COMMENT ON COLUMN train_run.run_date IS '운행일 / 명절 기간';
 COMMENT ON COLUMN train_run.sale_open_at IS '예매 오픈 시각 / 트래픽 폭증 시점. 부하 테스트 시나리오 기준. 일반은 출발 2개월 전 07:00, 명절은 행사 오픈 시각';
 COMMENT ON COLUMN train_run.sale_close_at IS '판매 마감';
-COMMENT ON COLUMN train_run.status IS 'SCHEDULED / ON_SALE / CLOSED / DEPARTED / 판매 가능 여부 판단. 전이는 판매 오픈 스케줄러가 한다 — sale_open_at이 지나면 ON_SALE, sale_close_at이 지나면 CLOSED. 주기 app_policy sale.open_interval_sec';
+COMMENT ON COLUMN train_run.status IS 'SCHEDULED / ON_SALE / CLOSED / DEPARTED / 판매 가능 여부 판단. 전이는 판매 오픈 스케줄러가 한다 — sale_open_at이 지나면 ON_SALE, sale_close_at이 지나면 CLOSED, 기점 출발 시각(MIN(train_stop.departure_time))이 지나면 DEPARTED. 출발은 판매 일정과 무관한 사실이라 DEPARTED가 아닌 모든 상태에서 바로 간다. 주기 app_policy sale.open_interval_sec';
 COMMENT ON COLUMN train_run.created_at IS '생성 시각';
 COMMENT ON COLUMN train_run.updated_at IS '수정 시각';
 
@@ -609,12 +610,12 @@ CREATE TABLE notification (
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_notification PRIMARY KEY (notification_id),
-  CONSTRAINT ck_notification_type CHECK (type IN ('WAITLIST_OFFER', 'PAY_REMINDER', 'EXPIRED', 'WAITLIST_SKIPPED', 'REFUNDED')),
+  CONSTRAINT ck_notification_type CHECK (type IN ('WAITLIST_OFFER', 'PAY_REMINDER', 'EXPIRED', 'WAITLIST_SKIPPED', 'REFUNDED', 'CONFIRMED')),
   CONSTRAINT ck_notification_ref_type CHECK (ref_type IN ('RESERVATION', 'WAITLIST', 'CASE')),
   CONSTRAINT ck_notification_channel CHECK (channel IN ('PUSH', 'EMAIL', 'IN_APP'))
 );
 COMMENT ON TABLE notification IS '알림 - 취소표 배정·결제 독촉·만료 알림.';
-COMMENT ON COLUMN notification.type IS 'WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED / 취소표 건너뜀(매수 한도 초과)·환불 완료 안내';
+COMMENT ON COLUMN notification.type IS 'WAITLIST_OFFER / PAY_REMINDER / EXPIRED / WAITLIST_SKIPPED / REFUNDED / CONFIRMED / 취소표 건너뜀(매수 한도 초과)·환불 완료·예매 완료 안내';
 COMMENT ON COLUMN notification.ref_type IS 'RESERVATION / WAITLIST / CASE / ref_id가 어느 테이블을 가리키는지';
 COMMENT ON COLUMN notification.ref_id IS '관련 예약·대기 ID';
 COMMENT ON COLUMN notification.channel IS 'PUSH / EMAIL / IN_APP / 채널 추가 확장';
@@ -635,7 +636,6 @@ CREATE TABLE risk_score (
   avg_request_interval_ms    NUMBER,
   account_age_days           NUMBER,
   rule_score                 NUMBER(5,2),
-  iforest_score              NUMBER(5,2),
   final_score                NUMBER(5,2) NOT NULL,
   reasons                    CLOB,
   model_version              VARCHAR2(20),
@@ -659,7 +659,6 @@ COMMENT ON COLUMN risk_score.linked_account_cnt IS '연결된 계정 수 / 다�
 COMMENT ON COLUMN risk_score.avg_request_interval_ms IS '평균 요청 간격 / 매크로 신호';
 COMMENT ON COLUMN risk_score.account_age_days IS '가장 오래된 계정 나이 / 신규 계정 기본 신뢰도';
 COMMENT ON COLUMN risk_score.rule_score IS '규칙 기반 점수';
-COMMENT ON COLUMN risk_score.iforest_score IS 'Isolation Forest 점수 / 두 방식 비교';
 COMMENT ON COLUMN risk_score.final_score IS '최종 점수 (0~100) / 대기열 순번 조정량';
 COMMENT ON COLUMN risk_score.reasons IS '점수 근거 목록 (JSON) / 운영 원칙: 근거 기록';
 COMMENT ON COLUMN risk_score.model_version IS '산정 모델 버전 / 모델 교체 시 비교';
@@ -896,14 +895,14 @@ CREATE TABLE case_marker (
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_case_marker PRIMARY KEY (marker_id),
   CONSTRAINT ck_case_marker_marker_type CHECK (marker_type IN ('AUTO', 'MANUAL')),
-  CONSTRAINT ck_case_marker_rule_code CHECK (rule_code IN ('FAST_CLICK', 'SAME_SEAT_RETRY', 'CANCEL_AFTER_PAY', 'MULTI_ACCOUNT_SYNC', 'LINEAR_MOUSE')),
+  CONSTRAINT ck_case_marker_rule_code CHECK (rule_code IN ('FAST_CLICK', 'SAME_SEAT_RETRY', 'CANCEL_AFTER_PAY', 'MULTI_ACCOUNT_SYNC', 'REGULAR_INTERVAL', 'LINEAR_MOUSE')),
   CONSTRAINT ck_case_marker_severity CHECK (severity IN ('LOW', 'MID', 'HIGH'))
 );
 COMMENT ON TABLE case_marker IS '타임라인 마커 - 재생 타임라인의 북마크. 시스템이 자동으로 찍고 관리자가 메모를 더한다.';
 COMMENT ON COLUMN case_marker.session_id IS '표시할 세션 (없을 수 있음) / Oracle 기록만으로 찍는 마커(구매 직후 취소 등)는 녹화 세션이 없다. 세션이 있으면 재생기가 그 지점으로 이동';
 COMMENT ON COLUMN case_marker.at_ts IS '타임라인 위치 / 누르면 그 시점으로 이동';
 COMMENT ON COLUMN case_marker.marker_type IS 'AUTO / MANUAL / 시스템 탐지와 관리자 메모 구분';
-COMMENT ON COLUMN case_marker.rule_code IS 'FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / LINEAR_MOUSE / 어떤 규칙이 잡았는지';
+COMMENT ON COLUMN case_marker.rule_code IS 'FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / REGULAR_INTERVAL / LINEAR_MOUSE / 어떤 규칙이 잡았는지. 값은 RiskRule 중 마커 규칙(marker=true)과 같게 둔다';
 COMMENT ON COLUMN case_marker.label IS '예: 0.1초 간격 좌석 클릭 28회';
 COMMENT ON COLUMN case_marker.severity IS 'LOW / MID / HIGH';
 COMMENT ON COLUMN case_marker.created_by IS '작성 관리자 (AUTO는 null)';
@@ -946,12 +945,12 @@ CREATE TABLE model_run (
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_model_run PRIMARY KEY (model_version),
-  CONSTRAINT ck_model_run_algorithm CHECK (algorithm IN ('RULE', 'IFOREST')),
+  CONSTRAINT ck_model_run_algorithm CHECK (algorithm IN ('RULE', 'IFOREST', 'ENSEMBLE')),
   CONSTRAINT ck_model_run_is_active CHECK (is_active IN ('Y', 'N'))
 );
-COMMENT ON TABLE model_run IS '모델 학습 기록 - 규칙·Isolation Forest 모델 버전별 파라미터와 성능. 발표용 수치의 원천.';
-COMMENT ON COLUMN model_run.model_version IS '예: iforest-2026.11-01 / risk_score.model_version이 참조';
-COMMENT ON COLUMN model_run.algorithm IS 'RULE / IFOREST / 두 방식 비교';
+COMMENT ON TABLE model_run IS '모델 학습 기록 - 규칙·모델 버전별 파라미터와 성능. 발표용 수치의 원천. 규칙(RULE)은 risk_score를, 합성 모델(ENSEMBLE)은 model_score를 낸다.';
+COMMENT ON COLUMN model_run.model_version IS '예: rule-2026.11-01, ens-2026.11-01 / risk_score.model_version·model_score.model_version이 참조';
+COMMENT ON COLUMN model_run.algorithm IS 'RULE / IFOREST / ENSEMBLE / 두 방식 비교. ENSEMBLE = 부스팅 + IF + GRU 합성 (tools/ml, 점수는 model_score)';
 COMMENT ON COLUMN model_run.params IS 'contamination, n_estimators 등 (JSON) / 재현';
 COMMENT ON COLUMN model_run.train_source IS '학습 데이터 범위';
 COMMENT ON COLUMN model_run.precision_score IS '정밀도 / 발표용 성능 수치';
@@ -1224,6 +1223,8 @@ CREATE INDEX ix_app_policy_history_1jzu2w ON app_policy_history (changed_by);
 -- 예시 데이터 (팀 확정 전 예시값)
 INSERT INTO model_run (model_version, algorithm, params, train_source, trained_at, threshold, decay_half_life_days, is_active) VALUES ('rule-2026.11-01', 'RULE', '{"weights":"risk_score 신호별 가중치"}', 'synthetic v1', TIMESTAMP '2026-11-18 10:00:00', 80, 30, 'Y');
 INSERT INTO model_run (model_version, algorithm, params, train_source, trained_at, threshold, decay_half_life_days, is_active) VALUES ('iforest-2026.11-01', 'IFOREST', '{"n_estimators":200,"contamination":0.05}', 'synthetic v1 + ext_web_access_log', TIMESTAMP '2026-11-18 10:00:00', 80, 30, 'N');
+INSERT INTO model_run (model_version, algorithm, params, train_source, trained_at, threshold, is_active) VALUES ('ens-2026.11-01', 'ENSEMBLE', '{"models":["gbm","iforest","gru x5"],"dropped":["account_age_days_log","accounts_on_ip","distinct_ips","min_sync_gap_ip_s_log"]}', 'tools/ml generate.py 18000계정', TIMESTAMP '2026-11-18 10:52:00', 97.6, 'N');
+INSERT INTO model_run (model_version, algorithm, params, train_source, trained_at, threshold, is_active) VALUES ('ens-2026.11-02', 'ENSEMBLE', '{"dir":"data/ml/model-next","models":["gbm","iforest","gru x5"],"stage":true,"pick_floor_s":1.0}', 'tools/ml generate.py g7~g9 (ML_PICK_FLOOR=1, ML_STAGE=1)', TIMESTAMP '2026-11-19 03:55:00', 98.2, 'N');
 INSERT INTO sale_event (sale_event_id, name, holiday_from, holiday_to, sale_open_at, priority_open_at, status) VALUES (1, '2026 추석 (예시)', DATE '2026-09-24', DATE '2026-09-27', TIMESTAMP '2026-09-08 07:00:00', TIMESTAMP '2026-09-07 07:00:00', 'PLANNED');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('inventory.segment_mode', 'OFF', 1, 'STRING', '구간 재고 사용 여부 (OFF면 segment_no=0). 2주차 말 결정');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('queue.admit_per_sec', '200', 1, 'NUMBER', '초당 대기열 입장 허용 인원');

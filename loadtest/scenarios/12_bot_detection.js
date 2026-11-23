@@ -39,7 +39,7 @@ const BOUNDARY = __ENV.BOUNDARY === '1';
 // 경계 측정 기본값: 강도마다 PER_LEVEL명
 const B = BOUNDARY
   ? { FAST_LEVELS: '10,15,19,20,21,25,50', RETRY_LEVELS: '3,4,5,6,8', CANCEL_LEVELS: '1,2,3', MULTI_SIZES: '2,3',
-      STEADY_LEVELS: '300,500,1000', NORMAL: 20 }
+      STEADY_LEVELS: '300,500,1000', ROTATE_LEVELS: '2,3,4', NORMAL: 20 }
   : {};
 const env = (k, d) => __ENV[k] ?? B[k] ?? d;
 const n = (k, d, max = 2000) => Math.min(max, Math.max(0, Number(env(k, d))));
@@ -67,6 +67,10 @@ const RETRY = count('RETRY', 5, RETRY_LEVELS);
 const MULTI_GROUPS = count('MULTI_GROUPS', 3, MULTI_SIZES);
 const CANCEL = count('CANCEL', 5, CANCEL_LEVELS);
 const STEADY = n('STEADY', BOUNDARY || __ENV.STEADY_LEVELS ? STEADY_LEVELS.length * PER_LEVEL : 0);
+// 좌석을 돌려 가며 문턱 아래로 시도하는 봇 (SAME_SEAT_RETRY "여러 좌석 합산" 확인용). 강도 = 좌석마다 시도 수, 좌석 ROTATE_SEATS개
+const ROTATE_LEVELS = levels('ROTATE_LEVELS', 4, 1, 50);
+const ROTATE_SEATS = n('ROTATE_SEATS', 3, 9);
+const ROTATE = n('ROTATE', BOUNDARY || __ENV.ROTATE_LEVELS ? ROTATE_LEVELS.length * PER_LEVEL : 0);
 const SPREAD_SEC = n('SPREAD_SEC', 30, 600);
 const pickLevel = (lv, i) => lv[i % lv.length];
 const NORMAL_CANCEL_RATE = Number(__ENV.NORMAL_CANCEL_RATE ?? 0.2); // 정상 사용자도 마음이 바뀌면 1번은 취소한다 (문턱 2건 아래)
@@ -74,7 +78,7 @@ const FROM = __ENV.FROM || '3900023';
 const TO = __ENV.TO || '3900114';
 const MAX_WAIT_SEC = n('MAX_WAIT_SEC', 180, 1800);
 
-const KINDS = ['normal', 'fast', 'retry', 'multi', 'cancel', 'steady'];
+const KINDS = ['normal', 'fast', 'retry', 'multi', 'cancel', 'steady', 'rotate'];
 const flowOk = new Rate('bot_flow_ok');        // 각 사용자가 의도한 행동을 끝까지 했는지 (kind 태그). 낮으면 평가를 믿을 수 없음
 const fastClicks = new Counter('fast_clicks'); // 실제로 보낸 연타 수
 const retry409 = new Counter('retry_409');     // 반복 선점이 실제로 409를 받은 수 (좌석이 안 팔려 있으면 0)
@@ -96,6 +100,7 @@ const MULTI_TOTAL = Array.from({ length: MULTI_GROUPS }, (_, g) => pickLevel(MUL
 if (MULTI_TOTAL) scenarios.multi = group('multiAccount', MULTI_TOTAL);
 if (CANCEL) scenarios.cancel = group('cancelAbuser', CANCEL);
 if (STEADY) scenarios.steady = group('steadyMacro', STEADY);
+if (ROTATE) scenarios.rotate = group('rotateRetrier', ROTATE);
 
 export const options = {
   setupTimeout: '20m',
@@ -139,6 +144,7 @@ function plan(tag) {
   add('multi', multiGroupOf.length, (i) => multiGroupOf[i]);
   add('cancel', CANCEL, (i) => pickLevel(CANCEL_LEVELS, i));
   add('steady', STEADY, (i) => pickLevel(STEADY_LEVELS, i));
+  add('rotate', ROTATE, (i) => pickLevel(ROTATE_LEVELS, i));
   add('decoy', 1); // 반복 선점용 좌석을 미리 사 두는 도우미. 평가에서 뺀다
   return out;
 }
@@ -167,8 +173,11 @@ export function setup() {
   }
   const need = NORMAL + FAST + MULTI_TOTAL + CANCEL * Math.max(...CANCEL_LEVELS) + 1;
   if (map.seats.length < need) console.warn(`빈 좌석 ${map.seats.length}석 < 필요 ${need}석: 일부 사용자가 좌석을 못 잡습니다.`);
-  const targetSeat = pick(map.seats);
-  const h = hold(token, q.passToken, { from: FROM, to: TO, seatIds: [targetSeat] });
+  // 좌석 1 + ROTATE_SEATS개를 한 번에 산다 (retry 봇은 첫 좌석, rotate 봇은 나머지를 돌아가며)
+  const bought = map.seats.slice().sort(() => Math.random() - 0.5).slice(0, 1 + (ROTATE ? ROTATE_SEATS : 0));
+  const targetSeat = bought[0];
+  const rotateSeats = bought.slice(1);
+  const h = hold(token, q.passToken, { from: FROM, to: TO, seatIds: bought });
   const rid = (safeJson(h) || {}).reservationId;
   const p = rid ? pay(token, rid, { cardNumber: decoy.card }) : h;
   queueLeave(token);
@@ -177,7 +186,7 @@ export function setup() {
 
   const date = runDate(RUN_ID, FROM, TO);
   if (!date) throw new Error(`운행 ${RUN_ID} 상세를 읽지 못했습니다 (FROM=${FROM}, TO=${TO}).`);
-  return { tag, users, targetSeat, date };
+  return { tag, users, targetSeat, rotateSeats, date };
 }
 
 // ── 공통 동작 ─────────────────────────────────────────────────
@@ -328,6 +337,33 @@ export function cancelAbuser(data) {
     }
     cancelled.add(ok);
     done('cancel', ok >= rounds);
+  } finally {
+    queueLeave(token);
+  }
+}
+
+// ── 봇 6: 좌석을 돌려 가며 문턱 아래로 반복 (SAME_SEAT_RETRY "여러 좌석 합산") ──
+// 한 좌석에는 문턱(5) 아래로만 시도하고 좌석을 바꿔 가며 반복 → 한 좌석 최댓값으로는 안 걸림.
+// 규칙은 좌석마다 "두 번째 실패부터"를 합산하므로 좌석 3개 × 4번이면 합 9로 걸려야 한다
+export function rotateRetrier(data) {
+  const u = me(data, 'rotate');
+  setDevice(`ltdev${data.tag}t${u.i}`);
+  sleep(Math.random() * SPREAD_SEC);
+  const token = loginOrFail(u);
+  const q = queueUntilAdmitted(token, { maxWaitSec: MAX_WAIT_SEC });
+  if (!q.ok) return done('rotate', false);
+  try {
+    const perSeat = u.grp; // 강도 (ROTATE_LEVELS)
+    let conflicts = 0;
+    for (let round = 0; round < perSeat; round++) {
+      for (const seat of data.rotateSeats) {
+        const h = hold(token, q.passToken, { from: FROM, to: TO, seatIds: [seat] });
+        if (h.status === 409) conflicts++;
+        sleep(rand(0.3, 0.6)); // 200ms 넘게: 연타 규칙은 건드리지 않음
+      }
+    }
+    retry409.add(conflicts);
+    done('rotate', conflicts >= perSeat * data.rotateSeats.length - 1);
   } finally {
     queueLeave(token);
   }

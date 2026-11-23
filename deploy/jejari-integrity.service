@@ -1,0 +1,15 @@
+# 예매 정합성 점검 한 번 (jejari-integrity.timer가 부름). setup-server.sh가 __USER__·__HOME__을 채워 설치
+[Unit]
+Description=Jejari 예매 정합성 점검 (돈·좌석·이벤트·알림·행동 로그 어긋남 → Pushgateway → 경보)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__HOME__/Jejari
+Environment=LANG=C.UTF-8
+Environment=TZ=Asia/Seoul
+ExecStart=/bin/bash __HOME__/Jejari/deploy/integrity-check.sh
+TimeoutStartSec=5min
+Nice=10

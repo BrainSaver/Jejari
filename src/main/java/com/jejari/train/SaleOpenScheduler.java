@@ -13,7 +13,7 @@ import com.jejari.common.config.AppPolicy;
  * ADM-02 판매 오픈 스케줄러: {@code train_run.status}를 시각에 맞춰 옮긴다.
  *
  * <pre>
- * SCHEDULED --(sale_open_at 지남)--> ON_SALE --(sale_close_at 지남)--> CLOSED
+ * SCHEDULED --(sale_open_at 지남)--> ON_SALE --(sale_close_at 지남)--> CLOSED --(열차가 떠남)--> DEPARTED
  * </pre>
  *
  * <p>오픈 시각은 시드가 규칙으로 계산해 넣는다 (일반은 출발 2개월 전 07:00, 명절은 행사 오픈 시각).
@@ -21,8 +21,13 @@ import com.jejari.common.config.AppPolicy;
  * 판매 중 여부의 원천이 {@code status}이므로({@link TrainRunReader}) 오픈 시각이 지난 운행이 계속
  * SCHEDULED로 남아 대기열·좌석 선점이 열리지 않는다. 그 자리를 메우는 것이 이 스케줄러다.
  *
- * <p><b>마감을 먼저, 오픈을 나중에</b> 훑는다. 오픈·마감이 모두 지난 운행(지난 날짜 운행)을
- * ON_SALE로 한 번 올렸다가 곧바로 CLOSED로 내리는 헛걸음을 없애려는 것이다.
+ * <p><b>출발 → 마감 → 오픈</b> 순서로 훑는다. 뒤 단계가 앞 단계의 결과를 건드리지 않도록 센 것부터 본다.
+ * 오픈·마감이 모두 지난 운행(지난 날짜 운행)을 ON_SALE로 한 번 올렸다가 곧바로 CLOSED로 내리는
+ * 헛걸음을 없애려는 것이기도 하다.
+ *
+ * <p><b>출발을 가장 먼저 보는 이유</b>: 열차가 떠난 것은 판매 일정과 무관한 사실이라 다른 전이보다 세다.
+ * 시드의 {@code sale_close_at}은 운행일 다음 날이어서 열차가 떠난 뒤에도 한동안 판매 중(ON_SALE)이다.
+ * 그래서 DEPARTED 전이는 CLOSED뿐 아니라 <b>DEPARTED가 아닌 모든 상태</b>에서 간다.
  *
  * <p>앱이 여러 대면 이 스케줄러도 여러 대에서 돈다. 두 UPDATE 모두 현재 status를 WHERE에 넣은
  * 조건부 UPDATE(concurrency.md §0.3)라 같은 운행을 두 대가 잡아도 한쪽만 바꾼다
@@ -39,6 +44,19 @@ import com.jejari.common.config.AppPolicy;
 public class SaleOpenScheduler {
 
 	private static final Logger log = LoggerFactory.getLogger(SaleOpenScheduler.class);
+
+	/**
+	 * 출발: 기점 출발 시각이 지난 운행 (이미 DEPARTED인 것은 건드리지 않음).
+	 *
+	 * <p>출발 시각은 {@code MIN(train_stop.departure_time)}이다. 마지막 역은 departure_time이 비어 있고
+	 * 시각이 정차 순서대로 커지므로, 최솟값이 곧 기점 출발 시각이다 (관리자 운행 목록도 같은 식을 쓴다).
+	 * 정차 정보가 없는 운행은 출발 시각을 알 수 없어 그대로 둔다.
+	 */
+	private static final String DEPART = """
+			UPDATE train_run r
+			   SET status = 'DEPARTED', updated_at = SYSTIMESTAMP
+			 WHERE status <> 'DEPARTED'
+			   AND (SELECT MIN(s.departure_time) FROM train_stop s WHERE s.run_id = r.run_id) <= SYSTIMESTAMP""";
 
 	/** 판매 마감: 마감 시각이 지난 SCHEDULED·ON_SALE 운행 (이미 CLOSED·DEPARTED인 것은 건드리지 않음) */
 	private static final String CLOSE = """
@@ -80,20 +98,22 @@ public class SaleOpenScheduler {
 	}
 
 	/**
-	 * 마감 → 오픈 순서로 한 번 훑는다. 두 UPDATE는 각자의 트랜잭션이다 (한쪽이 실패해도 다른 쪽은 남는다).
+	 * 출발 → 마감 → 오픈 순서로 한 번 훑는다. 세 UPDATE는 각자의 트랜잭션이다
+	 * (하나가 실패해도 나머지는 남는다).
 	 *
-	 * @return 바뀐 운행 수 (마감 + 오픈)
+	 * @return 바뀐 운행 수
 	 */
 	public Swept sweepOnce() {
+		int departed = jdbc.update(DEPART);
 		int closed = jdbc.update(CLOSE);
 		int opened = jdbc.update(OPEN);
-		if (closed > 0 || opened > 0) {
-			log.info("판매 상태 전이: 오픈 {}건, 마감 {}건", opened, closed);
+		if (departed > 0 || closed > 0 || opened > 0) {
+			log.info("판매 상태 전이: 오픈 {}건, 마감 {}건, 출발 {}건", opened, closed, departed);
 		}
-		return new Swept(opened, closed);
+		return new Swept(opened, closed, departed);
 	}
 
 	/** 한 번 훑은 결과 */
-	public record Swept(int opened, int closed) {
+	public record Swept(int opened, int closed, int departed) {
 	}
 }

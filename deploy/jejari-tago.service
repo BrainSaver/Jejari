@@ -1,0 +1,14 @@
+# 실제 KTX 시간표 넣기 한 번 (jejari-tago.timer가 부름). setup-server.sh가 __USER__·__HOME__을 채워 설치
+[Unit]
+Description=Jejari TAGO 실제 KTX 시간표 갱신 (앞뒤 7일)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__HOME__/Jejari
+Environment=LANG=C.UTF-8
+Environment=TZ=Asia/Seoul
+ExecStart=/bin/bash __HOME__/Jejari/deploy/tago-refresh.sh
+TimeoutStartSec=15min

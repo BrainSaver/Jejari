@@ -8,6 +8,7 @@ import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -20,6 +21,7 @@ import com.jejari.seat.SeatMapService.State;
 import com.jejari.train.RunInfo;
 import com.jejari.train.TrainLayoutReader;
 import com.jejari.train.TrainLayoutReader.Car;
+import com.jejari.train.web.TrainController;
 import com.jejari.train.TrainLayoutReader.SeatInfo;
 import com.jejari.train.TrainRunReader;
 
@@ -56,8 +58,12 @@ public class SeatMapController {
 
 	@GetMapping
 	public SeatMapView seats(@PathVariable long runId, @RequestParam(required = false) String from,
-			@RequestParam(required = false) String to, @RequestParam(required = false) String grade) {
+			@RequestParam(required = false) String to, @RequestParam(required = false) String grade,
+			@RequestHeader(name = TrainController.AUTO_HEADER, required = false) String auto) {
 		Map<String, Object> meta = new LinkedHashMap<>();
+		if ("1".equals(auto)) {
+			meta.put("auto", true); // 화면이 스스로 다시 부른 조회 (좌석을 뺏긴 직후)
+		}
 		if (grade != null) {
 			meta.put("grade", grade);
 		}

@@ -40,7 +40,7 @@ import tools.jackson.databind.json.JsonMapper;
  * 행동 로그 적재 컨슈머 (RISK-01). Kafka {@code jejari.behavior} → MongoDB {@code behavior_log}.
  *
  * <pre>
- * poll(최대 behavior.batch_size건) → 형식 검사(깨진 메시지는 건너뜀) → ci_hash 붙이기 → interval_ms 계산
+ * poll(최대 behavior.batch_size건) → 형식 검사(깨진 메시지는 건너뜀) → 속도 상한(SinkPacer) → ci_hash 붙이기 → interval_ms 계산
  *   → 회원↔기기 연결(member_device) → insertMany(ordered:false) → CI·기기를 위험 점수 재계산 대상(risk:dirty)으로 표시
  *   → 성공하면 오프셋 커밋
  * </pre>
@@ -63,9 +63,20 @@ public class BehaviorSink {
 	private final IntervalTracker intervals = new IntervalTracker(200_000);
 	private final Map<Long, String> ciCache = new ConcurrentHashMap<>();
 	private volatile boolean indexesReady;
+	// A-10 트래픽 관제 지표 (admin/traffic/PipelineMetrics). 형식 오류로 건너뛴 것은 커밋되어 다시 오지 않는 유실이라 따로 센다
+	private final java.util.concurrent.atomic.AtomicLong skippedTotal = new java.util.concurrent.atomic.AtomicLong();
+	private final java.util.concurrent.atomic.AtomicLong storedTotal = new java.util.concurrent.atomic.AtomicLong();
+
+	private final SinkPacer pacer;
 
 	public BehaviorSink(MongoTemplate mongo, JdbcTemplate jdbc, JsonMapper json, BehaviorPolicy policy,
 			RiskDirtyQueue riskDirty) {
+		this(mongo, jdbc, json, policy, riskDirty, new SinkPacer(0));
+	}
+
+	public BehaviorSink(MongoTemplate mongo, JdbcTemplate jdbc, JsonMapper json, BehaviorPolicy policy,
+			RiskDirtyQueue riskDirty, SinkPacer pacer) {
+		this.pacer = pacer;
 		this.mongo = mongo;
 		this.jdbc = jdbc;
 		this.json = json;
@@ -83,16 +94,27 @@ public class BehaviorSink {
 			Parsed p = BehaviorDocuments.parse(r.value(), json);
 			if (p == null) {
 				skipped++;
+				// 형식 오류는 다시 해도 안 되므로 건너뛰되, 버리지 않고 격리 보관함(jejari.behavior.DLT)에 — 형식을 고친 뒤 다시 넣을 수 있게
+				if (deadLetters != null) {
+					deadLetters.park(BehaviorSinkConfig.GROUP_ID, r, com.jejari.event.dlq.DeadLetters.MALFORMED, null);
+				}
 				continue;
 			}
 			parsed.add(p);
 		}
 		if (skipped > 0) {
+			skippedTotal.addAndGet(skipped);
 			// 값은 남기지 않는다 (누가 넣었는지 모르는 데이터)
 			log.warn("행동 로그 형식 오류 {}건을 건너뜀 (토픽 {})", skipped, BehaviorEvent.TOPIC);
 		}
 		if (parsed.isEmpty()) {
 			return;
+		}
+		try {
+			pacer.acquire(parsed.size()); // 밀린 것을 따라잡을 때 CPU를 다 쓰지 않게 (SinkPacer)
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("행동 로그 적재 대기 중 중단 (이 묶음은 다시 처리)", e);
 		}
 		ensureIndexes();
 		Map<Long, String> ci = ciHashes(parsed);
@@ -107,6 +129,7 @@ public class BehaviorSink {
 		}
 		recordDevices(docs); // Mongo 저장보다 먼저: 이벤트가 보일 때는 연결도 이미 있게 (MERGE라 재시도해도 같음)
 		insert(docs);
+		storedTotal.addAndGet(docs.size());
 		markRiskSubjects(docs);
 		batch.commit(); // 저장에 성공한 뒤에만 (재시도 때 간격이 0으로 바뀌지 않게)
 	}
@@ -219,6 +242,23 @@ public class BehaviorSink {
 				args);
 	}
 
+
+	private com.jejari.event.dlq.DeadLetters deadLetters;   // 없으면(단위 시험) 예전처럼 건너뛰기만
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setDeadLetters(com.jejari.event.dlq.DeadLetters deadLetters) {
+		this.deadLetters = deadLetters;
+	}
+
+	/** 형식 검사에서 건너뛴 누적 건수 */
+	public long skippedCount() {
+		return skippedTotal.get();
+	}
+
+	/** MongoDB 저장에 성공한 누적 건수 (재전달 중복 포함) */
+	public long storedCount() {
+		return storedTotal.get();
+	}
 
 	void insert(List<Document> docs) {
 		try {

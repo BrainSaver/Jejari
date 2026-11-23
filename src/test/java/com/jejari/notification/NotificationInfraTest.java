@@ -96,7 +96,11 @@ class NotificationInfraTest {
 		NotificationPolicy policy = new NotificationPolicy(jdbc);
 		reminder = new PayReminderScanner(jdbc, policy, clock);
 		dispatcher = new NotificationDispatcher(jdbc, policy);
-		seatIds = jdbc.queryForList("SELECT seat_id FROM seat WHERE train_id = 1 ORDER BY seat_id", Long.class);
+		// 이 운행에서 아무도 안 쓰는 좌석만 (로컬·공용 DB에 시연·부하 테스트 예약이 남아 있어도 겹치지 않게)
+		seatIds = jdbc.queryForList("""
+				SELECT seat_id FROM seat WHERE train_id = 1
+				   AND seat_id NOT IN (SELECT seat_id FROM seat_inventory WHERE run_id = ?)
+				 ORDER BY seat_id""", Long.class, RUN);
 		seatCursor = 0;
 	}
 
@@ -134,12 +138,58 @@ class NotificationInfraTest {
 	}
 
 	@Test
+	void 예매_완료_이벤트는_CONFIRMED_알림이고_알림함에_열차_시각_구간_좌석이_붙는다() {
+		long m = newMember();
+		long other = newMember();
+		long r = holdSeat(m);
+		EventEnvelope e = event(EventType.RESERVATION_CONFIRMED, r);
+		tx.executeWithoutResult(st -> handler.handle(e));
+		assertThat(count("SELECT COUNT(*) FROM notification WHERE member_id = ? AND type = 'CONFIRMED' AND ref_id = ?", m, r))
+				.isOne();
+		dispatcher.dispatchOnce();
+
+		NotificationService.Item item = service.list(m, null, 20).items().get(0);
+		assertThat(item.type()).isEqualTo("CONFIRMED");
+		NotificationService.Trip trip = item.trip();
+		assertThat(trip).isNotNull();
+		assertThat(trip.trainNo()).isNotBlank();
+		assertThat(trip.runDate()).isNotNull();
+		assertThat(trip.fromName()).isNotBlank();
+		assertThat(trip.toName()).isNotBlank();
+		assertThat(trip.seats()).matches("[0-9]+호차 .+");
+		// 남의 예약 번호를 가리키는 알림이 있어도 그 표 내용은 붙지 않는다
+		tx.executeWithoutResult(st -> writer.create(other, NotificationType.CONFIRMED, "RESERVATION", r));
+		dispatcher.dispatchOnce();
+		assertThat(service.list(other, null, 20).items().get(0).trip()).isNull();
+	}
+
+	@Test
+	void DB_제약에_CONFIRMED가_아직_없으면_예매_완료_알림만_건너뛰고_멈추지_않는다() {
+		long m = newMember();
+		long r = holdSeat(m);
+		String withConfirmed = "type IN ('WAITLIST_OFFER', 'PAY_REMINDER', 'EXPIRED', 'WAITLIST_SKIPPED', 'REFUNDED', 'CONFIRMED')";
+		String old = "type IN ('WAITLIST_OFFER', 'PAY_REMINDER', 'EXPIRED', 'WAITLIST_SKIPPED', 'REFUNDED')";
+		jdbc.execute("ALTER TABLE notification DROP CONSTRAINT ck_notification_type");
+		jdbc.execute("ALTER TABLE notification ADD CONSTRAINT ck_notification_type CHECK (" + old + ")"); // ERD 패치 전 DB
+		try {
+			NotificationEventHandler fresh = new NotificationEventHandler(jdbc, writer); // 확인 결과를 기억하지 않은 새것
+			tx.executeWithoutResult(st -> fresh.handle(event(EventType.RESERVATION_CONFIRMED, r))); // 예외 없이 끝남
+			tx.executeWithoutResult(st -> fresh.handle(event(EventType.RESERVATION_EXPIRED, r))); // 다른 알림은 그대로
+			assertThat(count("SELECT COUNT(*) FROM notification WHERE member_id = ? AND type = 'CONFIRMED'", m)).isZero();
+			assertThat(count("SELECT COUNT(*) FROM notification WHERE member_id = ? AND type = 'EXPIRED'", m)).isOne();
+		} finally {
+			jdbc.execute("ALTER TABLE notification DROP CONSTRAINT ck_notification_type");
+			jdbc.execute("ALTER TABLE notification ADD CONSTRAINT ck_notification_type CHECK (" + withConfirmed + ")");
+		}
+	}
+
+	@Test
 	void 알림을_만들지_않는_이벤트는_도장도_찍지_않는다() {
 		assertThat(handler.handles(EventType.RESERVATION_EXPIRED.name())).isTrue();
 		assertThat(handler.handles(EventType.REFUND_COMPLETED.name())).isTrue();
-		// 제안·건너뜀 알림은 강동균의 제안 트랜잭션이 이미 남긴다. 확정·선점·결제 시작은 알림 종류에 없다
+		assertThat(handler.handles(EventType.RESERVATION_CONFIRMED.name())).isTrue(); // 예매 완료 (CONFIRMED)
+		// 제안·건너뜀 알림은 강동균의 제안 트랜잭션이 이미 남긴다. 선점·결제 시작은 알림 종류에 없다
 		assertThat(handler.handles(EventType.WAITLIST_OFFERED.name())).isFalse();
-		assertThat(handler.handles(EventType.RESERVATION_CONFIRMED.name())).isFalse();
 		assertThat(handler.handles(EventType.SEAT_HELD.name())).isFalse();
 		assertThat(handler.handles(null)).isFalse();
 	}

@@ -8,6 +8,10 @@ export const seoulMs = (local) => Date.parse(local.slice(0, 23) + '+09:00');
 export const seoulTime = (d) => d.toLocaleTimeString('en-GB', { timeZone: TZ });
 /** 오늘 날짜 "2026-11-17" (서울) */
 export const seoulToday = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+/** 지금 시각 "16:17" (서울) */
+export const seoulHm = () => new Date().toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+/** 지금 "2026-11-17T16:17:51" (서울, 시간대 없는 LocalDateTime 모양) */
+export const seoulNowLocal = () => `${seoulToday()}T${seoulTime(new Date())}`;
 /** "2026-11-17" + n일 */
 export const addDays = (ymd, n) => {
   const d = new Date(ymd + 'T00:00:00Z');

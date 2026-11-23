@@ -186,6 +186,7 @@ function WaitCard({ w, onChanged }) {
           <span className="grow">
             {w.status === 'WAITING' && w.ahead != null && <><span className="num" style={{ fontSize: 30, fontWeight: 600 }}>{w.ahead + 1}</span><span className="mut" style={{ fontSize: 14 }}>번째</span><br /></>}
             <span className="mut" style={{ fontSize: 13 }}>{shortDate(w.runDate)} {GRADE[w.seatGrade]} {w.seatCount}매</span>
+            {w.status === 'SKIPPED' && <><br /><span className="mut" style={{ fontSize: 13 }}>예매할 수 있는 매수를 넘어 이번 제안은 건너뛰었어요.</span></>}
           </span>
           {w.status === 'WAITING' && <ConfirmButton className="btn ghost sm" confirm="한 번 더 누르면 취소" onConfirm={cancel}>대기 취소</ConfirmButton>}
         </div>

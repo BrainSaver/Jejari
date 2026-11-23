@@ -30,6 +30,138 @@ class QueueServiceTest extends QueueRedisSupport {
         redis.opsForHash().put("policy:cache", key, value);
     }
 
+    // ---------- 입장 토큰 연장 (1회) ----------
+
+    @Test
+    void 입장_토큰은_한_번만_연장되고_남은_시간에_연장분이_더해진다() {
+        setPolicy("queue.pass_ttl_sec", "60");
+        setPolicy("queue.pass_extend_sec", "300");
+        queue.enter(1, RUN);
+        admitter.admit(RUN);
+        QueueStatus before = queue.status(1, RUN);
+        assertThat(before.state()).isEqualTo(QueueStatus.State.ADMITTED);
+
+        QueueStatus after = queue.extend(1, RUN);
+
+        assertThat(after.passToken()).isEqualTo(before.passToken()); // 토큰은 그대로, 시간만 늘어난다
+        assertThat(after.passExpiresAt()).isAfter(before.passExpiresAt().plusSeconds(290));
+        assertThat(redis.getExpire("queue:pass:" + RUN + ":1", java.util.concurrent.TimeUnit.SECONDS)).isGreaterThan(300);
+        // 두 번째는 거절
+        assertThatThrownBy(() -> queue.extend(1, RUN))
+                .isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getErrorCode()).isEqualTo(QueueErrorCode.QUEUE_EXTEND_USED));
+    }
+
+    @Test
+    void 입장하지_않았거나_토큰이_없으면_연장할_수_없다() {
+        queue.enter(1, RUN); // 대기 중 (토큰 없음)
+        assertThatThrownBy(() -> queue.extend(1, RUN))
+                .isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getErrorCode()).isEqualTo(QueueErrorCode.QUEUE_TOKEN_INVALID));
+    }
+
+    @Test
+    void 동시에_여러_번_눌러도_연장은_한_번이다() throws Exception {
+        queue.enter(1, RUN);
+        admitter.admit(RUN);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+        var ok = new java.util.concurrent.atomic.AtomicInteger();
+        var used = new java.util.concurrent.atomic.AtomicInteger();
+        List<java.util.concurrent.Future<?>> fs = new java.util.ArrayList<>();
+        for (int i = 0; i < 16; i++) {
+            fs.add(pool.submit(() -> {
+                try {
+                    queue.extend(1, RUN);
+                    ok.incrementAndGet();
+                } catch (BusinessException e) {
+                    if (e.getErrorCode() == QueueErrorCode.QUEUE_EXTEND_USED) used.incrementAndGet();
+                }
+            }));
+        }
+        for (var f : fs) f.get();
+        pool.shutdown();
+        assertThat(ok.get()).isEqualTo(1);
+        assertThat(used.get()).isEqualTo(15);
+    }
+
+    // ---------- 활성 운행 목록(queue:runs)과 입장 처리 ----------
+
+    private java.util.Set<String> activeRuns() {
+        return redis.opsForSet().members("queue:runs");
+    }
+
+    private long redisSec() {
+        return redis.execute((org.springframework.data.redis.core.RedisCallback<Long>) c -> c.serverCommands().time(java.util.concurrent.TimeUnit.SECONDS));
+    }
+
+    @Test
+    void 줄_선_사람이_있는_운행만_활성_운행_목록에_들어가고_비면_빠진다() {
+        assertThat(activeRuns()).isEmpty();
+        assertThat(admitter.admitActiveRuns()).isZero(); // 목록이 비면 아무 운행도 건드리지 않는다
+
+        queue.enter(1, RUN);
+        assertThat(activeRuns()).containsExactly(String.valueOf(RUN));
+
+        assertThat(admitter.admitActiveRuns()).isEqualTo(1); // 입장
+        assertThat(activeRuns()).containsExactly(String.valueOf(RUN)); // 토큰이 살아 있는 동안은 정리할 것이 남아 있다
+
+        queue.leave(1, RUN); // 줄도 입장도 모두 비움
+        admitter.admitActiveRuns();
+        assertThat(activeRuns()).isEmpty();
+    }
+
+    @Test
+    void 입장한_사람의_토큰이_끝나면_운행이_활성_운행_목록에서_빠진다() throws Exception {
+        setPolicy("queue.pass_ttl_sec", "1");
+        queue.enter(1, RUN);
+        admitter.admitActiveRuns();
+        assertThat(activeRuns()).contains(String.valueOf(RUN));
+
+        Thread.sleep(1300); // 토큰·active 만료
+        admitter.admitActiveRuns();
+        assertThat(activeRuns()).isEmpty();
+    }
+
+    @Test
+    void 판매_중이어도_사람이_없으면_목록에_없고_목록_맞추기는_있는_운행만_넣는다() {
+        queue.enter(1, RUN);
+        redis.delete("queue:runs"); // 목록 도입 전에 줄 선 사람·키 유실 흉내
+        assertThat(admitter.reconcile(List.of(RUN, 424242L))).isEqualTo(1);
+        assertThat(activeRuns()).containsExactly(String.valueOf(RUN));
+        assertThat(admitter.reconcile(List.of(RUN, 424242L))).isZero(); // 두 번 해도 같다
+    }
+
+    @Test
+    void 초당_상한을_켜면_같은_초에_여러_번_불러도_정책값을_넘지_않는다() {
+        for (int m = 1; m <= 30; m++) queue.enter(m, RUN);
+        long s1 = redisSec();
+        int total = 0;
+        for (int i = 0; i < 5; i++) total += admitter.admit(RUN, 10, 300_000, true);
+        long s2 = redisSec();
+        // 5번 모두 같은 초 안이면 10명, 초가 넘어갔으면 그만큼 더 (초당 10명)
+        assertThat(total).isLessThanOrEqualTo((int) (10 * (s2 - s1 + 1)));
+        assertThat(total).isGreaterThanOrEqualTo(10);
+    }
+
+    @Test
+    void 앱_여러_대가_동시에_입장_처리해도_입장_속도는_정책값이다() throws Exception {
+        for (int m = 1; m <= 200; m++) queue.enter(m, RUN);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<Integer>> fs = new java.util.ArrayList<>();
+        long s1 = redisSec();
+        for (int i = 0; i < 16; i++) { // 앱 2대가 같은 시각에 스케줄러를 돌리는 상황
+            fs.add(pool.submit(() -> { start.await(); return admitter.admit(RUN, 20, 300_000, true); }));
+        }
+        start.countDown();
+        int total = 0;
+        for (var f : fs) total += f.get();
+        pool.shutdown();
+        long s2 = redisSec();
+        assertThat(total).isLessThanOrEqualTo((int) (20 * (s2 - s1 + 1)));
+        assertThat(total).isGreaterThanOrEqualTo(20);
+        // 입장한 사람은 중복 없이 정확히 total명
+        assertThat(redis.opsForZSet().zCard("queue:active:" + RUN)).isEqualTo((long) total);
+    }
+
     // ---------- 진입 ----------
 
     @Test

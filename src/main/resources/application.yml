@@ -9,6 +9,22 @@ spring:
     # 기본 인메모리 사용자(기동 로그에 비밀번호 출력)를 만들지 않습니다. 인증은 JWT로 직접 구성합니다
     exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
 
+  # 종료 단계마다 기다리는 최대 시간 (기본 30초 → 10초). Kafka가 멈춘 채 종료하면 Kafka 소비자 단계가 30초를 다 써서
+  # 종료가 47초 걸렸다 (2026-11-20 실측) → 서버의 강제 종료(TimeoutStopSec 40초)에 걸려 행동 로그를 디스크에 적기 전에 죽는다.
+  # 요청은 길어야 몇 초(Redis·Mongo 2초, DB 연결 5초 제한)라 10초면 마무리된다. 계산은 BehaviorPublisher.destroy 주석
+  lifecycle:
+    timeout-per-shutdown-phase: 10s
+
+  # ── 정기 작업(@Scheduled) 스레드 ──
+  # 기본값은 1개라 모든 정기 작업이 한 스레드를 나눠 씁니다. 대기열 입장 처리(1초 주기)가 1초를 넘기자
+  # 좌석 선점 만료·Outbox 발행·결제 재확인이 그만큼 늦게 시작될 수 있었습니다 (공용 서버 2026-11-18 실측).
+  # 같은 작업이 겹쳐 돌지는 않고(Spring이 보장), 서로 다른 작업이 동시에 도는 것은 앱 2대에서 이미 일어나는 일이라 새 위험이 아닙니다.
+  task:
+    scheduling:
+      pool:
+        size: 4
+      thread-name-prefix: jejari-sched-
+
   # ── Oracle (gvenzl/oracle-free, 서비스 FREEPDB1) ──
   datasource:
     url: jdbc:oracle:thin:@//${ORACLE_HOST:localhost}:${ORACLE_PORT:1521}/${ORACLE_SERVICE:FREEPDB1}
@@ -17,6 +33,14 @@ spring:
     hikari:
       # DB 세션 시간대 고정 (concurrency.md §0.7). 기동 시 TimeZoneVerifier가 확인합니다 (T34)
       connection-init-sql: ALTER SESSION SET TIME_ZONE = 'Asia/Seoul'
+      # 커넥션 풀 (기본 10 → 20). 300명이 10초 안에 예매하면 10개가 다 차서 요청이 줄을 섰다.
+      # 같은 조건(데운 앱)에서 10 → 20: 선점 p95 1.73 → 1.26초, 최대 2.94 → 1.70초, 커넥션 대기 9 → 0. 30에서도 실제 사용은 최대 18개.
+      # Oracle Free는 CPU 2개라 더 키워도 DB 안에서 줄만 선다. 앱 2대여도 40 < Oracle processes 200.
+      # 근거·재현: docs/강동균/features/용량-시험-안내.md "예매 쪽 데이터 처리"
+      maximum-pool-size: 20
+      # 풀이 다 찼을 때 기다리는 최대 시간 (기본 30초 → 5초). 오래 기다리면 그동안 요청 스레드를 쥐고 있어
+      # 다른 API까지 막힌다 (로그인 폭주 때와 같은 원리). 넘으면 빨리 실패하는 편이 낫다
+      connection-timeout: 5000
   jpa:
     open-in-view: false
     hibernate:
@@ -91,6 +115,14 @@ jejari:
     purchase-window: 30d        # 구매·취소 집계 기간
     decay-refresh-after: 1d     # 새 신호가 없어도 이만큼 지난 점수는 감쇠를 반영해 다시 계산
     signal-listener-enabled: true  # 예약 확정·취소 이벤트 소비 (risk-signal)
+  # 공용 서버 수동 배포 버튼 (관리자 화면 A-08, DeployAdminService). 서버 .env에서만 켭니다.
+  # 버튼은 서버의 자동 배포 장치(jejari-autodeploy)를 지금 한 번 실행시킬 뿐이라 CI·ERD 확인은 그대로입니다
+  ops:
+    deploy:
+      enabled: ${JEJARI_OPS_DEPLOY_ENABLED:false}
+      admin-ids: ${JEJARI_OPS_DEPLOY_ADMIN_IDS:}   # 누를 수 있는 관리자 번호(admin_user.admin_id), 쉼표로
+    # A-10 트래픽 관제가 읽는 Prometheus (서버·PC 모두 같은 호스트의 127.0.0.1:9090, TrafficService)
+    prometheus-url: ${JEJARI_PROMETHEUS_URL:http://127.0.0.1:9090}
   # 첫 관리자 계정 (AUTH-05, AdminBootstrap). admin_user가 비어 있을 때만 SUPERVISOR 1명을 만듭니다
   admin:
     bootstrap:
@@ -99,7 +131,9 @@ jejari:
   jwt:
     issuer: jejari
     access-ttl: 15m
-    refresh-ttl: 14d          # 로그인 시점부터 고정. 재발급해도 늘지 않음
+    refresh-ttl: 14d          # 회원이 "로그인 상태 유지"를 골랐을 때. 로그인 시점부터 고정, 재발급해도 늘지 않음
+    session-refresh-ttl: 12h  # 고르지 않았을 때 (쿠키는 브라우저를 닫으면 사라짐)
+    admin-refresh-ttl: 8h     # 관리자 (마스킹 해제·강제 취소 권한, 쿠키는 브라우저를 닫으면 사라짐)
     clock-skew: 30s
     active-kid: ${JWT_ACTIVE_KID:k1}
     secrets:                  # kid: Base64 키(32바이트 이상). 키 교체 방법은 JwtProperties 주석

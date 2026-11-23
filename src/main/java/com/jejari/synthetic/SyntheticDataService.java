@@ -221,7 +221,9 @@ public class SyntheticDataService {
 		return switch (i % 50) {
 			case 10, 11, 12 -> "family";
 			case 20, 21 -> "replan";
-			case 30, 31 -> "biz";
+			// 출장자 40명 중 1명(2.5%)은 직전 취소가 잦은 출장자. 근거: 호텔 출장 예약 중 과거 취소 3번 이상 2.6%
+			// (docs/강다인/features/외부데이터-호텔-취소-분석.md 6절). 순번 0이 들어가게 해 적은 인원에서도 1명은 생긴다
+			case 30, 31 -> ((i / 50) * 2 + (i % 50 - 30)) % 40 == 0 ? "biz_lm" : "biz";
 			default -> "plain";
 		};
 	}
@@ -323,7 +325,10 @@ public class SyntheticDataService {
 	 * plain   0~2건, 1~2매. 10%는 한참 뒤(2~35시간) 1건 취소
 	 * family  3~6건, 3~4매 (명절·주말 가족 이동)                            → 누적 매수가 많음 (BULK_PURCHASE 근처)
 	 * replan  4~7건, 1~2매, 건마다 절반 확률로 1시간~2일 뒤 취소 후 다시 예매 → 취소 비율 높음 (HIGH_CANCEL_RATIO 근처)
-	 * biz     4~8건, 1매, 건마다 40% 확률로 출발 10분~10시간 전 취소(일정 변경) → 출발 직전 취소 (LAST_MINUTE_CANCEL 근처)
+	 * biz     4~8건, 1매, 건마다 21.5% 확률로 취소(일정 변경). 취소의 20%는 출발 10분~3시간 전(직전), 나머지는 3시간~3일 전
+	 * biz_lm  출장자의 2.5%. 4~8건 중 3~4건을 출발 10분~3시간 전에 취소 → LAST_MINUTE_CANCEL(3건)에 걸리는 정상 회원 (오탐 측정용)
+	 *         근거: 호텔 출장 예약 2,986건(DATA-04, 강다인) 취소율 21.5%, 취소 중 도착 3일 안 19.9%, 과거 취소 3번 이상 2.6%.
+	 *         호텔의 "도착 3일 안"을 열차의 "출발 3시간 안"(risk.last_minute_min 180)으로 옮긴 것은 [가정]
 	 * cancel  3건, 결제 1~3분 뒤 모두 취소 (봇)
 	 * 그 밖   0~1건
 	 * </pre>
@@ -357,7 +362,18 @@ public class SyntheticDataService {
 			case "biz" -> {
 				int n = 4 + rnd.nextInt(5);
 				for (int i = 0; i < n; i++) {
-					buys.add(new Buy(1, rnd.nextInt(10) < 4 ? 60L + rnd.nextInt(1440) : null, 10 + rnd.nextInt(590)));
+					boolean cancel = rnd.nextInt(1000) < 215;
+					boolean lastMinute = cancel && rnd.nextInt(5) == 0;
+					buys.add(new Buy(1, cancel ? 60L + rnd.nextInt(1440) : null,
+							lastMinute ? 10 + rnd.nextInt(170) : 180 + rnd.nextInt(4140)));
+				}
+			}
+			case "biz_lm" -> {
+				int n = 4 + rnd.nextInt(5);
+				int late = 3 + rnd.nextInt(2);
+				for (int i = 0; i < n; i++) {
+					buys.add(new Buy(1, i < late ? 60L + rnd.nextInt(1440) : null,
+							i < late ? 10 + rnd.nextInt(170) : 180 + rnd.nextInt(4140)));
 				}
 			}
 			default -> {

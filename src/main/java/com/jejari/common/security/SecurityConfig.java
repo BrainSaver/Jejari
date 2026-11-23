@@ -53,11 +53,13 @@ public class SecurityConfig {
 						.requestMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
 						.requestMatchers("/error").permitAll()
 						// 프론트엔드 화면·정적 파일 (SpaForwardController). 화면 안의 데이터는 API가 따로 막는다
+						// HEAD도 GET과 같게 연다: 외부 상태 점검·링크 미리보기가 HEAD로 확인하는데 401이 오면 사이트가 죽은 것으로 보인다
 						.requestMatchers(HttpMethod.GET, SPA_PAGES).permitAll()
+						.requestMatchers(HttpMethod.HEAD, SPA_PAGES).permitAll()
 						// 열차 조회(TRN-01~03)는 비회원도 (기능설계서 2장). 좌석 배치도 /runs/{runId}/seats는 여전히 로그인 + 입장 토큰
 						.requestMatchers(HttpMethod.GET, "/api/v1/stations", "/api/v1/runs", "/api/v1/runs/{runId}").permitAll()
 						// 관리자 로그인(AUTH-05)만 토큰 없이. 나머지 관리자 API는 ADMIN, 세부 권한은 @PreAuthorize("hasAuthority('ADMIN_REVIEWER')") 등
-						.requestMatchers(HttpMethod.POST, "/api/v1/admin/auth/login").permitAll()
+						.requestMatchers(HttpMethod.POST, "/api/v1/admin/auth/login", "/api/v1/admin/auth/refresh").permitAll()
 						.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
 						.anyRequest().authenticated())
 				.oauth2ResourceServer(rs -> rs

@@ -1,0 +1,18 @@
+# /etc/sudoers.d/jejari — 앱 주인(__USER__)이 비밀번호 없이 쓸 수 있는 명령 (setup-server.sh가 설치, visudo로 검사)
+#
+# 왜 필요한가: OS Login을 켜면 기존 계정의 sudo가 사라진다. 그러면 deploy.sh(자동 배포)가 앱을 재시작하지 못한다 (11-18 실제로 발생).
+# 왜 이것만: sudo 전체 대신 제자리 서비스를 켜고 끄는 명령만. 운영자가 `sudo -iu __USER__` 뒤에 쓰는 명령도 이 안에 있다.
+# --no-block 줄은 관리자 화면 "배포" 버튼(DeployAdminService)용: 앱이 자기 재시작을 기다리지 않고 시작만 건다.
+Cmnd_Alias JEJARI_UNITS = \
+  /usr/bin/systemctl start jejari@8080, /usr/bin/systemctl start jejari@8081, \
+  /usr/bin/systemctl stop jejari@8080, /usr/bin/systemctl stop jejari@8081, \
+  /usr/bin/systemctl restart jejari@8080, /usr/bin/systemctl restart jejari@8081, \
+  /usr/bin/systemctl stop jejari@8080 jejari@8081, \
+  /usr/bin/systemctl start jejari-autodeploy, /usr/bin/systemctl start jejari-autodeploy.service, \
+  /usr/bin/systemctl start --no-block jejari-autodeploy.service, \
+  /usr/bin/systemctl enable --now jejari-autodeploy.timer, /usr/bin/systemctl disable --now jejari-autodeploy.timer, \
+  /usr/bin/systemctl start jejari-tago, /usr/bin/systemctl start jejari-tago.service, \
+  /usr/bin/systemctl start jejari-model, /usr/bin/systemctl start jejari-model.service, \
+  /usr/bin/systemctl start jejari-model-retrain, /usr/bin/systemctl start jejari-model-retrain.service, \
+  /usr/bin/systemctl start jejari-integrity, /usr/bin/systemctl start jejari-integrity.service
+__USER__ ALL=(root) NOPASSWD: JEJARI_UNITS

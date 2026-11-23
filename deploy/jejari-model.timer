@@ -1,0 +1,11 @@
+# 매시간 17분에 모델 점수를 다시 매김 (보조 의견이라 실시간일 필요 없음). 놓쳤으면 켜질 때 바로
+[Unit]
+Description=Jejari 위험 점수 모델 보조 의견 매시간 갱신
+
+[Timer]
+OnCalendar=*-*-* *:17:00 Asia/Seoul
+Persistent=true
+RandomizedDelaySec=3min
+
+[Install]
+WantedBy=timers.target

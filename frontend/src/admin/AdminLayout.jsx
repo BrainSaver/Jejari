@@ -4,8 +4,8 @@ import Icon, { Seal } from './Icon.jsx';
 import { useAdminAuth } from './useAdminAuth.js';
 
 const MENU = [
-  ['운영', [['dashboard', 'pulse', '실시간 현황'], ['risk', 'shield', '위험 사용자'], ['cases', 'folder', '케이스']]],
-  ['기준·설정', [['master', 'train', '기준 데이터'], ['runs', 'calendar', '운행·행사'], ['settings', 'gear', '운영 설정']]],
+  ['운영', [['dashboard', 'pulse', '실시간 현황'], ['traffic', 'flow', '트래픽 관제'], ['risk', 'shield', '위험 사용자'], ['cases', 'folder', '케이스'], ['models', 'swap', '모델 관리']]],
+  ['기준·설정', [['master', 'train', '기준 데이터'], ['runs', 'calendar', '운행·행사'], ['settings', 'gear', '운영 설정'], ['deploy', 'refresh', '배포']]],
 ];
 
 export default function AdminLayout() {

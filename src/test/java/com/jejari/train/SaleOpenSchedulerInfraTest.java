@@ -70,8 +70,11 @@ class SaleOpenSchedulerInfraTest {
 
 	@AfterEach
 	void cleanUp() {
-		// 관리자 화면 운행(1000000~)은 정차 시각이 붙어 있어 지우면 FK에 걸린다. 테스트 대역만 지운다
-		jdbc.update("DELETE FROM train_run WHERE run_id >= ? AND run_id < 1000000", BASE);
+		// 테스트 대역(9101~9999)만 지운다. 밖에는 시드의 날짜별 운행(100000~, train_run_seq), 합성 데이터(880000~),
+		// 관리자 화면 운행(1000000~)이 있고 정차 시각이 붙어 있어 지우면 FK에 걸린다.
+		// 출발 전이 테스트가 넣은 정차를 먼저 지워야 train_run이 FK에 걸리지 않는다
+		jdbc.update("DELETE FROM train_stop WHERE run_id >= ? AND run_id < 10000", BASE);
+		jdbc.update("DELETE FROM train_run WHERE run_id >= ? AND run_id < 10000", BASE);
 	}
 
 	/**
@@ -150,6 +153,60 @@ class SaleOpenSchedulerInfraTest {
 		Swept again = scheduler.sweepOnce();
 		assertThat(status(noClose)).isEqualTo("ON_SALE");
 		assertThat(again.closed()).isZero();
+	}
+
+	/** 그 운행의 기점 정차를 넣어 출발 시각을 만든다. {@code departAfterSec}가 음수면 이미 떠난 것 */
+	private void stop(long runId, long departAfterSec) {
+		jdbc.update("""
+				INSERT INTO train_stop (run_id, station_id, stop_order, arrival_time, departure_time)
+				VALUES (?, '3900023', 1, NULL, SYSTIMESTAMP + NUMTODSINTERVAL(?, 'SECOND'))""",
+				runId, departAfterSec);
+	}
+
+	@Test
+	void 기점_출발_시각이_지나면_DEPARTED로_바꾼다() {
+		long gone = run(9, -7200, -3600L, "CLOSED");
+		stop(gone, -60);
+
+		Swept swept = scheduler.sweepOnce();
+
+		assertThat(status(gone)).isEqualTo("DEPARTED");
+		assertThat(swept.departed()).isEqualTo(1);
+	}
+
+	@Test
+	void 아직_안_떠난_운행은_DEPARTED로_가지_않는다() {
+		long soon = run(10, -60, 3600L, "ON_SALE");
+		stop(soon, 3600);
+
+		Swept swept = scheduler.sweepOnce();
+
+		assertThat(status(soon)).isEqualTo("ON_SALE");
+		assertThat(swept.departed()).isZero();
+	}
+
+	/**
+	 * 시드의 sale_close_at은 운행일 다음 날이라, 열차가 떠난 뒤에도 한동안 판매 중(ON_SALE)이다.
+	 * 출발은 판매 일정과 무관한 사실이므로 CLOSED를 거치지 않고 바로 DEPARTED로 간다.
+	 */
+	@Test
+	void 아직_판매_중이어도_떠났으면_DEPARTED로_간다() {
+		long onSaleButGone = run(11, -7200, 3600L, "ON_SALE");
+		stop(onSaleButGone, -60);
+
+		scheduler.sweepOnce();
+
+		assertThat(status(onSaleButGone)).isEqualTo("DEPARTED");
+	}
+
+	@Test
+	void 정차_정보가_없으면_출발_시각을_몰라_그대로_둔다() {
+		long noStops = run(12, -7200, -3600L, "CLOSED");
+
+		Swept swept = scheduler.sweepOnce();
+
+		assertThat(status(noStops)).isEqualTo("CLOSED");
+		assertThat(swept.departed()).isZero();
 	}
 
 	@Test

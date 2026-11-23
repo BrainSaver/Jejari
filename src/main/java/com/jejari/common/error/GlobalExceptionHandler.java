@@ -40,6 +40,10 @@ public class GlobalExceptionHandler {
 		} else {
 			log.debug("business error {}: {}", code.code(), e.getMessage());
 		}
+		if (e instanceof RetryAfterException r) {
+			return ResponseEntity.status(code.status()).header(org.springframework.http.HttpHeaders.RETRY_AFTER,
+					String.valueOf(r.retryAfterSec())).body(ErrorResponse.of(code, e.getMessage()));
+		}
 		return respond(code, e.getMessage());
 	}
 

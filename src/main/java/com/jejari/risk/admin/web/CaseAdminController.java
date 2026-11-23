@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.jejari.risk.model.ModelOpinionService;
 import com.jejari.common.error.BusinessException;
 import com.jejari.common.error.CommonErrorCode;
 import com.jejari.risk.admin.CaseAdminService;
@@ -39,9 +40,11 @@ public class CaseAdminController {
 	static final Set<String> STATUSES = Set.of("OPEN", "REVIEWING", "CONFIRMED", "DISMISSED");
 
 	private final CaseAdminService service;
+	private final ModelOpinionService models;
 
-	public CaseAdminController(CaseAdminService service) {
+	public CaseAdminController(CaseAdminService service, ModelOpinionService models) {
 		this.service = service;
+		this.models = models;
 	}
 
 	@GetMapping
@@ -68,6 +71,12 @@ public class CaseAdminController {
 	@GetMapping("/{caseId}")
 	public ResponseEntity<CaseDetail> detail(@PathVariable long caseId) {
 		return noStore(service.detail(caseId));
+	}
+
+	/** RISK-05 모델 보조 의견 (판정 참고용, 순번·제한에는 안 씀) */
+	@GetMapping("/{caseId}/model")
+	public ResponseEntity<ModelOpinionService.Opinion> model(@PathVariable long caseId) {
+		return noStore(models.forCase(caseId));
 	}
 
 	@GetMapping("/{caseId}/timeline")

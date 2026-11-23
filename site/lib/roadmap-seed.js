@@ -7,7 +7,7 @@ export const SEED = [
   ['INF-02', 'CI (빌드·테스트 자동 실행)', 'E', 'P1', 1, []],
   ['SEC-01', 'Spring Security·JWT 공통 인증, 비밀값 관리', 'E', 'P1', 1, []],
   ['INF-04', 'Prometheus·Grafana 모니터링', 'E', 'P1', 2, ['INF-01']],
-  ['INF-03', 'Oracle Cloud A1 VM 통합 환경 배포 (Docker Compose)', 'E', 'P1', 3, ['INF-01']],
+  ['INF-03', 'GCP Compute Engine VM 통합 환경 배포 (Docker Compose)', 'E', 'P1', 3, ['INF-01']],
   ['AUTH-04', '토큰 재발급·로그아웃 (리프레시 토큰 회전)', 'E', 'P1', 1, ['SEC-01']],
   ['AUTH-05', '관리자 로그인', 'E', 'P1', 1, ['SEC-01']],
   ['ADM-10', '트래픽 모니터링 (Grafana)', 'E', 'P1', 2, ['INF-04']],

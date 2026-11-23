@@ -68,6 +68,20 @@ class SignalCollectorTest {
     }
 
     @Test
+    void 여러_좌석의_재시도_실패를_합친다_첫_실패는_세지_않는다() {
+        // 좌석마다 4번씩 3좌석: 최댓값은 4(문턱 5 아래)지만 재시도 실패 합은 3+3+3 = 9
+        SignalCollector col = c();
+        for (long seat = 1; seat <= 3; seat++) {
+            for (int i = 0; i < 4; i++) col.seatHoldFailure(seat);
+        }
+        RiskSignals s = col.build();
+        assertThat(s.maxSameSeatFailures()).isEqualTo(4);
+        assertThat(s.seatRetryFailures()).isEqualTo(9);
+        // 사람처럼 이미 잡힌 좌석을 한 번씩 만나고 다른 좌석으로 가면 0
+        assertThat(c().seatHoldFailure(1).seatHoldFailure(2).seatHoldFailure(3).build().seatRetryFailures()).isZero();
+    }
+
+    @Test
     void 동시_선점_창_안의_서로_다른_계정_수() {
         Instant t = NOW;
         RiskSignals s = c()
@@ -174,7 +188,7 @@ class SignalCollectorTest {
         assertThat(r.finalScore()).isEqualByComparingTo("100");
         assertThat(r.triggerType()).isEqualTo("RISK_THRESHOLD");
         assertThat(r.markerReasons()).extracting(Reason::rule).containsExactlyInAnyOrder(
-                RiskRule.MULTI_ACCOUNT_SYNC, RiskRule.FAST_CLICK, RiskRule.SAME_SEAT_RETRY);
+                RiskRule.MULTI_ACCOUNT_SYNC, RiskRule.FAST_CLICK, RiskRule.SAME_SEAT_RETRY, RiskRule.REGULAR_INTERVAL);
     }
 
     @Test

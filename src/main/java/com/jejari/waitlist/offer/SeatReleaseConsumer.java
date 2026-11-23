@@ -83,17 +83,40 @@ public class SeatReleaseConsumer {
 			containerFactory = CONTAINER_FACTORY)
 	public void consume(List<ConsumerRecord<String, String>> records) {
 		for (ConsumerRecord<String, String> record : records) {
-			FreedSeats freed = parse(record.value());
+			if (com.jejari.event.dlq.DeadLetters.notForMe(record, EventTopics.GROUP_SEAT_RELEASE)) {
+				continue;   // 다른 그룹 몫으로 다시 넣은 메시지
+			}
+			FreedSeats freed;
+			try {
+				freed = parseStrict(record.value());
+			} catch (com.jejari.event.dlq.DeadLetters.Malformed m) {
+				park(record, com.jejari.event.dlq.DeadLetters.MALFORMED, m);
+				continue;
+			}
 			if (freed == null) {
-				continue;   // 다른 이벤트거나 형식이 깨짐. 컨슈머를 멈추지 않는다
+				continue;   // 빈 좌석과 상관없는 이벤트
 			}
 			try {
 				handle(freed);
 			} catch (RuntimeException e) {
-				// 한 건 실패가 나머지를 막지 않게. 오프셋을 커밋하지 않으려면 다시 던져야 하지만,
-				// 그러면 깨진 한 건이 뒤의 모든 좌석 제안을 막는다. 재전달은 재시작 때 일어난다
-				log.warn("seat-release: 예약 {} 처리 실패 (다음 전달 때 다시)", freed.reservationId(), e);
+				// 한 건 실패가 나머지를 막지 않게 넘어간다. 예전 주석은 "재전달은 재시작 때"였지만 AckMode.BATCH라 이 묶음이 끝나면
+				// 오프셋이 커밋되어 다시 오지 않는다 → 그 좌석의 취소표 제안이 사라졌다. 지금은 격리 보관함에 옮겨 다시 처리할 수 있게
+				log.warn("seat-release: 예약 {} 처리 실패 → 격리 보관", freed.reservationId(), e);
+				park(record, com.jejari.event.dlq.DeadLetters.HANDLER_FAILED, e);
 			}
+		}
+	}
+
+	private com.jejari.event.dlq.DeadLetters deadLetters;   // 없으면(단위 시험) 예전처럼 로그만
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setDeadLetters(com.jejari.event.dlq.DeadLetters deadLetters) {
+		this.deadLetters = deadLetters;
+	}
+
+	private void park(ConsumerRecord<String, String> record, String reason, Throwable cause) {
+		if (deadLetters != null) {
+			deadLetters.park(EventTopics.GROUP_SEAT_RELEASE, record, reason, cause);
 		}
 	}
 
@@ -114,10 +137,19 @@ public class SeatReleaseConsumer {
 		}
 	}
 
-	/** 빈 좌석 이벤트면 내용을, 아니면 null */
+	/** 빈 좌석 이벤트면 내용을, 아니면 null (형식이 깨진 것도 null) */
 	FreedSeats parse(String value) {
-		if (value == null || value.length() > 1_000_000) {
+		try {
+			return parseStrict(value);
+		} catch (com.jejari.event.dlq.DeadLetters.Malformed m) {
 			return null;
+		}
+	}
+
+	/** 빈 좌석 이벤트면 내용을, 다른 이벤트면 null, 형식이 깨졌으면 Malformed (격리 보관 대상) */
+	FreedSeats parseStrict(String value) {
+		if (value == null || value.length() > 1_000_000) {
+			throw new com.jejari.event.dlq.DeadLetters.Malformed(value == null ? "값 없음" : "너무 큼");
 		}
 		try {
 			EventEnvelope e = EventEnvelope.parse(json, value);
@@ -137,8 +169,8 @@ public class SeatReleaseConsumer {
 			return new FreedSeats(e.eventId(), Long.parseLong(e.aggregateId()), runId,
 					(String) p.get("from"), (String) p.get("to"), seatIds);
 		} catch (RuntimeException ex) {
-			log.warn("seat-release: 형식이 틀린 이벤트를 건너뜀");
-			return null;
+			log.warn("seat-release: 형식이 틀린 이벤트 → 격리 보관");
+			throw new com.jejari.event.dlq.DeadLetters.Malformed(ex.getClass().getSimpleName());
 		}
 	}
 

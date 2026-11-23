@@ -13,9 +13,10 @@ const authListeners = new Set();
 
 /** 서버 오류 응답 {code, message, traceId}를 담는다 */
 export class ApiError extends Error {
-  constructor(status, body, traceId) {
+  constructor(status, body, traceId, retryAfter = null) {
     super(body?.message || `요청이 실패했어요 (${status})`);
     this.status = status;
+    this.retryAfter = retryAfter; // 서버가 Retry-After로 알려 준 "몇 초 뒤 다시" (로그인 대기실이 가득 찼을 때 등)
     this.code = body?.code || 'HTTP_' + status;
     this.traceId = body?.traceId || traceId || null;
   }
@@ -64,7 +65,9 @@ function setToken(token) {
 /** 리프레시 쿠키로 액세스 토큰을 다시 받는다. 성공하면 true */
 export function refresh() {
   if (!refreshing) {
-    refreshing = send('POST', '/api/v1/auth/refresh', undefined, { auth: false })
+    // 관리자 화면은 관리자 쿠키(jejari_art)로, 나머지는 회원 쿠키(jejari_rt)로. 서버가 서로의 세션을 받지 않는다
+    const path = location.pathname.startsWith('/admin') ? '/api/v1/admin/auth/refresh' : '/api/v1/auth/refresh';
+    refreshing = send('POST', path, undefined, { auth: false })
       .then((r) => {
         setToken(r.accessToken);
         return true;
@@ -86,11 +89,26 @@ export async function adminLogin(loginId, password) {
   return tokenClaims();
 }
 
-/** 회원 로그인 (U-01). 관리자와 같은 리프레시 쿠키를 쓰므로 한 브라우저에서는 한 사람만 로그인한다 */
-export async function memberLogin(email, password) {
-  const r = await send('POST', '/api/v1/auth/login', { email, password }, { auth: false });
-  setToken(r.accessToken);
-  return tokenClaims();
+/**
+ * 회원 로그인 (U-01). 관리자와 쿠키가 달라 한 브라우저에서 회원·관리자를 오가도 서로 덮어쓰지 않는다.
+ * @param remember "로그인 상태 유지" — 고르면 14일, 아니면 브라우저를 닫으면 로그아웃(최대 12시간)
+ * @param onWait   로그인이 몰려 서버가 "N초 뒤 다시"(429 AUTH_LOGIN_BUSY + Retry-After)라고 하면 onWait(N)을 부르고
+ *                 그만큼 기다렸다가 자동으로 다시 보낸다 (최대 LOGIN_RETRY번). 사용자는 다시 누를 필요가 없다
+ */
+const LOGIN_RETRY = 20;
+export async function memberLogin(email, password, remember = false, onWait = null) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const r = await send('POST', '/api/v1/auth/login', { email, password, remember }, { auth: false });
+      setToken(r.accessToken);
+      return tokenClaims();
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.code !== 'AUTH_LOGIN_BUSY' || !e.retryAfter || attempt >= LOGIN_RETRY) throw e;
+      const sec = Math.round(e.retryAfter * (0.8 + Math.random() * 0.4)) || 1; // 모두 같은 순간에 다시 몰리지 않게 ±20%
+      onWait?.(sec);
+      await new Promise((ok) => setTimeout(ok, sec * 1000));
+    }
+  }
 }
 
 export async function logout() {
@@ -103,8 +121,33 @@ export async function logout() {
 
 // ------------------------------------------------------------ 요청
 
+/**
+ * 기기 ID. 서버가 X-Device-Id를 해시해 행동 로그에 남긴다 (기기 단위 분석의 재료).
+ * 처음 열 때 무작위로 만들어 브라우저에 저장한다.
+ * 저장소가 막혀 있으면(사생활 보호 창 등) 이 탭에서만 쓰는 ID로 대신한다.
+ */
+const DEVICE_KEY = 'jejari.device';
+let deviceId = null;
+function device() {
+  if (deviceId) return deviceId;
+  const fresh = () =>
+    (crypto.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9_-]/g, '');
+  try {
+    deviceId = localStorage.getItem(DEVICE_KEY);
+    if (!/^[A-Za-z0-9_-]{8,128}$/.test(deviceId || '')) {
+      deviceId = fresh();
+      localStorage.setItem(DEVICE_KEY, deviceId);
+    }
+  } catch {
+    deviceId = fresh();
+  }
+  return deviceId;
+}
+
 async function send(method, path, body, { auth = true, extra } = {}) {
   const headers = { Accept: 'application/json', ...(extra || {}) };
+  // 이용자 요청에만 붙인다. 관리자 조회는 이용자 행동 분석에 섞이지 않게 (AdminDashboardController 주석과 같은 이유)
+  if (!path.startsWith('/api/v1/admin')) headers['X-Device-Id'] = device();
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (auth && accessToken) headers.Authorization = 'Bearer ' + accessToken;
 
@@ -127,7 +170,10 @@ async function send(method, path, body, { auth = true, extra } = {}) {
 
   const text = await res.text();
   const data = text ? safeJson(text) : null;
-  if (!res.ok) throw new ApiError(res.status, data, traceId);
+  if (!res.ok) {
+    const after = Number(res.headers.get('Retry-After'));
+    throw new ApiError(res.status, data, traceId, after > 0 ? after : null);
+  }
   return data;
 }
 
@@ -143,7 +189,18 @@ function safeJson(text) {
  * 토큰을 붙여 부르고, 401이면 한 번 재발급 후 다시 부른다.
  * @param headers 더 붙일 헤더 (예: X-Queue-Token, Idempotency-Key)
  */
+/**
+ * 페이지를 새로 열면 토큰은 메모리에서 사라진다. 첫 요청 전에 리프레시 쿠키로 한 번 받아 둔다.
+ * 안 그러면 공개 API(운행 검색 등)가 토큰 없이 먼저 나가 로그인한 사람의 행동이 "비회원"으로 기록된다
+ * (봇 대회 준비 중 발견: 검색 로그가 회원 행동에서 빠짐). 로그인 안 한 사람은 리프레시가 바로 실패하고 그대로 진행
+ */
+let booted = null;
+
 export async function api(method, path, body, headers) {
+  if (!accessToken) {
+    booted ??= refresh();
+    await booted;
+  }
   try {
     return await send(method, path, body, { extra: headers });
   } catch (e) {

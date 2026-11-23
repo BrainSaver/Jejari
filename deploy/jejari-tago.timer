@@ -1,0 +1,11 @@
+# 매일 새벽 4시 30분(서울)에 실제 KTX 시간표를 다시 넣음 → 늘 오늘 기준 앞뒤 7일이 있음. 놓쳤으면 켜질 때 바로
+[Unit]
+Description=Jejari TAGO 시간표 매일 갱신
+
+[Timer]
+OnCalendar=*-*-* 04:30:00 Asia/Seoul
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

@@ -197,5 +197,35 @@
     ],
     "owner": "조영준",
     "summary": "app_policy 값 보기·바꾸기"
+  },
+  {
+    "id": "A-08",
+    "name": "배포 (공용 서버)",
+    "kind": "admin",
+    "features": [
+      "INF-03"
+    ],
+    "owner": "조영준",
+    "summary": "자동 배포 장치를 지금 한 번 실행 (프로젝트 기간만)"
+  },
+  {
+    "id": "A-09",
+    "name": "모델 관리",
+    "kind": "admin",
+    "features": [
+      "RISK-05"
+    ],
+    "owner": "강동균",
+    "summary": "합성 모델 버전을 실데이터 점수로 비교하고 보조 의견에 쓸 버전을 고름 (학습은 하지 않음)"
+  },
+  {
+    "id": "A-10",
+    "name": "트래픽 관제",
+    "kind": "admin",
+    "features": [
+      "ADM-03"
+    ],
+    "owner": "강동균",
+    "summary": "서비스 전체 트래픽 실시간 흐름도(점이 움직임)·상태 판정·KPI·자원·그래프·많이 불린 API (Prometheus)"
   }
 ]

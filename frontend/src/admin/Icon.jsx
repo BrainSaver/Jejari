@@ -1,5 +1,7 @@
 // 2px 선 아이콘 (시안 docs/ui/A-0x.html의 SVG 세트). 이모지는 쓰지 않는다 (DESIGN.md)
 const PATHS = {
+  flow: <><circle cx="5" cy="12" r="2.2" /><circle cx="19" cy="6" r="2.2" /><circle cx="19" cy="18" r="2.2" /><path d="M7.2 11c4-1 6-4 9.6-4.6M7.2 13c4 1 6 4 9.6 4.6" /></>,
+  expand: <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />,
   pulse: <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />,
   shield: <><path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6z" /><path d="M12 8.5v4M12 15.5v.3" /></>,
   folder: <path d="M3.5 6.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />,
@@ -16,7 +18,7 @@ const PATHS = {
   bell: <><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></>,
   person: <><circle cx="12" cy="8.5" r="3.6" /><path d="M5 20c1-3.6 3.8-5.2 7-5.2s6 1.6 7 5.2" /></>,
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5.5M12 7.8v.3" /></>,
-  swap: <path d="M8 4v16M8 4L5 7M8 4l3 3M16 20V4M16 20l-3-3M16 20l3-3" />,
+  swap: <path d="M4 8h16M20 8l-3-3M20 8l-3 3M20 16H4M4 16l3-3M4 16l3 3" />,
   card: <><rect x="3" y="5.5" width="18" height="13" rx="2" /><path d="M3 10h18M7 15h4" /></>,
   phone: <path d="M6.5 3.5h3l1.5 4-2 1.5a11 11 0 0 0 6 6l1.5-2 4 1.5v3a2 2 0 0 1-2 2A16.5 16.5 0 0 1 4.5 5.5a2 2 0 0 1 2-2z" />,
 };

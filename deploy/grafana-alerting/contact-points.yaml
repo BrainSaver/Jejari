@@ -1,0 +1,12 @@
+# Discord로 경보 보내기 (서버 전용, compose.server.yaml이 마운트). 웹훅 주소는 서버 .env의 DISCORD_WEBHOOK_URL
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: jejari-discord
+    receivers:
+      - uid: jejari-discord
+        type: discord
+        settings:
+          url: ${DISCORD_WEBHOOK_URL}
+          use_discord_username: false
+        disableResolveMessage: false   # 해결되면 "해결됨"도 보냄

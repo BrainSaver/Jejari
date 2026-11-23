@@ -1,5 +1,7 @@
 package com.jejari.member.web;
 
+import java.util.concurrent.CompletableFuture;
+
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,6 +14,7 @@ import com.jejari.auth.web.TokenResponses;
 import com.jejari.auth.web.TokenResponses.TokenResponse;
 import com.jejari.common.hmac.Pseudonymizer;
 import com.jejari.member.MemberAuthEnabled;
+import com.jejari.member.login.LoginGate;
 import com.jejari.member.login.LoginService;
 import com.jejari.member.signup.SignupService;
 import com.jejari.member.verify.MockIdentityProvider.Provider;
@@ -35,9 +38,11 @@ public class MemberAuthController {
 	private final TokenResponses tokenResponses;
 	private final ClientIpResolver ipResolver;
 	private final Pseudonymizer pseudonymizer;
+	private final LoginGate gate;
 
 	public MemberAuthController(SignupService signup, LoginService login, TokenResponses tokenResponses,
-			ClientIpResolver ipResolver, Pseudonymizer pseudonymizer) {
+			ClientIpResolver ipResolver, Pseudonymizer pseudonymizer, LoginGate gate) {
+		this.gate = gate;
 		this.signup = signup;
 		this.login = login;
 		this.tokenResponses = tokenResponses;
@@ -61,10 +66,16 @@ public class MemberAuthController {
 				.body(new SignupResponse(masked));
 	}
 
-	/** 로그인 → 액세스 토큰(본문) + 리프레시 토큰(HttpOnly·Secure·SameSite=Strict 쿠키) */
+	/**
+	 * 로그인 → 액세스 토큰(본문) + 리프레시 토큰(HttpOnly·Secure·SameSite=Strict 쿠키).
+	 * 로그인 대기실({@link LoginGate})의 일꾼이 처리하고, 이 요청 스레드는 바로 풀려난다 (서블릿 비동기).
+	 * 대기실이 가득 차면 429 AUTH_LOGIN_BUSY + Retry-After
+	 */
 	@PostMapping("/login")
-	public ResponseEntity<TokenResponse> login(@RequestBody LoginRequest req, HttpServletRequest http) {
-		return tokenResponses.ok(login.login(req.email(), req.password(), ipHash(http), userAgent(http)));
+	public CompletableFuture<ResponseEntity<TokenResponse>> login(@RequestBody LoginRequest req, HttpServletRequest http) {
+		String ip = ipHash(http), ua = userAgent(http);     // 요청 객체는 이 스레드에서만 읽는다
+		boolean remember = Boolean.TRUE.equals(req.remember());
+		return gate.submit(() -> tokenResponses.ok(login.login(req.email(), req.password(), ip, ua, remember)));
 	}
 
 	private String ipHash(HttpServletRequest http) {
@@ -107,7 +118,8 @@ public class MemberAuthController {
 	public record SignupResponse(String email) {
 	}
 
-	public record LoginRequest(String email, String password) {
+	/** @param remember "로그인 상태 유지" (없으면 false) */
+	public record LoginRequest(String email, String password, Boolean remember) {
 		@Override
 		public String toString() {
 			return "LoginRequest[***]";

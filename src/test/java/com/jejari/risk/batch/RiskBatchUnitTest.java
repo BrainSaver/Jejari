@@ -192,10 +192,8 @@ class RiskBatchUnitTest {
 			c.purchase(10); // 누적 60매 → BULK HIGH 20
 			c.userCancel(120, 60); // 출발 직전 6건 → LAST_MINUTE HIGH 15, 취소 비율 100% → 20
 		}
-		c.linkedAccounts(5).oldestAccountCreatedAt(NOW.minus(Duration.ofDays(1)), NOW); // 20 + 신규 5
-		for (int i = 0; i < 40; i++) {
-			c.interval(1000); // 같은 간격 → REGULAR 15
-		}
+		c.linkedAccounts(5).oldestAccountCreatedAt(NOW.minus(Duration.ofDays(1)), NOW); // 20 + 신규 5 → 합 80
+		// REGULAR_INTERVAL은 v24부터 마커 규칙이라 여기 넣지 않는다 (보조 신호만으로 80점)
 		RiskResult r = engine.score(c.build(), null, NOW);
 		assertThat(r.markerReasons()).isEmpty();
 		assertThat(r.ruleScore()).isGreaterThanOrEqualTo(new BigDecimal("80"));

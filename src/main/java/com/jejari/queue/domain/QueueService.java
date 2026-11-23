@@ -27,6 +27,7 @@ public class QueueService {
 	private final RedisScript<List> enterScript;
 	private final RedisScript<List> leaveScript;
 	private final RedisScript<List> statusScript;
+	private final RedisScript<List> extendScript;
 	private final PolicyProvider policy;
 	private final RiskPenaltyService risk;
 	private final MemberIdentityPort members;
@@ -35,12 +36,13 @@ public class QueueService {
 	private final Clock clock;
 
 	public QueueService(StringRedisTemplate redis, RedisScript<List> enterScript, RedisScript<List> leaveScript,
-						RedisScript<List> statusScript, PolicyProvider policy, RiskPenaltyService risk, MemberIdentityPort members,
+						RedisScript<List> statusScript, RedisScript<List> extendScript, PolicyProvider policy, RiskPenaltyService risk, MemberIdentityPort members,
 						OnSaleRunProvider runs, QueueLogSink logSink, Clock clock) {
 		this.redis = redis;
 		this.enterScript = enterScript;
 		this.leaveScript = leaveScript;
 		this.statusScript = statusScript;
+		this.extendScript = extendScript;
 		this.policy = policy;
 		this.risk = risk;
 		this.members = members;
@@ -66,7 +68,7 @@ public class QueueService {
 		List<?> r = redis.execute(enterScript,
 				List.of(QueueKeys.queue(runId), QueueKeys.seq(runId),
 						QueueKeys.member(memberId), QueueKeys.ci(identity.ciHash()),
-						QueueKeys.throughput(runId)),
+						QueueKeys.throughput(runId), QueueKeys.RUNS),
 				String.valueOf(runId), String.valueOf(memberId), identity.ciHash(),
 				String.valueOf(penaltyMs), String.valueOf(entryTtlMs), String.valueOf(closeAtMs));
 
@@ -104,6 +106,26 @@ public class QueueService {
 			return admitted(runId, ticket, (String) r.get(3), ((Number) r.get(2)).longValue());
 		}
 		return waiting(runId, ticket, ((Number) r.get(2)).longValue(), ((Number) r.get(4)).longValue());
+	}
+
+	/**
+	 * 입장 토큰 연장. 회원당 운행마다 1회, queue.pass_extend_sec(기본 300초)만큼 남은 시간에 더한다.
+	 * 토큰이 없으면 QUEUE_TOKEN_INVALID, 이미 연장했으면 QUEUE_EXTEND_USED. 판정은 Lua 한 번이라 동시에 눌러도 1회다.
+	 */
+	public QueueStatus extend(long memberId, long runId) {
+		long addMs = policy.getLong(PolicyProvider.PASS_EXTEND_SEC) * 1000;
+		List<?> r = redis.execute(extendScript,
+				List.of(QueueKeys.pass(runId, memberId), QueueKeys.passExt(runId, memberId),
+						QueueKeys.active(runId), QueueKeys.member(memberId)),
+				String.valueOf(memberId), String.valueOf(addMs));
+		long result = ((Number) r.get(0)).longValue();
+		if (result == -1) {
+			throw new BusinessException(QueueErrorCode.QUEUE_TOKEN_INVALID);
+		}
+		if (result == -2) {
+			throw new BusinessException(QueueErrorCode.QUEUE_EXTEND_USED);
+		}
+		return status(memberId, runId);
 	}
 
 	/** 대기 중이든 입장했든 지운다. 이미 나갔으면 아무 일도 하지 않는다 (멱등). */

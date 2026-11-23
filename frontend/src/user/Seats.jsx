@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ApiError, get, post } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
-import { clearPass, loadPass } from '../lib/pass.js';
+import { clearPass, loadPass, savePass } from '../lib/pass.js';
 import { useMember } from './useMember.js';
 
 /**
@@ -37,19 +37,24 @@ export default function Seats() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [pass] = useState(() => loadPass(runId));
+  const [pass, setPass] = useState(() => loadPass(runId));
   const left = useCountdown(pass?.expiresAt);
   const expired = !pass || left <= 0;
 
   const [run, setRun] = useState(null);
   const [map, setMap] = useState(null);
   const [carNo, setCarNo] = useState(null);
-  const [people, setPeople] = useState({ ADULT: 1, CHILD: 0, SENIOR: 0 });
+  // 검색 화면에서 고른 유형별 인원 (없으면 어른 1명)
+  const want = Object.fromEntries(['adult', 'child', 'senior'].map((k) => [k, Math.max(0, Math.min(MAX_PEOPLE, Math.floor(Number(params.get(k))) || 0))]));
+  if (want.adult + want.child + want.senior < 1 || want.adult + want.child + want.senior > MAX_PEOPLE) Object.assign(want, { adult: 1, child: 0, senior: 0 });
+  const wantGrade = params.get('grade') || '';
+  const [people, setPeople] = useState({ ADULT: want.adult, CHILD: want.child, SENIOR: want.senior });
   const [picked, setPicked] = useState([]); // [{seatId, seatNo, carNo, grade}]
   const [notice, setNotice] = useState(null); // {kind:'taken'|'error'|'expired', text}
   const [busy, setBusy] = useState(false);
   const [lost, setLost] = useState([]); // 남이 먼저 잡은 좌석: 잠깐 흔들린다
   const idemKey = useRef(null);
+  const [extending, setExtending] = useState(false);
 
   const total = people.ADULT + people.CHILD + people.SENIOR;
   const passHeader = pass ? { 'X-Queue-Token': pass.token } : undefined;
@@ -58,19 +63,21 @@ export default function Seats() {
     get(`/api/v1/runs/${runId}?from=${from}&to=${to}`).then(setRun).catch(() => {});
   }, [runId, from, to]);
 
-  const loadMap = useCallback(async () => {
+  // auto = 사람이 누르지 않았는데 화면이 스스로 다시 부름 (좌석을 뺏긴 직후 새로고침). 행동 로그에서 구분해
+  // 위험 점수 특징(간격)에서 뺀다 — 안 빼면 봇에게 좌석을 놓친 사람이 "0.2초 만에 다시 조회"로 봇처럼 보인다
+  const loadMap = useCallback(async (auto = false) => {
     if (!pass) return;
     try {
-      const m = await get(`/api/v1/runs/${runId}/seats?from=${from}&to=${to}`, passHeader);
+      const m = await get(`/api/v1/runs/${runId}/seats?from=${from}&to=${to}`, auto ? { ...passHeader, 'X-Search-Auto': '1' } : passHeader);
       setMap(m);
-      setCarNo((c) => c ?? firstFreeCar(m));
+      setCarNo((c) => c ?? firstFreeCar(m, wantGrade));
     } catch (e) {
       handleError(e);
     }
   }, [runId, from, to, pass]);
 
   useEffect(() => {
-    if (member) loadMap();
+    if (member) loadMap(false);
   }, [member, loadMap]);
 
   // 고른 좌석·인원이 바뀌면 다른 요청 → 새 멱등 키
@@ -88,11 +95,32 @@ export default function Seats() {
       setLost(picked.map((p) => p.seatId));
       setTimeout(() => setLost([]), 1300);
       setPicked([]);
-      loadMap();
+      loadMap(true);
     } else {
       setNotice({ kind: 'error', text: MESSAGES[code] || e.message || '좌석을 잡지 못했어요.' });
     }
   }
+
+  // 좌석 고르는 시간 늘리기: 서버가 1회만 허용한다 (QUEUE_EXTEND_USED). 성공하면 새 만료 시각으로 바꾼다
+  const extend = async () => {
+    if (extending || !pass || pass.extended) return;
+    setExtending(true);
+    try {
+      const r = await post(`/api/v1/runs/${runId}/queue/me/extend`);
+      savePass(runId, r.passToken, r.passExpiresAt, true);
+      setPass({ token: r.passToken, expiresAt: r.passExpiresAt, extended: true });
+      setNotice(null);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'QUEUE_EXTEND_USED') {
+        savePass(runId, pass.token, pass.expiresAt, true);
+        setPass({ ...pass, extended: true });
+      } else {
+        handleError(e);
+      }
+    } finally {
+      setExtending(false);
+    }
+  };
 
   const car = map?.cars.find((c) => c.carNo === carNo);
   const fareOf = (grade) => run?.fares?.[grade] ?? 0;
@@ -162,7 +190,7 @@ export default function Seats() {
   return (
     <>
       <header className="top">
-        <Link className="back wl" to={`/?from=${from}&to=${to}&date=${run?.runDate || ''}`}><span>열차 다시 고르기</span></Link>
+        <Link className="back wl" to="/" state={{ q: { from, to, date: run?.runDate || '' } }}><span>열차 다시 고르기</span></Link>
         <h1>좌석 선택</h1>
       </header>
       <main className="body">
@@ -220,6 +248,12 @@ export default function Seats() {
                 <span className="grow">좌석을 고를 수 있는 시간</span>
                 <b>{mmss(left)}</b>
               </div>
+            )}
+            {pass && !expired && (
+              <button type="button" className={'btn sm' + (pass.extended ? ' off' : ' soft')} style={{ order: 1 }}
+                disabled={pass.extended || extending} onClick={extend}>
+                {extending ? <><span className="spinner" />늘리는 중…</> : pass.extended ? '시간을 이미 늘렸어요 (1회)' : '5분 더 쓰기 (1회만 가능)'}
+              </button>
             )}
             <div className="card" style={{ padding: '14px 16px', order: 2 }}>
               <div className="row">
@@ -299,7 +333,7 @@ function SeatMap({ car, picked, lost = [], onToggle }) {
     const state = isMine ? '내가 고른 좌석' : s.state === 'EMPTY' ? '빈 좌석' : s.state === 'HELD' ? '다른 분이 고르는 중' : '판매됨';
     return (
       <button
-        key={s.seatId} type="button" className={'seat ' + cls}
+        key={s.seatId} type="button" className={'seat ' + cls} data-rec={'seat-' + s.seatId}
         disabled={!isMine && s.state !== 'EMPTY'} aria-pressed={isMine}
         aria-label={`${s.seatNo} ${state}${s.window ? ', 창가' : ''}`}
         onClick={() => onToggle(s)}
@@ -382,7 +416,7 @@ function pickTogether(car, n) {
   return all.length >= n ? all.slice(0, n) : null;
 }
 
-const firstFreeCar = (m) => (m.cars.find((c) => c.grade === 'GENERAL' && c.available > 0) || m.cars.find((c) => c.available > 0) || m.cars[0])?.carNo ?? null;
+const firstFreeCar = (m, grade) => (m.cars.find((c) => c.grade === (grade || 'GENERAL') && c.available > 0) || m.cars.find((c) => c.available > 0) || m.cars[0])?.carNo ?? null;
 
 // ------------------------------------------------------------ 시간
 

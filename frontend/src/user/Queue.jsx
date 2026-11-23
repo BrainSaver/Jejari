@@ -23,6 +23,8 @@ export default function Queue() {
   const [params] = useSearchParams();
   const from = params.get('from') || '';
   const to = params.get('to') || '';
+  // 검색 화면에서 고른 인원·좌석 종류를 좌석 화면까지 이어 준다
+  const carry = ['adult', 'child', 'senior', 'grade'].filter((k) => params.get(k)).map((k) => `&${k}=${encodeURIComponent(params.get(k))}`).join('');
   const { member, checking } = useMember();
   const navigate = useNavigate();
   const location = useLocation();
@@ -57,7 +59,7 @@ export default function Queue() {
         // 차례가 왔다: 기차가 끝까지 달려 나간 뒤 좌석 화면으로 (움직임 줄이기면 바로)
         setGoing(true);
         const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-        timer.current = setTimeout(() => navigate(`/runs/${runId}/seats?from=${from}&to=${to}`, { replace: true }), reduce ? 0 : 1000);
+        timer.current = setTimeout(() => navigate(`/runs/${runId}/seats?from=${from}&to=${to}${carry}`, { replace: true }), reduce ? 0 : 1000);
         return;
       }
       timer.current = setTimeout(poll, Math.max(1, s.pollIntervalSec || 2) * 1000);
@@ -90,7 +92,7 @@ export default function Queue() {
     } catch {
       /* 이미 빠졌으면 그만 */
     }
-    navigate(`/?from=${from}&to=${to}&date=${run?.runDate || ''}`);
+    navigate('/', { state: { q: { from, to, date: run?.runDate || '' } } });
   };
 
   const ahead = st?.ahead ?? 0;
@@ -120,7 +122,7 @@ export default function Queue() {
           <div className="alert stop" role="alert" style={{ flexWrap: 'wrap' }}>
             <Icon name="info" />
             <span className="grow">{MESSAGES[error.code] || error.message}</span>
-            <Link className="btn sm" to={`/?from=${from}&to=${to}&date=${run?.runDate || ''}`} style={{ marginLeft: 28 }}>열차 다시 찾기</Link>
+            <Link className="btn sm" to="/" state={{ q: { from, to, date: run?.runDate || '' } }} style={{ marginLeft: 28 }}>열차 다시 찾기</Link>
           </div>
         ) : (
           <>

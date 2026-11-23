@@ -62,6 +62,19 @@ public class QueueConfig {
 		return script("lua/queue/status.lua");
 	}
 
+	@Bean
+	RedisScript<Long> queueReconcileScript() {
+		DefaultRedisScript<Long> s = new DefaultRedisScript<>();
+		s.setLocation(new ClassPathResource("lua/queue/reconcile.lua"));
+		s.setResultType(Long.class);
+		return s;
+	}
+
+	@Bean
+	RedisScript<List> queueExtendScript() {
+		return script("lua/queue/extend.lua");
+	}
+
 	private static RedisScript<List> script(String path) {
 		DefaultRedisScript<List> s = new DefaultRedisScript<>();
 		s.setLocation(new ClassPathResource(path));
@@ -88,10 +101,10 @@ public class QueueConfig {
 
 	@Bean
 	QueueService queueService(StringRedisTemplate redis, RedisScript<List> queueEnterScript,
-			RedisScript<List> queueLeaveScript, RedisScript<List> queueStatusScript, PolicyProvider queuePolicyProvider,
-			RiskPenaltyService queueRiskPenaltyService, ObjectProvider<MemberIdentityPort> members,
+			RedisScript<List> queueLeaveScript, RedisScript<List> queueStatusScript, RedisScript<List> queueExtendScript,
+			PolicyProvider queuePolicyProvider, RiskPenaltyService queueRiskPenaltyService, ObjectProvider<MemberIdentityPort> members,
 			ObjectProvider<OnSaleRunProvider> runs, ObjectProvider<QueueLogSink> logSink, Clock clock) {
-		return new QueueService(redis, queueEnterScript, queueLeaveScript, queueStatusScript, queuePolicyProvider,
+		return new QueueService(redis, queueEnterScript, queueLeaveScript, queueStatusScript, queueExtendScript, queuePolicyProvider,
 				queueRiskPenaltyService,
 				members.orderedStream().findFirst().orElseGet(UnavailableMemberIdentityPort::new),
 				runs.orderedStream().findFirst().orElseGet(UnavailableOnSaleRunProvider::new),
@@ -100,8 +113,8 @@ public class QueueConfig {
 
 	@Bean
 	QueueAdmitter queueAdmitter(StringRedisTemplate redis, RedisScript<List> queueAdmitScript,
-			PolicyProvider queuePolicyProvider, ObjectProvider<QueueLogSink> logSink, Clock clock) {
-		return new QueueAdmitter(redis, queueAdmitScript, queuePolicyProvider,
+			RedisScript<Long> queueReconcileScript, PolicyProvider queuePolicyProvider, ObjectProvider<QueueLogSink> logSink, Clock clock) {
+		return new QueueAdmitter(redis, queueAdmitScript, queueReconcileScript, queuePolicyProvider,
 				logSink.orderedStream().findFirst().orElseGet(LoggingQueueLogSink::new), clock);
 	}
 
