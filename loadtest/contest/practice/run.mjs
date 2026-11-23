@@ -113,7 +113,40 @@ const GEN2 = [
   P2('botghost', '위와 같고 명의끼리 65~120초 간격 (다계정 동시 선점 60초 피하기)', { searches: 2, step: [700, 1500], ipEach: true, start: 'stagger', staggerMs: [65000, 120000] }),
 ];
 
-const HUMAN = P('human', '합성 사람', '사람처럼 둘러보고 쉬고, 가끔 실패하면 다른 좌석', { think: T.human, searches: 2 });
+const HUMAN = P('human', '합성 사람', '사람처럼 둘러보고 쉬고, 가끔 실패하면 다른 좌석. 화면 녹화도 보냄', { think: T.human, searches: 2, replay: true });
+
+// ── 화면 녹화 (합성 사람만) ─────────────────────────────────
+// 실제 화면은 녹화기(frontend/src/replay/recorder.js)가 클릭·마우스 궤적을 보낸다. 합성 사람도 보내야
+// 서버의 "녹화 장애 보호"(다른 세션 녹화가 하나도 없으면 HEADLESS_HOLD를 세지 않음)가 풀려 대회와 같은 조건이 된다.
+// 궤적: 휜 곡선(2차 베지어) + 빨라졌다 느려지는 속도 + 손떨림. 봇은 API만 부르므로 녹화가 없다 (실제 매크로와 같음)
+async function recStart(ctx) {
+  const c = (await call(ctx, 'GET', '/api/v1/replay/config')).data;
+  ctx.rec = c?.enabled ? { c, seq: 0, pos: [rand(300, 700), rand(300, 700)], buf: [] } : null;
+}
+function recPush(ctx, e) { ctx.rec.buf.push({ seq: ++ctx.rec.seq, ts: Date.now(), runId: RUN_ID, ...e }); }
+async function recClick(ctx, screen, target) {
+  const r = ctx.rec;
+  if (!r) return;
+  recPush(ctx, { type: 'PAGE_VIEW', screen });
+  const [x0, y0] = r.pos;
+  const x1 = Math.round(rand(150, 850)), y1 = Math.round(rand(150, 850));
+  const L = Math.hypot(x1 - x0, y1 - y0) || 1, side = Math.random() < 0.5 ? -1 : 1, bend = rand(0.2, 0.45) * side;
+  const cx = (x0 + x1) / 2 - ((y1 - y0) / L) * L * bend, cy = (y0 + y1) / 2 + ((x1 - x0) / L) * L * bend;
+  const dur = 350 + 180 * Math.log2(L / 30 + 1) + rand(0, 250), step = r.c.pathSampleMs || 150;
+  const path = [];
+  for (let t = step; t < dur && path.length < (r.c.maxPathPoints || 16) - 1; t += step * rand(0.85, 1.15)) {
+    const u = t / dur, s = u * u * u * (10 - 15 * u + 6 * u * u); // 빨라졌다 느려짐
+    const bx = (1 - s) ** 2 * x0 + 2 * (1 - s) * s * cx + s * s * x1, by = (1 - s) ** 2 * y0 + 2 * (1 - s) * s * cy + s * s * y1;
+    path.push([Math.round(step), Math.round(bx + rand(-3, 3)), Math.round(by + rand(-3, 3))]);
+  }
+  path.push([Math.round(step), x1 + Math.round(rand(-2, 2)), y1 + Math.round(rand(-2, 2))]);
+  recPush(ctx, { type: 'MOUSE_PATH', screen, path });
+  await sleep(rand(120, 300)); // 도착 뒤 잠깐 멈췄다 누름
+  recPush(ctx, { type: 'CLICK', screen, target, x: x1, y: y1, pointer: 'm' });
+  r.pos = [x1, y1];
+  const events = r.buf.splice(0);
+  await call(ctx, 'POST', '/api/v1/replay/events', { events });
+}
 
 // ── HTTP ───────────────────────────────────────────────────
 async function call(ctx, method, path, body, extra = {}) {
@@ -187,6 +220,7 @@ async function searchStep(ctx, runDate) {
   const p = ctx.p;
   for (let i = 0; i < p.searches; i++) {
     const d = i === p.searches - 1 ? runDate : shiftDate(runDate, i - p.searches + 1);
+    if (ctx.rec) await recClick(ctx, 'search', 'search-submit');
     await call(ctx, 'GET', `/api/v1/runs?from=${FROM}&to=${TO}&date=${d}`);
     await sleep(p.think());
   }
@@ -229,6 +263,7 @@ const cancel = (ctx, id) => call(ctx, 'POST', `/api/v1/reservations/${id}/cancel
 async function buyOne(ctx, runDate) {
   const p = ctx.p;
   await login(ctx);
+  if (p.replay) await recStart(ctx);
   if (p.burst) await sleep(rand(5000, 15000));
   await searchStep(ctx, runDate);
   for (let i = 0; i < p.runHop; i++) {
@@ -258,6 +293,7 @@ async function buyOne(ctx, runDate) {
     const seats = choose(ctx, empty, k);
     if (!seats.length) break;
     if (p.step) await sleep(rand(...p.step)); // 좌석표 → 선점
+    if (ctx.rec) await recClick(ctx, 'runs/:id/seats', 'hold-submit');
     const h = await hold(ctx, pass, seats);
     if (h.status === 201 || h.status === 200) {
       const rid = h.data?.reservationId;
@@ -265,6 +301,7 @@ async function buyOne(ctx, runDate) {
       if (p.holdCancelLoops && loops > 1) { await sleep(burstThink()); await cancel(ctx, rid); loops--; empty = await seatMap(ctx, pass); continue; }
       await sleep(burstThink());
       if (p.step) await sleep(rand(...p.step)); // 선점 → 결제
+      if (ctx.rec) await recClick(ctx, 'reservations/:id/pay', 'pay-submit');
       const r = await pay(ctx, rid);
       if (r.status === 200 || r.status === 201) {
         ctx.seats += seats.length;
