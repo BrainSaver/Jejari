@@ -5,7 +5,7 @@
 #   loadtest/tools/eval_contest.sh <실행 태그> <대회 운행 ID>
 #
 # 라벨은 이메일에서 읽는다: lt{태그}.{종류}.g{묶음}.{번호}@…
-#   종류 = bota · botb · botc · botd · botx (봇) · human (사람 참가자)
+#   종류 = bot으로 시작하는 이름 (bota · botb · … · 새 봇) · human (사람 참가자)
 #
 # 방어층 (봇 하나가 여러 층에 걸릴 수 있다):
 #   1. 매수 제한   좌석 선점이 422 LIMIT_* 로 거절된 횟수 (Mongo 행동 로그 meta.errorCode)
@@ -25,7 +25,8 @@ TAG="${1:-}"; RUN="${2:-}"
 if [[ ! "$TAG" =~ ^[a-z0-9]{1,8}$ || ! "$RUN" =~ ^[0-9]+$ ]]; then
   echo "사용법: $0 <실행 태그(영문 소문자·숫자)> <대회 운행 ID>"; exit 1
 fi
-KINDS="'bota','botb','botc','botd','botx','human'"
+# 참가 종류: human과 bot으로 시작하는 모든 종류 (새 봇 bote·botf…도 손대지 않고 집계). bot.json 이름 규칙과 같음
+kinds() { echo "(${1:-}kind = 'human' OR REGEXP_LIKE(${1:-}kind, '^bot[a-z]+$'))"; }
 WAIT_SEC="${WAIT_SEC:-70}"
 MAX_WAIT_SEC="${MAX_WAIT_SEC:-300}"
 
@@ -57,7 +58,7 @@ LAB="SELECT member_id, REGEXP_SUBSTR(email, '^lt[a-z0-9]+\\.([a-z]+)\\.', 1, 1, 
            FROM member WHERE email LIKE 'lt${TAG}.%'"
 ids=$(sql <<EOF | tr -d ' \t\r' | { grep -E '^[0-9]+$' || true; } | paste -sd, -
 SET HEADING OFF FEEDBACK OFF PAGESIZE 0
-SELECT member_id FROM (${LAB}) WHERE kind IN (${KINDS});
+SELECT member_id FROM (${LAB}) WHERE $(kinds);
 EOF
 )
 if [[ -z "$ids" ]]; then echo "태그 ${TAG}의 참가자 계정이 없습니다."; exit 1; fi
@@ -69,7 +70,7 @@ MERGE INTO synthetic_label t
 USING (SELECT member_id, CASE kind WHEN 'human' THEN 'NORMAL' ELSE 'RESELLER' END AS user_type,
               CASE WHEN kind <> 'human' THEN grp + 1 END AS group_id,
               '{"source":"loadtest/contest","run":"${TAG}","behavior":"' || kind || '"}' AS params
-         FROM (${LAB}) WHERE kind IN (${KINDS})) s
+         FROM (${LAB}) WHERE $(kinds)) s
 ON (t.member_id = s.member_id)
 WHEN MATCHED THEN UPDATE SET t.user_type = s.user_type, t.group_id = s.group_id, t.generation_params = s.params, t.updated_at = SYSTIMESTAMP
 WHEN NOT MATCHED THEN INSERT (member_id, user_type, group_id, generation_params) VALUES (s.member_id, s.user_type, s.group_id, s.params);
@@ -135,7 +136,7 @@ per AS (
          NVL((SELECT MAX(r.final_score) FROM subj s JOIN risk_score r ON r.subject_type = s.st AND r.subject_hash = s.sh
                WHERE s.member_id = l.member_id), 0) AS score
     FROM lab l JOIN member m ON m.member_id = l.member_id
-   WHERE l.kind IN (${KINDS})
+   WHERE $(kinds l.)
 ),
 agg AS (
   SELECT kind, COUNT(*) members, COUNT(DISTINCT ci_hash) ids, SUM(paid) paid, SUM(held) held, SUM(tries) tries,
@@ -166,7 +167,7 @@ SELECT l.kind, c.subject_type subject, NVL(cm.rule_code, c.trigger_type) rule_co
   FROM lab l JOIN subj s ON s.member_id = l.member_id
   JOIN suspicious_case c ON c.subject_type = s.st AND c.subject_hash = s.sh
   LEFT JOIN case_marker cm ON cm.case_id = c.case_id
- WHERE l.kind IN (${KINDS})
+ WHERE $(kinds l.)
  GROUP BY l.kind, c.subject_type, NVL(cm.rule_code, c.trigger_type)
  ORDER BY l.kind, members DESC;
 

@@ -14,7 +14,38 @@
 > 블라인드 공격자(김성원·길동현)는 `loadtest/scenarios/12_bot_detection.js`, `loadtest/tools/eval_risk.sh`,
 > `docs/조영준/features/부하테스트-봇-탐지.md`도 보지 않습니다 — 규칙 문턱이 적혀 있습니다.
 
-## 순서
+## 버튼 하나로 진행 (집계자, 2026-11-23~)
+
+```bash
+node loadtest/contest/web/server.js        # → http://localhost:8098 (이 PC에서만 열림)
+```
+
+관리자 ID·비밀번호·태그·사람 시간(기본 10분)을 넣고 봇을 고른 뒤 **대회 시작**을 누르면 아래를 차례로 합니다.
+로그와 결과는 `loadtest/contest/results/<태그>/` (log.txt · eval.txt · compare.md · summary.json).
+
+| 단계 | 하는 일 |
+|---|---|
+| 점검 | Node 18+, docker compose, bash, 봇마다 `needs` 패키지, 관리자 로그인 |
+| 앱·인프라 | 앱이 꺼져 있으면 `docker compose up -d --wait` → `gradlew buildFrontend bootRun` (로그 `results/app.log`, 이 화면을 끄면 앱도 꺼짐). 이용자 화면이 있는지 확인 |
+| 지난 기록 정리 | Redis의 IP별 가입·로그인 시도 카운터(`rate:signup:*`·`rate:login:*`)만 비움 |
+| 대회 운행 만들기 | `day.sh start` (가입 제한 100으로, 행사·운행 만들고 판매 열기) |
+| 봇 명의 만들기 | 봇마다 `MODE=signup` (동시에). 실패한 봇은 빼고 계속 |
+| 사람 흐름 확인 | 가입 → 로그인 → 대기열 → 좌석 → 결제 → 취소를 API로 한 번. **1차 대회처럼 사람이 결제에서 막히면 여기서 멈춤** (점검 계정은 `lt{태그}p.probe…`라 평가에 안 들어감) |
+| 사람·봇 예매 | 접속 주소·이메일 형식·남은 시간을 크게 보여 줌. 봇 `MODE=buy`가 같이 출발. 사람 시간이 끝나고 봇이 다 끝나면 다음으로 |
+| 평가 | `eval_contest.sh` → `export_live.sh` → `compare_dl.py --bots <blind 봇>` (Python이 없으면 모델 비교만 건너뜀) |
+| 정리 | `day.sh restore` — **중간에 실패하거나 중지해도 항상** |
+
+### 봇 꽂기 (`bot.json`)
+
+봇 폴더(`loadtest/contest/bot{영문 소문자}/`)에 한 장 두면 화면에 나타납니다. 진행 화면 코드는 고치지 않습니다.
+
+```json
+{ "name": "botb", "owner": "길동현", "blind": true, "run": ["node", "bot.cjs"], "needs": ["playwright"], "env": {} }
+```
+
+`run`은 그 폴더 안에서 실행되고, 진행 화면이 `BASE_URL`·`RUN_ID`·`TAG`·`MODE`를 넣습니다. 평가는 `bot`으로 시작하는 모든 종류를 셉니다.
+
+## 순서 (손으로 할 때)
 
 ```bash
 # 0) 대회 날 집계자 PC: 가입 제한을 대회 동안만 올리고 → 대회 운행을 만들고 → 사람 참가자 접속 주소를 띄운다
@@ -76,5 +107,6 @@ lt{태그}.{종류}.g{묶음}.{번호}@loadtest.example.com
 | `botc/` | 강동균 | C 사람처럼 보이는 브라우저 | 규칙을 아는 공격자 (제출됨) |
 | `botd/` | 조영준 | D 조직이 명의 나눠 쓰기 | 규칙을 아는 공격자 |
 | `botx/` (선택) | 강동균 새 세션 | A·B·D 중 다시 뽑기 | 약한 블라인드 |
+| `bot…/` (추가) | 새로 만드는 사람 | `공격자-지시문.md`대로, `bot.json` 포함 | 만든 사람에 따라 |
 
 공격자 모두 Claude로 만들었다는 점, 그래서 수법이 닮았을 수 있다는 점은 결과를 낼 때 같이 적습니다.
