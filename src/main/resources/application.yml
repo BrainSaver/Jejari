@@ -164,6 +164,11 @@ server:
     # Tomcat 요청 스레드 사용량 메트릭(tomcat_threads_busy_threads) — 스레드가 다 찼는지 보려고 (Grafana)
     mbeanregistry:
       enabled: true
+    # 동시 연결 한도. 기본(8192 + 대기 100)이면 대기열 진입 폭주 시험(VU 9,200)에서 새 연결을 거절했다
+    # (connectex "actively refused": 입장 성공 71.5%, 실패 11,068건). 20000 + 2000으로 올리자 같은 시험에서 거절 0건·입장 100%.
+    # 연결이 느는 만큼 메모리를 조금 더 쓸 뿐이다. 요청 스레드(기본 200)는 DB 대기가 병목이라 그대로 둔다.
+    max-connections: 20000
+    accept-count: 2000
 
 management:
   endpoints:

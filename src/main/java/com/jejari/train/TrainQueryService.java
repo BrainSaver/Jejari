@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -56,6 +57,23 @@ public class TrainQueryService {
 			  FROM train_stop s JOIN station st ON st.station_id = s.station_id
 			 WHERE s.run_id = ? ORDER BY s.stop_order""";
 
+	/**
+	 * 거의 안 바뀌는 기준 데이터(역 목록·운임)는 짧게 들고 있는다. 부하 시험(500명)에서 DB 연결을 기다리는 줄이 190개까지 섰고
+	 * 연결 점유는 요청당 평균 27ms인데 횟수가 많았다 — 그중 역 목록·운임 조회가 매 요청 DB를 쳤다.
+	 * 관리자가 역을 고치면 최대 이 시간 뒤에 반영된다. 좌석 선점이 금액을 확정할 때는 {@link FareReader}를 직접 읽으므로 영향 없음.
+	 */
+	private static final long REF_TTL_NANOS = Duration.ofSeconds(30).toNanos();
+	private static final int FARE_CACHE_MAX = 5_000;
+
+	private record Timed<T>(T value, long expiresAtNanos) {
+		boolean fresh() {
+			return System.nanoTime() - expiresAtNanos < 0;
+		}
+	}
+
+	private volatile Timed<List<Station>> stationsCache;
+	private final Map<String, Timed<Map<String, Long>>> fareCache = new ConcurrentHashMap<>();
+
 	private final JdbcTemplate jdbc;
 	private final TrainRunReader runs;
 	private final FareReader fares;
@@ -75,10 +93,16 @@ public class TrainQueryService {
 
 	/** TRN-01 역 목록 (노선 순서) */
 	public List<Station> stations() {
-		return jdbc.query("""
+		Timed<List<Station>> c = stationsCache;
+		if (c != null && c.fresh()) {
+			return c.value();
+		}
+		List<Station> fresh = List.copyOf(jdbc.query("""
 				SELECT s.station_id, s.station_name FROM station s
 				 ORDER BY (SELECT MIN(rs.station_order) FROM route_station rs WHERE rs.station_id = s.station_id), s.station_id""",
-				(rs, i) -> new Station(rs.getString(1), rs.getString(2)));
+				(rs, i) -> new Station(rs.getString(1), rs.getString(2))));
+		stationsCache = new Timed<>(fresh, System.nanoTime() + REF_TTL_NANOS);
+		return fresh;
 	}
 
 	/** TRN-02 운행 검색: 그 날짜에 출발역 → 도착역 순서로 서는 운행 */
@@ -124,9 +148,19 @@ public class TrainQueryService {
 
 	/** 그 열차에 있는 등급만, 운임이 등록된 것만 */
 	private Map<String, Long> faresByGrade(long trainId, String kind, String from, String to, LocalDate date) {
+		String key = trainId + "|" + kind + "|" + from + "|" + to + "|" + date;
+		Timed<Map<String, Long>> c = fareCache.get(key);
+		if (c != null && c.fresh()) {
+			return c.value();
+		}
 		Map<String, Long> out = new LinkedHashMap<>();
 		layouts.layout(trainId).cars().stream().map(TrainLayoutReader.Car::grade).distinct().sorted()
 				.forEach(g -> fares.find(kind, g, from, to, date).ifPresent(a -> out.put(g, a)));
-		return out;
+		if (fareCache.size() >= FARE_CACHE_MAX) {
+			fareCache.clear(); // 키 조합이 끝없이 늘지 않게
+		}
+		Map<String, Long> frozen = java.util.Collections.unmodifiableMap(out);
+		fareCache.put(key, new Timed<>(frozen, System.nanoTime() + REF_TTL_NANOS));
+		return frozen;
 	}
 }
