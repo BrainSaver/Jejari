@@ -309,7 +309,8 @@ async function stepClean() {
 
 async function stepSetup() {
   const r = await sh('setup', 'bash', ['loadtest/contest/day.sh', 'start'], {
-    env: { ADMIN_ID: run.opts.adminId, ADMIN_PW: run.opts.adminPw, BASE_URL },
+    // 행사 이름은 영문으로 (Windows Git Bash의 curl이 한글 본문을 깨뜨려 400)
+    env: { ADMIN_ID: run.opts.adminId, ADMIN_PW: run.opts.adminPw, BASE_URL, NAME: `bot-contest-${run.tag}` },
   });
   run.setupStarted = true;
   const m = r.out.match(/대회 운행 ID = (\d+)\s+\(행사 (\d+), (\d{4}-\d{2}-\d{2})\)/);

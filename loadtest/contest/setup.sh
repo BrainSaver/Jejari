@@ -9,7 +9,7 @@
 #   TRAIN_ID  열차 (기본 1: 서울→부산 하행, 1,050석)
 #   DAYS      오늘부터 며칠 뒤 운행 (기본 70). 시드 04가 열차 1·2에 "오늘 ~ 2개월+1일" 운행을 미리 깔아 두므로
 #             그보다 뒤여야 운행이 만들어진다 (같은 열차·같은 날 운행은 하나뿐 — 10이면 건너뛰어 실패했다, 2026-11-18 리허설)
-#   NAME      행사 이름 (기본 "봇 대회 YYYYMMDD")
+#   NAME      행사 이름 (기본 "bot-contest-YYYYMMDD". 한글은 Windows Git Bash에서 400이 나니 영문으로)
 #
 # 만드는 것:
 #   - 명절 행사 1개: 기간 = 운행일 하루, 판매 오픈 = 지금. 매수 제한은 서버 기본값
@@ -33,7 +33,8 @@ DAYS="${DAYS:-70}"
 kst() { date -u -d "+9 hours $1" "$2" 2>/dev/null || date -u -v+9H ${3:+-v+"$3"d} "$2"; }   # GNU / BSD(macOS)
 RUN_DATE=$(kst "+${DAYS} days" +%F "${DAYS}")
 NOW=$(kst "" +%Y-%m-%dT%H:%M:%S)
-NAME="${NAME:-봇 대회 $(kst "" +%Y%m%d)}"
+# 기본 이름은 영문: Windows Git Bash의 curl이 한글 본문을 UTF-8이 아닌 인코딩으로 보내 400이 났다 (강다인 11-23)
+NAME="${NAME:-bot-contest-$(kst "" +%Y%m%d)}"
 
 # JSON 한 값 꺼내기 (jq 없이). $1 = 키, 표준 입력 = 응답
 val() { sed -n "s/.*\"$1\":\"\{0,1\}\([^\",}]*\).*/\1/p" | head -1; }
