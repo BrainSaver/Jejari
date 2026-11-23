@@ -186,7 +186,7 @@ public class RiskInputReader {
 		int n = 0;
 		try (MongoCursor<Document> cur = coll.find(filter)
 				.projection(Projections.include("ts", "interval_ms", "event_type", "member_id", "response_status",
-						"meta.seatIds", "meta.auto", "session_id"))
+						"meta.seatIds", "meta.auto", "session_id", "elapsed_ms"))
 				.sort(Sorts.ascending("ts")).limit(MAX_BEHAVIOR_EVENTS).batchSize(5000).iterator()) {
 			while (cur.hasNext()) {
 				apply(c, cur.next());
@@ -328,12 +328,29 @@ public class RiskInputReader {
 			c.queueEnter();
 			return;
 		}
+		Date at = d.getDate("ts");
+		String session = d.get("session_id") instanceof String v ? v : null;
+		// 응답을 다 보낸 시각 = 받은 시각 + 처리 시간. 서버가 느려도 "응답을 받고 다음 요청까지"를 잰다 (없으면 받은 시각)
+		long elapsed = d.get("elapsed_ms") instanceof Number n ? Math.max(0, n.longValue()) : 0;
+		if (BehaviorType.VIEW_SEAT.name().equals(type)) {
+			if (at != null && !(d.get("meta") instanceof Document md && Boolean.TRUE.equals(md.get("auto")))) {
+				c.seatView(session, at.toInstant().plusMillis(elapsed));
+			}
+			return;
+		}
+		if (BehaviorType.PAY.name().equals(type)) {
+			if (at != null) {
+				c.payStep(session, at.toInstant());
+			}
+			return;
+		}
 		if (!BehaviorType.SEAT_HOLD.name().equals(type)) {
 			return;
 		}
 		Date ts = d.getDate("ts");
 		if (ts != null && d.get("session_id") instanceof String sid) {
 			c.holdSession(sid, ts.toInstant());
+			c.holdStep(sid, ts.toInstant(), ts.toInstant().plusMillis(elapsed));
 		}
 		Object member = d.get("member_id");
 		if (ts != null && member instanceof Number m) {

@@ -40,16 +40,24 @@ public enum RiskRule {
     /**
      * 화면 없이 좌석 선점: 선점한 로그인 세션에 화면 녹화가 하나도 없음 = 브라우저 없이 API만 부른 클라이언트.
      * 같은 시간대에 다른 세션은 녹화되고 있을 때만 센다 (녹화 장애 때 전원 오탐 방지).
-     * 케이스를 열려면 ERD case_marker.rule_code CHECK에 값이 있어야 해서 <b>ERD 패치 전까지 점수만</b> (2026-11-23)
+     * 마커 규칙. ERD case_marker.rule_code CHECK에 값이 들어오기 전에는 {@code MarkerCodes}가 마커를 빼서 점수만 남긴다
      */
-    HEADLESS_HOLD(false),
+    HEADLESS_HOLD(true),
 
     /**
      * 집계 기간 안에 열차 조회(사람이 직접 한 VIEW_TRAIN)가 0건인데 대기열 진입이 있음 = 운행 번호를 알고 대기열 주소로 바로.
      * 취소표 대기·다시 줄 서기·새로고침·북마크로도 조회 없이 올 수 있어 <b>낮은 점수(LOW)만</b> (팀 의견 2026-11-23).
      * 검색 API를 한 번만 불러도 피하므로 단독으로는 약한 신호
      */
-    NO_SEARCH_ENTRY(false);
+    NO_SEARCH_ENTRY(false),
+
+    /**
+     * 사람 손으로 불가능한 단계 속도: 같은 세션에서 "좌석표 → 선점" 또는 "선점 → 결제"가 기본 0.5초 미만인 일이 여러 번.
+     * 화면에서는 좌석을 눈으로 고르고 누르는 단계, 결제 화면이 열리고 결제를 누르는 단계가 있어 이렇게 빠를 수 없다.
+     * 요청을 몇 번만 하는 매크로(연타·일정 간격 규칙의 최소 횟수에 안 닿음)를 잡는다 (강동균 연습 봇 30종 중 25종, 2026-11-23).
+     * 마커 규칙 — ERD 패치 전에는 {@code MarkerCodes}가 마커를 빼서 점수만
+     */
+    INHUMAN_STEP(true);
 
     private final boolean marker;
 

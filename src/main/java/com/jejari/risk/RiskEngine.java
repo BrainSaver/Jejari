@@ -70,6 +70,7 @@ public final class RiskEngine {
         tier(reasons, RiskRule.MULTI_ACCOUNT_SYNC, policy.multiAccountSync(), s.maxSyncAccounts());
         tier(reasons, RiskRule.LINEAR_MOUSE, policy.linearMouse(), s.mechanicalMouseMoves());
         tier(reasons, RiskRule.HEADLESS_HOLD, policy.headlessHold(), s.headlessHoldSessions());
+        tier(reasons, RiskRule.INHUMAN_STEP, policy.inhumanStep(), s.inhumanSteps());
         if (s.queueWithoutSearch() && policy.noSearchEntryPoints() > 0) {
             reasons.add(new Reason(RiskRule.NO_SEARCH_ENTRY, 1, 1, policy.noSearchEntryPoints(), Severity.LOW));
         }

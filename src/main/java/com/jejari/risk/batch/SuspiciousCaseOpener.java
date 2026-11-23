@@ -62,6 +62,13 @@ public class SuspiciousCaseOpener {
 	private final JdbcTemplate jdbc;
 	private final MongoTemplate mongo;
 
+	private MarkerCodes markerCodes; // 없으면(단위 시험) 모든 마커 허용
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setMarkerCodes(MarkerCodes markerCodes) {
+		this.markerCodes = markerCodes;
+	}
+
 	public SuspiciousCaseOpener(JdbcTemplate jdbc, MongoTemplate mongo) {
 		this.jdbc = jdbc;
 		this.mongo = mongo;
@@ -85,13 +92,23 @@ public class SuspiciousCaseOpener {
 
 	/** 케이스 종류. 새 증거가 아니거나 조건을 못 넘으면 null */
 	static String triggerOf(RiskResult r, RiskPolicy policy) {
+		return triggerOf(r, policy, r.markerReasons());
+	}
+
+	/** @param markers DB가 받아 주는 마커 규칙만 ({@link MarkerCodes}) */
+	static String triggerOf(RiskResult r, RiskPolicy policy, List<Reason> markers) {
 		if (r.ruleScore().compareTo(r.finalScore()) < 0) {
 			return null; // 감쇠한 이전 점수가 지배: 새 증거가 아님
 		}
 		if (r.ruleScore().compareTo(BigDecimal.valueOf(policy.caseThreshold())) >= 0) {
 			return "RISK_THRESHOLD";
 		}
-		return r.markerReasons().isEmpty() ? null : "RULE";
+		return markers.isEmpty() ? null : "RULE";
+	}
+
+	/** 케이스 마커로 넣을 수 있는 규칙만 (ERD 패치 전 새 규칙은 점수에만 남기고 마커는 빼서 롤백을 막는다) */
+	List<Reason> allowedMarkers(RiskResult r) {
+		return r.markerReasons().stream().filter(x -> markerCodes == null || markerCodes.allowed(x.rule())).toList();
 	}
 
 	/**
@@ -101,7 +118,8 @@ public class SuspiciousCaseOpener {
 	 * @param purchaseFrom 배치가 구매·취소를 센 시작 시각
 	 */
 	public Plan plan(RiskPolicy policy, RiskSubject s, RiskResult r, Instant behaviorFrom, Instant purchaseFrom) {
-		String trigger = triggerOf(r, policy);
+		List<Reason> allowed = allowedMarkers(r);
+		String trigger = triggerOf(r, policy, allowed);
 		if (trigger == null) {
 			return null;
 		}
@@ -109,7 +127,7 @@ public class SuspiciousCaseOpener {
 		List<Marker> markers = new ArrayList<>();
 		Instant first = null;
 		Instant last = null;
-		for (Reason reason : r.markerReasons()) {
+		for (Reason reason : allowed) {
 			Span span = evidence(policy, s, reason.rule(), behaviorFrom, purchaseFrom);
 			Instant at = span == null ? now : span.last();
 			markers.add(new Marker(reason.rule(), at, span == null ? null : span.sessionId(), cut(label(policy, reason)),
@@ -267,6 +285,11 @@ public class SuspiciousCaseOpener {
 		if (rule == RiskRule.LINEAR_MOUSE) {
 			return replaySpan(s, behaviorFrom);
 		}
+		if (rule == RiskRule.INHUMAN_STEP || rule == RiskRule.HEADLESS_HOLD) {
+			// 근거 = 선점·결제 요청들 (단계 속도·화면 없는 선점 모두 그 순간이 핵심)
+			return behaviorSpan(s, behaviorFrom, Filters.in("event_type", BehaviorType.SEAT_HOLD.name(),
+					BehaviorType.PAY.name()));
+		}
 		String field = switch (s.type()) {
 			case CI -> "ci_hash";
 			case DEVICE -> "device_hash";
@@ -289,6 +312,24 @@ public class SuspiciousCaseOpener {
 		if (filter == null) {
 			return null;
 		}
+		Document first = one(filter, Sorts.ascending("ts"));
+		Document last = one(filter, Sorts.descending("ts"));
+		if (first == null || last == null || first.getDate("ts") == null || last.getDate("ts") == null) {
+			return null;
+		}
+		return new Span(first.getDate("ts").toInstant(), last.getDate("ts").toInstant(), last.getString("session_id"));
+	}
+
+	private Span behaviorSpan(RiskSubject s, Instant from, Bson extra) {
+		String field = switch (s.type()) {
+			case CI -> "ci_hash";
+			case DEVICE -> "device_hash";
+			case PAYMENT -> null;
+		};
+		if (field == null) {
+			return null;
+		}
+		Bson filter = Filters.and(Filters.eq(field, s.hash()), Filters.gte("ts", Date.from(from)), extra);
 		Document first = one(filter, Sorts.ascending("ts"));
 		Document last = one(filter, Sorts.descending("ts"));
 		if (first == null || last == null || first.getDate("ts") == null || last.getDate("ts") == null) {
@@ -358,6 +399,8 @@ public class SuspiciousCaseOpener {
 					+ String.format(java.util.Locale.ROOT, "%.3f", r.observed()) + ")";
 			case LINEAR_MOUSE -> "마우스가 기계처럼 움직임 (클릭 자리로 순간이동·직선 등속 " + n + "회)";
 			case HEADLESS_HOLD -> "화면 없이 좌석 선점 (녹화 없는 세션 " + n + "개)";
+			case INHUMAN_STEP -> "사람 손으로 불가능한 속도 (좌석표→선점·선점→결제 " + policy.inhumanStepMs() + "ms 미만 " + n
+					+ "번)";
 			case NO_SEARCH_ENTRY -> "열차 조회 없이 대기열 진입";
 			default -> r.rule().name() + " " + n;
 		};

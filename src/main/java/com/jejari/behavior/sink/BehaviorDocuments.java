@@ -77,7 +77,7 @@ public final class BehaviorDocuments {
 	public static Document toDocument(Parsed p, String ciHash, Integer intervalMs, long retentionDays) {
 		BehaviorEvent e = p.event();
 		Map<String, Object> meta = BehaviorMeta.sanitize(e.meta()).meta();
-		return new Document()
+		Document d = new Document()
 				.append("event_id", e.eventId())
 				.append("member_id", e.memberId())
 				.append("ci_hash", ciHash)
@@ -93,6 +93,11 @@ public final class BehaviorDocuments {
 				.append("response_status", e.responseStatus())
 				.append("meta", new Document(meta))
 				.append("expire_at", Date.from(p.ts().plus(retentionDays, ChronoUnit.DAYS)));
+		// 처리 시간: 위조할 수 없는 서버 값. 음수·하루 넘는 값은 이상한 값이라 버린다
+		if (e.elapsedMs() != null && e.elapsedMs() >= 0 && e.elapsedMs() < 86_400_000L) {
+			d.append("elapsed_ms", e.elapsedMs());
+		}
+		return d;
 	}
 
 	private static boolean hashOrNull(String h) {

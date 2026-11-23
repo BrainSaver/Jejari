@@ -433,6 +433,54 @@ class RiskScoreBatchInfraTest {
 				.isZero(); // 녹화도 있고 조회도 했다 → 0점
 	}
 
+	/**
+	 * INHUMAN_STEP (2026-11-23): 좌석표 → 0.05초 → 선점 → 0.09초 → 결제 = 사람 손으로 불가능한 단계 2번 → 30점.
+	 * ERD v34 전이라 case_marker CHECK에 값이 없으면 마커에서 빠지고(점수는 저장), 같이 걸린 허용 마커(FAST_CLICK)로만 케이스가 열린다.
+	 * CHECK에 값이 생기면 재배포 없이 마커로 들어간다 (MarkerCodes, 5분 캐시).
+	 */
+	@Test
+	void 사람보다_빠른_단계는_INHUMAN_STEP_ERD_전에는_점수만_다른_마커와_함께면_그_마커로만_케이스() {
+		Instant t = Instant.now().minusSeconds(300);
+		String ci = hash();
+		long bot = member(ci, Instant.now().minus(30, ChronoUnit.DAYS));
+		String sid = UUID.randomUUID().toString();
+		mongo.getCollection("behavior_log").insertMany(List.of(
+				event("VIEW_SEAT", bot, ci, null, t, 5000, 200, null).append("session_id", sid),
+				event("SEAT_HOLD", bot, ci, null, t.plusMillis(50), 5000, 201, List.of(1L)).append("session_id", sid),
+				event("PAY", bot, ci, null, t.plusMillis(140), 5000, 200, null).append("session_id", sid)));
+		replay(sid, bot, ci, "m", 1); // 화면 녹화는 있음 (HEADLESS_HOLD와 섞이지 않게)
+		dirty.mark(new RiskSubject(SubjectType.CI, ci));
+		batch.run();
+
+		assertThat(jdbc.queryForObject("SELECT reasons FROM risk_score WHERE subject_hash = ?", String.class, ci))
+				.contains("INHUMAN_STEP");
+		assertThat(finalScore(SubjectType.CI, ci)).isEqualByComparingTo("30.00");
+		boolean patched = jdbc.queryForObject("""
+				SELECT COUNT(*) FROM user_constraints WHERE constraint_name = 'CK_CASE_MARKER_RULE_CODE'
+				   AND search_condition_vc LIKE '%INHUMAN_STEP%'""", Integer.class) > 0;
+		int cases = jdbc.queryForObject("SELECT COUNT(*) FROM suspicious_case WHERE subject_hash = ?", Integer.class, ci);
+		assertThat(cases).isEqualTo(patched ? 1 : 0); // ERD 전: 점수만 (롤백 없이 저장됨)
+
+		// 허용 마커와 함께 걸리면 케이스는 열리고, 마커는 CHECK가 받아 주는 것만
+		String ci2 = hash();
+		long bot2 = member(ci2, Instant.now().minus(30, ChronoUnit.DAYS));
+		String sid2 = UUID.randomUUID().toString();
+		List<Document> docs = new ArrayList<>(fastClicks(bot2, ci2, t, 30, sid2));
+		docs.add(event("VIEW_SEAT", bot2, ci2, null, t.plusSeconds(10), 5000, 200, null).append("session_id", sid2));
+		docs.add(event("SEAT_HOLD", bot2, ci2, null, t.plusSeconds(10).plusMillis(40), 5000, 201, List.of(2L))
+				.append("session_id", sid2));
+		docs.add(event("PAY", bot2, ci2, null, t.plusSeconds(10).plusMillis(90), 5000, 200, null).append("session_id", sid2));
+		mongo.getCollection("behavior_log").insertMany(docs);
+		replay(sid2, bot2, ci2, "m", 1);
+		dirty.mark(new RiskSubject(SubjectType.CI, ci2));
+		batch.run();
+		var codes = jdbc.queryForList("""
+				SELECT m.rule_code FROM case_marker m JOIN suspicious_case c ON c.case_id = m.case_id
+				 WHERE c.subject_hash = ? ORDER BY m.rule_code""", String.class, ci2);
+		assertThat(codes).contains("FAST_CLICK");
+		assertThat(codes.contains("INHUMAN_STEP")).isEqualTo(patched);
+	}
+
 	/** 녹화 세션 하나: 클릭 n번, 궤적 점은 클릭 자리에만 (중간 점 없음) */
 	void replay(String sid, long memberId, String ci, String pointer, int n) {
 		Date now = new Date();

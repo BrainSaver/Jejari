@@ -65,6 +65,11 @@ public final class SignalCollector {
     /** 선점한 로그인 세션 → 첫 선점 시각 (화면 녹화 확인용). 상한 있음 */
     private final Map<String, Instant> holdSessions = new java.util.LinkedHashMap<>();
     static final int MAX_HOLD_SESSIONS = 200;
+    /** 단계 속도를 재려고 세션마다 들고 있는 마지막 좌석표·선점 시각. 상한 있음 */
+    static final int MAX_STEP_SESSIONS = 5_000;
+    private final Map<String, Instant> lastSeatView = new HashMap<>();
+    private final Map<String, Instant> lastHold = new HashMap<>();
+    private long inhumanSteps;
 
     private record Hold(Instant ts, long memberId) {
     }
@@ -179,6 +184,56 @@ public final class SignalCollector {
         return this;
     }
 
+    /**
+     * 사람이 본 좌석표 (자동 새로고침 meta.auto는 넣지 않는다 — 좌석을 놓친 직후 자동 새로고침과 사람의 선점 클릭이
+     * 우연히 붙어도 "사람 손으로 불가능한 속도"가 되지 않게). 시각 오름차순으로 넣는다
+     */
+    public SignalCollector seatView(String sessionId, Instant ts) {
+        put(lastSeatView, sessionId, ts);
+        return this;
+    }
+
+    /** 선점 시도 (처리 시간을 모를 때) */
+    public SignalCollector holdStep(String sessionId, Instant ts) {
+        return holdStep(sessionId, ts, ts);
+    }
+
+    /**
+     * 선점 시도: 같은 세션의 마지막 좌석표 응답에서 문턱보다 빨랐으면 센다.
+     *
+     * @param ts      선점 요청을 받은 시각
+     * @param readyAt 선점 응답을 다 보낸 시각 (다음 결제 단계의 출발점)
+     */
+    public SignalCollector holdStep(String sessionId, Instant ts, Instant readyAt) {
+        if (fast(lastSeatView.get(sessionId), ts)) {
+            inhumanSteps++;
+            lastSeatView.remove(sessionId); // 같은 좌석표 한 번으로 선점 연타를 여러 번 세지 않음 (연타는 FAST_CLICK 몫)
+        }
+        put(lastHold, sessionId, readyAt);
+        return this;
+    }
+
+    /** 결제 시작: 같은 세션의 마지막 선점에서 문턱보다 빨랐으면 센다 */
+    public SignalCollector payStep(String sessionId, Instant ts) {
+        if (fast(lastHold.get(sessionId), ts)) {
+            inhumanSteps++;
+            lastHold.remove(sessionId);
+        }
+        return this;
+    }
+
+    private boolean fast(Instant from, Instant to) {
+        if (from == null || to == null) return false;
+        long ms = Duration.between(from, to).toMillis();
+        return ms >= 0 && ms < policy.inhumanStepMs();
+    }
+
+    private static void put(Map<String, Instant> m, String sessionId, Instant ts) {
+        if (sessionId != null && ts != null && (m.containsKey(sessionId) || m.size() < MAX_STEP_SESSIONS)) {
+            m.put(sessionId, ts);
+        }
+    }
+
     /** 사람이 직접 한 열차 조회 (자동 조회 meta.auto 제외) */
     public SignalCollector search() {
         searches++;
@@ -213,6 +268,6 @@ public final class SignalCollector {
                 purchaseCount, totalSeats, maxSingle,
                 userCancels, fastCancels, lastMinuteCancels, avgCancel,
                 linkedAccounts, maxSync, accountAgeDays, seatRetryFailures, mechanicalMouse,
-                headlessHolds, queueEnters > 0 && searches == 0);
+                headlessHolds, queueEnters > 0 && searches == 0, inhumanSteps);
     }
 }

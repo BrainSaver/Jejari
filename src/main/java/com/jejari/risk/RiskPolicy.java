@@ -30,6 +30,9 @@ import java.util.Map;
  * @param linearMouse          화면 녹화의 기계적 마우스 이동 수 → LINEAR_MOUSE ({@link MouseMotion})
  * @param headlessHold         화면 녹화 없이 선점한 세션 수 → HEADLESS_HOLD
  * @param noSearchEntryPoints  조회 없이 대기열 진입 NO_SEARCH_ENTRY 배점 (LOW)
+ * @param inhumanStepMs        "좌석표 → 선점", "선점 → 결제"가 이보다 빠르면 사람 손으로 불가능한 속도로 본다
+ * @param inhumanStep          그런 단계 수 → INHUMAN_STEP
+ * @param warningThreshold     위험 점수 등급 "경고"의 시작 점수 ({@link RiskGrade}). "위험"은 caseThreshold
  * @param halfLifeDays         이전 점수 반감기 (일)
  * @param caseThreshold        최종 점수가 이 이상이면 케이스를 연다 (RISK_THRESHOLD)
  */
@@ -45,6 +48,7 @@ public record RiskPolicy(
         Tier linkedAccounts,
         long newAccountDays, int newAccountPoints,
         Tier linearMouse, Tier headlessHold, int noSearchEntryPoints,
+        long inhumanStepMs, Tier inhumanStep, int warningThreshold,
         double halfLifeDays, int caseThreshold) {
 
     public RiskPolicy {
@@ -65,6 +69,10 @@ public record RiskPolicy(
         positive(newAccountDays, "newAccountDays");
         points(newAccountPoints, "newAccountPoints");
         points(noSearchEntryPoints, "noSearchEntryPoints");
+        positive(inhumanStepMs, "inhumanStepMs");
+        if (warningThreshold < 1 || warningThreshold >= caseThreshold) {
+            throw new IllegalArgumentException("warningThreshold는 1 이상이고 caseThreshold보다 작아야 합니다");
+        }
         if (!Double.isFinite(halfLifeDays) || halfLifeDays <= 0) {
             throw new IllegalArgumentException("halfLifeDays는 0보다 커야 합니다");
         }
@@ -73,7 +81,7 @@ public record RiskPolicy(
         }
         for (Tier t : new Tier[] {fastClick, sameSeatRetry, cancelAfterPay, multiAccountSync, cancelRatio,
                 lastMinuteCancel, bulkPurchase, linkedAccounts, linearMouse,
-                headlessHold}) {
+                headlessHold, inhumanStep}) {
             if (t == null) throw new IllegalArgumentException("배점 단계가 비어 있습니다");
         }
         if (cancelRatio.highThreshold() > 1) {
@@ -81,6 +89,9 @@ public record RiskPolicy(
         }
         if (multiAccountSync.threshold() < 2) {
             throw new IllegalArgumentException("동시 계정 문턱값은 2 이상이어야 합니다 (1이면 모든 사용자가 걸림)");
+        }
+        if (inhumanStep.threshold() < 2) {
+            throw new IllegalArgumentException("단계 속도 문턱은 2 이상이어야 합니다 (한 번은 더블클릭·우연일 수 있음)");
         }
         if (linkedAccounts.threshold() < 2) {
             throw new IllegalArgumentException("연결 계정 문턱값은 2 이상이어야 합니다 (1이면 모든 사용자가 걸림)");
@@ -99,6 +110,9 @@ public record RiskPolicy(
      * 기본값. 근거: 사람은 화면을 보고 누르므로 200ms 미만 간격이 20번 이상 나오기 어렵고,
      * 매진 좌석을 5번 넘게 다시 누르거나 30분 안에 두 번 이상 사고 무르는 일은 드물다.
      * k6 봇 시나리오(정답 라벨)로 탐지율 90%·오탐률 5%를 측정한 뒤 조정한다.
+     * INHUMAN_STEP 0.5초 미만 2번 → 30 · 5번 → 40: 화면은 좌석을 고르고 누르는 단계가 있다. 한 번은 더블클릭일 수 있어 2번부터
+     *   (연습 봇 25종 0.01~0.48초, 합성 사람 최소 0.6초 — 진짜 사람 최소값은 2차 대회에서 잰다).
+     * 등급: 경고 30 이상(규칙 하나가 MID로 걸린 수준), 위험 = caseThreshold 80 이상(케이스·결제 차단).
      * HEADLESS_HOLD 1 / 3: 사람은 화면으로만 선점하므로 한 번이라도 화면 없이 잡으면 의심 (녹화 장애 보호는 읽는 쪽).
      * NO_SEARCH_ENTRY 10 (LOW): 정상 경로로도 생겨 낮게.
      * LINEAR_MOUSE 8 / 20: 로컬 실측(2026-11-23) botb 세션마다 17~29, botc·사람 0~1
@@ -117,6 +131,7 @@ public record RiskPolicy(
                 7, 5,
                 new Tier(8, 25, 20, 40),
                 new Tier(1, 30, 3, 45), 10,
+                500, new Tier(2, 30, 5, 40), 30,
                 30, 80);
     }
 
@@ -142,6 +157,8 @@ public record RiskPolicy(
                 l(p, "new_account_days", d.newAccountDays), i(p, "new_account_points", d.newAccountPoints),
                 tier(p, "linear_mouse", d.linearMouse),
                 tier(p, "headless_hold", d.headlessHold), i(p, "no_search_entry_points", d.noSearchEntryPoints),
+                l(p, "inhuman_step_ms", d.inhumanStepMs), tier(p, "inhuman_step", d.inhumanStep),
+                i(p, "warning_threshold", d.warningThreshold),
                 dbl(p, "half_life_days", d.halfLifeDays), i(p, "case_threshold", d.caseThreshold));
     }
 

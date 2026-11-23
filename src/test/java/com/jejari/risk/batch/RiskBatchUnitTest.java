@@ -247,4 +247,62 @@ class RiskBatchUnitTest {
 		RiskInputReader.apply(c, new Document("event_type", "VIEW_TRAIN"));
 		assertThat(c.build().queueWithoutSearch()).isFalse();
 	}
+
+	@Test
+	void 좌석표에서_선점_선점에서_결제가_사람보다_빠르면_센다_세션마다_자동_새로고침_제외() {
+		SignalCollector c = new SignalCollector(RiskPolicy.defaults(), SubjectType.CI, "cd".repeat(32), Instant.EPOCH);
+		long t = 1_800_000_000_000L;
+		java.util.function.BiFunction<String, Long, Document> ev = (type, ms) -> new Document("event_type", type)
+				.append("ts", new Date(ms)).append("member_id", 1L).append("session_id", "s-1");
+		// 봇: 좌석표 → 0.05초 뒤 선점 → 0.09초 뒤 결제 = 2번
+		RiskInputReader.apply(c, ev.apply("VIEW_SEAT", t));
+		RiskInputReader.apply(c, ev.apply("SEAT_HOLD", t + 50));
+		RiskInputReader.apply(c, ev.apply("PAY", t + 140));
+		assertThat(c.build().inhumanSteps()).isEqualTo(2);
+
+		SignalCollector human = new SignalCollector(RiskPolicy.defaults(), SubjectType.CI, "cd".repeat(32), Instant.EPOCH);
+		// 사람: 좌석표 → 3초 뒤 선점 → 3초 뒤 결제. 그 사이 좌석을 놓쳐 자동 새로고침(auto)이 선점 0.1초 전에 붙어도 세지 않음
+		RiskInputReader.apply(human, ev.apply("VIEW_SEAT", t));
+		RiskInputReader.apply(human, ev.apply("VIEW_SEAT", t + 2_900).append("meta", new Document("auto", true)));
+		RiskInputReader.apply(human, ev.apply("SEAT_HOLD", t + 3_000));
+		RiskInputReader.apply(human, ev.apply("PAY", t + 6_000));
+		// 다른 세션의 좌석표와는 잇지 않는다 (같은 명의 두 계정이 따로 움직임)
+		RiskInputReader.apply(human, new Document("event_type", "VIEW_SEAT").append("ts", new Date(t + 6_000))
+				.append("session_id", "s-2"));
+		RiskInputReader.apply(human, ev.apply("SEAT_HOLD", t + 6_100));
+		assertThat(human.build().inhumanSteps()).isZero();
+	}
+
+	@Test
+	void 케이스_마커_코드는_DB_CHECK가_받아_주는_것만() {
+		assertThat(MarkerCodes.parse("rule_code IN ('FAST_CLICK', 'SAME_SEAT_RETRY', 'LINEAR_MOUSE')"))
+				.containsExactly("FAST_CLICK", "SAME_SEAT_RETRY", "LINEAR_MOUSE");
+		RiskEngine engine = new RiskEngine(RiskPolicy.defaults());
+		RiskSignals s = new RiskSignals(SubjectType.CI, "cd".repeat(32), Instant.EPOCH, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+				null, 0, 0, null, 0, 0, 0, false, 3);
+		RiskResult r = engine.score(s, null, Instant.now());
+		assertThat(SuspiciousCaseOpener.triggerOf(r, engine.policy())).isEqualTo("RULE");
+		// ERD 패치 전: INHUMAN_STEP이 CHECK에 없으면 마커가 빠지고, 다른 마커도 80점도 없으니 케이스 없음 (점수는 저장)
+		assertThat(SuspiciousCaseOpener.triggerOf(r, engine.policy(), List.of())).isNull();
+	}
+
+	@Test
+	void 단계_속도는_응답을_받은_뒤부터_잰다_서버가_느려도_봇은_봇() {
+		long t = 1_800_000_000_000L;
+		java.util.function.BiFunction<String, Long, Document> ev = (type, ms) -> new Document("event_type", type)
+				.append("ts", new Date(ms)).append("member_id", 1L).append("session_id", "s-1");
+		// 서버가 바빠 좌석표 0.9초·선점 1.5초 걸림. 봇은 응답 0.1초 뒤 바로 다음 요청 → 받은 시각 간격은 1.0초·1.6초지만 봇
+		SignalCollector slowServer = new SignalCollector(RiskPolicy.defaults(), SubjectType.CI, "cd".repeat(32), Instant.EPOCH);
+		RiskInputReader.apply(slowServer, ev.apply("VIEW_SEAT", t).append("elapsed_ms", 900));
+		RiskInputReader.apply(slowServer, ev.apply("SEAT_HOLD", t + 1_000).append("elapsed_ms", 1_500));
+		RiskInputReader.apply(slowServer, ev.apply("PAY", t + 2_600));
+		assertThat(slowServer.build().inhumanSteps()).isEqualTo(2);
+
+		// 사람: 좌석표 응답(0.9초) 뒤 2초 보고 누름 → 안 셈
+		SignalCollector human = new SignalCollector(RiskPolicy.defaults(), SubjectType.CI, "cd".repeat(32), Instant.EPOCH);
+		RiskInputReader.apply(human, ev.apply("VIEW_SEAT", t).append("elapsed_ms", 900));
+		RiskInputReader.apply(human, ev.apply("SEAT_HOLD", t + 2_900).append("elapsed_ms", 300));
+		RiskInputReader.apply(human, ev.apply("PAY", t + 6_000));
+		assertThat(human.build().inhumanSteps()).isZero();
+	}
 }

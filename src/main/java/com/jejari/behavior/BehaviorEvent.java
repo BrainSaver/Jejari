@@ -11,6 +11,8 @@ import java.util.Map;
  *
  * @param ts             요청을 받은 시각 (ISO-8601, Asia/Seoul)
  * @param responseStatus HTTP 상태 (실패 요청도 남긴다)
+ * @param elapsedMs      서버가 이 요청을 처리한 시간(ms, 받은 시각 → 응답을 다 보낸 시각). 예전 메시지는 null.
+ *                       "응답을 받고 다음 요청까지" = 다음 ts − (ts + elapsedMs) → 사람이 보고 누르는 시간 (INHUMAN_STEP)
  */
 public record BehaviorEvent(
 		String eventId,
@@ -24,7 +26,15 @@ public record BehaviorEvent(
 		String channel,
 		String userAgent,
 		int responseStatus,
-		Map<String, Object> meta) {
+		Map<String, Object> meta,
+		Long elapsedMs) {
+
+	/** 처리 시간 없는 모양 (예전 메시지·시험) */
+	public BehaviorEvent(String eventId, String eventType, String ts, Long memberId, String sessionId, String deviceHash,
+			String ipHash, Long runId, String channel, String userAgent, int responseStatus, Map<String, Object> meta) {
+		this(eventId, eventType, ts, memberId, sessionId, deviceHash, ipHash, runId, channel, userAgent, responseStatus,
+				meta, null);
+	}
 
 	public static final String TOPIC = "jejari.behavior";
 

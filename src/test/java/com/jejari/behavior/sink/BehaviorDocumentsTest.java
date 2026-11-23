@@ -66,4 +66,16 @@ class BehaviorDocumentsTest {
 		assertThat(BehaviorDocuments.parse(json(rawIp), JSON)).as("해시가 아닌 원문 IP").isNull();
 		assertThat(BehaviorDocuments.parse("x".repeat(20_000), JSON)).as("너무 큰 메시지").isNull();
 	}
+
+	@Test
+	void 처리_시간은_정상_범위만_남긴다_예전_메시지는_없음() {
+		String ts = "2026-11-23T10:00:00+09:00";
+		java.util.function.Function<Long, Document> doc = ms -> BehaviorDocuments.toDocument(BehaviorDocuments.parse(json(
+				new BehaviorEvent(UUID1, "VIEW_SEAT", ts, 1001L, UUID1, H, H, 9001L, "WEB", "Mozilla/5.0", 200, Map.of(), ms)),
+				JSON), null, null, 1);
+		assertThat(doc.apply(120L).get("elapsed_ms")).isEqualTo(120L); // Kafka JSON을 거쳐도 남음
+		assertThat(doc.apply(null).containsKey("elapsed_ms")).isFalse(); // 예전 메시지
+		assertThat(doc.apply(-5L).containsKey("elapsed_ms")).isFalse();
+		assertThat(doc.apply(90_000_000L).containsKey("elapsed_ms")).isFalse();
+	}
 }

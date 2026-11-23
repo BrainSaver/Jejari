@@ -20,6 +20,8 @@ import { ErrorBox } from './ui.jsx';
 const TYPE = { CI: 'CI', PAYMENT: '결제수단', DEVICE: '기기' };
 const REVIEW = { NONE: ['', '검토 전'], PENDING: ['amber', '검토 중'], CONFIRMED: ['stop', '확정'], CLEARED: ['go', '해제'] };
 const CASE = { OPEN: 'amber', REVIEWING: 'sky', CONFIRMED: 'stop', DISMISSED: 'go' };
+// 위험 점수 등급 (서버 RiskGrade: 경고 risk.rule.warning_threshold 30 · 위험 risk.rule.case_threshold 80 — 케이스·결제 차단과 같은 기준)
+const GRADE = { DANGER: ['stop', '위험'], WARNING: ['amber', '경고'], NORMAL: ['', '정상'] };
 
 export default function Risk() {
   const claims = useOutletContext();
@@ -53,7 +55,7 @@ export default function Risk() {
         <div className="filters">
           <Field label="점수">
             <select value={f.minScore} onChange={set('minScore')}>
-              <option value="80">80 이상</option><option value="60">60 이상</option><option value="30">30 이상</option><option value="">전체</option>
+              <option value="80">위험 (80 이상)</option><option value="60">60 이상</option><option value="30">경고 이상 (30 이상)</option><option value="">전체</option>
             </select>
           </Field>
           <Field label="검토 상태">
@@ -102,8 +104,9 @@ export default function Risk() {
                     <span className="faint num" title={r.subjectHash}>{r.subjectHash.slice(0, 4)}…</span>
                   </td>
                   <td>
-                    <span className={'score ' + (s >= 80 ? 'hi' : s >= 60 ? 'mid' : '')}>{Math.round(s)}</span>
-                    <span className="meter"><i style={{ width: `${Math.min(100, s)}%`, background: s >= 80 ? 'var(--stop)' : 'var(--amber)' }} /></span>
+                    <span className={'score ' + (r.grade === 'DANGER' ? 'hi' : r.grade === 'WARNING' ? 'mid' : '')}>{Math.round(s)}</span>
+                    {r.grade && r.grade !== 'NORMAL' && <span className={'st plain ' + GRADE[r.grade][0]} style={{ marginLeft: 4 }}>{GRADE[r.grade][1]}</span>}
+                    <span className="meter"><i style={{ width: `${Math.min(100, s)}%`, background: r.grade === 'DANGER' ? 'var(--stop)' : 'var(--amber)' }} /></span>
                   </td>
                   <td>{(r.markers || []).map((m) => <span key={m} className="st plain stop" style={{ marginRight: 4 }}>{m}</span>)}</td>
                   {model?.shown && <td><ModelCell m={r.model} linked={r.linkedAccounts} /></td>}
