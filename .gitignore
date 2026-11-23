@@ -76,3 +76,7 @@ heapdump*
 
 # 봇 대회 날 원래 정책 값 (loadtest/contest/day.sh)
 .contest-day
+
+# 봇 대회 꾸러미 (카톡으로 팀원에게 전달. 원본은 loadtest/contest/)
+/bot/
+/bot.tar.gz

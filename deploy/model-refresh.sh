@@ -40,7 +40,9 @@ out=$(bash tools/ml/export_live.sh --recent "$DAYS" "$OUT" 2>&1) || { [[ "$out" 
 echo "$out" | head -1
 [[ -s "$OUT/events.jsonl" ]] || { echo "최근 ${DAYS}일 행동 로그 없음"; push 1 0; exit 0; }
 
-ml() { docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/w" jejari-ml bash -c "$1"; }
+# CPU 1개까지만 (앱 1대·CPU 4개 서버라 매시간 점수 계산이 예매와 CPU를 다투지 않게). 컨테이너 안 작업이라
+# systemd 유닛의 CPUQuota·Nice는 닿지 않는다 → docker run에서 제한. 바꾸려면 ML_CPUS
+ml() { docker run --rm --cpus "${ML_CPUS:-1}" --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/w" jejari-ml bash -c "$1"; }
 
 # 2) 특징 (한 번, 단계 특징까지 — 점수는 모델마다 자기가 쓰는 칸만 이름으로 꺼낸다)
 ml "ML_STAGE=1 python -I tools/ml/features.py $OUT" > /tmp/jejari-model.log 2>&1 \

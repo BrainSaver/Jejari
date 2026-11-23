@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>제자리 공부 노트</title>
+<style>
+:root{
+  --bg:#f4f5f7;--card:#fff;--fg:#1d1f24;--mut:#6b7079;--line:#e4e5e8;
+  --acc:#2563eb;--acc-soft:#e8efff;--ok:#15803d;--ok-soft:#e7f6ec;--warn:#b45309;--warn-soft:#fff4e0;
+  --bad:#b91c1c;--bad-soft:#fde8e8;--code:#f1f2f5;
+  --c-redis:#d6453d;--c-oracle:#c2410c;--c-mongo:#15803d;--c-kafka:#334155;--c-app:#2563eb;--c-py:#7c3aed;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#15171b;--card:#1d2026;--fg:#e7e9ee;--mut:#9aa0ab;--line:#2c3038;
+    --acc:#7aa2ff;--acc-soft:#1e2a44;--ok:#4ade80;--ok-soft:#16301f;--warn:#fbbf24;--warn-soft:#3a2c10;
+    --bad:#f87171;--bad-soft:#3a1717;--code:#262a31;
+    --c-redis:#f07167;--c-oracle:#fb923c;--c-mongo:#4ade80;--c-kafka:#94a3b8;--c-app:#7aa2ff;--c-py:#b794f6;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15171b;--card:#1d2026;--fg:#e7e9ee;--mut:#9aa0ab;--line:#2c3038;
+  --acc:#7aa2ff;--acc-soft:#1e2a44;--ok:#4ade80;--ok-soft:#16301f;--warn:#fbbf24;--warn-soft:#3a2c10;
+  --bad:#f87171;--bad-soft:#3a1717;--code:#262a31;
+  --c-redis:#f07167;--c-oracle:#fb923c;--c-mongo:#4ade80;--c-kafka:#94a3b8;--c-app:#7aa2ff;--c-py:#b794f6;
+}
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:16px}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:15.5px/1.75 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;word-break:keep-all;overflow-wrap:anywhere}
+.wrap{display:grid;grid-template-columns:240px minmax(0,1fr);gap:28px;max-width:1180px;margin:0 auto;padding:24px 16px 80px}
+nav.toc{position:sticky;top:16px;align-self:start;max-height:calc(100vh - 32px);overflow:auto;font-size:13.5px;line-height:1.5}
+nav.toc .ttl{font-weight:700;margin:0 0 8px;font-size:14px}
+nav.toc a{display:block;color:var(--mut);text-decoration:none;padding:4px 10px;border-left:2px solid var(--line)}
+nav.toc a:hover{color:var(--fg)}
+nav.toc a.on{color:var(--acc);border-left-color:var(--acc);font-weight:600}
+main{min-width:0}
+header.top{margin-bottom:22px}
+h1{font-size:28px;line-height:1.3;margin:0 0 6px}
+.sub{color:var(--mut);margin:0}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px 26px;margin:0 0 18px}
+h2{font-size:21px;margin:0 0 4px;line-height:1.35}
+h2 .no{color:var(--acc);margin-right:8px}
+.lead{color:var(--mut);margin:0 0 16px}
+h3{font-size:16.5px;margin:22px 0 8px}
+p{margin:8px 0}
+ul,ol{margin:8px 0;padding-left:22px}
+li{margin:3px 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em;background:var(--code);padding:1px 6px;border-radius:5px}
+pre{background:var(--code);border-radius:10px;padding:14px 16px;overflow:auto;font-size:13px;line-height:1.6;margin:10px 0}
+pre code{background:none;padding:0}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
+th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{font-weight:600;color:var(--mut);font-size:13px;white-space:nowrap}
+.tbl{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tbl table{min-width:620px}
+td code,th code{white-space:nowrap;overflow-wrap:normal}
+.note{border-radius:10px;padding:12px 14px;margin:12px 0;font-size:14.5px}
+.note b:first-child{margin-right:4px}
+.n-info{background:var(--acc-soft)}
+.n-ok{background:var(--ok-soft)}
+.n-warn{background:var(--warn-soft)}
+.n-bad{background:var(--bad-soft)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:12px 0}
+.card{border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.card h4{margin:0 0 6px;font-size:15px}
+.card p{margin:4px 0;font-size:14px;color:var(--mut)}
+.tag{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;border:1px solid currentColor;margin-right:4px}
+.t-redis{color:var(--c-redis)}.t-oracle{color:var(--c-oracle)}.t-mongo{color:var(--c-mongo)}
+.t-kafka{color:var(--c-kafka)}.t-app{color:var(--c-app)}.t-py{color:var(--c-py)}
+/* 흐름 그림 */
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px;margin:14px 0}
+.flow .box{flex:1 1 120px;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px;background:var(--bg);min-width:110px}
+.flow .box b{display:block;font-size:14px}
+.flow .box small{color:var(--mut)}
+.flow .arr{align-self:center;color:var(--mut);font-size:18px;flex:0 0 auto}
+.b-redis{border-color:var(--c-redis)!important}.b-oracle{border-color:var(--c-oracle)!important}
+.b-mongo{border-color:var(--c-mongo)!important}.b-kafka{border-color:var(--c-kafka)!important}
+.b-app{border-color:var(--c-app)!important}.b-py{border-color:var(--c-py)!important}
+.arch{display:grid;grid-template-columns:1fr;gap:10px;margin:14px 0}
+.arch .row{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
+.arch .lbl{flex:0 0 92px;font-size:12.5px;color:var(--mut);align-self:center}
+.arch .box{flex:1 1 140px;border:1.5px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13.5px;background:var(--bg)}
+.arch .box b{display:block}
+.arch .box small{color:var(--mut)}
+.arch .down{text-align:center;color:var(--mut);font-size:13px;margin:-2px 0}
+/* 카프카 파티션 그림 */
+.kafka{border:1.5px solid var(--c-kafka);border-radius:12px;padding:12px;margin:12px 0}
+.kafka .p{display:flex;align-items:center;gap:6px;margin:6px 0;font-size:12.5px}
+.kafka .p span.name{flex:0 0 80px;color:var(--mut)}
+.kafka .p i{font-style:normal;display:inline-block;min-width:30px;text-align:center;border:1px solid var(--line);border-radius:6px;padding:2px 4px;background:var(--bg)}
+.kafka .p i.new{border-color:var(--acc);color:var(--acc)}
+.kafka .p em{font-style:normal;color:var(--mut);margin-left:6px}
+details{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:8px 0}
+details summary{cursor:pointer;font-weight:600}
+details[open] summary{margin-bottom:6px}
+.big{font-size:24px;font-weight:700;line-height:1.2}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:12px 0}
+.kpi{border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.kpi .k{font-size:12.5px;color:var(--mut)}
+.kpi .v{font-size:20px;font-weight:700;margin:2px 0}
+.kpi .d{font-size:12.5px;color:var(--mut)}
+.themebtn{position:fixed;right:16px;bottom:16px;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:999px;padding:8px 14px;font:inherit;font-size:13px;cursor:pointer}
+@media (max-width:860px){
+  .wrap{grid-template-columns:1fr;gap:0}
+  nav.toc{position:static;max-height:none;margin-bottom:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+  nav.toc a{display:inline-block;border-left:none;padding:3px 8px}
+  section{padding:18px 16px}
+  h1{font-size:23px}
+  .arch .lbl{flex-basis:100%}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="toc" aria-label="목차">
+  <p class="ttl">목차</p>
+  <a href="#s0">0. 한 장 요약</a>
+  <a href="#s1">1. 전체 구조</a>
+  <a href="#s2">2. 기술 지도</a>
+  <a href="#s3">3. 빅데이터란</a>
+  <a href="#s4">4. Kafka란</a>
+  <a href="#s5">5. Kafka 사용법</a>
+  <a href="#s6">6. Outbox · Inbox · DLQ</a>
+  <a href="#s7">7. 좌석 동시성</a>
+  <a href="#s8">8. 대기열</a>
+  <a href="#s9">9. 결제 · 만료 · 취소</a>
+  <a href="#s10">10. 보안</a>
+  <a href="#s11">11. 봇 탐지와 머신러닝</a>
+  <a href="#s12">12. 데이터를 잃지 않는 법</a>
+  <a href="#s13">13. 관측 · 부하 시험</a>
+  <a href="#s14">14. 배포 · 운영</a>
+  <a href="#s15">15. 숫자로 보기</a>
+  <a href="#s16">16. 스스로 점검</a>
+  <a href="#s17">17. 용어 사전</a>
+</nav>
+
+<main>
+<header class="top">
+  <h1>제자리 공부 노트</h1>
+  <p class="sub">명절 열차 공정 예매 시스템 — 어떤 기술을, 어떻게, 왜 썼는지. 강동균 정리 · 2026-11-23 기준 코드와 실측 수치</p>
+</header>
+
+<!-- 0 -->
+<section id="s0">
+  <h2><span class="no">0</span>한 장 요약</h2>
+  <p class="lead">처음 보는 사람에게 1분 안에 설명한다면</p>
+  <p><b>제자리</b>는 명절 열차표를 <b>봇·매크로 없이 공정하게</b> 파는 예매 시스템입니다. 판매가 열리는 순간 수만 명이 몰리는 상황을 가정하고, 세 가지 문제를 풉니다.</p>
+  <div class="grid2">
+    <div class="card"><h4>① 공정 — 봇을 막는다</h4><p>대기열로 줄을 세우고, 사람의 행동 로그(클릭 간격·순서)로 봇 같은 계정을 찾아 순번을 뒤로 미루거나 관리자에게 알린다.</p></div>
+    <div class="card"><h4>② 정확 — 돈과 좌석이 어긋나지 않는다</h4><p>같은 좌석을 두 명이 사지 않고, 돈만 빠져나가는 일이 없다. Redis로 빠르게 거르고 Oracle이 최종 판정한다.</p></div>
+    <div class="card"><h4>③ 버티기 — 몰려도 안 무너진다</h4><p>로그인 폭주·예매 몰림·장애 중에도 핵심 기능이 살아 있고, 데이터를 잃지 않는다. 숫자로 재서 확인한다.</p></div>
+  </div>
+  <div class="note n-info"><b>한 문장으로:</b> "Redis로 빠르게, Oracle로 정확하게, Kafka로 나중에 할 일은 나중에, MongoDB에 행동을 쌓아 봇을 찾는다."</div>
+</section>
+
+<!-- 1 -->
+<section id="s1">
+  <h2><span class="no">1</span>전체 구조</h2>
+  <p class="lead">요청 하나가 어디를 지나가는가</p>
+  <div class="arch">
+    <div class="row"><span class="lbl">사용자</span>
+      <div class="box b-app"><b>React + Vite</b><small>예매 화면(U-01~11) · 관리자 화면(A-01~10)</small></div></div>
+    <div class="down">↓ HTTPS (Caddy가 앞에서 받음)</div>
+    <div class="row"><span class="lbl">앱</span>
+      <div class="box b-app"><b>Spring Boot 4 · Java 21</b><small>대기열 · 좌석 · 결제 · 취소 · 회원 · 위험 점수 · 관리자 API</small></div></div>
+    <div class="down">↓ 무엇을 하느냐에 따라 나뉨</div>
+    <div class="row"><span class="lbl">저장소</span>
+      <div class="box b-redis"><b>Redis 7.4</b><small>빠른 1차 판정: 좌석 선점 · 대기열 · 매수 한도 · 멱등 키 · 캐시</small></div>
+      <div class="box b-oracle"><b>Oracle 23 Free</b><small>최종 판정 · 돈과 좌석의 원본 (테이블 44개)</small></div>
+      <div class="box b-mongo"><b>MongoDB 8.0</b><small>빅데이터: 행동 로그 · 화면 녹화 · 대기열 로그 · 모델 점수</small></div>
+      <div class="box b-kafka"><b>Kafka 4.1</b><small>나중에 해도 되는 일 전달: 알림 · 좌석 정리 · 위험 신호 · 행동 로그</small></div></div>
+    <div class="down">↓ 옆에서 돕는 것</div>
+    <div class="row"><span class="lbl">주변</span>
+      <div class="box b-py"><b>Python (tools/ml)</b><small>위험 점수 모델 학습·채점 (부스팅 + Isolation Forest + GRU)</small></div>
+      <div class="box"><b>Prometheus + Grafana</b><small>지표 수집 · 경보 14개 → Discord</small></div>
+      <div class="box"><b>k6</b><small>부하 시험 시나리오 13개</small></div>
+      <div class="box"><b>GCP VM 1대</b><small>docker compose + systemd 자동 배포</small></div></div>
+  </div>
+  <h3>예매 한 번의 흐름</h3>
+  <div class="flow">
+    <div class="box b-app"><b>1. 로그인</b><small>Argon2id 해시 · 로그인 대기실</small></div><span class="arr">→</span>
+    <div class="box b-redis"><b>2. 대기열</b><small>Redis 줄 서기 → 입장 토큰</small></div><span class="arr">→</span>
+    <div class="box b-redis"><b>3. 좌석 선점</b><small>Redis Lua 1차 → Oracle 최종</small></div><span class="arr">→</span>
+    <div class="box b-oracle"><b>4. 결제</b><small>멱등 키 · Saga · 마감 연장</small></div><span class="arr">→</span>
+    <div class="box b-kafka"><b>5. 이벤트</b><small>outbox → Kafka → 알림 등</small></div>
+  </div>
+  <p>모든 단계에서 <b>행동 로그</b>가 따로 Kafka → MongoDB로 쌓이고, 위험 점수 배치가 1분마다 읽어 봇 같은 계정의 점수를 올립니다.</p>
+</section>
+
+<!-- 2 -->
+<section id="s2">
+  <h2><span class="no">2</span>기술 지도 — 무엇을 왜 골랐나</h2>
+  <p class="lead">"왜 이 기술이냐"는 질문에 답할 수 있게</p>
+  <div class="tbl"><table>
+    <tr><th>기술</th><th>여기서 하는 일</th><th>왜 이것</th><th>고려한 대안</th></tr>
+    <tr><td><span class="tag t-app">Spring Boot 4</span></td><td>모든 API, 트랜잭션, 정기 작업(@Scheduled), Kafka 소비</td><td>트랜잭션·보안·Kafka·JPA가 한 틀에 들어 있다. 팀이 익숙</td><td>—</td></tr>
+    <tr><td><span class="tag t-oracle">Oracle</span></td><td>돈·좌석·예약의 <b>원본</b>. PK·UNIQUE·조건부 UPDATE로 최종 판정</td><td>트랜잭션·락·제약이 강하다. 함수 기반 인덱스로 "남은 것만" 인덱싱</td><td>MySQL·PostgreSQL (과정 요구사항으로 Oracle)</td></tr>
+    <tr><td><span class="tag t-redis">Redis</span></td><td>좌석 1차 경쟁, 대기열, 매수 한도, 멱등 키, 캐시</td><td>메모리라 빠르고, <b>Lua 스크립트가 원자적</b>이라 여러 키를 한 번에 판정</td><td>DB 락만 쓰기 (락 비교에서 DB 왕복 101회 vs 1회)</td></tr>
+    <tr><td><span class="tag t-mongo">MongoDB</span></td><td>행동 로그·화면 녹화 등 <b>많고, 모양이 자주 바뀌는</b> 데이터</td><td>스키마가 유연하고 대량 쓰기·TTL 자동 삭제가 쉽다. 돈과 무관해 트랜잭션이 덜 중요</td><td>Oracle에 쌓기 (예매 DB에 부하), Elasticsearch</td></tr>
+    <tr><td><span class="tag t-kafka">Kafka</span></td><td>"지금 안 해도 되는 일"을 예매 트랜잭션에서 떼어 냄</td><td>디스크에 남는 로그라 <b>다시 읽을 수 있고</b>, 파티션으로 순서와 병렬을 같이 얻음</td><td>직접 호출, RabbitMQ, Redis Streams (4장 비교)</td></tr>
+    <tr><td><span class="tag t-py">Python</span></td><td>위험 점수 모델 학습·채점·비교</td><td>scikit-learn·PyTorch 생태계</td><td>Java로 모델 (생태계가 약함)</td></tr>
+    <tr><td><span class="tag">React + Vite</span></td><td>사용자·관리자 화면</td><td>빠른 개발 서버, 컴포넌트</td><td>서버 렌더링 템플릿</td></tr>
+    <tr><td><span class="tag">Prometheus·Grafana</span></td><td>지표 수집, 그래프, Discord 경보</td><td>Spring Actuator가 바로 내보냄</td><td>클라우드 모니터링 (비용)</td></tr>
+    <tr><td><span class="tag">k6</span></td><td>부하 시험 (로그인 폭주·예매 몰림·용량)</td><td>JS로 시나리오, 단계별 판정(threshold)</td><td>JMeter (무겁다)</td></tr>
+  </table></div>
+  <div class="note n-info"><b>핵심 원칙</b> "판정 계층": Redis가 빠르게 1차로 거르고, Oracle이 최종 판정한다. <b>Redis가 통과시켜도 DB가 거절하면 거절</b>이다. 반대로 DB가 허용할 것을 Redis가 막는 일은 없도록, Redis가 더 엄격하게 남는 경우를 되돌리는 장치(보상)를 둔다. — <code>docs/concurrency.md §0.1</code></div>
+</section>
+
+<!-- 3 -->
+<section id="s3">
+  <h2><span class="no">3</span>빅데이터란 — 그리고 우리 프로젝트의 빅데이터</h2>
+  <p class="lead">"데이터가 많다"가 전부가 아니다</p>
+  <h3>개념: 3V (+2)</h3>
+  <div class="tbl"><table>
+    <tr><th>특징</th><th>뜻</th><th>제자리에서</th></tr>
+    <tr><td><b>Volume</b> 양</td><td>한 대·한 DB로는 담기 힘든 양</td><td>행동 로그가 요청마다 생김. 1건 약 490바이트, 180일 보관</td></tr>
+    <tr><td><b>Velocity</b> 속도</td><td>쏟아지는 속도</td><td>판매 오픈 순간에 몰림. 적재는 초당 약 2만~2.8만 건까지 버팀</td></tr>
+    <tr><td><b>Variety</b> 다양성</td><td>모양이 제각각</td><td>클릭·좌석 선점·결제·화면 녹화(마우스 궤적)… 이벤트마다 <code>meta</code>가 다름 → MongoDB</td></tr>
+    <tr><td>Veracity 정확성</td><td>믿을 수 있나</td><td>중복(재전달)·누락(장애)·깨진 메시지를 걸러야 함 → event_id 유니크, DLQ, 정합성 점검</td></tr>
+    <tr><td>Value 가치</td><td>쓸모</td><td>봇 탐지 재료 (위험 점수 · 모델 학습)</td></tr>
+  </table></div>
+  <h3>빅데이터 파이프라인 5단계 — 우리 것에 대 보기</h3>
+  <div class="flow">
+    <div class="box b-app"><b>수집</b><small>BehaviorInterceptor가 요청마다 이벤트 생성 (요청 스레드는 기다리지 않음)</small></div><span class="arr">→</span>
+    <div class="box b-kafka"><b>전송</b><small>Kafka <code>jejari.behavior</code> (파티션 12). 실패하면 디스크 버퍼</small></div><span class="arr">→</span>
+    <div class="box b-mongo"><b>저장</b><small>MongoDB <code>behavior_log</code>, 묶음 insertMany, TTL 180일</small></div><span class="arr">→</span>
+    <div class="box b-app"><b>처리</b><small>위험 점수 배치 1분마다, 바뀐 대상만 (<code>risk:dirty</code>)</small></div><span class="arr">→</span>
+    <div class="box b-py"><b>활용</b><small>점수 → 대기열 패널티 · 케이스 · 모델 학습</small></div>
+  </div>
+  <h3>배치 vs 스트림</h3>
+  <div class="grid2">
+    <div class="card"><h4>스트림 (흘러오는 대로)</h4><p>Kafka 소비자가 이벤트가 오면 바로 처리 — 알림, 좌석 정리, 행동 로그 적재.</p></div>
+    <div class="card"><h4>배치 (모아서 한 번에)</h4><p>위험 점수 1분마다, 모델 점수 매시간, 재학습 매주 일요일, 정합성 점검 매시간.</p></div>
+  </div>
+  <p>둘을 섞은 이유: 적재는 빨라야 놓치지 않고, 점수 계산은 여러 이벤트를 모아 봐야 의미가 있다 (클릭 하나로는 봇인지 모름).</p>
+  <h3>제자리의 대량 데이터</h3>
+  <div class="tbl"><table>
+    <tr><th>컬렉션</th><th>무엇</th><th>보관</th><th>주요 인덱스</th></tr>
+    <tr><td><code>behavior_log</code></td><td>조회·선점·결제 등 모든 행동</td><td>180일 (TTL)</td><td><code>{ci_hash,ts}</code> <code>{member_id,ts}</code> <code>{device_hash,ts}</code> <code>event_id</code> 유니크</td></tr>
+    <tr><td><code>replay_event</code></td><td>화면 녹화 (클릭·스크롤·궤적)</td><td>90일, 케이스면 보존(legal_hold)</td><td><code>{session_id,seq}</code> 유니크</td></tr>
+    <tr><td><code>queue_log</code></td><td>대기열 진입·입장 기록</td><td>TTL</td><td><code>{run_id,entered_at}</code></td></tr>
+    <tr><td><code>login_attempt</code></td><td>로그인 시도</td><td>30일</td><td><code>{ip_hash,ts}</code> <code>{email_hash,ts}</code></td></tr>
+    <tr><td><code>model_score</code></td><td>모델 보조 의견</td><td>—</td><td><code>{member_id,model_version}</code> 유니크</td></tr>
+  </table></div>
+  <div class="note n-ok"><b>TTL로 지우는 법:</b> 문서에 <code>expire_at</code>(지울 시각)을 넣고 <code>{expire_at:1}, expireAfterSeconds:0</code> 인덱스를 두면 MongoDB가 그 시각에 자동으로 지운다. 케이스에 걸린 녹화는 <code>expire_at</code>만 지워 보존. — <code>concurrency.md §13.2</code></div>
+  <div class="note n-warn"><b>배운 것:</b> 무작위 UUID <code>event_id</code> 인덱스가 인덱스 공간의 50%를 차지했다. 무작위 값은 인덱스 아무 데나 끼어 들어가 데이터가 커질수록 쓰기가 느려진다 → 시간순 UUID(v7)가 다음 개선 후보.</div>
+</section>
+
+<!-- 4 -->
+<section id="s4">
+  <h2><span class="no">4</span>Kafka란 무엇인가</h2>
+  <p class="lead">"메시지 큐"보다 "모두가 읽을 수 있는, 지워지지 않는 일지"에 가깝다</p>
+  <h3>비유: 공용 업무 일지</h3>
+  <p>예매 서버가 "예약 R123 확정됨"이라고 <b>일지 맨 끝에 한 줄</b> 적는다. 알림 담당, 좌석 정리 담당, 위험 점수 담당은 <b>각자 자기 책갈피(오프셋)</b>를 갖고 그 일지를 읽어 내려간다. 한 사람이 읽었다고 줄이 지워지지 않아서, 담당이 늦거나 잠깐 쉬어도 돌아와서 이어 읽는다. 일지는 7일 동안 보관된다.</p>
+  <h3>핵심 용어</h3>
+  <div class="tbl"><table>
+    <tr><th>용어</th><th>뜻</th><th>제자리에서</th></tr>
+    <tr><td>브로커 (broker)</td><td>Kafka 서버 한 대</td><td>1대 (학교 서버 1대라 복제 1)</td></tr>
+    <tr><td>토픽 (topic)</td><td>일지 한 권 (주제별)</td><td><code>jejari.reservation</code>, <code>jejari.behavior</code> …</td></tr>
+    <tr><td>파티션 (partition)</td><td>일지를 여러 권으로 나눈 것. <b>한 권 안에서만 순서가 보장</b>됨</td><td>예약 12, 행동 12, 취소표 6, 녹화 6</td></tr>
+    <tr><td>키 (key)</td><td>어느 파티션에 적을지 정하는 값. 같은 키 → 같은 파티션 → 순서 보장</td><td>예약 이벤트 = <code>reservation_id</code>, 행동 = 회원 ID</td></tr>
+    <tr><td>오프셋 (offset)</td><td>파티션 안 줄 번호 = 책갈피</td><td>처리를 끝낸 뒤에만 커밋 (수동)</td></tr>
+    <tr><td>프로듀서 (producer)</td><td>적는 쪽</td><td>outbox 릴레이, 행동 로그 보내기</td></tr>
+    <tr><td>컨슈머 그룹 (consumer group)</td><td>같은 일을 나눠 하는 읽는 쪽 묶음. 그룹마다 책갈피가 따로</td><td><code>notification</code>, <code>seat-release</code>, <code>risk-signal</code>, <code>behavior-sink</code> …</td></tr>
+    <tr><td>보관 (retention)</td><td>얼마나 오래 남기나</td><td>7일. 격리 보관함(DLT)은 30일</td></tr>
+    <tr><td>acks</td><td>"받았다"를 어디까지 확인하나</td><td>예약 이벤트 <code>all</code>(확실히) · 행동 로그 <code>1</code>(빠르게)</td></tr>
+  </table></div>
+  <h3>그림: 키와 파티션, 그룹별 책갈피</h3>
+  <div class="kafka" aria-label="Kafka 파티션 그림">
+    <div style="font-size:13px;margin-bottom:6px"><b>토픽 jejari.reservation</b> <span style="color:var(--mut)">(12개 중 3개만)</span></div>
+    <div class="p"><span class="name">파티션 0</span><i>R7 생성</i><i>R7 확정</i><i>R2 생성</i><i class="new">R7 취소</i><em>← R7의 이벤트는 늘 여기, 순서대로</em></div>
+    <div class="p"><span class="name">파티션 1</span><i>R3 생성</i><i>R3 만료</i><i class="new">R9 생성</i></div>
+    <div class="p"><span class="name">파티션 2</span><i>R5 생성</i><i class="new">R5 확정</i></div>
+    <div style="font-size:12.5px;color:var(--mut);margin-top:8px">notification 그룹 책갈피: 파티션 0의 3번째까지 읽음 · seat-release 그룹 책갈피: 파티션 0의 2번째까지 읽음 → 서로 영향 없음</div>
+  </div>
+  <div class="note n-info"><b>왜 키가 reservation_id인가:</b> "R7 확정" 뒤에 "R7 취소"가 와야 한다. 순서가 뒤집히면 취소된 예약에 "예매 완료" 알림이 가거나 좌석이 꼬인다. 같은 예약의 이벤트를 같은 파티션에 넣으면 순서가 지켜진다. 서로 다른 예약은 다른 파티션에서 <b>병렬로</b> 처리된다.</div>
+  <h3>왜 Kafka인가 — 다른 방법과 비교</h3>
+  <div class="tbl"><table>
+    <tr><th>방법</th><th>장점</th><th>단점</th><th>판단</th></tr>
+    <tr><td>예매 코드에서 알림·좌석 정리를 직접 호출</td><td>간단</td><td>알림이 느리거나 죽으면 <b>예매도 느려지거나 실패</b></td><td>✗</td></tr>
+    <tr><td>RabbitMQ</td><td>작업 큐에 좋음, 라우팅 풍부</td><td>읽으면 지워져 다시 읽기 어렵다. 여러 소비자가 같은 이벤트를 각자 읽으려면 큐를 여러 개</td><td>△</td></tr>
+    <tr><td>Redis Streams</td><td>이미 쓰는 Redis</td><td>메모리라 대량·장기 보관에 부담, Redis가 예매 핵심이라 부하를 섞고 싶지 않음</td><td>△</td></tr>
+    <tr><td><b>Kafka</b></td><td>디스크 보관·다시 읽기·그룹별 책갈피·파티션 순서·대량 처리</td><td>운영할 것이 하나 더 (브로커)</td><td>✓</td></tr>
+  </table></div>
+  <h3>전달 보장 — "정확히 한 번"을 어떻게 흉내 내나</h3>
+  <ul>
+    <li>Kafka 기본은 <b>최소 한 번(at-least-once)</b>: 처리 후 오프셋 커밋 전에 죽으면 같은 메시지가 다시 온다.</li>
+    <li>그래서 소비자를 <b>멱등</b>하게 만든다: 두 번 처리해도 결과가 같게. 예약 이벤트는 <code>processed_event(consumer_group, event_id)</code> PK로, 행동 로그는 <code>event_id</code> 유니크 인덱스로 중복을 걸러 낸다.</li>
+    <li>최소 한 번 + 멱등 = 사실상 정확히 한 번 (effectively once).</li>
+    <li>보내는 쪽은 <b>멱등 프로듀서</b>(<code>enable.idempotence=true</code>, <code>acks=all</code>): 재전송해도 브로커에 두 번 적히지 않는다.</li>
+  </ul>
+</section>
+
+<!-- 5 -->
+<section id="s5">
+  <h2><span class="no">5</span>Kafka 사용법 — 코드와 명령어</h2>
+  <p class="lead">우리 코드에서 실제로 쓰는 모양</p>
+  <h3>토픽과 소비 그룹</h3>
+  <div class="tbl"><table>
+    <tr><th>토픽</th><th>파티션</th><th>키</th><th>읽는 그룹 → 하는 일</th></tr>
+    <tr><td><code>jejari.reservation</code></td><td>12</td><td>reservation_id</td><td><code>seat-release</code> 좌석·Redis 정리 + 취소표 제안 · <code>notification</code> 알림함 · <code>risk-signal</code> 위험 점수 재계산 표시</td></tr>
+    <tr><td><code>jejari.waitlist</code></td><td>6</td><td>waitlist_id</td><td>취소표 대기 이벤트</td></tr>
+    <tr><td><code>jejari.behavior</code></td><td>12</td><td>회원 ID (없으면 기기·IP 해시)</td><td><code>behavior-sink</code> → MongoDB</td></tr>
+    <tr><td><code>jejari.replay</code></td><td>6</td><td>session_id</td><td><code>replay-sink</code> → MongoDB 화면 녹화</td></tr>
+    <tr><td><code>*.DLT</code></td><td>1</td><td>원본 키</td><td>처리 못 한 메시지 격리 보관 (30일)</td></tr>
+  </table></div>
+  <h3>보내기 (프로듀서)</h3>
+<pre><code>// 행동 로그: 전용 프로듀서, 요청 스레드는 기다리지 않음 (behavior/BehaviorPublisher)
+props.put(ProducerConfig.ACKS_CONFIG, "1");           // 빠르게. 중복은 적재 쪽 event_id로 거름
+props.put(ProducerConfig.LINGER_MS_CONFIG, 20);       // 20ms 모아서 묶어 보내기
+props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "lz4");
+kafka.send("jejari.behavior", event.key(), json)      // key = "m:회원ID" → 같은 회원은 같은 파티션
+     .whenComplete((r, ex) -&gt; { if (ex != null) /* 디스크 버퍼로 */ });
+
+// 예약 이벤트: 팀 공용 프로듀서 (application.yml)
+spring.kafka.producer.acks: all
+spring.kafka.producer.properties.enable.idempotence: true</code></pre>
+  <h3>읽기 (컨슈머)</h3>
+<pre><code>@KafkaListener(id = "behavior-sink", topics = "jejari.behavior",
+               containerFactory = BehaviorSinkConfig.CONTAINER_FACTORY)
+public void consume(List&lt;ConsumerRecord&lt;String, String&gt;&gt; records) {   // 묶음(최대 1000건)으로 받음
+    // 형식 검사 → 깨진 건 격리 보관(DLT) → insertMany → 성공하면 오프셋 커밋
+}
+
+// 컨테이너 설정의 핵심
+props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);   // 자동 커밋 끔
+f.setBatchListener(true);
+f.getContainerProperties().setAckMode(AckMode.BATCH);           // 묶음이 성공해야 커밋
+f.setConcurrency(3);                                            // 스레드 3개가 파티션 12개를 나눠 맡음
+f.setCommonErrorHandler(new DefaultErrorHandler(new FixedBackOff(5000L, UNLIMITED_ATTEMPTS)));</code></pre>
+  <div class="note n-warn"><b>함정 (실제로 겪음):</b> 묶음 리스너에서 예외를 <code>catch</code>로 삼키면 묶음이 "성공"으로 끝나 오프셋이 커밋되고, 실패한 메시지는 <b>다시 오지 않는다</b>. 주석에는 "재시작 때 다시 온다"고 적혀 있었지만 사실이 아니었다 → 격리 보관함(DLQ)으로 고침.</div>
+  <h3>자주 쓰는 명령어</h3>
+<pre><code># 토픽 목록·파티션 보기
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic jejari.reservation
+
+# 소비 그룹이 얼마나 밀렸나 (LAG 열)
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group notification
+
+# 메시지 들여다보기 (처음부터, 키 포함)
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+  --topic jejari.reservation --from-beginning --property print.key=true --max-messages 5
+
+# 격리 보관함 보기·다시 넣기 (우리 도구)
+tools/dlq.sh list
+tools/dlq.sh replay reservation notification</code></pre>
+  <div class="note n-info"><b>소비자 수를 늘리면 빨라질까?</b> 파티션 수까지만 의미가 있다 (12개 파티션에 소비자 13개면 1개는 논다). 실측: 행동 로그 소비자 3 → 12개로 늘려도 초당 2.8만 건 그대로, Oracle 커넥션만 12개까지 더 썼다. 병목이 CPU·MongoDB였기 때문 → 3개 유지.</div>
+</section>
+
+<!-- 6 -->
+<section id="s6">
+  <h2><span class="no">6</span>Outbox · Inbox · DLQ — Kafka를 "안전하게" 쓰는 패턴</h2>
+  <p class="lead">DB와 Kafka에 동시에 쓰면 생기는 문제</p>
+  <h3>문제: 이중 쓰기 (dual write)</h3>
+  <p>예약을 DB에 저장하고 Kafka에 "확정됨"을 보내는 두 동작은 하나로 묶을 수 없다. DB 커밋 후 Kafka 전송 전에 서버가 죽으면 <b>예약은 있는데 알림·좌석 정리는 영원히 안 된다.</b> 반대 순서면 <b>없는 예약의 알림</b>이 간다.</p>
+  <h3>해결 1: Transactional Outbox</h3>
+  <div class="flow">
+    <div class="box b-oracle"><b>한 트랜잭션</b><small>reservation 저장 + <code>outbox_event</code>에 이벤트 행 INSERT</small></div><span class="arr">→</span>
+    <div class="box b-app"><b>릴레이 (0.2초마다)</b><small>PENDING인 샤드만 찾아 seq 순서로 발행</small></div><span class="arr">→</span>
+    <div class="box b-kafka"><b>Kafka</b><small>멱등 프로듀서, acks=all</small></div><span class="arr">→</span>
+    <div class="box b-oracle"><b>PUBLISHED 표시</b><small>성공한 행만</small></div>
+  </div>
+  <ul>
+    <li>이벤트가 예약과 <b>같은 트랜잭션</b>에 들어가므로 둘 다 있거나 둘 다 없다.</li>
+    <li><b>샤드 16개</b>: <code>shard_no = ORA_HASH(partition_key, 15)</code>. 같은 예약은 같은 샤드 → 샤드 안에서 seq 순서대로 발행 → 순서 보장. 샤드 하나가 막혀도 나머지 15개는 계속.</li>
+    <li>맨 앞 행이 FAILED면 그 샤드는 멈춘다 (뒤 이벤트가 앞지르지 않게). 관리자가 고치면 재개.</li>
+    <li>잠금은 맨 앞 N개 rowid만 (<code>FOR UPDATE WAIT</code>, <code>SKIP LOCKED</code>는 순서가 깨져 안 씀).</li>
+    <li>함수 기반 인덱스 <code>ix_outbox_pending</code>: PENDING·FAILED 행만 인덱스에 들어가서, 발행 끝난 행이 수만 건 쌓여도 가볍다.</li>
+  </ul>
+  <div class="note n-ok"><b>11-20 개선:</b> 보낼 것이 없어도 0.2초마다 샤드 16개에 트랜잭션을 열어, 아무도 안 쓸 때 DB 커넥션을 초당 76번 빌리고 있었다(전체의 93%). "보낼 것이 있는 샤드"를 인덱스로 먼저 찾게 바꿔 <b>초당 81.5 → 10.5번</b>. 발행 지연은 그대로였다. 조건을 <code>IS NOT NULL</code>로 쓰면 테이블 전체를 읽어서 <code>&gt;= 0</code>으로 바꿨다 (실행 계획으로 확인).</div>
+  <h3>해결 2: Inbox (멱등 소비자)</h3>
+<pre><code>-- 한 트랜잭션에서
+INSERT INTO processed_event (consumer_group, event_id, processed_at) ...;  -- 이미 있으면 ORA-00001 → 건너뜀
+-- 업무 처리
+COMMIT;  -- 그다음 Kafka 오프셋 커밋</code></pre>
+  <p><code>processed_event</code>는 8일 보관 — Kafka 보관(7일)보다 <b>길어야</b> 재전달 중복을 막는다.</p>
+  <h3>해결 3: DLQ (격리 보관함)</h3>
+  <p>계속 실패하는 메시지 하나 때문에 파티션 전체가 멈추면 안 되고, 그렇다고 버리면 안 된다 → <code>&lt;토픽&gt;.DLT</code>에 원본 그대로 + 헤더(그룹·이유·오류·시각)로 옮긴다. 원인을 고친 뒤 <code>tools/dlq.sh replay</code>로 원래 토픽에 다시 넣는다 (헤더 <code>dlt-replay-for</code>로 그 그룹만 처리).</p>
+  <div class="tbl"><table>
+    <tr><th>이유</th><th>언제</th><th>다시 넣기</th></tr>
+    <tr><td><code>malformed</code></td><td>JSON이 깨졌거나 형식이 틀림</td><td>기본 제외 (다시 넣어도 또 실패)</td></tr>
+    <tr><td><code>retries_exhausted</code></td><td>알림 저장이 3번 실패</td><td>원인 고친 뒤 ✓</td></tr>
+    <tr><td><code>handler_failed</code></td><td>좌석 정리 처리 실패</td><td>원인 고친 뒤 ✓</td></tr>
+  </table></div>
+</section>
+
+<!-- 7 -->
+<section id="s7">
+  <h2><span class="no">7</span>좌석 동시성 — 같은 좌석을 두 명이 사지 않게</h2>
+  <p class="lead">프로젝트의 심장</p>
+  <h3>2단 판정</h3>
+  <div class="flow">
+    <div class="box b-app"><b>요청 100명</b><small>같은 좌석</small></div><span class="arr">→</span>
+    <div class="box b-redis"><b>Redis hold.lua</b><small>모든 구간 키를 한꺼번에 SET. 하나라도 남의 것이면 전부 실패</small></div><span class="arr">→</span>
+    <div class="box b-oracle"><b>승자 1명만 DB</b><small>reservation → seat_inventory(PK) → purchase_counter 한 트랜잭션</small></div>
+  </div>
+  <ul>
+    <li><b>Lua가 원자적</b>이라 "검사 → 쓰기" 사이에 다른 요청이 끼지 못한다. "전부 아니면 전무"라 반쪽 예약이 없다.</li>
+    <li>패배자 99명은 Redis에서 끝나 <b>DB에 아예 안 간다</b>.</li>
+    <li>DB가 거절하면(PK 충돌 등) 롤백 후 Redis 키를 되돌린다(보상). 커밋 뒤 정리는 outbox로 보장.</li>
+    <li>Redis 키 만료 시각 = 결제 마감 시각 (<code>PXAT</code>). 원천은 <code>reservation.pay_deadline_at</code> 하나, 나머지는 복사본.</li>
+  </ul>
+  <h3>락 방식 비교 — 왜 이 방식인가 (§17.1)</h3>
+  <div class="tbl"><table>
+    <tr><th>방식</th><th>1석 100명 TPS (k6, 10회 중앙값)</th><th>DB 왕복</th><th>중복 예약</th></tr>
+    <tr><td>A 비관적 락 <code>SELECT FOR UPDATE</code></td><td>893</td><td>101</td><td>0</td></tr>
+    <tr><td>B 낙관적 락 <code>version</code></td><td>2,248</td><td>108</td><td>0</td></tr>
+    <tr><td><b>C Redis 1차 + DB PK 최종</b></td><td>2,044</td><td><b>1</b></td><td>0</td></tr>
+  </table></div>
+  <div class="note n-warn"><b>예상과 달랐던 점:</b> 처음엔 "C가 가장 빠르다"고 생각했지만, CPU를 나누고 10회 반복해 다시 재니 B와 C는 <b>편차 안</b>이라 승부가 없었다. C를 고른 진짜 이유는 TPS가 아니라 <b>DB 왕복 101 → 1</b>. 명절엔 인기 열차 한 편에 수만 명이 몰리므로 DB가 버티는 게 먼저다. "C가 가장 빠르다"가 아니라 "C만 DB를 지킨다".</div>
+  <h3>멱등 키 — 버튼을 두 번 눌러도 예약은 하나</h3>
+  <ol>
+    <li>화면이 버튼마다 UUID <code>Idempotency-Key</code>를 만들고, 재시도엔 같은 키를 쓴다.</li>
+    <li>Redis <code>SET idem:{회원}:{키} 새예약ID NX</code> — 처음이면 진행, 이미 있으면 기존 예약 상태를 돌려줌 (아직 처리 중이면 202).</li>
+    <li>DB 최종 방어: <code>UNIQUE(member_id, idempotency_key)</code>.</li>
+  </ol>
+  <h3>매수 제한 — 1인 열차당 10석, 하루 20석</h3>
+  <ul>
+    <li>Redis <code>limit:*</code> Lua가 1차, Oracle <code>purchase_counter</code>의 조건부 UPDATE(<code>seat_count + n &lt;= max</code>)가 최종.</li>
+    <li>"하루"는 <b>사는 날</b> 기준 (하루에 몰아 사는 것을 막는 규칙이라). 자정을 넘겨 취소돼도 그 예약의 날짜 카운터를 깎는다.</li>
+  </ul>
+</section>
+
+<!-- 8 -->
+<section id="s8">
+  <h2><span class="no">8</span>대기열 — 공정하게 줄 세우기</h2>
+  <p class="lead">Redis 정렬 집합(ZSET) + Lua</p>
+  <ul>
+    <li>진입: <code>enter.lua</code>가 중복 확인과 <code>ZADD queue:{운행}</code>을 한 번에. 같은 사람(CI)이 다른 계정으로 또 서는 것도 막는다.</li>
+    <li><b>시각은 앱이 아니라 Redis <code>TIME</code></b>으로 읽는다. 앱 서버가 여러 대여도 시계 차이로 순번이 뒤집히지 않게.</li>
+    <li>입장: 스케줄러가 1초마다 앞에서부터 처리량만큼 입장 토큰 발급 → 좌석 선점 API는 토큰을 검증.</li>
+    <li><b>위험 패널티</b>: 위험 점수 1점 = 3분 뒤로 (80점이면 4시간). 차단이 아니라 <b>뒤로 미루기</b> — 오탐이어도 표를 살 수는 있다.</li>
+  </ul>
+  <div class="note n-info"><b>왜 Redis인가:</b> 수만 명이 1초에 몰리는 쓰기·순위 조회를 DB에 하면 DB가 먼저 무너진다. 줄은 잃어도 다시 설 수 있지만(원본 아님), 돈·좌석은 잃으면 안 되므로 Oracle.</div>
+</section>
+
+<!-- 9 -->
+<section id="s9">
+  <h2><span class="no">9</span>결제 · 만료 · 취소</h2>
+  <p class="lead">외부(PG)가 끼면 "결과를 모른다"가 생긴다</p>
+  <div class="grid2">
+    <div class="card"><h4>결제 시작 = 마감 연장</h4><p>HOLD → PAYMENT_PENDING 전이가 1행일 때만 마감을 한 번 늘린다 (PG 타임아웃 + 여유). 결제 중에 좌석이 풀리지 않게.</p></div>
+    <div class="card"><h4>Saga</h4><p>결제는 여러 단계(시작·PG·확정)라 한 트랜잭션으로 못 묶는다. 단계마다 상태를 남기고 실패하면 되돌리는 보상 단계를 실행.</p></div>
+    <div class="card"><h4>만료 스캐너</h4><p>1초마다 마감 지난 HOLD를 찾아 좌석 반환. 함수 기반 인덱스로 HOLD 행만 본다.</p></div>
+    <div class="card"><h4>늦은 승인 환불</h4><p>만료된 뒤 PG가 "승인"이라 답하면 좌석 대신 자동 환불. 돈만 빠지는 일이 없게.</p></div>
+    <div class="card"><h4>결과 모름 재확인</h4><p>PG 응답이 끊기면 결과를 모르는 동안 만료시키지 않고 주기적으로 다시 묻는다.</p></div>
+    <div class="card"><h4>취소표 제안</h4><p>취소된 좌석을 대기자에게 먼저 제안 (<code>REOFFER</code> 인계 값). 위험 점수가 높으면 뒤로.</p></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section id="s10">
+  <h2><span class="no">10</span>보안</h2>
+  <p class="lead">개인정보를 원문으로 들고 있지 않는다</p>
+  <div class="tbl"><table>
+    <tr><th>무엇</th><th>방법</th><th>왜</th></tr>
+    <tr><td>비밀번호</td><td><b>Argon2id</b> + pepper (서버만 아는 비밀값)</td><td>메모리를 많이 쓰게 해 GPU 대량 추측을 막음. DB가 털려도 pepper 없이는 못 품</td></tr>
+    <tr><td>본인 식별(CI)·기기·IP·이메일</td><td><b>HMAC-SHA256</b> 해시 (<code>*_hash</code>)</td><td>같은 사람인지 비교는 되지만 원문은 복원 불가. 봇 탐지는 "같은가"만 필요</td></tr>
+    <tr><td>전화번호 (복호화 필요)</td><td><b>AES-256-GCM</b> + 키 버전(<code>enc_key_id</code>)</td><td>알림에 써야 해서 복호화 가능, 키를 바꿔도 옛 데이터 읽기 가능</td></tr>
+    <tr><td>로그인 유지</td><td>JWT 액세스 15분 + 리프레시(14일/12시간) — 리프레시는 SHA-256 해시만 저장</td><td>DB가 털려도 토큰을 못 씀</td></tr>
+    <tr><td>로그인 폭주</td><td><b>로그인 대기실</b>: 해시 작업자 4개 + 대기 200칸, 넘치면 429 + Retry-After</td><td>Argon2id가 일부러 느려 폭주하면 스레드가 다 묶여 다른 API까지 멈췄다 (벌크헤드)</td></tr>
+    <tr><td>가입·로그인 남용</td><td>IP·계정당 시도 제한 (Redis <code>rate:*</code>)</td><td>대량 가입 봇</td></tr>
+  </table></div>
+  <div class="note n-ok"><b>벌크헤드(Bulkhead):</b> 배의 격벽처럼 한 구역이 물에 잠겨도 다른 구역은 산다. 로그인(무거운 해시)을 별도 작업자에 가둬 <b>로그인 폭주 200명에서 5xx 24% → 800명에서 5xx 0%</b>. 사용자는 "잠시 기다림"(화면 카운트다운 후 자동 재시도)으로만 느낀다.</div>
+</section>
+
+<!-- 11 -->
+<section id="s11">
+  <h2><span class="no">11</span>봇 탐지와 머신러닝</h2>
+  <p class="lead">규칙은 아는 봇만 잡는다</p>
+  <h3>두 겹</h3>
+  <div class="grid2">
+    <div class="card"><h4>규칙 엔진 (RISK-02, 1분 배치)</h4><p>너무 빠른 클릭(FAST_CLICK), 일정한 간격(REGULAR_INTERVAL), 같은 좌석 재시도, 한 기기 여러 계정 등. 점수 → 대기열 패널티·케이스 자동 열기.</p></div>
+    <div class="card"><h4>모델 보조 의견 (RISK-05, 매시간)</h4><p>행동 로그로 특징 32개 → 부스팅 + Isolation Forest + GRU. <b>제한에 쓰지 않고</b> 관리자에게 "보조 의견 + 근거 + 닮은 유형"만.</p></div>
+  </div>
+  <h3>모델이 하는 일</h3>
+  <div class="tbl"><table>
+    <tr><th>모델</th><th>보는 것</th><th>특징</th></tr>
+    <tr><td>그래디언트 부스팅</td><td>표 모양 특징 (평균 간격, 결제 안 한 선점 비율, 오픈 후 첫 선점까지 시간…)</td><td>정답(봇/사람)으로 학습. 표 데이터에 강함</td></tr>
+    <tr><td>Isolation Forest</td><td>같은 특징</td><td>정답 없이 "튀는 것"을 찾음 → 처음 보는 수법에 도움</td></tr>
+    <tr><td>GRU (딥러닝) × 5개 평균</td><td><b>이벤트 순서</b> 자체</td><td>순서를 봐야 보이는 봇(좌석 묶어 두기)을 잡음</td></tr>
+  </table></div>
+  <p>평가 방법: <b>봇 계열 하나를 통째로 빼고 학습 → 그 계열로 시험</b> (= 처음 보는 수법). 사람 오탐 5% 문턱.</p>
+  <div class="kpis">
+    <div class="kpi"><div class="k">처음 보는 봇 계열 탐지</div><div class="v">87%</div><div class="d">부스팅+IF (IF 29% · 신경망 40% · 부스팅 74%)</div></div>
+    <div class="kpi"><div class="k">GRU 추가 (4세트 비교)</div><div class="v">61.6 → 69.7%</div><div class="d">사람 오탐 7.0 → 6.0%</div></div>
+    <div class="kpi"><div class="k">블라인드 봇 대회 (c1119)</div><div class="v">규칙 0/12 · 모델 6/6</div><div class="d">규칙을 모르는 사람이 만든 봇 botb</div></div>
+  </div>
+  <h3>블라인드 봇 대회 — 왜 했나</h3>
+  <p>규칙을 아는 우리가 만든 봇으로 잰 100%는 <b>출제자가 푼 시험</b>이다. 그래서 규칙을 모르는 팀원이 봇을 만들고(공격자는 탐지 코드를 못 봄), 학습은 생성 데이터로만, 시험은 손대지 않은 대회 데이터로만 했다.</p>
+  <h3>학습 순환</h3>
+  <ol>
+    <li>실데이터로 "사람 기준" 다시 맞추기 (<code>recalibrate.py</code>)</li>
+    <li>관리자 판정을 정답으로 모으기 + <b>무작위 점검 표본</b> (의심과 무관하게 뽑은 계정 — 자기 확신 고리 끊기)</li>
+    <li>매주 일요일 새벽 재학습 + 자동 시험(관문) → 통과하면 <b>꺼진 후보</b>로 등록, 켜는 건 관리자 (A-09)</li>
+  </ol>
+  <div class="note n-warn"><b>정직하게:</b> 사람 기록이 부족해 실제 사람 오탐은 아직 못 쟀다. 봇만 있는 데이터의 100%는 "모두 봇이라 하는 모델"과 구별되지 않는다. 그래서 모델은 보조 의견에 머문다.</div>
+</section>
+
+<!-- 12 -->
+<section id="s12">
+  <h2><span class="no">12</span>데이터를 잃지 않는 법</h2>
+  <p class="lead">장애는 일부러 내 봐야 보인다</p>
+  <div class="tbl"><table>
+    <tr><th>어디서 샐 수 있나</th><th>장치</th><th>실측</th></tr>
+    <tr><td>예약은 저장됐는데 이벤트가 안 나감</td><td>Outbox (같은 트랜잭션)</td><td>Kafka 40초 정지 → 600건 쌓임 → 20초 안에 0, 유실 0</td></tr>
+    <tr><td>이벤트가 두 번 처리됨</td><td>Inbox (<code>processed_event</code>) · event_id 유니크</td><td>DLQ 다시 넣기 두 번 → 알림 3건 그대로</td></tr>
+    <tr><td>소비자가 처리 못 한 메시지</td><td>DLQ 격리 보관 + 다시 넣기</td><td>로그 1줄 남기고 버림 → 보관·복구</td></tr>
+    <tr><td>Kafka 장애 중 행동 로그</td><td>재시도 + <b>디스크 버퍼</b> + 회로 차단</td><td>Kafka 45초 멈춤, 87,906건 중 유실 0</td></tr>
+    <tr><td>배포(재시작) 순간 메모리 큐</td><td>종료 때 디스크로 → 다음 기동 때 다시 보냄</td><td>Kafka 멈춘 채 재시작: <b>70% 유실 → 0</b>, 종료 47 → 19초</td></tr>
+    <tr><td>어딘가 조용히 어긋남</td><td><b>매시간 정합성 점검</b> → Discord</td><td>일부러 깨뜨린 예약 1건을 critical로 잡음</td></tr>
+  </table></div>
+  <h3>정합성 점검 10항목 (<code>loadtest/tools/check_booking.sh</code>)</h3>
+  <p>결제했는데 표 없음 · 표 있는데 결제 없음 · 판매 좌석과 예약 상태 어긋남 · 선점 좌석 어긋남 · 확정 예약 좌석 빠짐 · 안 풀린 선점 · 발행 안 된 이벤트 · 예매 완료 알림 빠짐 · 행동 로그 빠짐(선점·결제). 서버가 매시 41분 자동 실행 → Pushgateway → Grafana 경보.</p>
+  <div class="note n-info"><b>배운 것:</b> "건너뛴다"는 코드를 보면 <b>어디에 두는지</b>를 같이 본다. 둘 곳이 없으면 그건 건너뛰기가 아니라 버리기다. 그리고 장애 시험은 정지(stop)와 응답 없음(pause)을 둘 다 한다 — 실패 속도가 완전히 다르다.</div>
+</section>
+
+<!-- 13 -->
+<section id="s13">
+  <h2><span class="no">13</span>관측 · 부하 시험</h2>
+  <p class="lead">재지 않으면 고친 게 아니다</p>
+  <h3>지표 → 화면 → 경보</h3>
+  <div class="flow">
+    <div class="box b-app"><b>앱 /actuator/prometheus</b><small>요청 수·지연 히스토그램·커넥션 풀·우리 지표</small></div><span class="arr">→</span>
+    <div class="box"><b>Prometheus</b><small>15초마다 수집</small></div><span class="arr">→</span>
+    <div class="box"><b>Grafana · A-10</b><small>그래프 · 동그란 점이 흐르는 흐름도</small></div><span class="arr">→</span>
+    <div class="box"><b>Discord</b><small>경보 14개 (5xx, 지연, outbox 멈춤, 소비 밀림, 정합성…)</small></div>
+  </div>
+  <ul>
+    <li><b>A-10 트래픽 관제</b>: 서버가 고정된 PromQL만 실행 (화면이 아무 쿼리나 보내지 못하게). "지금" 값은 30초 창, 기준선은 24시간 중앙값.</li>
+    <li>흐름도의 Oracle 선은 "커넥션을 빌린 횟수"라 정기 작업도 포함 → 아무도 안 쓸 때 초당 약 10번은 정상.</li>
+    <li>카운터는 0으로 미리 만들어 둔다 — 1에서 처음 생기면 <code>increase()</code>가 첫 1건을 못 봐 경보가 안 울린다 (실제로 겪음).</li>
+  </ul>
+  <h3>k6 부하 시험</h3>
+  <div class="tbl"><table>
+    <tr><th>시나리오</th><th>무엇을 재나</th></tr>
+    <tr><td><code>journey</code> (11)</td><td>로그인 → 대기열 → 선점 → 결제 전체 흐름, 단계별 p95</td></tr>
+    <tr><td><code>capacity</code> (13)</td><td>단계별로 사용자를 늘려 버틴 최대 단계 찾기 (5xx·p95 기준)</td></tr>
+    <tr><td><code>race</code>·<code>idem</code>·<code>bypass</code>…</td><td>같은 좌석 경쟁, 멱등, 대기열 우회 등 동시성 검증</td></tr>
+  </table></div>
+  <div class="note n-warn"><b>측정 함정 (실제로 겪음):</b> 막 띄운 앱과 데운 앱을 섞어 비교하면 개선 폭이 <b>두 배로 부풀려진다</b> (JIT·커넥션 생성). 매번 같은 조건(DB 새로 + 1.5분 데우기)으로 재고, 기준선을 바로 옆에서 같이 잰다.</div>
+</section>
+
+<!-- 14 -->
+<section id="s14">
+  <h2><span class="no">14</span>배포 · 운영</h2>
+  <p class="lead">작은 팀이 서버 한 대로</p>
+  <ul>
+    <li><b>GCP VM 1대</b>: Oracle·MongoDB·Kafka·Redis·Prometheus·Grafana는 docker compose, 앱은 systemd(<code>jejari@8080</code>), 앞에 Caddy(HTTPS).</li>
+    <li><b>자동 배포</b>: 몇 분마다 main을 보고 CI가 성공한 커밋을 배포. DB 패치·compose·systemd 유닛·경보 규칙·sudoers가 바뀌면 <b>BLOCKED</b>로 멈추고 사람이 확인 (관리자 화면 A-08 "막힌 커밋 승인").</li>
+    <li>앱 1대 결정: CPU 4개 VM에서 앱 2대가 오히려 느렸다 (PERF-01).</li>
+    <li>종료는 서버 강제 종료 한도(40초) 안에: 단계별 대기 10초, 행동 로그는 디스크로.</li>
+    <li>타이머: 매시간 정합성 점검, 매시간 모델 점수, 매주 재학습, 매일 outbox 정리.</li>
+  </ul>
+  <h3>스키마 관리 — ERD 편집기가 원본</h3>
+  <ul>
+    <li>스키마는 <code>docs/erd/jejari-erd.html</code> 하나가 원본. 바꿀 때는 기존 패치를 고치지 않고 <b>새 패치(v33…)만 끝에 쌓는다</b> → 브라우저마다 저장된 스키마가 갈라지지 않음.</li>
+    <li><code>tools/check-erd.js</code>가 검사(FAIL 0) + Oracle DDL 생성. 절차(SQL 순서·Lua)는 <code>docs/concurrency.md</code>가 원본 — 원천을 두 개로 나눴다.</li>
+    <li>v1(33개 테이블) → 네 차례 팀 검토 → v8, 이후 팀 요청을 패치로 v32까지.</li>
+  </ul>
+</section>
+
+<!-- 15 -->
+<section id="s15">
+  <h2><span class="no">15</span>숫자로 보기</h2>
+  <p class="lead">발표·면접에서 바로 쓰는 실측값 (로컬 4코어, 서버 실측은 별도)</p>
+  <div class="kpis">
+    <div class="kpi"><div class="k">같은 좌석 100명 동시</div><div class="v">중복 0</div><div class="d">성공 1, 거절 99</div></div>
+    <div class="kpi"><div class="k">좌석 선점 DB 왕복</div><div class="v">101 → 1</div><div class="d">비관적 락 vs Redis 1차</div></div>
+    <div class="kpi"><div class="k">로그인 폭주 (해시 4개)</div><div class="v">200 → 800명</div><div class="d">5xx 24% → 0%</div></div>
+    <div class="kpi"><div class="k">커넥션 풀 10 → 20</div><div class="v">대기 9 → 0</div><div class="d">선점 p95 1.73 → 1.26초</div></div>
+    <div class="kpi"><div class="k">재시작 중 행동 로그</div><div class="v">70% → 0%</div><div class="d">유실 (디스크 버퍼)</div></div>
+    <div class="kpi"><div class="k">행동 로그 적재</div><div class="v">초당 2~2.8만</div><div class="d">평소 유입의 수백 배</div></div>
+    <div class="kpi"><div class="k">밀림 따라잡는 중 예매</div><div class="v">2.9배 → 1.3배</div><div class="d">적재 속도 상한 2,000/초</div></div>
+    <div class="kpi"><div class="k">아무도 안 쓸 때 DB 호출</div><div class="v">81.5 → 10.5/초</div><div class="d">outbox 릴레이 개선</div></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section id="s16">
+  <h2><span class="no">16</span>스스로 점검 — 면접 예상 질문</h2>
+  <p class="lead">먼저 답해 보고 펼쳐 보기</p>
+  <details><summary>Kafka의 파티션과 키는 왜 중요한가?</summary>
+    <p>Kafka는 파티션 안에서만 순서를 보장한다. 같은 예약의 이벤트(생성→확정→취소)는 순서가 중요해서 키를 reservation_id로 해 같은 파티션에 넣는다. 다른 예약은 다른 파티션에서 병렬로 처리된다 — 순서와 병렬을 같이 얻는다.</p></details>
+  <details><summary>DB에 저장하고 Kafka로 보내는데, 중간에 서버가 죽으면?</summary>
+    <p>이중 쓰기 문제. Outbox 패턴으로 이벤트를 예약과 같은 트랜잭션에서 outbox_event 테이블에 쓰고, 릴레이가 따로 Kafka로 보낸다. 둘 다 있거나 둘 다 없다. 릴레이가 보내고 표시하기 전에 죽으면 다시 보내는데, 소비 쪽 Inbox(processed_event)가 중복을 거른다.</p></details>
+  <details><summary>Kafka는 "정확히 한 번"을 보장하나?</summary>
+    <p>기본은 최소 한 번. 오프셋 커밋 전에 죽으면 다시 온다. 그래서 소비자를 멱등하게(processed_event PK, event_id 유니크) 만들어 사실상 한 번으로 만든다. 보내는 쪽은 멱등 프로듀서.</p></details>
+  <details><summary>같은 좌석을 두 명이 동시에 누르면?</summary>
+    <p>Redis Lua가 모든 구간 키를 원자적으로 한꺼번에 잡아 한 명만 통과시키고, 승자만 DB로 간다. DB의 PK가 최종 방어. 패배자는 DB에 가지 않아 DB 왕복이 101회에서 1회로 줄었다.</p></details>
+  <details><summary>왜 행동 로그는 Oracle이 아니라 MongoDB인가?</summary>
+    <p>양이 많고(요청마다), 모양이 이벤트마다 다르며(meta), 돈과 무관해 트랜잭션이 덜 중요하다. 예매 원본 DB(Oracle)에 부하를 섞지 않고, TTL로 180일 뒤 자동 삭제가 쉽다.</p></details>
+  <details><summary>소비자가 처리하지 못한 메시지는 어떻게 하나?</summary>
+    <p>재시도 후에도 안 되면 DLQ(&lt;토픽&gt;.DLT)에 원본 그대로 보관하고 다음 메시지로 넘어간다 (파티션이 막히지 않게). 원인을 고친 뒤 dlq.sh로 그 그룹에만 다시 넣는다. 깨진 메시지는 다시 넣어도 실패하므로 기본 제외.</p></details>
+  <details><summary>로그인이 몰리면 왜 다른 기능까지 멈췄나?</summary>
+    <p>Argon2id는 일부러 느리고 서버는 동시에 4개만 돌린다. 요청 스레드가 해시를 기다리며 다 묶여 대기열·조회까지 멈췄다. 해시만 별도 작업자 4개 + 대기 200칸에 가두고 넘치면 429 + Retry-After (벌크헤드) → 800명에서 5xx 0%.</p></details>
+  <details><summary>빅데이터 쪽 병목은 어디였나?</summary>
+    <p>적재 자체는 초당 2만 건 이상이라 평소엔 병목이 아니었다. 장애 뒤 밀린 것을 최대 속도로 따라잡을 때 CPU를 다 써서 예매가 3배 느려졌다. 커넥션 풀을 의심했지만 대기 0이라 아니었고, 따라잡는 속도에 상한을 걸어 1.3배로 줄였다.</p></details>
+  <details><summary>모델이 봇이라고 하면 바로 막나?</summary>
+    <p>아니다. 사람 오탐을 아직 충분히 재지 못했고, 틀리면 진짜 사람이 표를 못 산다. 관리자에게 보조 의견(근거·닮은 유형)만 보이고, 규칙 엔진 점수도 차단이 아니라 대기열 뒤로 미루기다.</p></details>
+  <details><summary>측정하면서 틀린 적은?</summary>
+    <p>커넥션 풀 비교에서 막 띄운 앱과 데운 앱을 섞어 개선 폭을 두 배로 부풀렸다. 같은 조건으로 다시 재서 25~30%로 고쳐 적었다. A-09 쿼리가 전체를 읽을 거라는 추정도 explain으로 재 보니 틀렸다 — 코드가 아니라 실행 계획으로 판단한다.</p></details>
+</section>
+
+<!-- 17 -->
+<section id="s17">
+  <h2><span class="no">17</span>용어 사전</h2>
+  <div class="tbl"><table>
+    <tr><th>용어</th><th>쉬운 뜻</th></tr>
+    <tr><td>원자적 (atomic)</td><td>중간에 다른 것이 끼어들 수 없이 한 번에</td></tr>
+    <tr><td>멱등 (idempotent)</td><td>여러 번 해도 결과가 한 번 한 것과 같음</td></tr>
+    <tr><td>트랜잭션</td><td>전부 되거나 전부 안 되는 작업 묶음</td></tr>
+    <tr><td>비관적 / 낙관적 락</td><td>먼저 잠그고 작업 / 작업 후 그새 바뀌었으면 실패</td></tr>
+    <tr><td>보상 (compensation)</td><td>앞 단계를 되돌리는 작업 (Redis 키 해제 등)</td></tr>
+    <tr><td>Saga</td><td>여러 단계 작업을 단계별 커밋 + 실패 시 보상으로 묶는 방식</td></tr>
+    <tr><td>Outbox / Inbox</td><td>보낼 이벤트를 DB에 같이 적기 / 받은 이벤트를 기록해 중복 거르기</td></tr>
+    <tr><td>DLQ</td><td>처리 못 한 메시지를 버리지 않고 따로 두는 곳</td></tr>
+    <tr><td>오프셋 / 컨슈머 랙(lag)</td><td>어디까지 읽었나 / 아직 못 읽은 양</td></tr>
+    <tr><td>TTL</td><td>지정 시간이 지나면 자동 삭제</td></tr>
+    <tr><td>함수 기반 인덱스</td><td>컬럼 값이 아니라 식의 결과로 만드는 인덱스 (NULL이면 안 들어감 → 필요한 행만)</td></tr>
+    <tr><td>p95</td><td>100번 중 95번은 이보다 빠름 (느린 꼬리를 보는 지표)</td></tr>
+    <tr><td>벌크헤드</td><td>한 기능의 과부하가 다른 기능으로 번지지 않게 자원을 나눠 가둠</td></tr>
+    <tr><td>회로 차단 (circuit breaker)</td><td>실패가 이어지면 잠시 부르지 않고 바로 다른 길로</td></tr>
+    <tr><td>HMAC</td><td>비밀 키를 넣은 해시 — 키 없이는 같은 값을 못 만듦</td></tr>
+    <tr><td>오탐</td><td>사람을 봇으로 잘못 판정</td></tr>
+  </table></div>
+  <p class="sub" style="margin-top:14px">더 깊이: <code>docs/concurrency.md</code>(절차 원본) · <code>docs/Jejari_ERD.md</code>(스키마) · <code>docs/강동균/features/</code>(기능 문서) · <code>docs/강동균/troubleshooting/</code>(문제와 해결)</p>
+</section>
+</main>
+</div>
+<button class="themebtn" type="button" id="themeBtn">테마 바꾸기</button>
+<script>
+(function(){
+  var KEY='jejari-study-theme', root=document.documentElement;
+  try{var t=localStorage.getItem(KEY); if(t) root.setAttribute('data-theme',t);}catch(e){}
+  document.getElementById('themeBtn').addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+    var next=cur==='dark'?'light':'dark'; root.setAttribute('data-theme',next);
+    try{localStorage.setItem(KEY,next);}catch(e){}
+  });
+  var links=[].slice.call(document.querySelectorAll('nav.toc a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'));});
+  function spy(){
+    var y=window.scrollY+120, idx=0;
+    secs.forEach(function(s,i){ if(s && s.offsetTop<=y) idx=i; });
+    links.forEach(function(a,i){ a.classList.toggle('on', i===idx); });
+  }
+  window.addEventListener('scroll',spy,{passive:true}); spy();
+})();
+</script>
+</body>
+</html>

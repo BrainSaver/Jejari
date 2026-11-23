@@ -88,13 +88,44 @@ public class ReplayAdminService {
 			events.add(d);
 		}
 		List<Map<String, Object>> server = new ArrayList<>();
-		for (Document d : mongo.getCollection("behavior_log").find(Filters.eq("session_id", sessionId))
+		for (Document d : mongo.getCollection("behavior_log").find(serverFilter(s, sessionId))
 				.projection(Projections.include("ts", "event_type", "response_status", "run_id"))
 				.sort(Sorts.ascending("ts")).limit(1000)) {
 			d.remove("_id");
 			server.add(d);
 		}
 		return new Replay(toSession(s), events, server, seatNames(events));
+	}
+
+	/** 세션 시작 전·끝난 뒤 여유 (앱 시계·녹화 시계 차이, 마지막 요청이 끝나는 시간) */
+	static final long SERVER_MARGIN_MS = 5 * 60_000L;
+
+	/**
+	 * 녹화 세션의 서버 기록(behavior_log)을 찾는 조건. behavior_log에는 session_id 인덱스가 없어 session_id만으로 찾으면
+	 * 컬렉션 전체를 읽는다 (2026-11-23 실측: 200만 건에서 문서 200만 개, 665ms. 보관 180일이면 그 몇 배).
+	 * 인덱스를 새로 만들면 모든 행동 로그 쓰기가 4~8% 느려지므로, 세션이 이미 아는 회원·기기와 시간 범위로 먼저 좁힌다
+	 * → ix_member_ts / ix_device_ts. 로그인 전 요청(회원 없음)도 기기로 잡히게 둘을 OR로.
+	 * 회원·기기를 모르는 세션만 예전처럼 session_id로 찾는다.
+	 */
+	static Bson serverFilter(Document session, String sessionId) {
+		Date started = session.getDate("started_at");
+		Date ended = session.getDate("ended_at");
+		List<Bson> who = new ArrayList<>();
+		if (started != null) {
+			Date from = new Date(started.getTime() - SERVER_MARGIN_MS);
+			Date to = new Date((ended != null ? ended.getTime() : System.currentTimeMillis()) + SERVER_MARGIN_MS);
+			if (session.get("member_id") instanceof Number m) {
+				who.add(Filters.and(Filters.eq("member_id", m.longValue()), Filters.gte("ts", from), Filters.lte("ts", to)));
+			}
+			if (session.getString("device_hash") != null) {
+				who.add(Filters.and(Filters.eq("device_hash", session.getString("device_hash")), Filters.gte("ts", from),
+						Filters.lte("ts", to)));
+			}
+		}
+		if (who.isEmpty()) {
+			return Filters.eq("session_id", sessionId);
+		}
+		return Filters.and(Filters.eq("session_id", sessionId), who.size() == 1 ? who.get(0) : Filters.or(who));
 	}
 
 	/** 녹화에 나온 seat-{좌석 ID} → "N호차 좌석번호". 좌석 표(seat)는 운영 데이터라 개인정보가 아니다 */

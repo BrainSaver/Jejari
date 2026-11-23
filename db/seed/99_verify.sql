@@ -87,8 +87,10 @@ SELECT item, CASE WHEN ok = 1 THEN 'OK' ELSE 'FAIL' END AS pass, detail
       ON g.from_station_id = f.from_station_id AND g.to_station_id = f.to_station_id
      AND f.seat_grade = 'FIRST' AND g.seat_grade = 'GENERAL' AND f.amount <= g.amount
   UNION ALL
+  -- 시드가 넣는 7건만 센다 (4~7 행사 2 전용, 8~10 상시). 관리자 화면에서 행사를 만들면
+  -- 전용 정책이 100번대로 생기므로 ">= 4"로 보면 늘어난다 (2026-11-23에 실제로 FAIL)
   SELECT '18. 매수 제한: 행사 4 + 상시 3',     CASE WHEN COUNT(*) = 7   THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
-    FROM purchase_limit_policy WHERE policy_id >= 4
+    FROM purchase_limit_policy WHERE policy_id BETWEEN 4 AND 10
   UNION ALL
   SELECT '19. 지금 유효한 PER_RUN 정책 있음',  CASE WHEN COUNT(*) >= 1  THEN 1 ELSE 0 END,      '실제 ' || COUNT(*)
     FROM purchase_limit_policy

@@ -4,6 +4,7 @@ import { get } from '../api/client.js';
 import { usePolling } from '../hooks/usePolling.js';
 import { Who } from './AdminLayout.jsx';
 import RequestLog from './RequestLog.jsx';
+import { BY } from './ModelOpinion.jsx';
 import { ErrorBox } from './ui.jsx';
 
 /**
@@ -13,6 +14,8 @@ import { ErrorBox } from './ui.jsx';
  *  - 점수는 1분 배치(RISK-04)가 risk_score에 쓴 값. 언제 계산했는지(calculatedAt)를 같이 보여 준다
  *  - 묶음 키(대상)는 CI·결제수단·기기의 HMAC 해시. 개인정보는 서버가 가린 값만 내려온다 (해제는 A-06에서 사유를 남기고)
  *  - 근거 마커는 탐지 규칙 코드 그대로 (MULTI_ACCOUNT_SYNC, FAST_CLICK …)
+ *  - 모델 의견(RISK-05): 대상에 묶인 계정 중 가장 높은 모델 점수. 보조 의견이라 필터·정렬은 규칙 점수로만.
+ *    숨김 설정(jejari.model.show=false)·사용 중인 모델 없음이면 칸을 빼고 이유만 한 줄
  */
 const TYPE = { CI: 'CI', PAYMENT: '결제수단', DEVICE: '기기' };
 const REVIEW = { NONE: ['', '검토 전'], PENDING: ['amber', '검토 중'], CONFIRMED: ['stop', '확정'], CLEARED: ['go', '해제'] };
@@ -31,6 +34,9 @@ export default function Risk() {
     setPage(0);
     setF({ ...f, [k]: e.target.value });
   };
+
+  const model = data?.model;
+  const cols = model?.shown ? 8 : 7;
 
   return (
     <>
@@ -74,9 +80,16 @@ export default function Risk() {
             이 조건에 맞는 대상이 없어요.{f.minScore ? ` ${f.minScore}점 이상이 없으면 점수 필터를 낮춰 보세요.` : ' 필터를 바꿔 보세요.'}
           </p>
         )}
+        {model && !model.shown && <p className="faint" style={{ fontSize: 13 }}>모델 의견 칸 없음: {model.reason}</p>}
         <table>
           <thead>
-            <tr><th>대상</th><th>점수</th><th>근거</th><th className="n">연결 계정</th><th>검토</th><th>케이스</th><th>계산 시각</th></tr>
+            <tr>
+              <th>대상</th><th>점수</th><th>근거</th>
+              {model?.shown && (
+                <th title={`${model.modelVersion} · 문턱 ${model.threshold} 이상이면 봇 쪽 · 판정 참고용, 순번·제한에는 안 씀`}>모델 의견</th>
+              )}
+              <th className="n">연결 계정</th><th>검토</th><th>케이스</th><th>계산 시각</th>
+            </tr>
           </thead>
           <tbody>
             {(data?.items || []).map((r) => {
@@ -93,6 +106,7 @@ export default function Risk() {
                     <span className="meter"><i style={{ width: `${Math.min(100, s)}%`, background: s >= 80 ? 'var(--stop)' : 'var(--amber)' }} /></span>
                   </td>
                   <td>{(r.markers || []).map((m) => <span key={m} className="st plain stop" style={{ marginRight: 4 }}>{m}</span>)}</td>
+                  {model?.shown && <td><ModelCell m={r.model} linked={r.linkedAccounts} /></td>}
                   <td className="n">{r.linkedAccounts}</td>
                   <td><span className={'st ' + rc}>{rl}</span></td>
                   <td>
@@ -106,7 +120,7 @@ export default function Risk() {
                 </tr>
               );
             })}
-            {data && !data.items.length && <tr><td colSpan={7} className="mut">이 조건의 위험 대상이 없어요.</td></tr>}
+            {data && !data.items.length && <tr><td colSpan={cols} className="mut">이 조건의 위험 대상이 없어요.</td></tr>}
           </tbody>
         </table>
         {(page > 0 || data?.hasNext) && (
@@ -119,6 +133,20 @@ export default function Risk() {
       </section>
       <RequestLog filter={(r) => r.path.includes('/admin/risks')} rows={5} />
     </>
+  );
+}
+
+/** 대상에 묶인 계정 중 가장 높은 모델 점수. 규칙 점수와 다르게 볼 때 눈에 띄게 (봇 쪽이면 빨강) */
+function ModelCell({ m, linked }) {
+  if (!m) return <span className="faint" title="연결 계정에 모델 점수가 아직 없어요">—</span>;
+  const part = m.scoredAccounts < linked ? ` · ${m.scoredAccounts}/${linked}계정` : '';
+  return (
+    <span title={`가장 높게 본 모델: ${BY[m.by] || m.by || '—'}${part}`}>
+      <span className={'st plain ' + (m.overThreshold ? 'stop' : 'go')}>
+        {Math.round(m.score)} {m.overThreshold ? '봇 쪽' : '사람 쪽'}
+      </span>
+      {part && <span className="faint" style={{ fontSize: 12 }}>{part}</span>}
+    </span>
   );
 }
 

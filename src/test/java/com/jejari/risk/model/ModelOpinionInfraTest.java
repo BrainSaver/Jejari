@@ -120,6 +120,56 @@ class ModelOpinionInfraTest {
 				.andExpect(status().isNotFound());
 	}
 
+	/** A-05 목록: 대상(CI)에 묶인 계정 중 가장 높은 점수 하나. 사용 중인 모델이 없으면 칸 대신 이유 */
+	@Test
+	void 위험_사용자_목록에_대상의_가장_높은_모델_점수() throws Exception {
+		String ci = String.format("%064x", NEXT.get() + 11);
+		String none = String.format("%064x", NEXT.get() + 12); // 점수 있는 계정 없음
+		long a = member(ci);
+		long b = member(ci);
+		member(ci); // 점수 없음
+		member(none);
+		long stranger = member(String.format("%064x", 2L));
+		score(a, 42.0, "GBM", List.of("느림"));
+		score(b, 95.5, "GRU", List.of("행동 순서가 학습한 봇과 닮음(GRU)"));
+		score(stranger, 99.9, "GBM", List.of("남의 점수"));
+		// 다른 버전 점수는 안 섞임
+		mongo.getCollection("model_score").insertOne(new Document("member_id", a).append("model_version", VERSION + "-old")
+				.append("score", 100.0).append("by", "IF"));
+		for (String h : List.of(ci, none)) {
+			jdbc.update("""
+					INSERT INTO risk_score (subject_type, subject_hash, final_score, rule_score, reasons, linked_account_cnt,
+					  calculated_at, review_status) VALUES ('CI', ?, 63.17, 63.17, '[]', 3, SYSTIMESTAMP, 'NONE')""", h);
+		}
+		String url = "/api/v1/admin/risks?minScore=63.17&maxScore=63.17&type=CI&size=100";
+		try {
+			mvc.perform(get(url).header("Authorization", admin())).andExpect(status().isOk())
+					.andExpect(jsonPath("$.model.shown").value(false))
+					.andExpect(jsonPath("$.model.reason").exists())
+					.andExpect(jsonPath("$.items[?(@.subjectHash == '" + ci + "')].model").value(org.hamcrest.Matchers.contains(
+							org.hamcrest.Matchers.nullValue())));
+
+			jdbc.update("UPDATE model_run SET is_active = 'Y' WHERE model_version = ?", VERSION);
+			mvc.perform(get(url).header("Authorization", admin())).andExpect(status().isOk())
+					.andExpect(jsonPath("$.model.shown").value(true))
+					.andExpect(jsonPath("$.model.modelVersion").value(VERSION))
+					.andExpect(jsonPath("$.model.threshold").value(90))
+					.andExpect(jsonPath("$.items[?(@.subjectHash == '" + ci + "')].model.score").value(
+							org.hamcrest.Matchers.contains(95.5)))
+					.andExpect(jsonPath("$.items[?(@.subjectHash == '" + ci + "')].model.overThreshold").value(
+							org.hamcrest.Matchers.contains(true)))
+					.andExpect(jsonPath("$.items[?(@.subjectHash == '" + ci + "')].model.by").value(
+							org.hamcrest.Matchers.contains("GRU")))
+					.andExpect(jsonPath("$.items[?(@.subjectHash == '" + ci + "')].model.scoredAccounts").value(
+							org.hamcrest.Matchers.contains(2)))
+					.andExpect(jsonPath("$.items[?(@.subjectHash == '" + none + "')].model").value(
+							org.hamcrest.Matchers.contains(org.hamcrest.Matchers.nullValue())));
+		} finally {
+			mongo.getCollection("model_score").deleteMany(new Document("model_version", VERSION + "-old"));
+			jdbc.update("DELETE FROM risk_score WHERE subject_hash IN (?, ?)", ci, none);
+		}
+	}
+
 	void score(long memberId, double score, String by, List<String> reasons) {
 		mongo.getCollection("model_score").insertOne(new Document("member_id", memberId).append("model_version", VERSION)
 				.append("score", score).append("by", by).append("scores", Map.of("gbm", score))

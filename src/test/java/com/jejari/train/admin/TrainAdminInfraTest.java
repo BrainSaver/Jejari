@@ -73,18 +73,76 @@ class TrainAdminInfraTest {
 		clean();
 	}
 
+	/**
+	 * 테스트가 만든 기준 데이터를 지운다.
+	 *
+	 * <p><b>달린 것이 있으면 건드리지 않는다.</b> 번호 대역만 보고 지우면 두 가지가 터진다 —
+	 * 관리자 화면(ADM-01·02)으로 만든 운행에 예약이 달려 있으면 FK(ORA-02292)에 걸려 이 클래스가
+	 * 통째로 깨지고(2026-11-23에 실제로 그랬다. 로컬 DB에 11-19에 만든 운행 1000000이 좌석 48·예약 30과
+	 * 함께 남아 있었다), FK가 없는 쪽에서는 <b>남의 데이터가 조용히 지워진다</b>. 화면으로 운행을
+	 * 만드는 것은 정상적인 사용법이라 테스트가 그것을 밀어 버리면 안 된다.
+	 *
+	 * <p>테스트가 만든 행은 예약이 달릴 일이 없으므로 항상 지워진다 — 건너뛰는 것은 남의 것뿐이다.
+	 */
 	void clean() {
-		jdbc.update("DELETE FROM train_stop WHERE run_id >= ?", RunAdminService.RUN_ID_BASE);
-		jdbc.update("DELETE FROM train_run WHERE run_id >= ?", RunAdminService.RUN_ID_BASE);
+		jdbc.update("""
+				DELETE FROM train_stop
+				 WHERE run_id >= ?
+				   AND NOT EXISTS (SELECT 1 FROM reservation    d WHERE d.run_id = train_stop.run_id)
+				   AND NOT EXISTS (SELECT 1 FROM seat_inventory d WHERE d.run_id = train_stop.run_id)
+				   AND NOT EXISTS (SELECT 1 FROM waitlist       d WHERE d.run_id = train_stop.run_id)""",
+				RunAdminService.RUN_ID_BASE);
+		jdbc.update("""
+				DELETE FROM train_run
+				 WHERE run_id >= ?
+				   AND NOT EXISTS (SELECT 1 FROM reservation    d WHERE d.run_id = train_run.run_id)
+				   AND NOT EXISTS (SELECT 1 FROM seat_inventory d WHERE d.run_id = train_run.run_id)
+				   AND NOT EXISTS (SELECT 1 FROM waitlist       d WHERE d.run_id = train_run.run_id)""",
+				RunAdminService.RUN_ID_BASE);
 		jdbc.update("DELETE FROM purchase_limit_policy WHERE policy_id >= ?", RunAdminService.POLICY_ID_BASE);
-		jdbc.update("DELETE FROM sale_event WHERE sale_event_id >= ?", RunAdminService.EVENT_ID_BASE);
-		jdbc.update("DELETE FROM seat WHERE train_id >= ?", MasterDataService.TRAIN_ID_BASE);
-		jdbc.update("DELETE FROM train_car WHERE train_id >= ?", MasterDataService.TRAIN_ID_BASE);
-		jdbc.update("DELETE FROM train WHERE train_id >= ?", MasterDataService.TRAIN_ID_BASE);
-		jdbc.update("DELETE FROM route_station WHERE route_id >= ?", MasterDataService.ROUTE_ID_BASE);
-		jdbc.update("DELETE FROM route WHERE route_id >= ?", MasterDataService.ROUTE_ID_BASE);
-		jdbc.update("DELETE FROM car_type WHERE car_type_code LIKE 'TST%'");
-		jdbc.update("DELETE FROM station WHERE station_id LIKE 'TST%'");
+		// 아래는 모두 같은 이유다: 위에서 못 지운 운행·좌석이 가리키고 있으면 두고 간다
+		jdbc.update("""
+				DELETE FROM sale_event
+				 WHERE sale_event_id >= ?
+				   AND NOT EXISTS (SELECT 1 FROM train_run r WHERE r.sale_event_id = sale_event.sale_event_id)""",
+				RunAdminService.EVENT_ID_BASE);
+		jdbc.update("""
+				DELETE FROM seat
+				 WHERE train_id >= ?
+				   AND NOT EXISTS (SELECT 1 FROM seat_inventory d WHERE d.seat_id = seat.seat_id)""",
+				MasterDataService.TRAIN_ID_BASE);
+		jdbc.update("""
+				DELETE FROM train_car
+				 WHERE train_id >= ?
+				   AND NOT EXISTS (SELECT 1 FROM seat s WHERE s.train_id = train_car.train_id
+				                                          AND s.car_no = train_car.car_no)""",
+				MasterDataService.TRAIN_ID_BASE);
+		jdbc.update("""
+				DELETE FROM train
+				 WHERE train_id >= ?
+				   AND NOT EXISTS (SELECT 1 FROM train_run r WHERE r.train_id = train.train_id)
+				   AND NOT EXISTS (SELECT 1 FROM train_car c WHERE c.train_id = train.train_id)""",
+				MasterDataService.TRAIN_ID_BASE);
+		jdbc.update("""
+				DELETE FROM route_station
+				 WHERE route_id >= ?
+				   AND NOT EXISTS (SELECT 1 FROM train t WHERE t.route_id = route_station.route_id)""",
+				MasterDataService.ROUTE_ID_BASE);
+		jdbc.update("""
+				DELETE FROM route
+				 WHERE route_id >= ?
+				   AND NOT EXISTS (SELECT 1 FROM train t WHERE t.route_id = route.route_id)
+				   AND NOT EXISTS (SELECT 1 FROM route_station s WHERE s.route_id = route.route_id)""",
+				MasterDataService.ROUTE_ID_BASE);
+		jdbc.update("""
+				DELETE FROM car_type
+				 WHERE car_type_code LIKE 'TST%'
+				   AND NOT EXISTS (SELECT 1 FROM train_car c WHERE c.car_type_code = car_type.car_type_code)""");
+		jdbc.update("""
+				DELETE FROM station
+				 WHERE station_id LIKE 'TST%'
+				   AND NOT EXISTS (SELECT 1 FROM route_station s WHERE s.station_id = station.station_id)
+				   AND NOT EXISTS (SELECT 1 FROM train_stop p WHERE p.station_id = station.station_id)""");
 	}
 
 	// ------------------------------------------------------------ 권한

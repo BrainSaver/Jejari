@@ -45,7 +45,11 @@ import tools.jackson.databind.json.JsonMapper;
 		"jejari.risk.cache-resync-enabled=false",
 		"jejari.risk.batch-enabled=false",
 		"jejari.seat.expiry-scanner-enabled=false",
-		"jejari.train.sale-open-scheduler-enabled=false"})
+		"jejari.train.sale-open-scheduler-enabled=false",
+		// 결제 재확인 스캐너도 꺼야 한다. "결과 모름" 테스트가 next_check_at이 지난 REQUESTED를
+		// 넣고 세는데, 스캐너가 기본 켜짐(matchIfMissing=true)이라 조회보다 먼저 집어가면 0이 된다.
+		// 단독 실행에서는 운 좋게 통과하고 전체 실행에서만 깨져서 찾기 어려웠다 (2026-11-23)
+		"jejari.payment.recheck-scanner-enabled=false"})
 @AutoConfigureMockMvc
 class AdminDashboardInfraTest {
 
