@@ -1,0 +1,307 @@
+#!/usr/bin/env node
+// 연습 봇 30종 + 합성 사람 — 규칙·모델 보강용 "연습 상대" (2026-11-23 강동균)
+//
+// 대회 봇(botb·botc)은 2차(11-26) 채점용으로 손대지 않고 남겨 둔다. 보강은 이 연습 봇으로 하고,
+// 2차에서 대회 봇으로 처음 시험한다 (시험 문제를 보고 푸는 것을 막으려고).
+// 수법은 botb·botc 코드를 보지 않고, 실제 예매 매크로가 흔히 하는 짓에서 골랐다.
+//
+//   node loadtest/contest/practice/run.mjs                 # 전부 (가입 → 구매)
+//   PROFILES=botfast,botsteady HUMANS=0 node …            # 일부만
+//   MODE=signup | buy | all (기본 all)
+//
+// 앱은 신뢰 프록시 모드로: --jejari.auth.trusted-proxies=127.0.0.1,0:0:0:0:0:0:0:1 (프로필마다 다른 IP를 X-Forwarded-For로 보냄.
+//   안 그러면 30종이 한 IP에서 가입해 IP당 가입 제한에 전부 막힘 — 그 자체가 방어가 동작한 것)
+// 환경 변수: BASE_URL(기본 http://localhost:8080) · RUN_ID(필수) · TAG(필수, 영문 소문자·숫자 7자)
+//            ACCOUNTS(프로필당 명의, 기본 3, 최대 6) · HUMANS(합성 사람 수, 기본 12) · FROM · TO (기본 서울 → 부산)
+// 평가: loadtest/tools/eval_contest.sh <TAG> <RUN_ID>  (종류 이름이 그대로 봇 이름. human = 합성 사람)
+//
+// 주의: "합성 사람"은 사람처럼 쉬고 둘러보게 만든 스크립트다. 진짜 사람의 오탐은 대회의 사람 참가자로만 잴 수 있다.
+
+import crypto from 'node:crypto';
+
+const BASE = process.env.BASE_URL || 'http://localhost:8080';
+const RUN_ID = Number(process.env.RUN_ID);
+const TAG = process.env.TAG || '';
+const MODE = process.env.MODE || 'all';
+const ACCOUNTS = Math.min(6, Math.max(1, Number(process.env.ACCOUNTS || 3)));
+const HUMANS = Math.max(0, Number(process.env.HUMANS ?? 12));
+const FROM = process.env.FROM || '3900023';
+const TO = process.env.TO || '3900114';
+const DOMAIN = 'loadtest.example.com';
+if (!RUN_ID || !/^[a-z0-9]{1,7}$/.test(TAG)) {
+  console.error('RUN_ID와 TAG(영문 소문자·숫자 7자 이내)가 필요합니다');
+  process.exit(2);
+}
+
+// ── 시간 ───────────────────────────────────────────────────
+const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
+const rand = (a, b) => a + Math.random() * (b - a);
+const logn = (medMs, sigma) => medMs * Math.exp(sigma * gauss()); // 사람 반응 시간은 로그정규에 가깝다
+function gauss() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+const T = {
+  none: () => 0,
+  jitter: () => rand(50, 150),
+  steady1: () => 1000,
+  steady3: () => 3000,
+  human: () => Math.min(20000, logn(2500, 0.6)),
+  quick: () => rand(150, 400),
+};
+
+// ── 프로필 30종 ─────────────────────────────────────────────
+// family: 어떤 성질로 사람과 다른가 (보강 규칙을 "봇 하나"가 아니라 "성질"에 맞추려고)
+const P = (kind, family, desc, o = {}) => ({
+  kind, family, desc,
+  think: T.quick, searches: 1, seatMap: true, mapPolls: 0, party: 2, pick: 'random', retrySame: 0, pay: true,
+  cancelAfterPayMs: null, holdNoPay: false, holdCancelLoops: 0, start: 'sync', device: 'own', card: 'own',
+  sameCi: false, queueSpam: 0, ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0 Safari/537.36',
+  runHop: 0, limitProbe: false, burst: false, ...o,
+});
+const PROFILES = [
+  // 속도
+  P('botfast', '속도', '쉬지 않고 연달아', { think: T.none, party: 4, pick: 'front' }),
+  P('botjitter', '속도', '50~150ms 무작위로 쉼 (사람처럼 보이려는 흔들기)', { think: T.jitter }),
+  P('botsteady', '일정 간격', '정확히 1초 간격', { think: T.steady1 }),
+  P('botslow', '일정 간격', '정확히 3초 간격 (느리지만 기계적)', { think: T.steady3 }),
+  P('botburst', '속도', '오래 쉬었다 한꺼번에 몰아침', { think: T.none, burst: true }),
+  // 화면 흐름 건너뛰기
+  P('botnosearch', '흐름 건너뜀', '조회 없이 대기열로 바로', { searches: 0 }),
+  P('botnomap', '흐름 건너뜀', '좌석표를 안 보고 좌석 번호를 찍어서 선점', { seatMap: false }),
+  P('botpollmap', '흐름 건너뜀', '좌석표를 0.2초마다 20번 새로 받고 선점', { mapPolls: 20, think: T.none }),
+  P('botdirect', '흐름 건너뜀', '조회·좌석표 없이 입장하자마자 선점', { searches: 0, seatMap: false, think: T.none }),
+  // 좌석 다루기
+  P('bothammer', '같은 좌석 반복', '뺏긴 좌석을 15번 다시 시도', { retrySame: 15, pick: 'front', think: T.none }),
+  P('botspray', '좌석 흩뿌리기', '1석씩 여러 번 선점', { party: 1, think: T.jitter }),
+  P('botsniper', '좌석 집착', '맨 앞 좌석만 노림', { pick: 'front', retrySame: 5 }),
+  P('botbigparty', '대량', '항상 4석 붙여서', { party: 4 }),
+  P('bothoarder', '선점만', '선점하고 결제 안 함 (좌석 묶어 두기)', { holdNoPay: true }),
+  P('botholdloop', '선점만', '선점 → 결제 전 취소 → 다시 선점을 3번', { holdCancelLoops: 3 }),
+  // 여러 계정
+  P('botsync', '다계정', '명의들이 같은 순간에', { start: 'sync', think: T.none }),
+  P('botstagger', '다계정', '명의들이 20~40초씩 간격을 두고', { start: 'stagger' }),
+  P('botshareddev', '다계정', '명의들이 기기 하나를 같이 씀', { device: 'shared' }),
+  P('botrotdev', '기기 위장', '요청마다 기기 ID를 바꿈', { device: 'rotate' }),
+  P('botnodev', '기기 위장', '기기 ID를 안 보냄', { device: 'none' }),
+  P('botsharedcard', '다계정', '명의들이 카드 하나를 같이 씀', { card: 'shared' }),
+  P('botsameci', '다계정', '한 명의(CI)로 계정 여러 개', { sameCi: true }),
+  // 되팔기·한도
+  P('botresell', '되팔기', '결제하고 1~2분 뒤 취소', { cancelAfterPayMs: [60000, 120000] }),
+  P('botlimit', '한도 탐색', '4석부터 매수 제한에 걸릴 때까지 줄여 가며', { party: 4, limitProbe: true }),
+  // 대기열·운행
+  P('botqueuespam', '대기열 남용', '대기열을 5번 들어갔다 나갔다', { queueSpam: 5 }),
+  P('botrunhop', '대기열 남용', '다른 운행 대기열에 들렀다가', { runHop: 2 }),
+  // 위장
+  P('botua', '기기 위장', '스크립트 티가 나는 User-Agent', { ua: 'python-requests/2.31' }),
+  P('botmimic', '사람 흉내', '사람처럼 쉬고 둘러봄 (날짜 여러 개 조회, 1~5초 생각)', { think: T.human, searches: 3 }),
+  P('botmimicfast', '사람 흉내', '둘러보기는 사람처럼, 좌석 선점 순간만 빠르게', { think: T.human, searches: 3, burst: true }),
+  P('botlate', '사람 흉내', '판매 열리고 1분 뒤 천천히', { think: T.human, start: 'late' }),
+];
+const HUMAN = P('human', '합성 사람', '사람처럼 둘러보고 쉬고, 가끔 실패하면 다른 좌석', { think: T.human, searches: 2 });
+
+// ── HTTP ───────────────────────────────────────────────────
+async function call(ctx, method, path, body, extra = {}) {
+  const headers = { 'Content-Type': 'application/json', 'User-Agent': ctx.ua, ...extra };
+  if (ctx.token) headers.Authorization = `Bearer ${ctx.token}`;
+  const dev = ctx.deviceFor();
+  if (dev) headers['X-Device-Id'] = dev;
+  if (ctx.ip) headers['X-Forwarded-For'] = ctx.ip;
+  const res = await fetch(BASE + path, { method, headers, body: body == null ? undefined : JSON.stringify(body) });
+  let data = null;
+  try { data = await res.json(); } catch { /* 본문 없음 */ }
+  return { status: res.status, data };
+}
+
+function identity(kind, n, sameCi) {
+  const seed = crypto.createHash('sha256').update(`${TAG}.${kind}.${sameCi ? 1 : n}`).digest();
+  const digits = [...seed].map((b) => b % 10).join('').slice(0, 7);
+  const phone = `010${digits}1`; // 끝자리 1 (모의 본인인증의 실패 번호 …0000 피하기)
+  const name = '연습' + [...digits.slice(0, 3)].map((d) => '가나다라마바사아자차'[Number(d)]).join('');
+  const group = kind === 'human' ? n : 1;
+  return { name, phone, email: `lt${TAG}.${kind}.g${group}.${n}@${DOMAIN}`, password: `Pr4c!${TAG}#${kind.length}x${n}Qz` };
+}
+
+function fakeIp(key) {
+  const b = crypto.createHash('sha256').update(`${TAG}.${key}`).digest();
+  return `10.${b[0]}.${b[1]}.${1 + (b[2] % 250)}`;
+}
+
+function makeCtx(p, n) {
+  const ownDev = crypto.randomBytes(12).toString('hex');
+  const shared = crypto.createHash('sha256').update(`${TAG}.${p.kind}.dev`).digest('hex').slice(0, 24);
+  return {
+    p, n, ua: p.ua, token: null, id: identity(p.kind, n, p.sameCi), seats: 0, errors: [],
+    // IP: 봇은 프로필마다 하나(프록시 하나를 쓰는 운영자), 합성 사람은 사람마다 하나. 앱이 신뢰 프록시 모드일 때만 의미 있음
+    ip: fakeIp(p.kind === 'human' ? `${p.kind}.${n}` : p.kind),
+    card: p.card === 'shared' ? '4111222233334441' : `41112222${String(1000 + n * 97).slice(-4)}${String(n % 9)}1`.slice(0, 16),
+    deviceFor() {
+      if (p.device === 'none') return null;
+      if (p.device === 'shared') return shared;
+      if (p.device === 'rotate') return crypto.randomBytes(12).toString('hex');
+      return ownDev;
+    },
+  };
+}
+
+// ── 단계 ───────────────────────────────────────────────────
+async function signupOne(ctx) {
+  const v = await call(ctx, 'POST', '/api/v1/auth/verify', { name: ctx.id.name, phone: ctx.id.phone, provider: 'MOCK_PASS' });
+  if (v.status !== 200) throw new Error(`본인인증 ${v.status} ${v.data?.code || ''}`);
+  const s = await call(ctx, 'POST', '/api/v1/auth/signup', { verificationToken: v.data.verificationToken, email: ctx.id.email, password: ctx.id.password });
+  if (s.status !== 201 && s.status !== 200 && s.data?.code !== 'AUTH_EMAIL_DUPLICATED') throw new Error(`가입 ${s.status} ${s.data?.code || ''}`);
+}
+
+async function login(ctx) {
+  for (let i = 0; i < 20; i++) {
+    const r = await call(ctx, 'POST', '/api/v1/auth/login', { email: ctx.id.email, password: ctx.id.password });
+    if (r.status === 200) { ctx.token = r.data.accessToken; return; }
+    if (r.status === 429) { await sleep(1000 * Number(r.data?.retryAfterSec || 2)); continue; }
+    throw new Error(`로그인 ${r.status} ${r.data?.code || ''}`);
+  }
+  throw new Error('로그인 대기 초과');
+}
+
+async function searchStep(ctx, runDate) {
+  const p = ctx.p;
+  for (let i = 0; i < p.searches; i++) {
+    const d = i === p.searches - 1 ? runDate : shiftDate(runDate, i - p.searches + 1);
+    await call(ctx, 'GET', `/api/v1/runs?from=${FROM}&to=${TO}&date=${d}`);
+    await sleep(p.think());
+  }
+}
+
+async function queueAdmit(ctx, runId) {
+  const r = await call(ctx, 'POST', `/api/v1/runs/${runId}/queue`);
+  if (r.status !== 200) throw new Error(`대기열 ${r.status} ${r.data?.code || ''}`);
+  let s = r.data;
+  const until = Date.now() + 180000;
+  while (s?.state === 'WAITING' && Date.now() < until) {
+    await sleep(1000 * Math.max(0.3, Number(s.pollIntervalSec) || 1));
+    s = (await call(ctx, 'GET', `/api/v1/runs/${runId}/queue/me`)).data;
+  }
+  if (s?.state !== 'ADMITTED') throw new Error('대기열 입장 실패');
+  return s.passToken;
+}
+
+async function seatMap(ctx, pass) {
+  const r = await call(ctx, 'GET', `/api/v1/runs/${RUN_ID}/seats?from=${FROM}&to=${TO}`, null, { 'X-Queue-Token': pass });
+  if (r.status !== 200) return [];
+  return (r.data?.cars || []).flatMap((c) => (c.seats || []).filter((s) => s.state === 'EMPTY').map((s) => s.seatId));
+}
+
+function choose(ctx, empty, k) {
+  if (!empty.length) return [];
+  if (ctx.p.pick === 'front') return empty.slice(0, k);
+  const start = Math.floor(Math.random() * Math.max(1, empty.length - k));
+  return ctx.p.party > 1 && k > 1 ? empty.slice(start, start + k) : [empty[Math.floor(Math.random() * empty.length)]];
+}
+
+async function hold(ctx, pass, seatIds) {
+  return call(ctx, 'POST', '/api/v1/reservations',
+    { runId: RUN_ID, fromStationId: FROM, toStationId: TO, seats: seatIds.map((seatId) => ({ seatId, passengerType: 'ADULT' })), channel: 'WEB' },
+    { 'X-Queue-Token': pass, 'Idempotency-Key': crypto.randomUUID() });
+}
+const pay = (ctx, id) => call(ctx, 'POST', `/api/v1/reservations/${id}/payments`, { cardNumber: ctx.card }, { 'Idempotency-Key': crypto.randomUUID() });
+const cancel = (ctx, id) => call(ctx, 'POST', `/api/v1/reservations/${id}/cancel`);
+
+async function buyOne(ctx, runDate) {
+  const p = ctx.p;
+  await login(ctx);
+  if (p.burst) await sleep(rand(5000, 15000));
+  await searchStep(ctx, runDate);
+  for (let i = 0; i < p.runHop; i++) {
+    try { await queueAdmit(ctx, RUN_ID + 2 * (i + 1)); } catch { /* 다른 운행은 실패해도 됨 */ }
+    await call(ctx, 'DELETE', `/api/v1/runs/${RUN_ID + 2 * (i + 1)}/queue/me`);
+  }
+  for (let i = 0; i < p.queueSpam; i++) {
+    await call(ctx, 'POST', `/api/v1/runs/${RUN_ID}/queue`);
+    await sleep(p.think());
+    await call(ctx, 'DELETE', `/api/v1/runs/${RUN_ID}/queue/me`);
+  }
+  const pass = await queueAdmit(ctx, RUN_ID);
+  const burstThink = p.burst ? T.none : p.think;
+  let empty = [];
+  if (p.seatMap) {
+    empty = await seatMap(ctx, pass);
+    for (let i = 0; i < p.mapPolls; i++) { await sleep(200); empty = await seatMap(ctx, pass); }
+  } else {
+    // 좌석표를 안 보고 번호를 찍는다: 한 번만 몰래 받아 두고 그 뒤로는 안 봄 (번호 규칙을 아는 매크로 흉내)
+    empty = await seatMap(ctx, pass);
+  }
+  await sleep(burstThink());
+
+  let k = p.party;
+  let loops = Math.max(1, p.holdCancelLoops + 1);
+  for (let attempt = 0; attempt < 30 && loops > 0; attempt++) {
+    const seats = choose(ctx, empty, k);
+    if (!seats.length) break;
+    const h = await hold(ctx, pass, seats);
+    if (h.status === 201 || h.status === 200) {
+      const rid = h.data?.reservationId;
+      if (p.holdNoPay) { ctx.seats += 0; loops = 0; break; }
+      if (p.holdCancelLoops && loops > 1) { await sleep(burstThink()); await cancel(ctx, rid); loops--; empty = await seatMap(ctx, pass); continue; }
+      await sleep(burstThink());
+      const r = await pay(ctx, rid);
+      if (r.status === 200 || r.status === 201) {
+        ctx.seats += seats.length;
+        if (p.cancelAfterPayMs) { await sleep(rand(...p.cancelAfterPayMs)); await cancel(ctx, rid); }
+      } else ctx.errors.push(`결제 ${r.status} ${r.data?.code || ''}`);
+      loops--;
+      if (ctx.p.party === 1 && attempt < 3) { loops = 1; empty = await seatMap(ctx, pass); } // 흩뿌리기: 1석씩 몇 번 더
+      continue;
+    }
+    const code = h.data?.code || '';
+    if (code.startsWith('LIMIT') || code.includes('LIMIT')) {
+      if (p.limitProbe && k > 1) { k--; continue; }
+      ctx.errors.push(code); break;
+    }
+    if (code === 'SEAT_ALREADY_TAKEN' || h.status === 409) {
+      if (p.retrySame > 0) { for (let r = 0; r < p.retrySame; r++) { await sleep(burstThink()); const again = await hold(ctx, pass, seats); if (again.status === 201 || again.status === 200) break; } }
+      empty = p.seatMap ? await seatMap(ctx, pass) : empty.filter((s) => !seats.includes(s));
+      await sleep(burstThink());
+      continue;
+    }
+    ctx.errors.push(`선점 ${h.status} ${code}`);
+    break;
+  }
+}
+
+function shiftDate(iso, days) {
+  const d = new Date(`${iso}T00:00:00+09:00`);
+  d.setDate(d.getDate() + days);
+  return d.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+}
+
+// ── 실행 ───────────────────────────────────────────────────
+async function runProfile(p, count, runDate) {
+  const ctxs = Array.from({ length: count }, (_, i) => makeCtx(p, i + 1));
+  const go = async (ctx, i) => {
+    try {
+      if (MODE !== 'buy') await signupOne(ctx);
+      if (MODE === 'signup') return;
+      if (p.start === 'stagger') await sleep(i * rand(20000, 40000));
+      if (p.start === 'late') await sleep(60000 + rand(0, 20000));
+      await buyOne(ctx, runDate);
+    } catch (e) { ctx.errors.push(e.message); }
+  };
+  await Promise.all(ctxs.map(go));
+  return ctxs;
+}
+
+const want = (process.env.PROFILES || '').split(',').map((s) => s.trim()).filter(Boolean);
+const chosen = PROFILES.filter((p) => !want.length || want.includes(p.kind));
+const probe = { token: null, ua: 'practice', deviceFor: () => null };
+const run = await call(probe, 'GET', `/api/v1/runs/${RUN_ID}?from=${FROM}&to=${TO}`);
+const runDate = run.data?.runDate;
+if (!runDate) { console.error(`운행 ${RUN_ID}을 찾지 못했습니다 (${run.status})`); process.exit(1); }
+console.log(`연습 ${chosen.length}종 × 명의 ${ACCOUNTS} + 합성 사람 ${HUMANS} · 운행 ${RUN_ID} (${runDate}) · 태그 ${TAG} · ${MODE}`);
+
+const t0 = Date.now();
+const jobs = chosen.map((p) => runProfile(p, ACCOUNTS, runDate).then((c) => [p, c]));
+if (HUMANS && (!want.length || want.includes('human'))) jobs.push(runProfile(HUMAN, HUMANS, runDate).then((c) => [HUMAN, c]));
+const done = await Promise.all(jobs);
+
+console.log(`\n끝 (${Math.round((Date.now() - t0) / 1000)}초)\n종류            성질          결제 좌석  오류`);
+for (const [p, ctxs] of done) {
+  const errs = ctxs.flatMap((c) => c.errors);
+  console.log(`${p.kind.padEnd(15)} ${p.family.padEnd(12)} ${String(ctxs.reduce((a, c) => a + c.seats, 0)).padStart(5)}    ${errs.length ? [...new Set(errs)].slice(0, 2).join(' / ') : '-'}`);
+}
+console.log(`\n평가: loadtest/tools/eval_contest.sh ${TAG} ${RUN_ID}`);
