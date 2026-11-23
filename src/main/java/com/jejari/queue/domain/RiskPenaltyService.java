@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalDouble;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -76,6 +77,46 @@ public class RiskPenaltyService {
 		}
 		warnIfStale(marker);
 		return maxOf(values.subList(0, values.size() - 1));
+	}
+
+	/**
+	 * 결제 단계 차단(PaymentRiskGuard)용: {@link #score}와 같은 규칙으로 읽되, <b>읽지 못하면 빈 값</b>을 돌려준다.
+	 * 대기열은 "모르면 막는다"(100점)지만, 결제에서 같은 규칙을 쓰면 Redis·Oracle 장애 한 번에 모든 결제가 멈추므로
+	 * 결제 쪽은 모르면 통과시키고 알리기만 한다 (11-23 팀 결정, 대기열에서 이미 한 번 걸렀으므로 두 번째 관문은 느슨하게).
+	 * RESTRICTED 계정과 형식이 잘못된 값(오염)은 아는 것으로 보고 100점이다.
+	 */
+	public OptionalDouble knownScore(MemberIdentity m) {
+		if ("RESTRICTED".equals(m.status())) {
+			return OptionalDouble.of(RESTRICTED_SCORE);
+		}
+		List<String> keys = new ArrayList<>();
+		keys.add(QueueKeys.risk("CI", m.ciHash()));
+		m.paymentHashes().forEach(h -> keys.add(QueueKeys.risk("PAYMENT", h)));
+		m.deviceHashes().forEach(h -> keys.add(QueueKeys.risk("DEVICE", h)));
+		keys.add(QueueKeys.RISK_SYNCED_AT);
+		List<String> values;
+		try {
+			values = redis.opsForValue().multiGet(keys);
+		} catch (RuntimeException e) {
+			throttledWarn("위험 점수 Redis 조회 실패 member={} → 결제 단계는 모름으로 처리: {}", m.memberId(), e.toString());
+			return OptionalDouble.empty();
+		}
+		String marker = values == null ? null : values.get(values.size() - 1);
+		if (marker != null) {
+			return OptionalDouble.of(maxOf(values.subList(0, values.size() - 1)));
+		}
+		try {
+			double s = fallback.maxScore(m);
+			if (Double.isNaN(s) || s < 0 || s > MAX_SCORE) {
+				throttledWarn("위험 점수 원본 조회값이 범위를 벗어남 member={} value={} → {}점", m.memberId(), s, MAX_SCORE);
+				return OptionalDouble.of(MAX_SCORE);
+			}
+			return OptionalDouble.of(s);
+		} catch (RuntimeException e) {
+			throttledWarn("risk:meta:synced_at 없음 + 위험 점수 원본 조회 실패 member={} → 결제 단계는 모름으로 처리: {}",
+					m.memberId(), e.toString());
+			return OptionalDouble.empty();
+		}
 	}
 
 	/**

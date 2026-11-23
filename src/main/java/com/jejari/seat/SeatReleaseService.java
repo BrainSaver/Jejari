@@ -125,6 +125,18 @@ public class SeatReleaseService {
 	}
 
 	/**
+	 * §7.5 결제 단계 차단 (PaymentRiskGuard, 11-23): 위험 점수가 높아 결제를 막을 때 그 사람의 HOLD를 바로 풀어
+	 * 다른 사람이 살 수 있게 한다. 본인 예약이고 HOLD일 때만 1행이 되며, 이미 결제 중·만료·취소면 아무것도 하지 않는다.
+	 * actor SYSTEM이라 위험 점수의 사용자 취소 수에 세지 않는다.
+	 *
+	 * @return 풀었으면 true
+	 */
+	public boolean releaseForRiskBlock(long memberId, long reservationId) {
+		Released done = tx.execute(st -> releaseTx.release(reservationId, ReleaseReason.RISK_BLOCKED, memberId));
+		return afterCommit(done);
+	}
+
+	/**
 	 * Saga·결제 쪽(C 길동현)이 부르는 해제. <b>이미 열린 트랜잭션 안에서</b> §7.1을 실행하고,
 	 * 그 트랜잭션이 커밋되면 Redis 보상을 한다. 예: §5.2 결제 실패는 payment FAILED 기록과 같은 트랜잭션에서
 	 * {@code releaseInCurrentTx(R, ReleaseReason.PAY_FAILED)}. 예약 행 락은 호출하는 쪽이 먼저 잡아도 되고 안 잡아도 된다.
