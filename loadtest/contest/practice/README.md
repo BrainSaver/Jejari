@@ -38,6 +38,17 @@ loadtest/tools/eval_contest.sh <태그> <운행>
 | 사람 흉내 | botmimic (쉬고 둘러봄) · botmimicfast (선점 순간만 빠름) · botlate (1분 늦게 천천히) |
 | 합성 사람 | human (12명) — **진짜 사람이 아닙니다.** 오탐은 대회 사람 참가자로만 잴 수 있습니다 |
 
+## 2단계 (제안 규칙 피하기, 9종)
+
+`GEN=2`로 돌립니다 (`GEN=all`은 39종). 제안 규칙을 알고 피하는 봇입니다: botstep · botstepjit · botsearchfast · botresi · botpace · botsmallbuy · botretrydiff · botghostsync · botghost.
+제안 규칙은 아직 코드가 아니므로 모의 채점합니다.
+
+```bash
+python3 -I loadtest/contest/practice/simulate_rules.py data/ml/practice-<태그> --step 0.5 --times 2
+```
+
+결과와 해석: [연습봇-평가와-규칙-제안.md 3-2절](../../../docs/강동균/features/연습봇-평가와-규칙-제안.md)
+
 ## 결과 읽기
 
 `eval_contest.sh` 표에서 봇마다 **탐지 계정**(케이스가 열린 계정)과 **순번 -초**를 봅니다.
