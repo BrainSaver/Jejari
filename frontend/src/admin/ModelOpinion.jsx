@@ -6,7 +6,7 @@ import { get } from '../api/client.js';
  * 오프라인 합성 모델(부스팅 + Isolation Forest + GRU)이 계정마다 매긴 점수. 판정 참고용이고 순번·제한에는 쓰지 않는다.
  * 규칙 점수와 모델이 다르게 볼 때 한 번 더 보라는 뜻으로 나란히 보여 준다.
  */
-const BY = { GBM: '부스팅', IF: 'Isolation Forest', GRU: '행동 순서(GRU)' };
+export const BY = { GBM: '부스팅', IF: 'Isolation Forest', GRU: '행동 순서(GRU)' };
 // 닮은 유형 (ERD v29 model_score.type, tools/ml/train_type.py). 별도 모델의 추정이라 "봇 쪽으로 봄"인 계정에만 서버가 내려 준다
 export const TYPE = {
   SPEED: ['빠른 반복 매크로', '연타·일정 간격·판매 오픈 순간 요청'],
