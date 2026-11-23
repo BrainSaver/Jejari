@@ -24,6 +24,11 @@ import com.jejari.risk.PreviousScore.ReviewStatus;
 import com.jejari.risk.RiskRule;
 import com.jejari.risk.SubjectType;
 import com.jejari.risk.batch.RiskInputReader;
+import com.jejari.risk.model.ModelOpinionService;
+import com.jejari.risk.model.ModelOpinionService.ListModel;
+import com.jejari.risk.model.ModelOpinionService.SubjectKey;
+import com.jejari.risk.model.ModelOpinionService.SubjectOpinions;
+import com.jejari.risk.model.ModelOpinionService.SubjectScore;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -36,6 +41,7 @@ import tools.jackson.databind.json.JsonMapper;
  *       복호화가 실패하면(키 없음·변조) 오류를 내지 않고 "***"로 보여 준다 (목록 전체가 깨지지 않게, 원인은 로그).</li>
  *   <li>마스킹 해제는 이 목록이 아니라 케이스 상세(ADM-06, SUPERVISOR, 사유·이력)에서만.</li>
  *   <li>대표 계정 = 그 대상에 연결된 가장 오래된 계정. 연결 계정 수는 risk_score에 저장된 값(배치 계산 시점).</li>
+ *   <li>모델 보조 의견(RISK-05): 대상에 묶인 계정 중 가장 높은 모델 점수. 규칙 점수와 나란히 보여 주기만 하고 필터·정렬에는 안 쓴다.</li>
  *   <li>페이지는 최대 {@value #MAX_SIZE}건. 한 페이지에서 행마다 몇 번씩 더 읽지만 관리자 화면이라 건수가 작다.</li>
  * </ul>
  */
@@ -50,11 +56,14 @@ public class RiskAdminService {
 	private final JdbcTemplate jdbc;
 	private final ObjectProvider<PiiCipher> cipher;
 	private final JsonMapper json;
+	private final ModelOpinionService models;
 
-	public RiskAdminService(JdbcTemplate jdbc, ObjectProvider<PiiCipher> cipher, JsonMapper json) {
+	public RiskAdminService(JdbcTemplate jdbc, ObjectProvider<PiiCipher> cipher, JsonMapper json,
+			ModelOpinionService models) {
 		this.jdbc = jdbc;
 		this.cipher = cipher;
 		this.json = json;
+		this.models = models;
 	}
 
 	public record Filter(BigDecimal minScore, BigDecimal maxScore, Set<ReviewStatus> statuses, Set<SubjectType> types,
@@ -69,10 +78,12 @@ public class RiskAdminService {
 	}
 
 	public record Row(String subjectType, String subjectHash, BigDecimal finalScore, String reviewStatus,
-			List<String> markers, long linkedAccounts, Holder holder, CaseRef latestCase, Instant calculatedAt) {
+			List<String> markers, long linkedAccounts, Holder holder, CaseRef latestCase, Instant calculatedAt,
+			SubjectScore model) {
 	}
 
-	public record Page(List<Row> items, int page, boolean hasNext) {
+	/** @param model 모델 보조 의견 머리 (사용 중인 버전·문턱, 숨김이면 이유) */
+	public record Page(List<Row> items, int page, boolean hasNext, ListModel model) {
 	}
 
 	public Page list(Filter f) {
@@ -101,13 +112,17 @@ public class RiskAdminService {
 				rs.getBigDecimal(3), rs.getString(4), rs.getString(5), rs.getLong(6), rs.getTimestamp(7)),
 				args.toArray());
 		boolean hasNext = rows.size() > f.size();
+		List<Base> page = rows.subList(0, Math.min(rows.size(), f.size()));
+		SubjectOpinions opinions = models
+				.forSubjects(page.stream().map(b -> new SubjectKey(SubjectType.valueOf(b.type()), b.hash())).toList());
 		List<Row> out = new ArrayList<>();
-		for (Base b : rows.subList(0, Math.min(rows.size(), f.size()))) {
+		for (Base b : page) {
 			SubjectType type = SubjectType.valueOf(b.type());
 			out.add(new Row(b.type(), b.hash(), b.score(), b.review(), markers(b.reasons()), b.linked(),
-					holder(type, b.hash()), latestCase(type, b.hash()), b.at() == null ? null : b.at().toInstant()));
+					holder(type, b.hash()), latestCase(type, b.hash()), b.at() == null ? null : b.at().toInstant(),
+					opinions.scores().get(new SubjectKey(type, b.hash()))));
 		}
-		return new Page(out, f.page(), hasNext);
+		return new Page(out, f.page(), hasNext, opinions.model());
 	}
 
 	/** 값이 enum 이름뿐이라 자리표시자로만 붙인다. 전부 고르면 조건 없음 */
