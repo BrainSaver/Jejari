@@ -7,7 +7,7 @@
 //
 //   node loadtest/contest/practice/run.mjs                 # 전부 (가입 → 구매)
 //   PROFILES=botfast,botsteady HUMANS=0 node …            # 일부만
-//   GEN=2 node …                                         # 2단계(제안 규칙 피하기) 9종, GEN=all은 39종
+//   GEN=2 node …                                         # 2단계(제안 규칙 피하기) 9종, GEN=3은 3단계(녹화 꾸미기) 6종, GEN=all은 45종
 //   MODE=signup | buy | all (기본 all)
 //
 // 앱은 신뢰 프록시 모드로: --jejari.auth.trusted-proxies=127.0.0.1,0:0:0:0:0:0:0:1 (프로필마다 다른 IP를 X-Forwarded-For로 보냄.
@@ -55,7 +55,7 @@ const P = (kind, family, desc, o = {}) => ({
   think: T.quick, searches: 1, seatMap: true, mapPolls: 0, party: 2, pick: 'random', retrySame: 0, pay: true,
   cancelAfterPayMs: null, holdNoPay: false, holdCancelLoops: 0, start: 'sync', device: 'own', card: 'own',
   sameCi: false, queueSpam: 0, ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0 Safari/537.36',
-  runHop: 0, limitProbe: false, burst: false, gen: 1, step: null, ipEach: false, staggerMs: [20000, 40000], ...o,
+  runHop: 0, limitProbe: false, burst: false, gen: 1, step: null, ipEach: false, staggerMs: [20000, 40000], rec: null, ...o,
 });
 const PROFILES = [
   // 속도
@@ -113,39 +113,73 @@ const GEN2 = [
   P2('botghost', '위와 같고 명의끼리 65~120초 간격 (다계정 동시 선점 60초 피하기)', { searches: 2, step: [700, 1500], ipEach: true, start: 'stagger', staggerMs: [65000, 120000] }),
 ];
 
-const HUMAN = P('human', '합성 사람', '사람처럼 둘러보고 쉬고, 가끔 실패하면 다른 좌석. 화면 녹화도 보냄', { think: T.human, searches: 2, replay: true });
+// 3단계: 화면 녹화 규칙(HEADLESS_HOLD·LINEAR_MOUSE)과 INHUMAN_STEP이 케이스 규칙이 된 뒤의 매크로. GEN=3으로 돌림
+// 모두 2단계의 피하기(단계 사이 0.6~1초, 조회 2번, 명의마다 IP)를 갖추고, 녹화를 꾸미는 방법만 다르다
+const P3 = (kind, desc, o) => P(kind, '3단계', desc, { gen: 3, searches: 2, step: [600, 1000], ipEach: true, ...o });
+const GEN3 = [
+  P3('botrecone', '녹화 이벤트 하나만 보냄 (화면 없이 선점 피하기)', { rec: 'one' }),
+  P3('botrecclick', '클릭만 꾸며 보내고 마우스 궤적은 없음', { rec: 'clickonly' }),
+  P3('botrectouch', '직선 궤적인데 클릭을 터치라고 신고 (마우스 검사 제외 노림)', { rec: 'touch' }),
+  P3('botreclinear', '직선 등속 궤적 + 마우스 클릭 (자동화 도구 기본, 기준선)', { rec: 'linear' }),
+  P3('botrecbezier', '휜 곡선 궤적, 등간격·손떨림 없음·도착 즉시 클릭', { rec: 'bezier' }),
+  P3('botrectemplate', '사람 같은 궤적 하나를 모든 계정이 똑같이 재사용', { rec: 'template' }),
+];
 
-// ── 화면 녹화 (합성 사람만) ─────────────────────────────────
+const HUMAN = P('human', '합성 사람', '사람처럼 둘러보고 쉬고, 가끔 실패하면 다른 좌석. 화면 녹화도 보냄', { think: T.human, searches: 2, rec: 'human' });
+
+// ── 화면 녹화 ──────────────────────────────────────────────
 // 실제 화면은 녹화기(frontend/src/replay/recorder.js)가 클릭·마우스 궤적을 보낸다. 합성 사람도 보내야
 // 서버의 "녹화 장애 보호"(다른 세션 녹화가 하나도 없으면 HEADLESS_HOLD를 세지 않음)가 풀려 대회와 같은 조건이 된다.
-// 궤적: 휜 곡선(2차 베지어) + 빨라졌다 느려지는 속도 + 손떨림. 봇은 API만 부르므로 녹화가 없다 (실제 매크로와 같음)
+// 1·2단계 봇은 API만 부르므로 녹화가 없다. 3단계 봇은 녹화를 꾸며 보낸다 (rec: 아래 모드)
+//   human     휜 곡선 + 빨라졌다 느려지는 속도 + 손떨림 + 도착 뒤 잠깐 멈췄다 클릭 (합성 사람)
+//   one       로그인 직후 PAGE_VIEW 하나만 (녹화 0건 = HEADLESS_HOLD 피하기)
+//   clickonly 클릭만 보내고 마우스 궤적은 없음
+//   touch     직선 등속 궤적 + 클릭을 터치(t)라고 신고
+//   linear    직선 등속 궤적 + 마우스 클릭 (자동화 도구 기본 이동. LINEAR_MOUSE가 잡아야 하는 기준선)
+//   bezier    휜 곡선이지만 등간격(가감속 없음)·손떨림 없음·도착 즉시 클릭
+//   template  사람처럼 보이는 궤적 하나를 모든 계정이 똑같이 재사용
+function seeded(seed) { let x = seed >>> 0 || 1; return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296); }
 async function recStart(ctx) {
   const c = (await call(ctx, 'GET', '/api/v1/replay/config')).data;
-  ctx.rec = c?.enabled ? { c, seq: 0, pos: [rand(300, 700), rand(300, 700)], buf: [] } : null;
+  ctx.rec = c?.enabled ? { c, seq: 0, n: 0, pos: [rand(300, 700), rand(300, 700)], buf: [] } : null;
+  if (ctx.rec && ctx.p.rec === 'one') { recPush(ctx, { type: 'PAGE_VIEW', screen: 'home' }); await recFlush(ctx); }
 }
 function recPush(ctx, e) { ctx.rec.buf.push({ seq: ++ctx.rec.seq, ts: Date.now(), runId: RUN_ID, ...e }); }
-async function recClick(ctx, screen, target) {
-  const r = ctx.rec;
-  if (!r) return;
-  recPush(ctx, { type: 'PAGE_VIEW', screen });
-  const [x0, y0] = r.pos;
-  const x1 = Math.round(rand(150, 850)), y1 = Math.round(rand(150, 850));
-  const L = Math.hypot(x1 - x0, y1 - y0) || 1, side = Math.random() < 0.5 ? -1 : 1, bend = rand(0.2, 0.45) * side;
+async function recFlush(ctx) { const events = ctx.rec.buf.splice(0); if (events.length) await call(ctx, 'POST', '/api/v1/replay/events', { events }); }
+function makePath(r, mode, x0, y0, x1, y1) {
+  const R = mode === 'template' ? seeded(7919 * (r.n + 1)) : Math.random; // template: 클릭 순번마다 같은 궤적
+  const rr = (a, b) => a + R() * (b - a);
+  const step = r.c.pathSampleMs || 150, maxPts = (r.c.maxPathPoints || 16) - 1;
+  const L = Math.hypot(x1 - x0, y1 - y0) || 1;
+  const curved = mode !== 'linear' && mode !== 'touch';
+  const bend = curved ? rr(0.2, 0.45) * (R() < 0.5 ? -1 : 1) : 0;
   const cx = (x0 + x1) / 2 - ((y1 - y0) / L) * L * bend, cy = (y0 + y1) / 2 + ((x1 - x0) / L) * L * bend;
-  const dur = 350 + 180 * Math.log2(L / 30 + 1) + rand(0, 250), step = r.c.pathSampleMs || 150;
+  const ease = mode === 'human' || mode === 'template';
+  const noise = ease ? 3 : 0;
+  const pts = curved ? Math.min(maxPts, Math.max(5, Math.round((350 + 180 * Math.log2(L / 30 + 1) + rr(0, 250)) / step))) : maxPts;
   const path = [];
-  for (let t = step; t < dur && path.length < (r.c.maxPathPoints || 16) - 1; t += step * rand(0.85, 1.15)) {
-    const u = t / dur, s = u * u * u * (10 - 15 * u + 6 * u * u); // 빨라졌다 느려짐
+  for (let k = 1; k <= pts; k++) {
+    const u = k / pts, s = ease ? u * u * u * (10 - 15 * u + 6 * u * u) : u;
     const bx = (1 - s) ** 2 * x0 + 2 * (1 - s) * s * cx + s * s * x1, by = (1 - s) ** 2 * y0 + 2 * (1 - s) * s * cy + s * s * y1;
-    path.push([Math.round(step), Math.round(bx + rand(-3, 3)), Math.round(by + rand(-3, 3))]);
+    const dt = ease ? Math.round(step * rr(0.85, 1.15)) : step;
+    path.push([dt, Math.round(bx + rr(-noise, noise)), Math.round(by + rr(-noise, noise))]);
   }
-  path.push([Math.round(step), x1 + Math.round(rand(-2, 2)), y1 + Math.round(rand(-2, 2))]);
-  recPush(ctx, { type: 'MOUSE_PATH', screen, path });
-  await sleep(rand(120, 300)); // 도착 뒤 잠깐 멈췄다 누름
-  recPush(ctx, { type: 'CLICK', screen, target, x: x1, y: y1, pointer: 'm' });
+  if (ease) path[path.length - 1] = [step, x1 + Math.round(rr(-2, 2)), y1 + Math.round(rr(-2, 2))];
+  return path;
+}
+async function recClick(ctx, screen, target) {
+  const r = ctx.rec, mode = ctx.p.rec;
+  if (!r || mode === 'one') return;
+  recPush(ctx, { type: 'PAGE_VIEW', screen });
+  const R = mode === 'template' ? seeded(104729 * (r.n + 1)) : Math.random;
+  const [x0, y0] = r.pos;
+  const x1 = Math.round(150 + R() * 700), y1 = Math.round(150 + R() * 700);
+  if (mode !== 'clickonly') recPush(ctx, { type: 'MOUSE_PATH', screen, path: makePath(r, mode, x0, y0, x1, y1) });
+  if (mode === 'human' || mode === 'template') await sleep(rand(120, 300)); // 도착 뒤 잠깐 멈췄다 누름
+  recPush(ctx, { type: 'CLICK', screen, target, x: x1, y: y1, pointer: mode === 'touch' ? 't' : 'm' });
   r.pos = [x1, y1];
-  const events = r.buf.splice(0);
-  await call(ctx, 'POST', '/api/v1/replay/events', { events });
+  r.n++;
+  await recFlush(ctx);
 }
 
 // ── HTTP ───────────────────────────────────────────────────
@@ -263,7 +297,7 @@ const cancel = (ctx, id) => call(ctx, 'POST', `/api/v1/reservations/${id}/cancel
 async function buyOne(ctx, runDate) {
   const p = ctx.p;
   await login(ctx);
-  if (p.replay) await recStart(ctx);
+  if (p.rec) await recStart(ctx);
   if (p.burst) await sleep(rand(5000, 15000));
   await searchStep(ctx, runDate);
   for (let i = 0; i < p.runHop; i++) {
@@ -352,7 +386,7 @@ async function runProfile(p, count, runDate) {
 const want = (process.env.PROFILES || '').split(',').map((s) => s.trim()).filter(Boolean);
 // GEN: 1(기본, 1단계 30종) · 2(2단계) · all. PROFILES로 이름을 주면 단계와 상관없이 그 봇만
 const GEN = process.env.GEN || '1';
-const pool = PROFILES.concat(GEN2);
+const pool = PROFILES.concat(GEN2, GEN3);
 const chosen = want.length ? pool.filter((p) => want.includes(p.kind))
   : pool.filter((p) => GEN === 'all' || String(p.gen) === GEN);
 const probe = { token: null, ua: 'practice', deviceFor: () => null };
