@@ -16,6 +16,39 @@
 -- 적용되므로 1회 9매·열차당 10매·1일 20매가 걸리고, PER_HOLIDAY는 적용되지 않습니다.
 -- 명절 한도(1회 4·열차당 4·명절 전체 8)까지 테스트하려면 03의 명절 운행을 쓰세요.
 
+-- 시연 운행 9001·9002·9003이 옮겨 갈 날짜를 먼저 비웁니다.
+--
+-- 아래 MERGE는 이 셋의 운행일을 "돌린 날" 기준으로 다시 계산해 덮어씁니다. 그런데 이 파일
+-- 뒤쪽이 **예매 가능한 모든 날**에 운행을 깔아 두므로, 옮겨 갈 날짜는 이미 생성된 운행이
+-- 쥐고 있습니다. 그대로 UPDATE하면 uq_train_run_train_id_run_date에 걸려
+-- ORA-00001로 시드가 멈춥니다 (2026-11-23에 실제로 겪었습니다).
+--
+-- 생성된 운행은 **번호에 뜻이 없습니다** (train_run_seq가 줍니다). 그래서 자리를 비켜 주고,
+-- 비워진 옛 날짜는 뒤쪽 MERGE가 다시 채웁니다. 결과적으로 두 운행이 날짜를 맞바꿉니다.
+--
+-- 예약·좌석·대기자가 달린 운행은 건드리지 않습니다. 그 경우 아래 MERGE의 WHERE가 그 행을
+-- 걸러 내어 9001을 옮기지 않고 둡니다 (시드는 멈추지 않고, 창은 생성된 운행이 메우고 있습니다).
+DELETE FROM train_stop
+ WHERE run_id IN (SELECT r.run_id FROM train_run r
+                    JOIN (SELECT 1 AS train_id, TRUNC(SYSDATE) + 45 AS run_date FROM dual UNION ALL
+                          SELECT 2,             TRUNC(SYSDATE) + 45            FROM dual UNION ALL
+                          SELECT 1,             ADD_MONTHS(TRUNC(SYSDATE), 2) + 1 FROM dual) w
+                      ON w.train_id = r.train_id AND w.run_date = r.run_date
+                   WHERE r.run_id >= 100000 AND r.run_id < 400000
+                     AND NOT EXISTS (SELECT 1 FROM reservation     d WHERE d.run_id = r.run_id)
+                     AND NOT EXISTS (SELECT 1 FROM seat_inventory  d WHERE d.run_id = r.run_id)
+                     AND NOT EXISTS (SELECT 1 FROM waitlist        d WHERE d.run_id = r.run_id));
+
+DELETE FROM train_run r
+ WHERE r.run_id >= 100000 AND r.run_id < 400000
+   AND EXISTS (SELECT 1 FROM (SELECT 1 AS train_id, TRUNC(SYSDATE) + 45 AS run_date FROM dual UNION ALL
+                              SELECT 2,             TRUNC(SYSDATE) + 45            FROM dual UNION ALL
+                              SELECT 1,             ADD_MONTHS(TRUNC(SYSDATE), 2) + 1 FROM dual) w
+                WHERE w.train_id = r.train_id AND w.run_date = r.run_date)
+   AND NOT EXISTS (SELECT 1 FROM reservation    d WHERE d.run_id = r.run_id)
+   AND NOT EXISTS (SELECT 1 FROM seat_inventory d WHERE d.run_id = r.run_id)
+   AND NOT EXISTS (SELECT 1 FROM waitlist       d WHERE d.run_id = r.run_id);
+
 MERGE INTO train_run t
 USING (
   SELECT r.run_id, r.train_id, CAST(NULL AS NUMBER) AS sale_event_id, r.run_date,
@@ -36,6 +69,11 @@ USING (
           SELECT 9003,           1,             ADD_MONTHS(TRUNC(SYSDATE), 2) + 1 FROM dual
         )
     ) r
+   -- 위 DELETE로도 비우지 못한 날짜(예약이 달린 생성 운행)는 건너뜁니다. 옮기지 않고 두는 것이
+   -- 시드를 ORA-00001로 멈추는 것보다 낫습니다
+   WHERE NOT EXISTS (SELECT 1 FROM train_run o
+                      WHERE o.train_id = r.train_id AND o.run_date = r.run_date
+                        AND o.run_id <> r.run_id)
 ) s ON (t.run_id = s.run_id)
 WHEN MATCHED THEN
   -- 날짜까지 덮어씁니다. status만 다시 계산하면 이미 출발한 운행은 되살릴 수 없어
@@ -92,9 +130,15 @@ USING (
 ) s ON (t.train_id = s.train_id AND t.run_date = s.run_date)
 WHEN MATCHED THEN
   -- 이미 그 열차·그 날에 운행이 있으면(명절 8건, 9001·9002, 9003, 화면에서 만든 것, 전에 이
-  -- 시드가 넣은 것) 마감 시각만 맞춥니다. status는 건드리지 않습니다 — 오늘 운행은 기점을
-  -- 떠나면 DEPARTED가 되는데 실제로 떠난 열차라 되살리면 안 됩니다
-  UPDATE SET t.sale_close_at = s.sale_close_at, t.updated_at = SYSTIMESTAMP
+  -- 시드가 넣은 것) 마감 시각을 맞추고, **오픈 시각이 지난 SCHEDULED만** 엽니다.
+  --   DEPARTED·CLOSED는 건드리지 않습니다 — 실제로 떠나거나 닫힌 열차라 되살리면 안 됩니다.
+  --   여는 이유: 지평 밖이라 SCHEDULED로 들어간 날짜는 그 뒤 오픈 시각이 지나도 앱이
+  --   떠 있지 않으면 아무도 열어 주지 않습니다. 그러면 99_verify 23번(status가 오픈 시각과
+  --   일관)이 FAIL입니다 (2026-11-23에 실제로 겪었습니다). 판매 오픈 스케줄러와 같은 판정입니다
+  UPDATE SET t.sale_close_at = s.sale_close_at,
+             t.status = CASE WHEN t.status = 'SCHEDULED' AND t.sale_open_at <= SYSTIMESTAMP
+                             THEN 'ON_SALE' ELSE t.status END,
+             t.updated_at = SYSTIMESTAMP
 WHEN NOT MATCHED THEN
   INSERT (run_id, train_id, sale_event_id, run_date, sale_open_at, sale_close_at, status)
   VALUES (train_run_seq.NEXTVAL, s.train_id, s.sale_event_id, s.run_date,
