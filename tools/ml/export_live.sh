@@ -6,7 +6,7 @@
 #   python3 -I tools/ml/features.py <출력 폴더>
 #
 # 라벨은 이메일(lt{태그}.{종류}.g{묶음}.{번호}@…)에서 읽는다.
-#   대회: bota~botd → RESELLER, human → NORMAL / 시나리오 12: normal → NORMAL, multi → RESELLER,
+#   대회: bota~botd → RESELLER, human(연습 사람 변형 human…도) → NORMAL / 시나리오 12: normal → NORMAL, multi → RESELLER,
 #   cancel → CANCEL_ABUSER, 나머지 → MACRO (eval_risk.sh와 같은 규칙)
 # 카드 연결은 Oracle payment_method.method_hash에서 (행동 로그에는 카드가 없다).
 # 비밀값은 컨테이너 안 환경 변수로만 쓴다.
@@ -59,7 +59,7 @@ with open(os.path.join(out, ".members.txt"), encoding="utf-8") as f, \
         open(os.path.join(out, "members.jsonl"), "w", encoding="utf-8") as w:
     for line in f:
         mid, kind, grp, ci, age, cards = (line.rstrip("\n").split("|") + [""] * 6)[:6]
-        label = "UNKNOWN" if recent else LABEL.get(kind, "RESELLER" if kind.startswith("bot") else "MACRO")
+        label = "UNKNOWN" if recent else LABEL.get(kind, "RESELLER" if kind.startswith("bot") else "NORMAL" if kind.startswith("human") else "MACRO")
         w.write(json.dumps({"member_id": int(mid), "label": label, "strategy": kind, "group": int(grp or 0),
                             "ci": ci, "cards": [c for c in cards.split(",") if c],
                             "created_days_ago": int(age or 0), "source": f"live:{tag}"}) + "\n")
