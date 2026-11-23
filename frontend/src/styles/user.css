@@ -347,3 +347,28 @@
 }
 
 @container (max-width:300px){.user .flow li{flex-direction:column;align-items:flex-start;gap:4px;font-size:12px}}
+
+/* 선택 창: 달력·시각 격자·좌석 종류 목록 (.dlg 공통 틀 재사용) */
+.dlg .cal{padding:6px 0 14px}
+.dlg .cal-nav{display:flex;align-items:center;justify-content:space-between;padding:6px 0 10px;font-size:17px}
+.dlg .cal-nav button{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:22px;line-height:1;cursor:pointer;padding:0}
+.dlg .cal-nav button:disabled{opacity:.35;cursor:not-allowed}
+.dlg .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+.dlg .cal-grid .w{font-size:12.5px;font-weight:800;color:var(--mut);padding:6px 0}
+.dlg .cal-grid .w.sun{color:#C0392B}
+.dlg .cal-grid .w.sat{color:#2E5BBA}
+.dlg .cal-grid .d{aspect-ratio:1/1;min-height:40px;border:1px solid transparent;border-radius:10px;background:none;color:var(--ink);font-size:16px;font-weight:700;cursor:pointer;padding:0}
+.dlg .cal-grid .d:hover:not(:disabled){border-color:var(--ink)}
+.dlg .cal-grid .d.today{border-color:var(--line)}
+.dlg .cal-grid .d.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.dlg .cal-grid .d:disabled{color:var(--faint);opacity:.5;cursor:not-allowed}
+.dlg .opt-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:6px 0 14px}
+.dlg .opt-grid button{min-height:46px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-size:14.5px;font-weight:800;cursor:pointer;padding:0 4px}
+.dlg .opt-grid button:hover:not(:disabled){border-color:var(--ink)}
+.dlg .opt-grid button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.dlg .opt-grid button:disabled{color:var(--faint);opacity:.45;cursor:not-allowed}
+.dlg .opt-list{list-style:none;margin:0;padding:6px 0 14px}
+.dlg .opt-list li{display:block;padding:4px 0;font-weight:400}
+.dlg .opt-list button{width:100%;display:flex;align-items:center;justify-content:space-between;min-height:48px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-size:16px;font-weight:800;cursor:pointer;padding:0 14px;text-align:left}
+.dlg .opt-list button.on{border-color:var(--ink);background:var(--line2)}
+@media (max-width:420px){.dlg .opt-grid{grid-template-columns:repeat(3,1fr)}}

@@ -5,6 +5,7 @@ import Icon, { Seal } from '../admin/Icon.jsx';
 import { AUTH_ART } from './art.js';
 import { EaseBar, EaseRoot } from './ease.jsx';
 import { useMember } from './useMember.js';
+import { useMyName } from './myName.js';
 
 /**
  * 사용자 화면 공통 틀 (시안 docs/ui/U-*.html): 도우미 줄 + PC 위쪽 메뉴 / 모바일 아래 탭.
@@ -23,6 +24,7 @@ export default function UserLayout() {
   const { member } = useMember();
   const navigate = useNavigate();
   const unread = useUnread(member, pathname);
+  const myName = useMyName(member);
   // 로그아웃하면 "로그아웃됐어요" 안내를 몇 초 보여 준다 (오른쪽 위 글자만 바뀌면 눈치채기 어렵다)
   const [bye, setBye] = useState(false);
   useEffect(() => {
@@ -52,7 +54,7 @@ export default function UserLayout() {
           </nav>
           {member ? (
             <span className="row" style={{ gap: 14 }}>
-              <Link className="me" to="/me"><i><Icon name="person" /></i>회원 #{member.sub}</Link>
+              <Link className="me" to="/me"><i><Icon name="person" /></i>{myName ? `${myName} 님` : '내 정보'}</Link>
               <button type="button" className="me" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }}
                 onClick={() => logout().then(() => navigate('/', { state: { loggedOut: true } }))}>로그아웃</button>
             </span>

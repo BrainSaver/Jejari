@@ -73,6 +73,9 @@ export default function Login() {
       {params.get('joined') && !error && (
         <div className="alert go"><Icon name="info" /><span>가입했어요. 방금 정한 비밀번호로 로그인해 주세요.</span></div>
       )}
+      {params.get('changed') && !error && (
+        <div className="alert go"><Icon name="info" /><span>비밀번호를 바꿨어요. 보안을 위해 모든 기기에서 로그아웃됐으니 새 비밀번호로 다시 로그인해 주세요.</span></div>
+      )}
       {error && <div className="alert stop" role="alert"><Icon name="info" /><span>{error}</span></div>}
       {wait != null && (
         <div className="alert amber" role="status" aria-live="polite">

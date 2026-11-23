@@ -60,10 +60,15 @@ export default function Search() {
   const qTime = toHour(params.get('time')) || defaultTime(q.date);
   const qParty = peopleOf(params);
   const qPeople = total(qParty);
-  const [peopleOpen, setPeopleOpen] = useState(false);
+  const [openDlg, setOpenDlg] = useState(null); // 'date' | 'time' | 'people' | 'grade' — 열린 선택 창
+  const closeDlg = () => setOpenDlg(null);
   const qGrade = GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '';
   useEffect(() => {
-    if (!q.from || !q.to || !q.date) return;
+    // 검색 조건이 없으면(로고를 눌러 처음 화면으로 돌아옴) 이전 결과를 비워 아무것도 안 보이게 한다
+    if (!q.from || !q.to || !q.date) {
+      setState({ runs: null, loading: false, error: null });
+      return;
+    }
     let alive = true;
     setState({ runs: null, loading: true, error: null });
     get(`/api/v1/runs?${new URLSearchParams(q)}`)
@@ -92,7 +97,7 @@ export default function Search() {
 
   const name = (id) => stations.find((s) => s.stationId === id)?.stationName || id;
   const sorted = useMemo(() => {
-    if (!state.runs) return null;
+    if (!state.runs || !q.date) return null;
     // 고른 날짜·시각 이후에 출발하고, 지금 기준으로 이미 떠났거나 예매가 끝난 열차는 뺀다
     const since = `${q.date}T${qTime}`;
     const now = seoulNowLocal();
@@ -141,52 +146,41 @@ export default function Search() {
               </label>
             </div>
             <div className="s-fields">
-              <label className="fld">
+              <button type="button" className="fld" aria-haspopup="dialog" onClick={() => setOpenDlg('date')}>
                 <span className="k"><Icon name="calendar" />운행일</span>
-                <span className="v">{shortDate(form.date)}{form.date === seoulToday() && <span className="st amber">오늘</span>}</span>
-                {/* 칸 전체를 보이지 않는 입력이 덮고 있어서, 어디를 눌러도 브라우저 달력이 열린다 */}
-                <input
-                  type="date" aria-label="운행일" value={form.date} min={seoulToday()} required
-                  onClick={openPicker}
-                  onChange={(e) => e.target.value && setForm({ ...form, date: e.target.value, time: timeForDate(form, e.target.value) })}
-                  style={overlay}
-                />
-              </label>
-              <label className="fld">
+                <span className="v">{shortDate(form.date)}{form.date === seoulToday() && <span className="st amber">오늘</span>}<i className="chev" aria-hidden="true" /></span>
+              </button>
+              <button type="button" className="fld" aria-haspopup="dialog" onClick={() => setOpenDlg('time')}>
                 <span className="k"><Icon name="clock" />출발 시각 이후</span>
                 <span className="v">{timeText(form.time)}<i className="chev" aria-hidden="true" /></span>
-                {/* 분은 고르지 않고 시(0~23시)만. 오늘이면 이미 지난 시는 비활성 */}
-                <select
-                  aria-label="출발 시각" value={form.time} required
-                  onChange={(e) => setForm({ ...form, time: e.target.value, timeSet: true })}
-                  style={overlay}
-                >
-                  {HOURS.map((h) => (
-                    <option key={h} value={h} disabled={form.date === seoulToday() && h < hourNow()}>{timeText(h)}</option>
-                  ))}
-                </select>
-              </label>
-              <button type="button" className="fld" aria-haspopup="dialog" onClick={() => setPeopleOpen(true)}>
+              </button>
+              <button type="button" className="fld" aria-haspopup="dialog" onClick={() => setOpenDlg('people')}>
                 <span className="k"><Icon name="person" />인원</span>
                 <span className="v">{partyText(form)}<i className="chev" aria-hidden="true" /></span>
               </button>
-              <label className="fld">
+              <button type="button" className="fld" aria-haspopup="dialog" onClick={() => setOpenDlg('grade')}>
                 <span className="k"><Icon name="ticket" />좌석 종류</span>
-                <select aria-label="좌석 종류" value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })}>
-                  <option value="">전체</option>
-                  {GRADES.map(([g, label]) => <option key={g} value={g}>{label}</option>)}
-                </select>
-              </label>
+                <span className="v">{form.grade ? GRADES.find(([g]) => g === form.grade)[1] : '전체'}<i className="chev" aria-hidden="true" /></span>
+              </button>
             </div>
           </div>
             <button className="btn ink" type="submit" disabled={!stations.length}>열차 찾기</button>
           </form>
-          {peopleOpen && (
-            <PeopleDialog
-              value={form}
-              onClose={() => setPeopleOpen(false)}
-              onApply={(v) => { setForm({ ...form, ...v }); setPeopleOpen(false); }}
-            />
+          {openDlg === 'date' && (
+            <DateDialog value={form.date} onClose={closeDlg}
+              onApply={(date) => { setForm({ ...form, date, time: timeForDate(form, date) }); closeDlg(); }} />
+          )}
+          {openDlg === 'time' && (
+            <TimeDialog value={form.time} date={form.date} onClose={closeDlg}
+              onApply={(time) => { setForm({ ...form, time, timeSet: true }); closeDlg(); }} />
+          )}
+          {openDlg === 'people' && (
+            <PeopleDialog value={form} onClose={closeDlg}
+              onApply={(v) => { setForm({ ...form, ...v }); closeDlg(); }} />
+          )}
+          {openDlg === 'grade' && (
+            <GradeDialog value={form.grade} onClose={closeDlg}
+              onApply={(grade) => { setForm({ ...form, grade }); closeDlg(); }} />
           )}
         </div>
       </section>
@@ -232,15 +226,6 @@ export default function Search() {
   );
 }
 
-const overlay = { position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', minHeight: 0, width: '100%' };
-/** 글자 영역을 눌러도 달력·시각 선택창이 열리게 한다 (브라우저는 보통 작은 아이콘만 연다) */
-const openPicker = (e) => {
-  try {
-    e.currentTarget.showPicker?.();
-  } catch {
-    /* 이미 열려 있거나 지원하지 않으면 브라우저 기본 동작 */
-  }
-};
 /** 오늘이면 지금 시각, 다른 날이면 0시 */
 const defaultTime = (date) => (date === seoulToday() ? hourNow() : '00:00');
 /** 시(0~23)만 고른다: "00:00" ~ "23:00" */
@@ -274,12 +259,14 @@ const timeText = (t) => {
   return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}시${m ? ` ${m}분` : ''}`;
 };
 
-// ------------------------------------------------------------ 인원 선택
+// ------------------------------------------------------------ 선택 창 (날짜·시각·인원·좌석 종류)
 
-/** 인원 선택 대화상자. [적용]을 눌러야 검색 조건에 반영되고, [취소]·닫기·Esc·바깥을 누르면 버린다 */
-function PeopleDialog({ value, onClose, onApply }) {
-  const [d, setD] = useState({ adult: value.adult, child: value.child, senior: value.senior });
-  const sum = total(d);
+/**
+ * 선택 창 공통 틀. [적용]을 눌러야 검색 조건에 반영되고, [취소]·닫기·Esc·바깥을 누르면 버린다.
+ * 페이지 전환 애니메이션(.page-enter)의 transform이 남아 있으면 position:fixed가 화면이 아니라 그 요소 기준이 돼,
+ * 열차 목록이 길어진 뒤에는 창이 화면 아래로 밀려난다. 그래서 .user 바로 아래(화면 기준)에 그린다
+ */
+function Dialog({ id, title, onClose, onApply, children, note }) {
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', onKey);
@@ -292,34 +279,117 @@ function PeopleDialog({ value, onClose, onApply }) {
   }, [onClose]);
   const box = (
     <div className="dlg-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dlg" role="dialog" aria-modal="true" aria-labelledby="pp-title">
+      <div className="dlg" role="dialog" aria-modal="true" aria-labelledby={id}>
         <header>
-          <h2 id="pp-title">인원 선택</h2>
+          <h2 id={id}>{title}</h2>
           <button type="button" className="x" aria-label="닫기" onClick={onClose}>×</button>
         </header>
-        <ul>
-          {KINDS.map(([k, label, age]) => (
-            <li key={k}>
-              <span>{label}<span className="age">({age})</span></span>
-              <span className="step">
-                <button type="button" aria-label={`${label} 한 명 빼기`} disabled={d[k] === 0 || sum <= 1} onClick={() => setD({ ...d, [k]: d[k] - 1 })}>−</button>
-                <b>{d[k]}</b>
-                <button type="button" aria-label={`${label} 한 명 더하기`} disabled={sum >= MAX_PEOPLE} onClick={() => setD({ ...d, [k]: d[k] + 1 })}>+</button>
-              </span>
-            </li>
-          ))}
-        </ul>
-        <p className="note">한 번에 최대 {MAX_PEOPLE}명까지 고를 수 있어요. 어린이·경로 할인은 아직 없어 어른 운임으로 계산해요.</p>
+        {children}
+        {note && <p className="note">{note}</p>}
         <footer>
           <button type="button" className="pill" onClick={onClose}>취소</button>
-          <button type="button" className="pill on" onClick={() => onApply(d)}>적용</button>
+          <button type="button" className="pill on" onClick={onApply}>적용</button>
         </footer>
       </div>
     </div>
   );
-  // 페이지 전환 애니메이션(.page-enter)의 transform이 남아 있으면 position:fixed가 화면이 아니라 그 요소 기준이 돼,
-  // 열차 목록이 길어진 뒤에는 창이 화면 아래로 밀려난다. 그래서 .user 바로 아래(화면 기준)에 그린다
   return createPortal(box, document.querySelector('.user') || document.body);
+}
+
+function PeopleDialog({ value, onClose, onApply }) {
+  const [d, setD] = useState({ adult: value.adult, child: value.child, senior: value.senior });
+  const sum = total(d);
+  return (
+    <Dialog id="pp-title" title="인원 선택" onClose={onClose} onApply={() => onApply(d)}
+      note={`한 번에 최대 ${MAX_PEOPLE}명까지 고를 수 있어요. 어린이·경로 할인은 아직 없어 어른 운임으로 계산해요.`}>
+      <ul>
+        {KINDS.map(([k, label, age]) => (
+          <li key={k}>
+            <span>{label}<span className="age">({age})</span></span>
+            <span className="step">
+              <button type="button" aria-label={`${label} 한 명 빼기`} disabled={d[k] === 0 || sum <= 1} onClick={() => setD({ ...d, [k]: d[k] - 1 })}>−</button>
+              <b>{d[k]}</b>
+              <button type="button" aria-label={`${label} 한 명 더하기`} disabled={sum >= MAX_PEOPLE} onClick={() => setD({ ...d, [k]: d[k] + 1 })}>+</button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Dialog>
+  );
+}
+
+/** 운행일: 달 단위 달력. 오늘 이전은 고를 수 없다 */
+function DateDialog({ value, onClose, onApply }) {
+  const today = seoulToday();
+  const [pick, setPick] = useState(value);
+  const [ym, setYm] = useState(value.slice(0, 7)); // "2026-11"
+  const [y, m] = ym.split('-').map(Number);
+  const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay(); // 1일의 요일 (일=0)
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const iso = (d) => `${ym}-${String(d).padStart(2, '0')}`;
+  const move = (n) => {
+    const t = new Date(Date.UTC(y, m - 1 + n, 1));
+    setYm(`${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}`);
+  };
+  const canPrev = ym > today.slice(0, 7);
+  return (
+    <Dialog id="dt-title" title="운행일 선택" onClose={onClose} onApply={() => onApply(pick)}>
+      <div className="cal">
+        <div className="cal-nav">
+          <button type="button" aria-label="이전 달" disabled={!canPrev} onClick={() => move(-1)}>‹</button>
+          <b>{y}년 {m}월</b>
+          <button type="button" aria-label="다음 달" onClick={() => move(1)}>›</button>
+        </div>
+        <div className="cal-grid">
+          {['일', '월', '화', '수', '목', '금', '토'].map((w, i) => <span key={w} className={'w' + (i === 0 ? ' sun' : i === 6 ? ' sat' : '')}>{w}</span>)}
+          {Array.from({ length: first }, (_, i) => <span key={'b' + i} />)}
+          {Array.from({ length: days }, (_, i) => {
+            const d = i + 1;
+            const v = iso(d);
+            return (
+              <button key={v} type="button" className={'d' + (v === pick ? ' on' : '') + (v === today ? ' today' : '')}
+                disabled={v < today} aria-pressed={v === pick} aria-label={`${m}월 ${d}일`} onClick={() => setPick(v)}>{d}</button>
+            );
+          })}
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+/** 출발 시각: 0~23시를 눌러 고른다. 오늘이면 이미 지난 시는 비활성 */
+function TimeDialog({ value, date, onClose, onApply }) {
+  const [pick, setPick] = useState(value);
+  const now = hourNow();
+  return (
+    <Dialog id="tm-title" title="출발 시각 선택" onClose={onClose} onApply={() => onApply(pick)}
+      note="고른 시(時) 이후에 출발하는 열차를 보여 줘요.">
+      <div className="opt-grid">
+        {HOURS.map((h) => (
+          <button key={h} type="button" className={h === pick ? 'on' : ''} aria-pressed={h === pick}
+            disabled={date === seoulToday() && h < now} onClick={() => setPick(h)}>{timeText(h)}</button>
+        ))}
+      </div>
+    </Dialog>
+  );
+}
+
+/** 좌석 종류: 전체 또는 한 가지 */
+function GradeDialog({ value, onClose, onApply }) {
+  const [pick, setPick] = useState(value);
+  return (
+    <Dialog id="gr-title" title="좌석 종류 선택" onClose={onClose} onApply={() => onApply(pick)}>
+      <ul className="opt-list" role="radiogroup" aria-label="좌석 종류">
+        {[['', '전체'], ...GRADES].map(([g, label]) => (
+          <li key={g || 'all'}>
+            <button type="button" role="radio" aria-checked={g === pick} className={g === pick ? 'on' : ''} onClick={() => setPick(g)}>
+              <span>{label}</span><i aria-hidden="true">{g === pick ? '✓' : ''}</i>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Dialog>
+  );
 }
 
 // ------------------------------------------------------------ 운행 카드
