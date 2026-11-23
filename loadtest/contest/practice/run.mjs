@@ -7,6 +7,7 @@
 //
 //   node loadtest/contest/practice/run.mjs                 # 전부 (가입 → 구매)
 //   PROFILES=botfast,botsteady HUMANS=0 node …            # 일부만
+//   GEN=2 node …                                         # 2단계(제안 규칙 피하기) 9종, GEN=all은 39종
 //   MODE=signup | buy | all (기본 all)
 //
 // 앱은 신뢰 프록시 모드로: --jejari.auth.trusted-proxies=127.0.0.1,0:0:0:0:0:0:0:1 (프로필마다 다른 IP를 X-Forwarded-For로 보냄.
@@ -54,7 +55,7 @@ const P = (kind, family, desc, o = {}) => ({
   think: T.quick, searches: 1, seatMap: true, mapPolls: 0, party: 2, pick: 'random', retrySame: 0, pay: true,
   cancelAfterPayMs: null, holdNoPay: false, holdCancelLoops: 0, start: 'sync', device: 'own', card: 'own',
   sameCi: false, queueSpam: 0, ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0 Safari/537.36',
-  runHop: 0, limitProbe: false, burst: false, ...o,
+  runHop: 0, limitProbe: false, burst: false, gen: 1, step: null, ipEach: false, staggerMs: [20000, 40000], ...o,
 });
 const PROFILES = [
   // 속도
@@ -95,6 +96,23 @@ const PROFILES = [
   P('botmimicfast', '사람 흉내', '둘러보기는 사람처럼, 좌석 선점 순간만 빠르게', { think: T.human, searches: 3, burst: true }),
   P('botlate', '사람 흉내', '판매 열리고 1분 뒤 천천히', { think: T.human, start: 'late' }),
 ];
+// ── 2단계: 1단계 평가에서 나온 규칙 제안(연습봇-평가와-규칙-제안.md 3절)을 피하도록 바꾼 봇 ──
+// 규칙을 보강하면 실제 매크로도 이렇게 바뀐다. 제안 규칙이 어디까지 버티는지 미리 본다. GEN=2로 돌림
+//   step: 좌석표 → 선점, 선점 → 결제 사이를 이만큼 쉼 (INHUMAN_STEP 0.5초 피하기)
+//   ipEach: 명의마다 다른 IP (주거용 프록시, SHARED_IP 피하기)
+const P2 = (kind, desc, o) => P(kind, '2단계', desc, { gen: 2, think: T.quick, ...o });
+const GEN2 = [
+  P2('botstep', '단계 사이만 0.6~0.9초 (나머지는 빠르게)', { step: [600, 900] }),
+  P2('botstepjit', '단계 사이 0.6~2초 무작위', { step: [600, 2000] }),
+  P2('botsearchfast', '조회 한 번 하고(조회 없이 진입 피하기) 단계 사이 0.6초', { step: [600, 800], think: T.none }),
+  P2('botresi', '명의마다 다른 IP + 단계 사이 0.7초', { step: [700, 1000], ipEach: true }),
+  P2('botpace', '전체를 사람보다 조금 빠른 속도로 (중앙 1.2초)', { think: () => Math.min(8000, logn(1200, 0.4)), step: [700, 1500] }),
+  P2('botsmallbuy', '1석씩만, 단계 사이 0.7초 (대량 구매 피하기)', { party: 1, step: [700, 1100] }),
+  P2('botretrydiff', '뺏기면 같은 좌석 대신 다른 좌석, 단계 사이 0.7초', { pick: 'front', step: [700, 1100] }),
+  P2('botghostsync', '명의마다 IP·기기·카드 다름 + 조회 2번 + 단계 사이 0.7~1.5초, 동시에 출발', { searches: 2, step: [700, 1500], ipEach: true }),
+  P2('botghost', '위와 같고 명의끼리 65~120초 간격 (다계정 동시 선점 60초 피하기)', { searches: 2, step: [700, 1500], ipEach: true, start: 'stagger', staggerMs: [65000, 120000] }),
+];
+
 const HUMAN = P('human', '합성 사람', '사람처럼 둘러보고 쉬고, 가끔 실패하면 다른 좌석', { think: T.human, searches: 2 });
 
 // ── HTTP ───────────────────────────────────────────────────
@@ -135,7 +153,7 @@ function makeCtx(p, n) {
   return {
     p, n, ua: p.ua, token: null, id: identity(p.kind, n, p.sameCi), seats: 0, errors: [],
     // IP: 봇은 프로필마다 하나(프록시 하나를 쓰는 운영자), 합성 사람은 사람마다 하나. 앱이 신뢰 프록시 모드일 때만 의미 있음
-    ip: fakeIp(p.kind === 'human' ? `${p.kind}.${n}` : p.kind),
+    ip: fakeIp(p.kind === 'human' || p.ipEach ? `${p.kind}.${n}` : p.kind),
     // 카드: 계정마다 다르게 (프로필·번호로 만든 15자리 + 끝자리 1 = 모의 PG 승인). botsharedcard만 프로필 안에서 하나를 같이 씀
     card: cardFor(p.card === 'shared' ? `${p.kind}.shared` : `${p.kind}.${n}`),
     deviceFor() {
@@ -239,12 +257,14 @@ async function buyOne(ctx, runDate) {
   for (let attempt = 0; attempt < 30 && loops > 0; attempt++) {
     const seats = choose(ctx, empty, k);
     if (!seats.length) break;
+    if (p.step) await sleep(rand(...p.step)); // 좌석표 → 선점
     const h = await hold(ctx, pass, seats);
     if (h.status === 201 || h.status === 200) {
       const rid = h.data?.reservationId;
       if (p.holdNoPay) { ctx.seats += 0; loops = 0; break; }
       if (p.holdCancelLoops && loops > 1) { await sleep(burstThink()); await cancel(ctx, rid); loops--; empty = await seatMap(ctx, pass); continue; }
       await sleep(burstThink());
+      if (p.step) await sleep(rand(...p.step)); // 선점 → 결제
       const r = await pay(ctx, rid);
       if (r.status === 200 || r.status === 201) {
         ctx.seats += seats.length;
@@ -283,7 +303,7 @@ async function runProfile(p, count, runDate) {
     try {
       if (MODE !== 'buy') await signupOne(ctx);
       if (MODE === 'signup') return;
-      if (p.start === 'stagger') await sleep(i * rand(20000, 40000));
+      if (p.start === 'stagger') await sleep(i * rand(...p.staggerMs));
       if (p.start === 'late') await sleep(60000 + rand(0, 20000));
       await buyOne(ctx, runDate);
     } catch (e) { ctx.errors.push(e.message); }
@@ -293,7 +313,11 @@ async function runProfile(p, count, runDate) {
 }
 
 const want = (process.env.PROFILES || '').split(',').map((s) => s.trim()).filter(Boolean);
-const chosen = PROFILES.filter((p) => !want.length || want.includes(p.kind));
+// GEN: 1(기본, 1단계 30종) · 2(2단계) · all. PROFILES로 이름을 주면 단계와 상관없이 그 봇만
+const GEN = process.env.GEN || '1';
+const pool = PROFILES.concat(GEN2);
+const chosen = want.length ? pool.filter((p) => want.includes(p.kind))
+  : pool.filter((p) => GEN === 'all' || String(p.gen) === GEN);
 const probe = { token: null, ua: 'practice', deviceFor: () => null };
 const run = await call(probe, 'GET', `/api/v1/runs/${RUN_ID}?from=${FROM}&to=${TO}`);
 const runDate = run.data?.runDate;
