@@ -25,8 +25,8 @@ TAG="${1:-}"; RUN="${2:-}"
 if [[ ! "$TAG" =~ ^[a-z0-9]{1,8}$ || ! "$RUN" =~ ^[0-9]+$ ]]; then
   echo "사용법: $0 <실행 태그(영문 소문자·숫자)> <대회 운행 ID>"; exit 1
 fi
-# 참가 종류: human과 bot으로 시작하는 모든 종류 (새 봇 bote·botf…도 손대지 않고 집계). bot.json 이름 규칙과 같음
-kinds() { echo "(${1:-}kind = 'human' OR REGEXP_LIKE(${1:-}kind, '^bot[a-z]+$'))"; }
+# 참가 종류: human(연습용 사람 변형 human…도 사람으로 셈)과 bot으로 시작하는 모든 종류 (새 봇 bote·botf…도 손대지 않고 집계). bot.json 이름 규칙과 같음
+kinds() { echo "(REGEXP_LIKE(${1:-}kind, '^human[a-z]*$') OR REGEXP_LIKE(${1:-}kind, '^bot[a-z]+$'))"; }
 WAIT_SEC="${WAIT_SEC:-70}"
 MAX_WAIT_SEC="${MAX_WAIT_SEC:-300}"
 
@@ -67,8 +67,8 @@ if [[ -z "$ids" ]]; then echo "태그 ${TAG}의 참가자 계정이 없습니다
 sql <<EOF
 SET FEEDBACK OFF DEFINE OFF
 MERGE INTO synthetic_label t
-USING (SELECT member_id, CASE kind WHEN 'human' THEN 'NORMAL' ELSE 'RESELLER' END AS user_type,
-              CASE WHEN kind <> 'human' THEN grp + 1 END AS group_id,
+USING (SELECT member_id, CASE WHEN kind LIKE 'human%' THEN 'NORMAL' ELSE 'RESELLER' END AS user_type,
+              CASE WHEN kind NOT LIKE 'human%' THEN grp + 1 END AS group_id,
               '{"source":"loadtest/contest","run":"${TAG}","behavior":"' || kind || '"}' AS params
          FROM (${LAB}) WHERE $(kinds)) s
 ON (t.member_id = s.member_id)
@@ -108,7 +108,7 @@ HOLD=$(rows "$holds" NUMBER)
 # ── 4) 평가 ──────────────────────────────────────────────────────
 sql <<EOF
 SET FEEDBACK OFF DEFINE OFF LINESIZE 220 PAGESIZE 100
-COLUMN kind FORMAT A6
+COLUMN kind FORMAT A14
 COLUMN layers FORMAT A44
 COLUMN rule_code FORMAT A20
 COLUMN subject FORMAT A8
@@ -146,12 +146,12 @@ agg AS (
 )
 SELECT kind, members, ids "명의", paid "결제한 좌석", held "잡고 안 낸 좌석", tries "선점 시도",
        lim "제한 거절", det "탐지 계정", max_score "최고 점수", pen_sec "순번 -초",
-       CASE WHEN kind = 'human' THEN CASE WHEN det > 0 THEN '오탐 ' || det || '명' ELSE '오탐 없음' END
+       CASE WHEN kind LIKE 'human%' THEN CASE WHEN det > 0 THEN '오탐 ' || det || '명' ELSE '오탐 없음' END
             ELSE NVL(RTRIM(CASE WHEN lim > 0 THEN '매수제한 · ' END
                           || CASE WHEN det > 0 THEN '규칙(케이스) · ' END
                           || CASE WHEN pen_sec > 0 THEN '순번조정 ' || pen_sec || '초 · ' END
                           || CASE WHEN judged > 0 THEN '관리자판정 · ' END, ' · '), '뚫림') END AS layers
-  FROM agg ORDER BY DECODE(kind, 'human', 1, 0), kind;
+  FROM agg ORDER BY CASE WHEN kind LIKE 'human%' THEN 1 ELSE 0 END, kind;
 
 PROMPT
 PROMPT 걸린 규칙 (종류별, 그 규칙의 케이스가 연결된 계정 수)

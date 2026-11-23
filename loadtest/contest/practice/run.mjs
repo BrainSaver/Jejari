@@ -7,7 +7,7 @@
 //
 //   node loadtest/contest/practice/run.mjs                 # 전부 (가입 → 구매)
 //   PROFILES=botfast,botsteady HUMANS=0 node …            # 일부만
-//   GEN=2 node …                                         # 2단계(제안 규칙 피하기) 9종, GEN=3은 3단계(녹화 꾸미기) 6종, GEN=all은 45종
+//   GEN=2 node …                                         # 2단계 9종 · GEN=3 녹화 꾸미기 9종 · GEN=h 사람 변형 10종(오탐) · GEN=all 전부
 //   MODE=signup | buy | all (기본 all)
 //
 // 앱은 신뢰 프록시 모드로: --jejari.auth.trusted-proxies=127.0.0.1,0:0:0:0:0:0:0:1 (프로필마다 다른 IP를 X-Forwarded-For로 보냄.
@@ -55,7 +55,7 @@ const P = (kind, family, desc, o = {}) => ({
   think: T.quick, searches: 1, seatMap: true, mapPolls: 0, party: 2, pick: 'random', retrySame: 0, pay: true,
   cancelAfterPayMs: null, holdNoPay: false, holdCancelLoops: 0, start: 'sync', device: 'own', card: 'own',
   sameCi: false, queueSpam: 0, ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0 Safari/537.36',
-  runHop: 0, limitProbe: false, burst: false, gen: 1, step: null, ipEach: false, staggerMs: [20000, 40000], rec: null, ...o,
+  runHop: 0, limitProbe: false, burst: false, gen: 1, step: null, ipEach: false, staggerMs: [20000, 40000], rec: null, count: null, ip: null, doubleClick: false, ...o,
 });
 const PROFILES = [
   // 속도
@@ -125,6 +125,30 @@ const GEN3 = [
   P3('botrectemplate', '사람 같은 궤적 하나를 모든 계정이 똑같이 재사용', { rec: 'template' }),
 ];
 
+// 사람 변형 (오탐 시험): 진짜 사람이 하는데 규칙에 걸리기 쉬운 행동. GEN=h로 돌림. 탐지되면 오탐
+//   진짜 사람이 아닌 스크립트라 "이 행동이면 오탐이 나는지"만 본다. 오탐률 자체는 2차 대회 사람으로
+const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 Version/18.1 Mobile/15E148 Safari/604.1';
+const PH = (kind, desc, o) => P(kind, '사람 변형', desc, { gen: 'h', think: T.human, searches: 2, rec: 'human', ...o });
+const GENH = [
+  PH('humanfast', '손 빠른 사람 (생각 0.7초 안팎, 단계 사이 0.55~0.9초 — INHUMAN_STEP 문턱 바로 위)', { think: () => Math.min(4000, logn(700, 0.35)), step: [550, 900], searches: 1 }),
+  PH('humandouble', '선점 버튼을 두 번 누르는 사람 (0.06~0.14초 간격, 60%)', { doubleClick: true }),
+  PH('humanretry', '오픈 직후 인기 좌석 경쟁: 뺏기면 같은 좌석 1번 더, 그다음 다른 좌석 (맨 앞 좌석 선호)', { pick: 'front', retrySame: 1, think: () => Math.min(6000, logn(1200, 0.4)) }),
+  PH('humanmobile', '휴대폰 사용자 (터치만, 마우스 궤적 없음, 모바일 브라우저)', { rec: 'mobile', ua: MOBILE_UA }),
+  PH('humankeyboard', '키보드로 쓰는 사람 (Tab·Enter, 클릭 좌표 0, 궤적 없음)', { rec: 'keyboard' }),
+  PH('humanlink', '조회 없이 링크로 바로 줄 서기 (취소표 "예매하기"·공유 링크)', { searches: 0 }),
+  PH('humanfamily', '가족 3명 표를 한 컴퓨터에서 차례로 (같은 기기·같은 IP, 명의는 각자, 20~40초 간격)', { device: 'shared', ip: 'shared', start: 'stagger', count: 3 }),
+  PH('humannat', '회사·학교 같은 IP 뒤 6명이 오픈 순간 동시에 (기기는 각자)', { ip: 'shared', count: 6 }),
+  PH('humancancel', '결제 뒤 1~2분 만에 날짜를 잘못 고른 걸 알고 취소', { cancelAfterPayMs: [60000, 120000] }),
+  PH('humanslow', '천천히 고르는 사람 (날짜 4번 조회, 생각 3~10초)', { searches: 4, think: () => Math.min(20000, logn(5000, 0.5)) }),
+];
+
+// 3단계 추가: 남은 빈틈 (마우스 궤적 보강 제안 5절)
+GEN3.push(
+  P3('botrecjump', '클릭 자리에 점 하나만 찍고 클릭 (순간이동인데 클릭 수가 적어 문턱 아래)', { rec: 'jump' }),
+  P3('botrecmobile', '휴대폰인 척: 모바일 브라우저 + 터치 클릭만 (진짜 휴대폰 사용자와 녹화가 같음)', { rec: 'mobile', ua: MOBILE_UA }),
+  P3('botrecreal', '사람과 같은 녹화(곡선·가감속·멈췄다 클릭) + 2단계 피하기 전부 = 가장 잘 숨는 봇 (어디까지 막히나 상한)', { rec: 'human' }),
+);
+
 const HUMAN = P('human', '합성 사람', '사람처럼 둘러보고 쉬고, 가끔 실패하면 다른 좌석. 화면 녹화도 보냄', { think: T.human, searches: 2, rec: 'human' });
 
 // ── 화면 녹화 ──────────────────────────────────────────────
@@ -138,6 +162,9 @@ const HUMAN = P('human', '합성 사람', '사람처럼 둘러보고 쉬고, 가
 //   linear    직선 등속 궤적 + 마우스 클릭 (자동화 도구 기본 이동. LINEAR_MOUSE가 잡아야 하는 기준선)
 //   bezier    휜 곡선이지만 등간격(가감속 없음)·손떨림 없음·도착 즉시 클릭
 //   template  사람처럼 보이는 궤적 하나를 모든 계정이 똑같이 재사용
+//   jump      클릭 자리에 점 하나만 찍고 바로 클릭 (자동화 도구 "요소로 이동 후 클릭")
+//   mobile    휴대폰: 터치(t) 클릭만, 마우스 궤적 없음 (진짜 휴대폰 사용자도 이렇다)
+//   keyboard  키보드(Tab·Enter): 클릭 좌표 0, 궤적 없음 (접근성·키보드 사용자)
 function seeded(seed) { let x = seed >>> 0 || 1; return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296); }
 async function recStart(ctx) {
   const c = (await call(ctx, 'GET', '/api/v1/replay/config')).data;
@@ -174,9 +201,12 @@ async function recClick(ctx, screen, target) {
   const R = mode === 'template' ? seeded(104729 * (r.n + 1)) : Math.random;
   const [x0, y0] = r.pos;
   const x1 = Math.round(150 + R() * 700), y1 = Math.round(150 + R() * 700);
-  if (mode !== 'clickonly') recPush(ctx, { type: 'MOUSE_PATH', screen, path: makePath(r, mode, x0, y0, x1, y1) });
-  if (mode === 'human' || mode === 'template') await sleep(rand(120, 300)); // 도착 뒤 잠깐 멈췄다 누름
-  recPush(ctx, { type: 'CLICK', screen, target, x: x1, y: y1, pointer: mode === 'touch' ? 't' : 'm' });
+  const noPath = mode === 'clickonly' || mode === 'mobile' || mode === 'keyboard';
+  if (mode === 'jump') recPush(ctx, { type: 'MOUSE_PATH', screen, path: [[r.c.pathSampleMs || 150, x1, y1]] });
+  else if (!noPath) recPush(ctx, { type: 'MOUSE_PATH', screen, path: makePath(r, mode, x0, y0, x1, y1) });
+  if (mode === 'human' || mode === 'template' || mode === 'mobile') await sleep(rand(120, 300)); // 도착(손가락 이동) 뒤 잠깐 멈췄다 누름
+  const pointer = mode === 'touch' || mode === 'mobile' ? 't' : mode === 'keyboard' ? 'k' : 'm';
+  recPush(ctx, { type: 'CLICK', screen, target, x: mode === 'keyboard' ? 0 : x1, y: mode === 'keyboard' ? 0 : y1, pointer });
   r.pos = [x1, y1];
   r.n++;
   await recFlush(ctx);
@@ -200,7 +230,7 @@ function identity(kind, n, sameCi) {
   const digits = [...seed].map((b) => b % 10).join('').slice(0, 7);
   const phone = `010${digits}1`; // 끝자리 1 (모의 본인인증의 실패 번호 …0000 피하기)
   const name = '연습' + [...digits.slice(0, 3)].map((d) => '가나다라마바사아자차'[Number(d)]).join('');
-  const group = kind === 'human' ? n : 1;
+  const group = kind.startsWith('human') ? n : 1;
   return { name, phone, email: `lt${TAG}.${kind}.g${group}.${n}@${DOMAIN}`, password: `Pr4c!${TAG}#${kind.length}x${n}Qz` };
 }
 
@@ -220,7 +250,7 @@ function makeCtx(p, n) {
   return {
     p, n, ua: p.ua, token: null, id: identity(p.kind, n, p.sameCi), seats: 0, errors: [],
     // IP: 봇은 프로필마다 하나(프록시 하나를 쓰는 운영자), 합성 사람은 사람마다 하나. 앱이 신뢰 프록시 모드일 때만 의미 있음
-    ip: fakeIp(p.kind === 'human' || p.ipEach ? `${p.kind}.${n}` : p.kind),
+    ip: fakeIp(p.ip === 'shared' ? `${p.kind}.shared` : p.kind.startsWith('human') || p.ipEach ? `${p.kind}.${n}` : p.kind),
     // 카드: 계정마다 다르게 (프로필·번호로 만든 15자리 + 끝자리 1 = 모의 PG 승인). botsharedcard만 프로필 안에서 하나를 같이 씀
     card: cardFor(p.card === 'shared' ? `${p.kind}.shared` : `${p.kind}.${n}`),
     deviceFor() {
@@ -328,6 +358,7 @@ async function buyOne(ctx, runDate) {
     if (!seats.length) break;
     if (p.step) await sleep(rand(...p.step)); // 좌석표 → 선점
     if (ctx.rec) await recClick(ctx, 'runs/:id/seats', 'hold-submit');
+    if (p.doubleClick && Math.random() < 0.6) setTimeout(() => hold(ctx, pass, seats).catch(() => {}), rand(60, 140)); // 선점 버튼 두 번 누름
     const h = await hold(ctx, pass, seats);
     if (h.status === 201 || h.status === 200) {
       const rid = h.data?.reservationId;
@@ -384,9 +415,9 @@ async function runProfile(p, count, runDate) {
 }
 
 const want = (process.env.PROFILES || '').split(',').map((s) => s.trim()).filter(Boolean);
-// GEN: 1(기본, 1단계 30종) · 2(2단계) · all. PROFILES로 이름을 주면 단계와 상관없이 그 봇만
+// GEN: 1(기본, 1단계 30종) · 2(2단계) · 3(녹화 꾸미기) · h(사람 변형, 오탐 시험) · all. PROFILES로 이름을 주면 단계와 상관없이 그 봇만
 const GEN = process.env.GEN || '1';
-const pool = PROFILES.concat(GEN2, GEN3);
+const pool = PROFILES.concat(GEN2, GEN3, GENH);
 const chosen = want.length ? pool.filter((p) => want.includes(p.kind))
   : pool.filter((p) => GEN === 'all' || String(p.gen) === GEN);
 const probe = { token: null, ua: 'practice', deviceFor: () => null };
@@ -396,7 +427,7 @@ if (!runDate) { console.error(`운행 ${RUN_ID}을 찾지 못했습니다 (${run
 console.log(`연습 ${chosen.length}종 × 명의 ${ACCOUNTS} + 합성 사람 ${HUMANS} · 운행 ${RUN_ID} (${runDate}) · 태그 ${TAG} · ${MODE}`);
 
 const t0 = Date.now();
-const jobs = chosen.map((p) => runProfile(p, ACCOUNTS, runDate).then((c) => [p, c]));
+const jobs = chosen.map((p) => runProfile(p, p.count || ACCOUNTS, runDate).then((c) => [p, c]));
 if (HUMANS && (!want.length || want.includes('human'))) jobs.push(runProfile(HUMAN, HUMANS, runDate).then((c) => [HUMAN, c]));
 const done = await Promise.all(jobs);
 
