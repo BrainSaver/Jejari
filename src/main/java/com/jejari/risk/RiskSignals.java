@@ -30,6 +30,8 @@ import java.util.regex.Pattern;
  * @param seatRetryFailures   같은 좌석을 다시 시도해 또 실패한 횟수를 모든 좌석에 걸쳐 합한 값 (좌석마다 실패 수 − 1의 합).
  *                            좌석을 바꿔 가며 문턱 아래로 반복하는 봇(좌석마다 4번씩)을 잡는다. 사람은 이미 잡힌 좌석을
  *                            다시 누르기보다 다른 좌석을 고르므로 정상 회원은 대개 0~1
+ * @param headlessHoldSessions 좌석을 선점했는데 화면 녹화가 0건인 로그인 세션 수 (같은 시간대 다른 세션은 녹화 중일 때만)
+ * @param queueWithoutSearch  집계 기간 안에 대기열 진입은 있는데 사람이 직접 한 열차 조회가 0건이면 true
  * @param mechanicalMouseMoves 화면 녹화에서 센 기계적 마우스 이동 수 (클릭 자리로 순간이동 + 직선·등속 이동, {@link MouseMotion}).
  *                            마우스 클릭만 보므로 휴대폰·키보드 사용자는 0
  */
@@ -40,9 +42,24 @@ public record RiskSignals(
         long purchaseCount, long totalPurchaseSeats, long maxSinglePurchase,
         long userCancelCount, long fastCancelCount, long lastMinuteCancelCount, Double avgMinutesToCancel,
         long linkedAccountCount, long maxSyncAccounts,
-        Long accountAgeDays, long seatRetryFailures, long mechanicalMouseMoves) {
+        Long accountAgeDays, long seatRetryFailures, long mechanicalMouseMoves,
+        long headlessHoldSessions, boolean queueWithoutSearch) {
 
     private static final Pattern HASH = Pattern.compile("^[0-9a-f]{64}$");
+
+    /** 화면·조회 신호 없이 만드는 모양 */
+    public RiskSignals(SubjectType subjectType, String subjectHash, Instant windowFrom,
+            long intervalCount, long fastIntervalCount, double intervalMeanMs, double intervalStdDevMs,
+            long maxSameSeatFailures,
+            long purchaseCount, long totalPurchaseSeats, long maxSinglePurchase,
+            long userCancelCount, long fastCancelCount, long lastMinuteCancelCount, Double avgMinutesToCancel,
+            long linkedAccountCount, long maxSyncAccounts,
+            Long accountAgeDays, long seatRetryFailures, long mechanicalMouseMoves) {
+        this(subjectType, subjectHash, windowFrom, intervalCount, fastIntervalCount, intervalMeanMs, intervalStdDevMs,
+                maxSameSeatFailures, purchaseCount, totalPurchaseSeats, maxSinglePurchase, userCancelCount,
+                fastCancelCount, lastMinuteCancelCount, avgMinutesToCancel, linkedAccountCount, maxSyncAccounts,
+                accountAgeDays, seatRetryFailures, mechanicalMouseMoves, 0, false);
+    }
 
     /** 마우스 신호 없이 만드는 기존 모양. mechanicalMouseMoves = 0 */
     public RiskSignals(SubjectType subjectType, String subjectHash, Instant windowFrom,
@@ -84,6 +101,7 @@ public record RiskSignals(
         nonNegative(maxSameSeatFailures, "maxSameSeatFailures");
         nonNegative(seatRetryFailures, "seatRetryFailures");
         nonNegative(mechanicalMouseMoves, "mechanicalMouseMoves");
+        nonNegative(headlessHoldSessions, "headlessHoldSessions");
         nonNegative(purchaseCount, "purchaseCount");
         nonNegative(totalPurchaseSeats, "totalPurchaseSeats");
         nonNegative(maxSinglePurchase, "maxSinglePurchase");

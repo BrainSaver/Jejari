@@ -229,4 +229,22 @@ class RiskBatchUnitTest {
 		assertThat(paths).hasSize(1);
 		assertThat(paths.get(0)).hasSize(2); // 이상한 점 둘은 버림
 	}
+
+	@Test
+	void 행동_로그에서_사람_조회와_대기열_진입과_선점_세션을_모은다() {
+		RiskPolicy policy = RiskPolicy.defaults();
+		String h = "cd".repeat(32);
+		SignalCollector c = new SignalCollector(policy, SubjectType.CI, h, Instant.EPOCH);
+		Date t = new Date();
+		RiskInputReader.apply(c, new Document("event_type", "VIEW_TRAIN").append("meta", new Document("auto", true)));
+		RiskInputReader.apply(c, new Document("event_type", "QUEUE_ENTER"));
+		RiskInputReader.apply(c, new Document("event_type", "SEAT_HOLD").append("ts", t).append("member_id", 1L)
+				.append("session_id", "s-1"));
+		RiskInputReader.apply(c, new Document("event_type", "SEAT_HOLD").append("ts", t).append("member_id", 1L)); // 세션 없음
+		assertThat(c.build().queueWithoutSearch()).isTrue(); // 자동 조회만 있으면 사람이 찾은 게 아니다
+		assertThat(c.holdSessions()).containsOnlyKeys("s-1");
+
+		RiskInputReader.apply(c, new Document("event_type", "VIEW_TRAIN"));
+		assertThat(c.build().queueWithoutSearch()).isFalse();
+	}
 }

@@ -357,6 +357,8 @@ public class SuspiciousCaseOpener {
 			case REGULAR_INTERVAL -> "요청 간격이 기계처럼 일정함 (변동계수 "
 					+ String.format(java.util.Locale.ROOT, "%.3f", r.observed()) + ")";
 			case LINEAR_MOUSE -> "마우스가 기계처럼 움직임 (클릭 자리로 순간이동·직선 등속 " + n + "회)";
+			case HEADLESS_HOLD -> "화면 없이 좌석 선점 (녹화 없는 세션 " + n + "개)";
+			case NO_SEARCH_ENTRY -> "열차 조회 없이 대기열 진입";
 			default -> r.rule().name() + " " + n;
 		};
 	}

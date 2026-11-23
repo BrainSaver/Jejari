@@ -35,7 +35,21 @@ public enum RiskRule {
      * 화면 녹화의 마우스가 기계처럼 움직임: 클릭 자리로 순간이동, 직선·등속 이동 ({@link MouseMotion}).
      * 사람 흉내 브라우저 매크로용 마커 규칙 (ERD case_marker.rule_code CHECK에 처음부터 있던 값, 2026-11-23 구현)
      */
-    LINEAR_MOUSE(true);
+    LINEAR_MOUSE(true),
+
+    /**
+     * 화면 없이 좌석 선점: 선점한 로그인 세션에 화면 녹화가 하나도 없음 = 브라우저 없이 API만 부른 클라이언트.
+     * 같은 시간대에 다른 세션은 녹화되고 있을 때만 센다 (녹화 장애 때 전원 오탐 방지).
+     * 케이스를 열려면 ERD case_marker.rule_code CHECK에 값이 있어야 해서 <b>ERD 패치 전까지 점수만</b> (2026-11-23)
+     */
+    HEADLESS_HOLD(false),
+
+    /**
+     * 집계 기간 안에 열차 조회(사람이 직접 한 VIEW_TRAIN)가 0건인데 대기열 진입이 있음 = 운행 번호를 알고 대기열 주소로 바로.
+     * 취소표 대기·다시 줄 서기·새로고침·북마크로도 조회 없이 올 수 있어 <b>낮은 점수(LOW)만</b> (팀 의견 2026-11-23).
+     * 검색 API를 한 번만 불러도 피하므로 단독으로는 약한 신호
+     */
+    NO_SEARCH_ENTRY(false);
 
     private final boolean marker;
 
