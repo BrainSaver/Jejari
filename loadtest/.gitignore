@@ -4,3 +4,4 @@ results/
 __pycache__/
 *.pyc
 capacity-result.json
+contest/web/bots.local.json

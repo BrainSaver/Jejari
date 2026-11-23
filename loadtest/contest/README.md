@@ -20,6 +20,8 @@
 node loadtest/contest/web/server.js        # → http://localhost:8098 (이 PC에서만 열림)
 ```
 
+**쓰는 법은 [`진행-화면-사용법.md`](진행-화면-사용법.md)** (화면 맨 위 "사용 방법"에도 그대로 보임).
+
 관리자 ID·비밀번호·태그·사람 시간(기본 10분)을 넣고 봇을 고른 뒤 **대회 시작**을 누르면 아래를 차례로 합니다.
 로그와 결과는 `loadtest/contest/results/<태그>/` (log.txt · eval.txt · compare.md · summary.json).
 
@@ -38,6 +40,8 @@ node loadtest/contest/web/server.js        # → http://localhost:8098 (이 PC�
 ### 봇 꽂기 (`bot.json`)
 
 봇 폴더(`loadtest/contest/bot{영문 소문자}/`)에 한 장 두면 화면에 나타납니다. 진행 화면 코드는 고치지 않습니다.
+화면의 **+ 봇 추가**로도 넣을 수 있습니다: 받은 봇 파일을 올리면 이 폴더와 `bot.json`을 만들어 주고, 다른 폴더에 있는 봇은 경로만 등록합니다(`web/bots.local.json`, 이 PC에만).
+Playwright는 봇 폴더 하나에만 설치하면 모든 봇이 같이 씁니다 (화면이 `NODE_PATH`로 묶음).
 
 ```json
 { "name": "botb", "owner": "길동현", "blind": true, "run": ["node", "bot.cjs"], "needs": ["playwright"], "env": {} }

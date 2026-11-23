@@ -22,7 +22,7 @@ input[type=text], input[type=password], input[type=number] { width:100%; padding
 .bot { display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-top:1px solid var(--line); font-size:14px; }
 .bot:first-child { border-top:0; }
 .bot .why { color:var(--stop); font-size:12px; }
-.badge { font-size:11px; padding:1px 6px; border-radius:9px; border:1px solid var(--line); color:var(--mute); margin-left:4px; }
+.badge { white-space:nowrap; font-size:11px; padding:1px 6px; border-radius:9px; border:1px solid var(--line); color:var(--mute); margin-left:4px; }
 button { font:inherit; padding:9px 14px; border-radius:7px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
 button.primary { background:var(--go); border-color:var(--go); color:#fff; font-weight:600; width:100%; margin-top:12px; padding:12px; font-size:16px; }
 button.danger { color:var(--stop); border-color:var(--stop); }
@@ -40,6 +40,28 @@ ol.steps li { display:flex; gap:10px; padding:5px 0; align-items:baseline; }
 .mono { font-family:ui-monospace, Consolas, monospace; font-size:13px; }
 pre { margin:0; background:var(--code); border-radius:6px; padding:10px; overflow:auto; font:12.5px/1.45 ui-monospace, Consolas, monospace; white-space:pre; }
 #log { height:360px; }
+.bot .grow { flex:1; min-width:0; }
+.bot .where { color:var(--mute); font-size:12px; word-break:break-all; }
+button.small { padding:3px 9px; font-size:12px; }
+.h2row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+.h2row h2 { margin:0; }
+#addform { border-top:1px solid var(--line); margin-top:10px; padding-top:6px; }
+.seg { display:flex; gap:0; margin-top:8px; }
+.seg button { flex:1; border-radius:0; padding:6px; font-size:13px; }
+.seg button:first-child { border-radius:6px 0 0 6px; } .seg button:last-child { border-radius:0 6px 6px 0; border-left:0; }
+.seg button.on { background:var(--run); border-color:var(--run); color:#fff; }
+.check { display:flex; gap:6px; align-items:center; color:var(--fg); font-size:14px; white-space:normal; }
+input[type=file] { width:100%; font-size:13px; margin-top:2px; }
+.guide { grid-column:1/-1; }
+.guide summary { cursor:pointer; font-weight:600; }
+.md { font-size:14px; } .md h1 { font-size:18px; margin:14px 0 6px; } .md h2 { font-size:16px; margin:16px 0 6px; } .md h3 { font-size:15px; margin:12px 0 4px; }
+.md p, .md ul, .md ol { margin:6px 0; } .md ul, .md ol { padding-left:20px; }
+.md table { border-collapse:collapse; width:100%; margin:6px 0; display:block; overflow-x:auto; }
+.md th, .md td { border:1px solid var(--line); padding:4px 8px; text-align:left; vertical-align:top; }
+.md th { background:var(--code); }
+.md code { background:var(--code); padding:1px 4px; border-radius:4px; font:12.5px ui-monospace, Consolas, monospace; }
+.md pre code { padding:0; background:none; }
+.md blockquote { margin:6px 0; padding:2px 10px; border-left:3px solid var(--line); color:var(--mute); }
 .botstate { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
 .chip { font-size:12px; padding:2px 8px; border-radius:10px; border:1px solid var(--line); }
 .chip.ok { border-color:var(--go); color:var(--go); } .chip.failed { border-color:var(--stop); color:var(--stop); } .chip.running { border-color:var(--run); color:var(--run); }
@@ -51,6 +73,12 @@ pre { margin:0; background:var(--code); border-radius:6px; padding:10px; overflo
 <body>
 <main>
   <h1>봇 대회 진행 <small id="base"></small></h1>
+
+  <section class="guide">
+    <details id="guide"><summary>사용 방법 <span class="mute">(loadtest/contest/진행-화면-사용법.md)</span></summary>
+      <div class="md" id="guidebody">불러오는 중…</div>
+    </details>
+  </section>
 
   <div style="display:grid; gap:16px; align-content:start">
     <section>
@@ -68,9 +96,24 @@ pre { margin:0; background:var(--code); border-radius:6px; padding:10px; overflo
     </section>
 
     <section>
-      <h2>봇 <span class="mute" id="botcount"></span></h2>
+      <div class="h2row"><h2>봇 <span class="mute" id="botcount"></span></h2><button class="small" id="addbtn">+ 봇 추가</button></div>
       <div id="bots"></div>
-      <p class="mute" style="margin:8px 0 0">새 봇은 폴더에 <span class="mono">bot.json</span>을 두면 여기 나타납니다 (새로 고침).</p>
+      <div id="addform" hidden>
+        <div class="seg"><button id="m-upload" class="on" type="button">파일 올리기</button><button id="m-path" type="button">폴더 지정</button></div>
+        <div class="row">
+          <div><label for="b-name">이름 (bot + 소문자)</label><input id="b-name" type="text" placeholder="bote"></div>
+          <div><label for="b-owner">만든 사람</label><input id="b-owner" type="text"></div>
+        </div>
+        <div id="f-upload"><label for="b-files">봇 파일 (여러 개 가능)</label><input id="b-files" type="file" multiple></div>
+        <div id="f-path" hidden><label for="b-dir">봇 폴더 (이 PC의 전체 경로)</label><input id="b-dir" type="text" placeholder="C:/Users/me/Downloads/bote"></div>
+        <div class="row">
+          <div><label for="b-run">실행 명령 (그 폴더 안에서)</label><input id="b-run" type="text" placeholder="node bot.js"></div>
+          <div><label for="b-needs">필요 패키지</label><input id="b-needs" type="text" value="playwright"></div>
+        </div>
+        <label class="check"><input id="b-blind" type="checkbox"> 블라인드 (규칙 코드·평가 문서를 안 보고 만든 봇)</label>
+        <div class="actions"><button id="b-save" class="small" type="button">추가</button><button id="b-cancel" class="small" type="button">닫기</button></div>
+        <div class="err" id="b-err"></div>
+      </div>
     </section>
 
     <section>
@@ -121,6 +164,7 @@ pre { margin:0; background:var(--code); border-radius:6px; padding:10px; overflo
 const $ = (id) => document.getElementById(id);
 let state = null;
 let names = {};
+const seen = new Set();   // 한 번 본 봇 (새로 생긴 봇만 처음에 체크)
 const LOG_MAX = 3000;
 
 function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { return null; } }
@@ -138,12 +182,20 @@ function render() {
   // 봇 목록 (진행 중이면 고정)
   if (!$('bots').dataset.drawn || !busy) {
     const prev = new Set([...document.querySelectorAll('#bots input:checked')].map((x) => x.value));
-    const first = !$('bots').dataset.drawn;
-    $('bots').innerHTML = state.bots.map((b) => `<div class="bot">
-      <input type="checkbox" value="${b.name}" ${b.ok ? '' : 'disabled'} ${(first ? b.ok : prev.has(b.name)) ? 'checked' : ''} ${busy ? 'disabled' : ''}>
-      <div><b>${b.name}</b>${b.owner ? ' · ' + esc(b.owner) : ''}${b.blind ? '<span class="badge">블라인드</span>' : ''}
-      ${b.ok ? '' : `<div class="why">${esc(b.problem)}</div>`}</div></div>`).join('') || '<p class="mute">loadtest/contest/bot*/ 에 봇이 없습니다</p>';
+    const from = { folder: '깃', upload: '올림', path: '폴더' };
+    $('bots').innerHTML = state.bots.map((b) => {
+      const on = busy ? r.opts.bots.includes(b.name) : (seen.has(b.name) ? prev.has(b.name) : b.ok);
+      const removable = b.source !== 'folder' && !busy;
+      return `<div class="bot">
+      <input type="checkbox" value="${b.name}" ${b.ok && !busy ? '' : 'disabled'} ${on && b.ok ? 'checked' : ''}>
+      <div class="grow"><b>${b.name}</b>${b.owner ? ' · ' + esc(b.owner) : ''}${b.blind ? '<span class="badge">블라인드</span>' : ''}<span class="badge">${from[b.source] || ''}</span>
+      ${b.source === 'path' ? `<div class="where">${esc(b.dir)}</div>` : ''}
+      ${b.ok ? '' : `<div class="why">${esc(b.problem)}</div>`}</div>
+      ${removable ? `<button class="small danger" data-remove="${b.name}">빼기</button>` : ''}</div>`;
+    }).join('') || '<p class="mute">봇이 없습니다. + 봇 추가로 넣으세요</p>';
+    for (const b of state.bots) seen.add(b.name);
     $('bots').dataset.drawn = '1';
+    $('addbtn').disabled = !!busy;
     $('botcount').textContent = `${state.bots.filter((b) => b.ok).length}개 준비`;
   }
   names = Object.fromEntries(state.steps.map(([id, n]) => [id, n]));
@@ -221,6 +273,94 @@ $('start').onclick = async () => {
   } catch (e) { $('err').textContent = e.message; }
 };
 $('skip').onclick = () => post('/api/skip-wait').catch((e) => ($('err').textContent = e.message));
+// ── 사용 방법 (md → 화면) ──
+function inline(t) {
+  return esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+}
+function md(src) {
+  const lines = src.replace(/\r/g, '').split('\n');
+  let html = '';
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.startsWith('```')) {
+      const code = [];
+      while (++i < lines.length && !lines[i].startsWith('```')) code.push(lines[i]);
+      html += `<pre><code>${esc(code.join('\n'))}</code></pre>`;
+    } else if (/^#{1,3} /.test(l)) {
+      const n = l.match(/^#+/)[0].length;
+      if (!(n === 1 && i === 0)) html += `<h${n}>${inline(l.slice(n + 1))}</h${n}>`;
+    } else if (l.startsWith('|')) {
+      const rows = [];
+      for (; i < lines.length && lines[i].startsWith('|'); i++) rows.push(lines[i]);
+      i--;
+      const cells = (r) => r.replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+      html += '<table><tr>' + cells(rows[0]).map((c) => `<th>${inline(c)}</th>`).join('') + '</tr>'
+        + rows.slice(2).map((r) => '<tr>' + cells(r).map((c) => `<td>${inline(c)}</td>`).join('') + '</tr>').join('') + '</table>';
+    } else if (/^(- |\d+\. )/.test(l)) {
+      const ol = /^\d+\. /.test(l);
+      const items = [];
+      for (; i < lines.length && /^(- |\d+\. )/.test(lines[i]); i++) items.push(lines[i].replace(/^(- |\d+\. )/, ''));
+      i--;
+      html += `<${ol ? 'ol' : 'ul'}>` + items.map((x) => `<li>${inline(x)}</li>`).join('') + `</${ol ? 'ol' : 'ul'}>`;
+    } else if (l.startsWith('> ')) html += `<blockquote>${inline(l.slice(2))}</blockquote>`;
+    else if (l.trim()) html += `<p>${inline(l)}</p>`;
+  }
+  return html;
+}
+fetch('/api/guide').then((r) => r.text()).then((t) => { $('guidebody').innerHTML = md(t); }).catch(() => { $('guidebody').textContent = '사용 방법을 불러오지 못했습니다'; });
+if (!store('contest.guideSeen')) { $('guide').open = true; store('contest.guideSeen', '1'); }
+
+// ── 봇 추가 ──
+let addMode = 'upload';
+function setMode(m) {
+  addMode = m;
+  $('m-upload').classList.toggle('on', m === 'upload');
+  $('m-path').classList.toggle('on', m === 'path');
+  $('f-upload').hidden = m !== 'upload';
+  $('f-path').hidden = m !== 'path';
+}
+$('m-upload').onclick = () => setMode('upload');
+$('m-path').onclick = () => setMode('path');
+$('addbtn').onclick = () => { $('addform').hidden = !$('addform').hidden; $('b-err').textContent = ''; };
+$('b-cancel').onclick = () => { $('addform').hidden = true; };
+$('b-files').onchange = () => {
+  const f = [...$('b-files').files].map((x) => x.name);
+  const main = f.find((n) => /^bot\.(c?js|mjs)$/.test(n)) || f.find((n) => /\.(c?js|mjs)$/.test(n)) || f.find((n) => /\.py$/.test(n));
+  if (main && !$('b-run').value) $('b-run').value = (/\.py$/.test(main) ? 'python ' : 'node ') + main;
+};
+const b64 = (file) => new Promise((ok, bad) => {
+  const fr = new FileReader();
+  fr.onload = () => ok(String(fr.result).split(',')[1] || '');
+  fr.onerror = () => bad(new Error(file.name + '를 읽지 못함'));
+  fr.readAsDataURL(file);
+});
+$('b-save').onclick = async () => {
+  $('b-err').textContent = '';
+  try {
+    const body = { mode: addMode, name: $('b-name').value.trim(), owner: $('b-owner').value, blind: $('b-blind').checked,
+      run: $('b-run').value, needs: $('b-needs').value, dir: $('b-dir').value };
+    if (addMode === 'upload') body.files = await Promise.all([...$('b-files').files].map(async (f) => ({ name: f.name, data: await b64(f) })));
+    await post('/api/bots', body);
+    for (const id of ['b-name', 'b-owner', 'b-run', 'b-dir']) $(id).value = '';
+    $('b-files').value = '';
+    $('b-blind').checked = false;
+    $('addform').hidden = true;
+  } catch (e) { $('b-err').textContent = e.message; }
+};
+let removeArmed = null;
+$('bots').onclick = (e) => {
+  const name = e.target.dataset && e.target.dataset.remove;
+  if (!name) return;
+  if (removeArmed !== name) {
+    removeArmed = name;
+    e.target.textContent = '한 번 더 누르면 빼기';
+    setTimeout(() => { if (removeArmed === name) { removeArmed = null; e.target.textContent = '빼기'; } }, 3000);
+    return;
+  }
+  removeArmed = null;
+  post('/api/bots/remove', { name }).catch((err) => ($('err').textContent = err.message));
+};
+
 let stopArmed = false;
 $('stop').onclick = () => {
   if (!stopArmed) { stopArmed = true; $('stop').textContent = '한 번 더 누르면 중지'; setTimeout(() => { stopArmed = false; $('stop').textContent = '중지 (정리는 함)'; }, 3000); return; }

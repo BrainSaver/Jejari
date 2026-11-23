@@ -3,7 +3,8 @@
 // 실행: node loadtest/contest/web/server.js        → http://localhost:8098 (이 PC에서만 열림)
 // 필요: Node 18+, Git Bash(Windows), Docker, 봇마다 bot.json의 needs (보통 Playwright)
 //
-// 봇은 loadtest/contest/<이름>/bot.json 한 장으로 꽂는다 (README "봇 꽂기"). 이 파일을 고칠 필요가 없다.
+// 봇은 loadtest/contest/<이름>/bot.json 한 장으로 꽂거나, 화면의 "+ 봇 추가"로 넣는다. 이 파일을 고칠 필요가 없다.
+// 쓰는 법: loadtest/contest/진행-화면-사용법.md (화면의 "사용 방법"에도 그대로 보임)
 // 화면에는 봇 이름·진행·결과만 보이고 봇 코드는 보이지 않는다 (블라인드 규칙).
 // 관리자 비밀번호는 메모리에만 두고 파일·로그에 남기지 않는다. day.sh에는 환경 변수로만 넘긴다.
 //
@@ -73,25 +74,115 @@ function publicState() {
 
 // ── 봇 찾기 ───────────────────────────────────────────────────────
 // bot.json: {"name":"botb","owner":"길동현","blind":true,"run":["node","bot.cjs"],"needs":["playwright"],"env":{}}
+// 봇은 두 곳에서 온다
+//   folder  loadtest/contest/bot…/bot.json (깃에 있는 봇, 또는 화면의 "파일 올리기"로 만든 폴더 — addedBy: "web")
+//   path    화면의 "폴더 지정"으로 등록한 다른 폴더. 등록은 이 PC에만 (web/bots.local.json, gitignore)
+const LOCAL = path.join(__dirname, 'bots.local.json');
+const NAME = /^bot[a-z]+$/;
+
+function readLocal() {
+  try { return JSON.parse(fs.readFileSync(LOCAL, 'utf8')); } catch { return []; }
+}
+function writeLocal(list) { fs.writeFileSync(LOCAL, JSON.stringify(list, null, 2)); }
+
+function check(bot, m) {
+  if (!NAME.test(bot.name)) return '이름은 bot + 영문 소문자 (평가가 이메일에서 이 이름을 읽음)';
+  if (m.name !== bot.name) return `bot.json의 name(${m.name})이 폴더 이름(${bot.name})과 다름`;
+  if (!Array.isArray(m.run) || !m.run.length) return 'run이 비었음 (예: ["node","bot.js"])';
+  if (!fs.existsSync(bot.dir)) return `폴더가 없음: ${bot.dir}`;
+  return '';
+}
+
 function discoverBots() {
   const out = [];
   for (const d of fs.readdirSync(CONTEST, { withFileTypes: true })) {
     if (!d.isDirectory() || !d.name.startsWith('bot')) continue;
     const dir = path.join(CONTEST, d.name);
     const f = path.join(dir, 'bot.json');
-    const bot = { name: d.name, dir, ok: false, problem: '' };
-    if (!fs.existsSync(f)) { bot.problem = 'bot.json 없음 (README "봇 꽂기")'; out.push(bot); continue; }
+    const bot = { name: d.name, dir, source: 'folder', ok: false, problem: '' };
+    if (!fs.existsSync(f)) { bot.problem = 'bot.json 없음 (+ 봇 추가 또는 README "봇 꽂기")'; out.push(bot); continue; }
     try {
       const m = JSON.parse(fs.readFileSync(f, 'utf8'));
-      Object.assign(bot, { owner: m.owner || '', blind: !!m.blind, cmd: m.run, needs: m.needs || [], env: m.env || {} });
-      if (m.name !== d.name) bot.problem = `bot.json의 name(${m.name})이 폴더 이름(${d.name})과 다름`;
-      else if (!/^bot[a-z]+$/.test(d.name)) bot.problem = '이름은 bot + 영문 소문자 (평가가 이메일에서 이 이름을 읽음)';
-      else if (!Array.isArray(m.run) || !m.run.length) bot.problem = 'run이 비었음 (예: ["node","bot.js"])';
-      else bot.ok = true;
+      Object.assign(bot, { owner: m.owner || '', blind: !!m.blind, cmd: m.run, needs: m.needs || [], env: m.env || {},
+        source: m.addedBy === 'web' ? 'upload' : 'folder' });
+      bot.problem = check(bot, m);
+      bot.ok = !bot.problem;
     } catch (e) { bot.problem = `bot.json을 읽지 못함: ${e.message}`; }
     out.push(bot);
   }
+  for (const m of readLocal()) {
+    const bot = { name: m.name, dir: m.dir, source: 'path', owner: m.owner || '', blind: !!m.blind, cmd: m.run,
+      needs: m.needs || [], env: m.env || {}, ok: false };
+    bot.problem = out.some((b) => b.name === m.name) ? `같은 이름의 봇 폴더가 이미 있음 (loadtest/contest/${m.name})` : check(bot, m);
+    bot.ok = !bot.problem;
+    out.push(bot);
+  }
   return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// 봇들이 Playwright 같은 패키지를 같이 쓰게: 봇 폴더들의 node_modules와 전역 npm 폴더를 NODE_PATH로.
+// 덕분에 한 봇 폴더에만 설치해도 화면으로 올린 새 봇이 바로 돈다
+let globalRoot;
+function nodePath(bots) {
+  if (globalRoot === undefined) {
+    const r = spawnSync(WIN ? 'npm.cmd' : 'npm', ['root', '-g'], { encoding: 'utf8', windowsHide: true, shell: WIN });
+    globalRoot = r.status === 0 ? r.stdout.trim() : '';
+  }
+  const dirs = bots.map((b) => path.join(b.dir, 'node_modules')).filter((d) => fs.existsSync(d));
+  if (globalRoot) dirs.push(globalRoot);
+  if (process.env.NODE_PATH) dirs.push(process.env.NODE_PATH);
+  return [...new Set(dirs)].join(path.delimiter);
+}
+
+// 실행 명령 한 줄 → 배열 (따옴표로 묶은 칸 허용: node "my bot.js")
+function splitCmd(line) {
+  return (String(line).match(/"[^"]*"|'[^']*'|\S+/g) || []).map((t) => t.replace(/^["']|["']$/g, ''));
+}
+
+function addBot(b) {
+  const name = String(b.name || '').trim();
+  if (!NAME.test(name)) throw new Error('이름은 bot + 영문 소문자 (예: bote)');
+  if (discoverBots().some((x) => x.name === name)) throw new Error(`${name}는 이미 있습니다`);
+  const run = splitCmd(b.run);
+  if (!run.length) throw new Error('실행 명령을 넣으세요 (예: node bot.js)');
+  const needs = String(b.needs || '').split(/[,\s]+/).filter(Boolean);
+  const meta = { name, owner: String(b.owner || '').trim(), blind: !!b.blind, run, needs, env: {} };
+  if (b.mode === 'path') {
+    const dir = path.resolve(String(b.dir || '').trim());
+    if (!b.dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw new Error(`폴더가 없습니다: ${b.dir || '(빈칸)'}`);
+    writeLocal([...readLocal(), { ...meta, dir }]);
+    return;
+  }
+  const files = Array.isArray(b.files) ? b.files : [];
+  if (!files.length) throw new Error('봇 파일을 고르세요');
+  const dir = path.join(CONTEST, name);
+  const saved = [];
+  fs.mkdirSync(dir);
+  try {
+    for (const f of files) {
+      const base = path.basename(String(f.name || ''));
+      if (!/^[A-Za-z0-9._-]{1,80}$/.test(base) || base === 'bot.json' || base.startsWith('.')) throw new Error(`파일 이름은 영문·숫자·._- 만: ${f.name}`);
+      const buf = Buffer.from(String(f.data || ''), 'base64');
+      if (buf.length > 5 * 1024 * 1024) throw new Error(`${base}가 5MB를 넘습니다`);
+      fs.writeFileSync(path.join(dir, base), buf);
+      saved.push(base);
+    }
+    if (!saved.includes(run[run.length - 1]) && !run.some((t) => saved.includes(t))) {
+      throw new Error(`실행 명령(${run.join(' ')})에 올린 파일 이름(${saved.join(', ')})이 없습니다`);
+    }
+    fs.writeFileSync(path.join(dir, 'bot.json'), JSON.stringify({ ...meta, addedBy: 'web' }, null, 2) + '\n');
+  } catch (e) {
+    fs.rmSync(dir, { recursive: true, force: true });
+    throw e;
+  }
+}
+
+function removeBot(name) {
+  const bot = discoverBots().find((x) => x.name === name);
+  if (!bot) throw new Error(`${name}가 없습니다`);
+  if (bot.source === 'path') return writeLocal(readLocal().filter((m) => m.name !== name));
+  if (bot.source === 'upload') return fs.rmSync(bot.dir, { recursive: true, force: true });
+  throw new Error('깃에 있는 봇은 화면에서 지우지 않습니다 (체크를 빼면 대회에 안 나감)');
 }
 
 // ── 프로세스 ──────────────────────────────────────────────────────
@@ -161,8 +252,9 @@ async function stepCheck() {
   if (!has('bash')) problems.push('bash가 없습니다 (Windows는 Git Bash에서 이 화면을 실행하세요)');
   for (const b of run.chosen) {
     for (const n of b.needs) {
-      const r = spawnSync(process.execPath, ['-e', `require.resolve(${JSON.stringify(n)})`], { cwd: b.dir, windowsHide: true });
-      if (r.status !== 0) problems.push(`${b.name}: ${n}를 찾지 못함 → 그 폴더에서 npm i ${n} && npx ${n} install chromium`);
+      const r = spawnSync(process.execPath, ['-e', `require.resolve(${JSON.stringify(n)})`],
+        { cwd: b.dir, windowsHide: true, env: { ...process.env, NODE_PATH: nodePath(discoverBots()) } });
+      if (r.status !== 0) problems.push(`${b.name}: ${n}를 찾지 못함 → 봇 폴더 하나에서 npm i ${n} && npx ${n} install chromium (모든 봇이 같이 씀)`);
     }
   }
   if (!python()) log('check', '참고: Python 3.9+가 없어 모델 비교(compare_dl.py)는 건너뜁니다');
@@ -229,7 +321,7 @@ async function stepSetup() {
 }
 
 function botEnv(b, mode) {
-  return { ...b.env, BASE_URL, RUN_ID: run.runId, TAG: run.tag, MODE: mode };
+  return { ...b.env, BASE_URL, RUN_ID: run.runId, TAG: run.tag, MODE: mode, NODE_PATH: nodePath(discoverBots()) };
 }
 
 async function stepSignup() {
@@ -407,7 +499,7 @@ async function pipeline() {
 function body(req) {
   return new Promise((resolve) => {
     let s = '';
-    req.on('data', (c) => (s += c));
+    req.on('data', (c) => { s += c; if (s.length > 40 * 1024 * 1024) req.destroy(); });
     req.on('end', () => { try { resolve(JSON.parse(s || '{}')); } catch { resolve({}); } });
   });
 }
@@ -423,6 +515,20 @@ http.createServer(async (req, res) => {
     return res.end(fs.readFileSync(path.join(__dirname, 'index.html')));
   }
   if (req.method === 'GET' && url.pathname === '/api/state') return json(res, 200, publicState());
+  if (req.method === 'GET' && url.pathname === '/api/guide') {
+    res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8' });
+    return res.end(fs.readFileSync(path.join(CONTEST, '진행-화면-사용법.md')));
+  }
+  if (req.method === 'POST' && (url.pathname === '/api/bots' || url.pathname === '/api/bots/remove')) {
+    if (run && !run.done) return json(res, 409, { error: '대회 중에는 봇을 바꿀 수 없습니다' });
+    const b = await body(req);
+    try {
+      if (url.pathname === '/api/bots') addBot(b);
+      else removeBot(String(b.name || ''));
+    } catch (e) { return json(res, 400, { error: e.message }); }
+    pushState();
+    return json(res, 200, { ok: true });
+  }
   if (req.method === 'GET' && url.pathname === '/api/events') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
     res.write(`data: ${JSON.stringify({ type: 'state', state: publicState() })}\n\n`);
