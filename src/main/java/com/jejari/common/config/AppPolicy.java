@@ -28,6 +28,11 @@ public class AppPolicy implements PolicyBounds {
 	public static final String SCANNER_HOLD_INTERVAL_SEC = "scanner.hold_interval_sec";
 	public static final String SCANNER_BATCH_SIZE = "scanner.batch_size";
 	public static final String REOFFER_HOLD_SEC = "waitlist.reoffer_hold_sec";
+	/**
+	 * 선점·제안 키(Redis seat:hold)를 결제 마감보다 이만큼 늦게 사라지게 한다 (concurrency.md §0.2). 그 사이 스캐너가 만료 처리하며
+	 * 키를 REOFFER로 바꿔 풀린 좌석을 대기자에게 먼저 넘긴다. 0이면 예전 동작(마감에 키가 사라짐). ERD v35에 들어가기 전에는 이 기본값
+	 */
+	public static final String HOLD_RELEASE_GRACE_SEC = "reservation.hold_release_grace_sec";
 	public static final String SEATMAP_CACHE_MS = "seatmap.cache_ms";
 	/** 좌석 조회·선점 속도 제한 (SeatRateLimiter). ERD v34에서 app_policy에 들어가기 전에는 아래 기본값으로 동작 */
 	public static final String SEATMAP_RATE_BURST = "seatmap.rate_burst";
@@ -57,6 +62,7 @@ public class AppPolicy implements PolicyBounds {
 			Map.entry(SCANNER_HOLD_INTERVAL_SEC, "5"),
 			Map.entry(SCANNER_BATCH_SIZE, "500"),
 			Map.entry(REOFFER_HOLD_SEC, "60"),
+			Map.entry(HOLD_RELEASE_GRACE_SEC, "10"),
 			Map.entry(SEATMAP_CACHE_MS, "1000"),
 			Map.entry(SEATMAP_RATE_BURST, "10"),
 			Map.entry(SEATMAP_RATE_PER_SEC, "1"),
@@ -97,6 +103,7 @@ public class AppPolicy implements PolicyBounds {
 				range(WAITLIST_MAX_PER_RUN, 1, 5),
 				range(WAITLIST_MAX_ACTIVE, 1, 10),
 				range(REOFFER_HOLD_SEC, 30, 600),
+				range(HOLD_RELEASE_GRACE_SEC, 0, 60),      // 0 = 끔. 스캐너 주기(기본 5초)+이벤트 지연보다 길어야 효과가 있다 (권장 ≥ 주기+5)
 				range(WAITLIST_PENALTY_MS_PER_POINT, 0, 3_600_000),
 				range(REPLAY_RETENTION_DAYS, 7, 180),      // 0이면 녹화가 바로 지워짐
 				range(REPLAY_MAX_PATH_POINTS, 5, 200),

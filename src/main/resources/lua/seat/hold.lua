@@ -4,7 +4,8 @@
 --
 -- KEYS[1..k] seat:hold:{runId}:{seatId}:{segNo}
 -- ARGV[1]    reservation_id (키에 넣을 값)
--- ARGV[2]    만료 시각 (PXAT, epoch ms) = reservation.pay_deadline_at (§0.2)
+-- ARGV[2]    만료 시각 (PXAT, epoch ms) = reservation.pay_deadline_at + reservation.hold_release_grace_sec (§0.2 예외)
+--            마감 뒤 유예 동안 키가 남아 일반 사용자를 막고, 만료 처리가 REOFFER로 바꿔 대기자에게 넘긴다
 -- ARGV[3]    인계 값. 취소표 제안(§9)에서 'REOFFER:{이전예약}' 을 넘기면
 --            그 값인 키는 비어 있는 것으로 보고 덮어쓴다. 평소에는 '' 를 넘긴다.
 -- 반환       1 전부 잡음 / 0 실패 (아무것도 바꾸지 않음)

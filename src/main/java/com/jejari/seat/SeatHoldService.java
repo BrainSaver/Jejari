@@ -143,7 +143,7 @@ public class SeatHoldService {
 		}
 
 		// 3~4. 좌석 경쟁. 진 요청은 DB 쓰기 0건 (§2.1-4)
-		Long won = redis.execute(scripts.hold, seatKeys, Long.toString(r), Long.toString(epochMs(deadline)), "");
+		Long won = redis.execute(scripts.hold, seatKeys, Long.toString(r), Long.toString(keyExpiryMs(deadline)), "");
 		if (won == null || won != 1L) {
 			limitDecr(r, limitKeys.keys, n, limitKeys.markExpiry);
 			release(List.of(idemKey), r);
@@ -257,7 +257,7 @@ public class SeatHoldService {
 
 		// 좌석. 대기자 몫으로 막아 둔 REOFFER 키를 인계받는다
 		String takeover = prevReservationId > 0 ? SeatKeys.reoffer(prevReservationId) : "";
-		Long won = redis.execute(scripts.hold, seatKeys, Long.toString(r), Long.toString(epochMs(deadline)), takeover);
+		Long won = redis.execute(scripts.hold, seatKeys, Long.toString(r), Long.toString(keyExpiryMs(deadline)), takeover);
 		if (won == null || won != 1L) {
 			limitDecr(r, limitKeys.keys, n, limitKeys.markExpiry);
 			return new OfferResult(r, null, 0, List.of(), LimitBlocked.SEATS_TAKEN);
@@ -455,5 +455,15 @@ public class SeatHoldService {
 
 	private long epochMs(LocalDateTime t) {
 		return t.atZone(clock.getZone()).toInstant().toEpochMilli();
+	}
+
+	/**
+	 * 선점·제안 키가 Redis에서 사라지는 시각 = 결제 마감 + {@code reservation.hold_release_grace_sec} (concurrency.md §0.2 예외).
+	 * 마감에 키가 바로 사라지면 스캐너가 만료 처리하기 전까지(최대 약 5초) 좌석이 일반 사용자에게 열려, 새로고침하는 봇이
+	 * 대기자보다 먼저 가져갔다. 유예 동안은 키가 R로 남아 막고, 만료 처리가 REOFFER로 바꿔 대기자에게 먼저 넘긴다.
+	 * DB 마감(pay_deadline_at)은 그대로라 결제 가능 시간은 늘지 않는다.
+	 */
+	private long keyExpiryMs(LocalDateTime deadline) {
+		return epochMs(deadline) + policy.getLong(AppPolicy.HOLD_RELEASE_GRACE_SEC) * 1000L;
 	}
 }

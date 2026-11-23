@@ -240,7 +240,7 @@ public class SeatReleaseService {
 		try {
 			List<String> seatKeys = seatIds.stream().map(id -> SeatKeys.hold(runId, id, HoldPlan.SEGMENT_NO)).toList();
 			if (!seatKeys.isEmpty()) {
-				// HOLD 만료라 TTL로 이미 사라졌으면 아무 일 없음
+				// 마감 뒤 유예(reservation.hold_release_grace_sec) 안이면 키가 아직 R이라 REOFFER로 바뀐다. 유예가 지나 사라졌으면(스캐너 지연·유예 0) 아무 일 없음
 				redis.execute(scripts.reoffer, seatKeys, Long.toString(reservationId),
 						Long.toString(policy.getLong(AppPolicy.REOFFER_HOLD_SEC) * 1000));
 			}

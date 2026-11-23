@@ -26,11 +26,17 @@ Redis가 통과시켜도 DB가 거절하면 거절입니다. 반대로 DB가 허
 | 복사본 | 갱신 시점 |
 |---|---|
 | `seat_inventory.hold_expires_at` | 선점(§2), 결제 시작(§4) |
-| Redis `seat:hold:*` 만료 시각 | 선점(§2), 결제 시작 커밋 후(§4) |
+| Redis `seat:hold:*` 만료 시각 | 선점(§2), 결제 시작 커밋 후(§4). **선점·취소표 제안으로 거는 키는 `:d + policy(reservation.hold_release_grace_sec)`** (아래 예외) |
 | `saga_instance.timeout_at` | 선점(§2), 결제 시작(§4) |
 | `waitlist.offer_deadline_at` | 취소표 제안(§9), 결제 시작(§4) |
 
 PG 결과를 모르는 동안 Redis 키를 다시 거는 것(§6.2 `rehold.lua`)은 예외입니다. 그때는 DB 마감이 이미 지났고, 키는 다음 PG 조회 때까지 좌석을 지키는 용도입니다.
+
+**선점·제안 키는 마감보다 `reservation.hold_release_grace_sec`(기본 10초)만큼 늦게 사라집니다 (예외).** 마감 때 키가 저절로 사라지면 스캐너(§6.1)가 만료를 처리하기 전까지 그 좌석이 일반 사용자에게 열려, 새로고침하는 봇이 대기자보다 먼저 가져갈 수 있었습니다(측정: 키가 사라진 뒤 대기자 제안이 좌석을 다시 잡기까지 0.37~5.15초). 유예 동안 키가 `R`로 남아 일반 사용자의 `hold.lua`를 막고, 만료 처리(§7.1)가 그 키를 `REOFFER:R`로 바꿔 대기자에게 먼저 넘깁니다(§9).
+- **DB가 최종**입니다. 결제 시작(§4)은 DB의 `pay_deadline_at > SYSTIMESTAMP`로 판정하므로 유예가 결제 가능 시간을 늘리지 않습니다. `seat_inventory.hold_expires_at`·`saga_instance.timeout_at`·`waitlist.offer_deadline_at`은 마감 그대로이고, **Redis 키 만료만** 늦습니다.
+- 값 `0`이면 예전 동작(마감에 키가 사라짐)입니다. 문제가 생기면 관리자 화면에서 바로 끌 수 있습니다.
+- 유예는 스캐너 주기(`scanner.hold_interval_sec`) + 이벤트 지연보다 길어야 효과가 있습니다. 권장: `reservation.hold_release_grace_sec ≥ scanner.hold_interval_sec + 5`. 스캐너가 유예 안에 못 돌면 키가 사라져 §3 재선점이 비상 경로로 동작합니다.
+- 결제 시작 후 연장(§4 `extend.lua`)과 PG 결과 확인(§6.2 `rehold.lua`)이 거는 키는 유예 없이 그 마감을 따릅니다. 결제 중 좌석은 스캐너(§6.2)가 정리합니다.
 
 ### 0.3 네이티브 UPDATE 규칙
 
@@ -71,7 +77,7 @@ PG 호출, Kafka 발행 같은 네트워크 호출은 **DB 트랜잭션 밖**에
 | JVM | `-Duser.timezone=Asia/Seoul`, `spring.jpa.properties.hibernate.jdbc.time_zone=Asia/Seoul` | 앱이 쓰는 `LocalDateTime`이 다른 기준이 됩니다 |
 | DB 세션 | JDBC 세션 시간대 = JVM 시간대 | `pay_deadline_at < SYSTIMESTAMP` 비교 때 Oracle은 TIMESTAMP 컬럼을 세션 시간대로 해석합니다 |
 
-- **마감 시각(`:d`)은 앱 시계 하나로 계산해 바인딩합니다** (§2, §4, §9). Redis `PXAT`에도 같은 값을 씁니다. DB의 `SYSTIMESTAMP`는 `updated_at`과 "이미 지났는가" 비교에만 씁니다. 서버 시계는 NTP로 맞춥니다.
+- **마감 시각(`:d`)은 앱 시계 하나로 계산해 바인딩합니다** (§2, §4, §9). Redis `PXAT`에도 같은 값을 씁니다 (선점·제안 키는 §0.2 예외로 유예를 더함). DB의 `SYSTIMESTAMP`는 `updated_at`과 "이미 지났는가" 비교에만 씁니다. 서버 시계는 NTP로 맞춥니다.
 - 기동 시 점검: `SELECT SESSIONTIMEZONE, SYSTIMESTAMP FROM dual`이 `+09:00`이어야 합니다 (T34).
 
 ---
@@ -105,7 +111,7 @@ PG 호출, Kafka 발행 같은 네트워크 호출은 **DB 트랜잭션 밖**에
 1. §1로 `reservation_id` R을 받습니다 (시퀀스 또는 Snowflake).
 2. 매수 한도 1차: `limit_incr.lua`(§14.2)로 `limit:{runId}:{ciHash}`, `limit:day:{yyyymmdd}:{ciHash}`, `limit:event:{saleEventId}:{ciHash}`를 n만큼 올립니다. `{yyyymmdd}`는 **앱 시계의 오늘 날짜**입니다 (§0.7). 키 순서는 이 순서로 고정하고, 스크립트가 돌려준 걸린 키 번호로 `LIMIT_PER_RUN`·`LIMIT_PER_DAY`·`LIMIT_PER_HOLIDAY`를 가립니다. 한도를 넘으면 스크립트가 되돌리고 0을 반환하며, §10.7 자가 복구를 한 번 거친 뒤에도 넘으면 거절합니다. 키가 없으면 스크립트가 `purchase_counter` 값으로 먼저 채웁니다 (§10.4).
 3. 마감 `:d = 앱 시계 지금 + policy(reservation.pay_deadline_min)`을 계산합니다 (§0.7).
-4. 좌석 경쟁: `hold.lua`로 예약할 모든 구간 키 `seat:hold:{runId}:{seatId}:{segNo}`를 R 값으로 `SET NX`하고 만료를 `PXAT :d`로 겁니다. 하나라도 다른 값이 있으면 전부 실패합니다.
+4. 좌석 경쟁: `hold.lua`로 예약할 모든 구간 키 `seat:hold:{runId}:{seatId}:{segNo}`를 R 값으로 `SET NX`하고 만료를 `PXAT (:d + policy(reservation.hold_release_grace_sec))`로 겁니다 (§0.2 예외: 마감 뒤 유예 동안 좌석을 대기자 몫으로 지킴). 하나라도 다른 값이 있으면 전부 실패합니다.
    - **패배자**: 2번의 한도를 되돌리고(`limit_decr.lua`), `idem` 키를 지우고 "이미 선점된 좌석"으로 거절합니다. **DB 쓰기는 0건**입니다.
 
 ### 2.2 DB 트랜잭션 (승자만)
@@ -147,6 +153,8 @@ K는 선점 때 계산해 쓰고, 이후에는 같은 식으로 다시 계산합
 ## §3 재선점 (만료된 HOLD 이어받기)
 
 §2.2 트랜잭션 안에서, 만료된 HOLD 행의 이전 예약 R1, R2, … 를 처리합니다.
+
+> **유예(§0.2)와의 관계**: 마감 뒤 `reservation.hold_release_grace_sec` 동안은 이전 예약의 `seat:hold` 키가 남아 있어 새 구매자의 `hold.lua`가 먼저 실패하므로 이 절차에 들어오지 않습니다(그 사이 스캐너가 §7.1로 만료 처리하고 좌석을 대기자 몫으로 넘깁니다). 스캐너가 유예 안에 못 돌아 키가 사라지거나 `reservation.hold_release_grace_sec = 0`이면 예전처럼 이 절차로 이어받습니다. 즉 **주 경로가 아니라 스캐너가 늦었을 때의 비상 경로**입니다.
 
 1. 이전 예약 잠금: ID를 앱에서 오름차순 정렬한 뒤 **한 건씩** 잠급니다 (§0.4-2).
    ```sql
@@ -277,7 +285,7 @@ SELECT reservation_id FROM reservation
  WHERE (CASE WHEN status = 'HOLD' THEN pay_deadline_at END) < SYSTIMESTAMP
 ```
 
-인덱스 `ix_resv_hold_due`와 같은 식입니다. 최대 N건을 읽고, 건마다 §7.1(`from = 'HOLD'`, `to = 'EXPIRED'`, `reason = 'TIMEOUT'`)을 실행합니다.
+인덱스 `ix_resv_hold_due`와 같은 식입니다. 최대 N건을 읽고, 건마다 §7.1(`from = 'HOLD'`, `to = 'EXPIRED'`, `reason = 'TIMEOUT'`)을 실행합니다. 커밋 뒤 보상(§14.3)이 아직 `R` 값으로 남아 있는 좌석 키를 `REOFFER:R`로 바꿔 대기자에게 먼저 넘깁니다 (유예, §0.2).
 
 ### 6.2 결제 결과 확인
 
@@ -406,7 +414,7 @@ SELECT payment_id, reservation_id, requested_at FROM payment
 
 빈 좌석 이벤트(`RESERVATION_CANCELED`, `RESERVATION_EXPIRED`)를 소비 그룹 `seat-release`가 받아 실행합니다. 이 소비자가 커밋 후 Redis 보상의 보장 경로(§14.3)도 맡습니다.
 
-**배정 원칙: 대기자 먼저.** 확정 취소(§8)나 결제 실패·결제 전 취소로 풀린 좌석은 Redis 키가 `REOFFER:R`로 남아 일반 사용자의 `hold.lua`를 막습니다. 대기자에게 제안하고, 맞는 대기자가 없을 때만 일반 판매로 돌립니다. HOLD 만료로 풀린 좌석은 Redis 키가 이미 TTL로 사라졌으므로 일반 사용자와 동시에 열립니다. 이벤트가 늦어도 `REOFFER` 키는 `policy(waitlist.reoffer_hold_sec)` 뒤 사라지므로 좌석이 오래 막히지 않습니다.
+**배정 원칙: 대기자 먼저.** 확정 취소(§8)나 결제 실패·결제 전 취소로 풀린 좌석은 Redis 키가 `REOFFER:R`로 남아 일반 사용자의 `hold.lua`를 막습니다. 대기자에게 제안하고, 맞는 대기자가 없을 때만 일반 판매로 돌립니다. **HOLD 만료로 풀린 좌석도 대기자 먼저**입니다: 선점 키가 마감 뒤 `reservation.hold_release_grace_sec` 동안 `R`로 남아 있다가(§0.2) 만료 처리가 `REOFFER:R`로 바꿉니다. 스캐너가 유예 안에 못 돌았거나 유예가 0이면 키가 이미 사라져 일반 사용자와 동시에 열립니다(옛 동작, 이때는 대기자 제안과 일반 선점이 `hold.lua`로 경쟁). 맞는 대기자가 없으면 `release.lua`로 일반 판매로 돌아가며, 그만큼(스캐너 주기 + 이벤트 처리) 대기자가 없는 좌석이 늦게 열립니다. 이벤트가 늦어도 `REOFFER` 키는 `policy(waitlist.reoffer_hold_sec)` 뒤 사라지므로 좌석이 오래 막히지 않습니다.
 
 ### 9.1 순서와 트랜잭션 경계
 
@@ -688,7 +696,7 @@ Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함�
 | `queue:adm:{runId}:{초}` | 그 운행에서 그 1초에 입장시킨 수. 앱이 여러 대여도 합쳐서 `queue.admit_per_sec`를 넘지 않게 `admit.lua`가 남은 만큼만 입장시킨다 | 3초 |
 | `queue:pass:{runId}:{memberId}` | 입장 토큰 | `queue.pass_ttl_sec` |
 | `queue:passext:{runId}:{memberId}` | 입장 토큰을 이미 한 번 연장했다는 표시 (`POST /runs/{runId}/queue/me/extend`, `extend.lua`가 PTTL 확인·표시·`PEXPIRE`를 원자적으로 처리. 연장분은 `queue.pass_extend_sec`, 기본 300초, 회원·운행당 1회) | 토큰과 함께 |
-| `seat:hold:{runId}:{seatId}:{segNo}` | `R`(HOLD), `SOLD:R`(확정), `REOFFER:R`(대기자 제안 대기) | `pay_deadline_at` / 운행 출발 시각 / `waitlist.reoffer_hold_sec` |
+| `seat:hold:{runId}:{seatId}:{segNo}` | `R`(HOLD), `SOLD:R`(확정), `REOFFER:R`(대기자 제안 대기) | `pay_deadline_at + reservation.hold_release_grace_sec` / 운행 출발 시각 / `waitlist.reoffer_hold_sec` |
 | `limit:{runId}:{ciHash}`, `limit:event:{saleEventId}:{ciHash}` | 보유 매수 | 운행 출발·행사 종료 |
 | `limit:day:{yyyymmdd}:{ciHash}` | 그 날 구매한 매수 | 그 날 24:00 + 1시간 |
 | `limit:dec:{reservationId}` | 1 (이 예약의 한도 감소를 이미 했다는 표시) | 운행 출발·행사 종료 중 늦은 쪽 |
@@ -702,7 +710,7 @@ Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함�
 
 | 스크립트 | 동작 |
 |---|---|
-| `hold.lua` | KEYS 전부에 대해, 다른 값이 하나라도 있으면 0 반환. 아니면 전부 `SET 값 PXAT 만료` 후 1 반환. ARGV로 인계 값(`REOFFER:R`)을 받으면 그 값인 키는 비어 있는 것으로 봄 (§9 전용) |
+| `hold.lua` | KEYS 전부에 대해, 다른 값이 하나라도 있으면 0 반환. 아니면 전부 `SET 값 PXAT 만료` 후 1 반환 (만료는 호출하는 쪽이 마감 + 유예로 계산해 넘김, §0.2). ARGV로 인계 값(`REOFFER:R`)을 받으면 그 값인 키는 비어 있는 것으로 봄 (§9 전용) |
 | `release.lua` | KEYS 중 값이 ARGV[1]인 키만 DEL (compare-and-delete). 지운 키 수를 반환 |
 | `extend.lua` | KEYS 중 값이 ARGV[1]인 키만 `PEXPIREAT` (결제 연장, 리스 갱신). 없는 키는 만들지 않음 |
 | `rehold.lua` | KEYS 중 값이 R이거나 없는 키를 `SET R PXAT 만료` (§6.2 PG 결과 모름) |
@@ -713,7 +721,7 @@ Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함�
 
 ### 14.3 Redis 보상
 
-**DB가 롤백됐을 때** (커밋 없음, §2.3): 그 자리에서 되돌립니다. `seat:hold`는 `release.lua`, `limit:*`는 `limit_decr.lua`, `idem`은 compare-and-delete입니다. 이 보상이 유실되면 seat 키는 HOLD 값이라 마감(최대 `reservation.pay_deadline_min`) 뒤 TTL로 사라지고, 한도는 다음 거절 때 §10.7이 바로잡습니다.
+**DB가 롤백됐을 때** (커밋 없음, §2.3): 그 자리에서 되돌립니다. `seat:hold`는 `release.lua`, `limit:*`는 `limit_decr.lua`, `idem`은 compare-and-delete입니다. 이 보상이 유실되면 seat 키는 HOLD 값이라 마감(최대 `reservation.pay_deadline_min`) + 유예(`reservation.hold_release_grace_sec`) 뒤 TTL로 사라지고, 한도는 다음 거절 때 §10.7이 바로잡습니다.
 
 **DB가 커밋된 뒤** (§3, §7, §8): 같은 일을 두 경로로 합니다.
 
@@ -749,6 +757,7 @@ Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함�
 | 키 | 예시 | 쓰는 곳 |
 |---|---|---|
 | `reservation.pay_deadline_min` | 10 | §2 최초 마감 |
+| `reservation.hold_release_grace_sec` | 10 | §0.2·§9 마감 뒤에도 선점 키를 유지해 풀린 좌석을 대기자에게 먼저 넘기는 유예. 0 = 끔(예전 동작). 권장 ≥ `scanner.hold_interval_sec` + 5 |
 | `payment.pg_timeout_sec` | 180 | §4 연장 (앱카드·ISP 인증 시간 포함) |
 | `payment.extend_grace_sec` | 60 | §4 연장 |
 | `payment.pg_recheck_sec` | 60 | §6.2 PG 결과를 모를 때 다음 조회까지 |
@@ -815,6 +824,12 @@ Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함�
 | T38 | 위험 점수 80인 회원 A(패널티 4시간, `priority_at` 14:00)가 10:00에, 정상 회원 B가 10:30에 신청한 뒤 좌석 1개가 빔 | B에게 먼저 제안, A는 WAITING 유지 | §9.3 |
 | T39 | 같은 조건에서 B가 14:30(A의 `priority_at` 14:00이 지난 뒤)에 신청 | A에게 먼저 제안 | §9.3 |
 | T40 | `member.status = RESTRICTED`인 회원이 취소표 대기 신청 | `WAITLIST_RESTRICTED`(403), `waitlist` 행 없음. 같은 회원을 ACTIVE로 되돌리면 신청 가능 | §9.3 |
+| T41 | 결제 기한이 지난 HOLD 좌석을 유예(10초) 안에 다른 사용자가 선점 (스캐너가 아직 안 돎) | `hold.lua`가 거절 (`SEAT_ALREADY_TAKEN`), 키 값은 그대로 R | §0.2 |
+| T42 | 같은 좌석을 기다리는 대기자가 있고 스캐너가 만료 처리 | 좌석 키가 한 번도 비지 않은 채 `R` → `REOFFER:R` → 제안 예약 R'로 이어짐, 대기자에게 제안 | §0.2, §9 |
+| T43 | 대기자가 없는 좌석의 HOLD 만료 | 만료 처리 뒤 `REOFFER:R`가 `release.lua`로 풀려 일반 선점 가능 | §9 |
+| T44 | `reservation.hold_release_grace_sec = 0` | 마감에 키가 사라지고 일반 사용자가 §3 재선점으로 이어받음 (예전 동작) | §0.2, §3 |
+| T45 | 스캐너가 유예 안에 못 돎 (정지) | 유예가 지나 키가 사라지고 §3 재선점이 동작, DB는 정합 | §0.2, §3 |
+| T46 | 마감 뒤 유예 안에 결제 시작 (키는 아직 R) | DB의 `pay_deadline_at > SYSTIMESTAMP` 조건으로 거절 (유예는 결제 시간을 늘리지 않음). 기존 `PaymentInfraTest.기한이_지난_HOLD는_결제할_수_없고…`가 키를 지우지 않으므로 이 경우다 | §4 |
 
 ---
 

@@ -107,7 +107,7 @@ class SeatReleaseInfraTest {
 				SELECT COUNT(*) FROM outbox_event WHERE aggregate_id = ? AND event_type = 'RESERVATION_EXPIRED'
 				   AND DBMS_LOB.INSTR(payload, 'TIMEOUT') > 0""", Long.toString(r))).isEqualTo(1);
 		assertThat(redis.opsForValue().get(SeatKeys.limitRun(RUN, ci(m)))).isEqualTo("0");
-		// 반환된 좌석은 다른 사람이 바로 잡을 수 있다 (HOLD 만료는 REOFFER 없이 모두에게 열림)
+		// 키가 유예 뒤에 이미 사라진 경우(위 pastDeadline(…, true)가 흉내)에는 다른 사람이 바로 잡을 수 있다 (§3 재선점). 유예 안이면 T41·T42
 		assertThat(hold.hold(newMember(), cmd(s1)).status()).isEqualTo("HOLD");
 	}
 
@@ -298,6 +298,61 @@ class SeatReleaseInfraTest {
 		}
 		pool.shutdown();
 		return out;
+	}
+
+	// ------------------------------------------------------------ 유예 (reservation.hold_release_grace_sec, concurrency.md §0.2 · T41~T44)
+
+	private static void sleep(long ms) {
+		try {
+			Thread.sleep(ms);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	@Test
+	void T41_선점_키는_마감보다_유예만큼_늦게_사라지고_그_사이_다른_사람은_못_잡는다() {
+		long grace = policy.getLong(AppPolicy.HOLD_RELEASE_GRACE_SEC);
+		long deadlineSec = policy.getLong(AppPolicy.PAY_DEADLINE_MIN) * 60;
+		long s = seatIds.get(0);
+		long r = hold.hold(newMember(), cmd(s)).reservationId();
+		assertThat(redis.getExpire(SeatKeys.hold(RUN, s, 0))).isBetween(deadlineSec + grace - 5, deadlineSec + grace);
+
+		pastDeadline(r, false, s); // DB 마감은 지났지만 Redis 키는 유예 동안 남아 있다 (스캐너가 아직 안 돎)
+
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, s, 0))).isEqualTo(Long.toString(r));
+		assertThatThrownBy(() -> hold.hold(newMember(), cmd(s)))
+				.isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getErrorCode()).isEqualTo(SeatErrorCode.SEAT_ALREADY_TAKEN));
+	}
+
+	@Test
+	void T42_스캐너가_유예_안에_만료_처리하면_키가_비지_않고_REOFFER로_바뀌어_일반_사용자는_계속_못_잡는다() {
+		long s = seatIds.get(1);
+		long r = hold.hold(newMember(), cmd(s)).reservationId();
+		pastDeadline(r, false, s);
+
+		assertThat(scanner.scanOnce()).isEqualTo(1);
+
+		assertThat(status(r)).isEqualTo("EXPIRED");
+		// 키가 한 번도 비지 않고 대기자 몫으로 넘어간다 (예전에는 마감에 키가 사라져 이 사이에 아무나 잡을 수 있었다)
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, s, 0))).isEqualTo(SeatKeys.reoffer(r));
+		assertThatThrownBy(() -> hold.hold(newMember(), cmd(s)))
+				.isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getErrorCode()).isEqualTo(SeatErrorCode.SEAT_ALREADY_TAKEN));
+	}
+
+	@Test
+	void T44_유예가_0이면_예전처럼_마감에_키가_사라진다() {
+		redis.opsForHash().put("policy:cache", AppPolicy.HOLD_RELEASE_GRACE_SEC, "0");
+		sleep(1100); // AppPolicy는 값을 1초 들고 있다
+		try {
+			long deadlineSec = policy.getLong(AppPolicy.PAY_DEADLINE_MIN) * 60;
+			long s = seatIds.get(2);
+			hold.hold(newMember(), cmd(s));
+			assertThat(redis.getExpire(SeatKeys.hold(RUN, s, 0))).isBetween(deadlineSec - 5, deadlineSec);
+		} finally {
+			redis.opsForHash().delete("policy:cache", AppPolicy.HOLD_RELEASE_GRACE_SEC);
+			sleep(1100);
+		}
 	}
 
 	private static HoldCommand cmd(long... seats) {
