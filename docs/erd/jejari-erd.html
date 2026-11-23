@@ -1133,7 +1133,8 @@ const DOCS = {
   ['v30','notification.type CHECK에 CONFIRMED 추가 — 예매 완료 알림 (RESERVATION_CONFIRMED 이벤트 → "예매가 완료됐어요"). 기존 DB는 db/patch/v30.sql을 먼저 넣고 나서 알림 코드를 합친다'],
   ['v31','model_run 예시에 두 번째 합성 모델 ens-2026.11-02 (data/ml/model-next, 꺼짐) — 모델 관리 화면(A-09)에서 지금 버전과 비교. 기존 DB는 db/patch/v31.sql'],
   ['v32','비고만: model_run.params(dir·gate)와 주간 재학습 후보, suspicious_case의 무작위 점검 표본 표시 약속 (사용자가 많아질수록 똑똑해지는 순환). DB 변경 없음'],
-  ['v33','비회원(게스트) 예매 (김성원 요청, 팀장 범위 확정): member.member_type(NULL = 회원, GUEST)·guest_expires_at, Redis rate:guest_lookup, app_policy guest.enabled(N)·retain_days_after_run(30)·lookup_rate_per_hour(10). 게스트도 CI 규칙 그대로. behavior_log 인덱스 { run_id, ts } 뺌 (쓰기 +12~18%)']]}
+  ['v33','비회원(게스트) 예매 (김성원 요청, 팀장 범위 확정): member.member_type(NULL = 회원, GUEST)·guest_expires_at, Redis rate:guest_lookup, app_policy guest.enabled(N)·retain_days_after_run(30)·lookup_rate_per_hour(10). 게스트도 CI 규칙 그대로. behavior_log 인덱스 { run_id, ts } 뺌 (쓰기 +12~18%)'],
+  ['v34','마커 규칙 2개 (강다인 요청): case_marker.rule_code에 INHUMAN_STEP(사람 손으로 불가능한 단계 속도)·HEADLESS_HOLD(화면 녹화 없이 선점). MongoDB behavior_log.elapsed_ms(서버 처리 시간), replay_event.pointer(m·t·p·k). app_policy risk.rule.* 15행 (warning_threshold·inhuman_step·headless_hold·linear_mouse·no_search_entry_points, 코드 기본값과 같음)']]}
 };
 // ===== 스키마 v5: 팀 검토 12건 반영 (2026-11-06) =====
 const V5_TABLES = [
@@ -1679,7 +1680,34 @@ const V33_OPS = [
   // 그 점검은 _id(저장 시각) 범위로 3ms. 서버는 db.behavior_log.dropIndex("ix_run_ts") — docs/강동균/features/서버-요청-ix_run_ts-제거.md
   ['notes','behavior_log','인덱스: { ci_hash: 1, ts: -1 }, { member_id: 1, ts: 1 } (타임라인 ADM-05) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13 · 유니크 { event_id: 1 }, partialFilterExpression: { event_id: { $type: "string" } } (재전달 중복 방지, 중복 키 오류는 무시. event_id가 없는 옛 문서끼리는 충돌하지 않게 부분 인덱스) · 인덱스 { device_hash: 1, ts: 1 } (기기 단위 집계·의심 구간 조회) · { run_id: 1, ts: 1 }은 v33에서 뺌 (운행별 조회는 _id 범위로, 쓰기 +12~18%)'],
 ];
-const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS}, {v:24,tables:V24_TABLES,ops:V24_OPS}, {v:25,tables:V25_TABLES,ops:V25_OPS}, {v:26,tables:V26_TABLES,ops:V26_OPS}, {v:27,tables:V27_TABLES,ops:V27_OPS}, {v:28,tables:V28_TABLES,ops:V28_OPS}, {v:29,tables:V29_TABLES,ops:V29_OPS}, {v:30,tables:V30_TABLES,ops:V30_OPS}, {v:31,tables:V31_TABLES,ops:V31_OPS}, {v:32,tables:V32_TABLES,ops:V32_OPS}, {v:33,tables:V33_TABLES,ops:V33_OPS} ];
+const V34_TABLES = [];
+const V34_OPS = [
+  // 마커 규칙 2개 (강다인 요청 2026-11-23, 연습 봇 39종 재측정 근거: 연습봇-평가와-규칙-제안.md 3-3).
+  // INHUMAN_STEP = 좌석표 → 선점, 선점 → 결제가 사람 손으로 불가능한 속도 · HEADLESS_HOLD = 화면 녹화 없이 좌석 선점.
+  // 코드는 CHECK를 읽어 값이 생기면 재배포 없이 케이스 규칙으로 켠다. NO_SEARCH_ENTRY는 점수만이라 넣지 않음
+  ['set','case_marker','rule_code',{desc:'FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / REGULAR_INTERVAL / LINEAR_MOUSE / INHUMAN_STEP / HEADLESS_HOLD',reason:'어떤 규칙이 잡았는지. 값은 RiskRule 중 마커 규칙(marker=true)과 같게 둔다'}],
+  ['add','behavior_log','response_status',[
+    ['elapsed_ms','Int','','시스템','서버 처리 시간 ms (요청을 받은 시각부터 응답을 다 보낸 시각까지)','INHUMAN_STEP이 "앞 응답을 받은 뒤부터" 다음 요청까지를 잰다 (ts는 받은 시각이라 서버가 느리면 사람도 빨라 보임). 예전 문서는 없음']]],
+  ['add','replay_event','label',[
+    ['pointer','String','','생성','CLICK을 만든 입력 장치: m 마우스 · t 터치 · p 펜 · k 키보드 (CLICK에만, 모르면 없음)','LINEAR_MOUSE는 마우스 클릭만 본다 (휴대폰 탭은 탭한 자리로 순간이동처럼 보이고 키보드는 좌표가 0)']]],
+  ['samples+','app_policy',[
+    {policy_key:'risk.rule.warning_threshold',policy_value:'30',version:1,value_type:'NUMBER',description:'위험 점수가 이 이상이면 주의(경고) 단계'},
+    {policy_key:'risk.rule.inhuman_step_ms',policy_value:'500',version:1,value_type:'NUMBER',description:'INHUMAN_STEP: 좌석표 → 선점, 선점 → 결제가 이 ms 미만이면 사람 손으로 불가능한 단계 1회'},
+    {policy_key:'risk.rule.inhuman_step.t1',policy_value:'2',version:1,value_type:'NUMBER',description:'INHUMAN_STEP 1단계 횟수'},
+    {policy_key:'risk.rule.inhuman_step.p1',policy_value:'30',version:1,value_type:'NUMBER',description:'INHUMAN_STEP 1단계 점수'},
+    {policy_key:'risk.rule.inhuman_step.t2',policy_value:'5',version:1,value_type:'NUMBER',description:'INHUMAN_STEP 2단계 횟수'},
+    {policy_key:'risk.rule.inhuman_step.p2',policy_value:'40',version:1,value_type:'NUMBER',description:'INHUMAN_STEP 2단계 점수'},
+    {policy_key:'risk.rule.headless_hold.t1',policy_value:'1',version:1,value_type:'NUMBER',description:'HEADLESS_HOLD 1단계: 화면 녹화 없이 선점한 세션 수'},
+    {policy_key:'risk.rule.headless_hold.p1',policy_value:'30',version:1,value_type:'NUMBER',description:'HEADLESS_HOLD 1단계 점수'},
+    {policy_key:'risk.rule.headless_hold.t2',policy_value:'3',version:1,value_type:'NUMBER',description:'HEADLESS_HOLD 2단계 세션 수'},
+    {policy_key:'risk.rule.headless_hold.p2',policy_value:'45',version:1,value_type:'NUMBER',description:'HEADLESS_HOLD 2단계 점수'},
+    {policy_key:'risk.rule.linear_mouse.t1',policy_value:'8',version:1,value_type:'NUMBER',description:'LINEAR_MOUSE 1단계: 기계적 마우스 이동(순간이동·직선 등속) 수'},
+    {policy_key:'risk.rule.linear_mouse.p1',policy_value:'25',version:1,value_type:'NUMBER',description:'LINEAR_MOUSE 1단계 점수'},
+    {policy_key:'risk.rule.linear_mouse.t2',policy_value:'20',version:1,value_type:'NUMBER',description:'LINEAR_MOUSE 2단계 이동 수'},
+    {policy_key:'risk.rule.linear_mouse.p2',policy_value:'40',version:1,value_type:'NUMBER',description:'LINEAR_MOUSE 2단계 점수'},
+    {policy_key:'risk.rule.no_search_entry_points',policy_value:'10',version:1,value_type:'NUMBER',description:'NO_SEARCH_ENTRY(조회 없이 대기열 진입) 점수. 점수만 (케이스 아님)'}]],
+];
+const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS}, {v:24,tables:V24_TABLES,ops:V24_OPS}, {v:25,tables:V25_TABLES,ops:V25_OPS}, {v:26,tables:V26_TABLES,ops:V26_OPS}, {v:27,tables:V27_TABLES,ops:V27_OPS}, {v:28,tables:V28_TABLES,ops:V28_OPS}, {v:29,tables:V29_TABLES,ops:V29_OPS}, {v:30,tables:V30_TABLES,ops:V30_OPS}, {v:31,tables:V31_TABLES,ops:V31_OPS}, {v:32,tables:V32_TABLES,ops:V32_OPS}, {v:33,tables:V33_TABLES,ops:V33_OPS}, {v:34,tables:V34_TABLES,ops:V34_OPS} ];
 const SEED_VERSION = Math.max(2,...PATCHES.map(p=>p.v));
 const LAYOUT = [
  ['station','route','route_station','fare','common_code'],

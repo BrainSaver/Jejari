@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v33)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v34)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -900,14 +900,14 @@ CREATE TABLE case_marker (
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_case_marker PRIMARY KEY (marker_id),
   CONSTRAINT ck_case_marker_marker_type CHECK (marker_type IN ('AUTO', 'MANUAL')),
-  CONSTRAINT ck_case_marker_rule_code CHECK (rule_code IN ('FAST_CLICK', 'SAME_SEAT_RETRY', 'CANCEL_AFTER_PAY', 'MULTI_ACCOUNT_SYNC', 'REGULAR_INTERVAL', 'LINEAR_MOUSE')),
+  CONSTRAINT ck_case_marker_rule_code CHECK (rule_code IN ('FAST_CLICK', 'SAME_SEAT_RETRY', 'CANCEL_AFTER_PAY', 'MULTI_ACCOUNT_SYNC', 'REGULAR_INTERVAL', 'LINEAR_MOUSE', 'INHUMAN_STEP', 'HEADLESS_HOLD')),
   CONSTRAINT ck_case_marker_severity CHECK (severity IN ('LOW', 'MID', 'HIGH'))
 );
 COMMENT ON TABLE case_marker IS '타임라인 마커 - 재생 타임라인의 북마크. 시스템이 자동으로 찍고 관리자가 메모를 더한다.';
 COMMENT ON COLUMN case_marker.session_id IS '표시할 세션 (없을 수 있음) / Oracle 기록만으로 찍는 마커(구매 직후 취소 등)는 녹화 세션이 없다. 세션이 있으면 재생기가 그 지점으로 이동';
 COMMENT ON COLUMN case_marker.at_ts IS '타임라인 위치 / 누르면 그 시점으로 이동';
 COMMENT ON COLUMN case_marker.marker_type IS 'AUTO / MANUAL / 시스템 탐지와 관리자 메모 구분';
-COMMENT ON COLUMN case_marker.rule_code IS 'FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / REGULAR_INTERVAL / LINEAR_MOUSE / 어떤 규칙이 잡았는지. 값은 RiskRule 중 마커 규칙(marker=true)과 같게 둔다';
+COMMENT ON COLUMN case_marker.rule_code IS 'FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / REGULAR_INTERVAL / LINEAR_MOUSE / INHUMAN_STEP / HEADLESS_HOLD / 어떤 규칙이 잡았는지. 값은 RiskRule 중 마커 규칙(marker=true)과 같게 둔다';
 COMMENT ON COLUMN case_marker.label IS '예: 0.1초 간격 좌석 클릭 28회';
 COMMENT ON COLUMN case_marker.severity IS 'LOW / MID / HIGH';
 COMMENT ON COLUMN case_marker.created_by IS '작성 관리자 (AUTO는 null)';
@@ -1284,6 +1284,21 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('guest.enabled', 'N', 1, 'STRING', 'Y면 비회원(게스트) 예매 사용. 기능이 들어가기 전에는 N');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('guest.retain_days_after_run', '30', 1, 'NUMBER', '게스트 개인정보 보관: 그 게스트의 마지막 운행일 + 이 일수 (조회·환불 문의 기간)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('guest.lookup_rate_per_hour', '10', 1, 'NUMBER', 'IP당 시간당 비회원 예약 조회 시도 한도 (rate:guest_lookup)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.warning_threshold', '30', 1, 'NUMBER', '위험 점수가 이 이상이면 주의(경고) 단계');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.inhuman_step_ms', '500', 1, 'NUMBER', 'INHUMAN_STEP: 좌석표 → 선점, 선점 → 결제가 이 ms 미만이면 사람 손으로 불가능한 단계 1회');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.inhuman_step.t1', '2', 1, 'NUMBER', 'INHUMAN_STEP 1단계 횟수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.inhuman_step.p1', '30', 1, 'NUMBER', 'INHUMAN_STEP 1단계 점수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.inhuman_step.t2', '5', 1, 'NUMBER', 'INHUMAN_STEP 2단계 횟수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.inhuman_step.p2', '40', 1, 'NUMBER', 'INHUMAN_STEP 2단계 점수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.headless_hold.t1', '1', 1, 'NUMBER', 'HEADLESS_HOLD 1단계: 화면 녹화 없이 선점한 세션 수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.headless_hold.p1', '30', 1, 'NUMBER', 'HEADLESS_HOLD 1단계 점수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.headless_hold.t2', '3', 1, 'NUMBER', 'HEADLESS_HOLD 2단계 세션 수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.headless_hold.p2', '45', 1, 'NUMBER', 'HEADLESS_HOLD 2단계 점수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.linear_mouse.t1', '8', 1, 'NUMBER', 'LINEAR_MOUSE 1단계: 기계적 마우스 이동(순간이동·직선 등속) 수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.linear_mouse.p1', '25', 1, 'NUMBER', 'LINEAR_MOUSE 1단계 점수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.linear_mouse.t2', '20', 1, 'NUMBER', 'LINEAR_MOUSE 2단계 이동 수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.linear_mouse.p2', '40', 1, 'NUMBER', 'LINEAR_MOUSE 2단계 점수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.no_search_entry_points', '10', 1, 'NUMBER', 'NO_SEARCH_ENTRY(조회 없이 대기열 진입) 점수. 점수만 (케이스 아님)');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (1, 1, 'PER_RESERVATION', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (2, 1, 'PER_RUN', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (3, 1, 'PER_HOLIDAY', 8, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
