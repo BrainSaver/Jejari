@@ -1,0 +1,8 @@
+{
+  "name": "botc",
+  "owner": "강동균",
+  "blind": false,
+  "run": ["node", "bot.js"],
+  "needs": ["playwright"],
+  "env": {}
+}
