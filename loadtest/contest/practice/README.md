@@ -49,7 +49,7 @@ python3 -I loadtest/contest/practice/simulate_rules.py data/ml/practice-<태그>
 
 결과와 해석: [연습봇-평가와-규칙-제안.md 3-2절](../../../docs/강동균/features/연습봇-평가와-규칙-제안.md)
 
-## 3단계 (화면 녹화 꾸미기, 6종)
+## 3단계 (화면 녹화 꾸미기, 9종)
 
 `GEN=3`으로 돌립니다 (`GEN=all`은 45종). 화면 녹화 규칙(HEADLESS_HOLD·LINEAR_MOUSE)과 INHUMAN_STEP이 케이스 규칙이 된 뒤를 가정한 봇입니다.
 모두 2단계의 피하기(단계 사이 0.6~1초, 조회 2번, 명의마다 IP)를 갖추고 녹화를 꾸미는 방법만 다릅니다.
@@ -62,6 +62,16 @@ python3 -I loadtest/contest/practice/simulate_rules.py data/ml/practice-<태그>
 | botreclinear | 직선 등속 궤적 + 마우스 클릭 (기준선: 지금 규칙이 잡아야 함) |
 | botrecbezier | 휜 곡선, 등간격·손떨림 없음·도착 즉시 클릭 |
 | botrectemplate | 사람 같은 궤적 하나를 모든 계정이 재사용 |
+| botrecjump | 클릭 자리에 점 하나만 (순간이동) |
+| botrecmobile | 휴대폰인 척, 터치 클릭만 |
+| botrecreal | 사람과 같은 녹화 + 2단계 피하기 전부 (상한) |
+
+## 사람 변형 (오탐 시험, 10종)
+
+`GEN=h`로 돌립니다. 진짜 사람이 하는데 규칙에 걸리기 쉬운 행동입니다 (kind가 `human`으로 시작하면 평가가 사람으로 세어, 탐지되면 오탐).
+humanfast (손 빠름) · humandouble (두 번 클릭) · humanretry (인기 좌석 경쟁) · humanmobile (휴대폰) · humankeyboard (키보드) · humanlink (조회 없이 링크) ·
+humanfamily (가족 3명 한 컴퓨터) · humannat (같은 IP 6명) · humancancel (결제 뒤 1~2분 취소) · humanslow (천천히).
+결과: [오탐 시험](../../../docs/강동균/features/오탐-시험-사람-변형.md)
 
 ## 결과 읽기
 
