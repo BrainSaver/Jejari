@@ -3,6 +3,7 @@ package com.jejari.member.signup;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -115,14 +116,28 @@ public class SignupService {
 	}
 
 	private void insert(VerifiedIdentity id, String email, Hashed hashed) {
-		long memberId = nextId("member_seq");
+		// 같은 CI로 비회원 예매를 했던 사람이 가입하면 그 게스트 행을 회원으로 바꾼다 (ERD v33).
+		// 새 행을 만들면 같은 CI에 계정이 둘이라 위험 점수가 다계정으로 보고, 예매 이력도 끊긴다
+		List<Long> guest = jdbc.queryForList(
+				"SELECT member_id FROM member WHERE ci_hash = ? AND member_type = 'GUEST' ORDER BY member_id FOR UPDATE",
+				Long.class, id.ciHash());
+		boolean converted = !guest.isEmpty();
+		long memberId = converted ? guest.get(0) : nextId("member_seq");
 		Encrypted phone = cipher.encrypt(id.phone(), PiiField.MEMBER_PHONE, memberId);
 		Timestamp now = Timestamp.from(clock.instant());
-		jdbc.update("""
-				INSERT INTO member (member_id, email, ci_hash, name, phone_enc, phone_hash, enc_key_id, status)
-				VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE')""",
-				memberId, email, id.ciHash(), id.name(), phone.cipherText(), pseudonymizer.phone(id.phone()),
-				phone.keyId());
+		if (converted) {
+			jdbc.update("""
+					UPDATE member SET email = ?, name = ?, phone_enc = ?, phone_hash = ?, enc_key_id = ?,
+					       member_type = NULL, guest_expires_at = NULL, withdrawn_at = NULL, updated_at = SYSTIMESTAMP
+					 WHERE member_id = ?""",
+					email, id.name(), phone.cipherText(), pseudonymizer.phone(id.phone()), phone.keyId(), memberId);
+		} else {
+			jdbc.update("""
+					INSERT INTO member (member_id, email, ci_hash, name, phone_enc, phone_hash, enc_key_id, status)
+					VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE')""",
+					memberId, email, id.ciHash(), id.name(), phone.cipherText(), pseudonymizer.phone(id.phone()),
+					phone.keyId());
+		}
 		jdbc.update("""
 				INSERT INTO member_credential (member_id, password_hash, hash_algo, hash_params, pepper_key_id,
 				    needs_rehash, failed_count, password_changed_at)

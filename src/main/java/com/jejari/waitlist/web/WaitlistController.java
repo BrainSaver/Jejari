@@ -20,6 +20,7 @@ import com.jejari.auth.AuthPrincipal;
 import com.jejari.behavior.BehaviorLog;
 import com.jejari.behavior.BehaviorType;
 import com.jejari.common.error.BusinessException;
+import com.jejari.member.GuestGuard;
 import com.jejari.waitlist.WaitlistService;
 import com.jejari.waitlist.WaitlistService.Applied;
 import com.jejari.waitlist.WaitlistService.ApplyCommand;
@@ -42,13 +43,16 @@ import com.jejari.waitlist.WaitlistService.Item;
 public class WaitlistController {
 
 	private final WaitlistService service;
+	private final GuestGuard guestGuard;
 
-	public WaitlistController(WaitlistService service) {
+	public WaitlistController(WaitlistService service, GuestGuard guestGuard) {
 		this.service = service;
+		this.guestGuard = guestGuard;
 	}
 
 	@PostMapping
 	public ResponseEntity<Applied> apply(@AuthenticationPrincipal AuthPrincipal me, @RequestBody ApplyCommand body) {
+		guestGuard.forbidGuest(me.memberId()); // 비회원은 취소표 대기를 쓸 수 없다
 		Map<String, Object> meta = new LinkedHashMap<>();
 		meta.put("seatGrade", body.seatGrade());
 		meta.put("seatCount", body.seatCount());

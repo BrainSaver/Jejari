@@ -34,6 +34,12 @@ public class AuthPolicy implements PolicyBounds {
 	/** [제안] 본인인증 토큰 유효 시간(초) */
 	public static final String VERIFY_TOKEN_TTL_SEC = "auth.verify_token_ttl_sec";
 	public static final String LOGIN_ATTEMPT_RETENTION_DAYS = "login_attempt.retention_days";
+	/** 비회원(게스트) 예매 사용 여부 Y/N. 원본 app_policy guest.enabled (ERD v33), 없으면 N */
+	public static final String GUEST_ENABLED = "guest.enabled";
+	/** 게스트 개인정보 보관: 그 게스트의 마지막 운행일 + 이 일수 */
+	public static final String GUEST_RETAIN_DAYS_AFTER_RUN = "guest.retain_days_after_run";
+	/** IP당 시간당 비회원 예약 조회 시도 한도 (rate:guest_lookup) */
+	public static final String GUEST_LOOKUP_RATE_PER_HOUR = "guest.lookup_rate_per_hour";
 
 	/** 키 → {기본값, 최소, 최대} */
 	private static final Map<String, long[]> NUMBERS = Map.of(
@@ -43,7 +49,9 @@ public class AuthPolicy implements PolicyBounds {
 			LOGIN_RATE_PER_MIN, new long[] {20, 1, 600},
 			SIGNUP_RATE_PER_HOUR, new long[] {10, 1, 100},
 			VERIFY_TOKEN_TTL_SEC, new long[] {600, 60, 1800},
-			LOGIN_ATTEMPT_RETENTION_DAYS, new long[] {30, 1, 365});
+			LOGIN_ATTEMPT_RETENTION_DAYS, new long[] {30, 1, 365},
+			GUEST_RETAIN_DAYS_AFTER_RUN, new long[] {30, 1, 365},
+			GUEST_LOOKUP_RATE_PER_HOUR, new long[] {10, 1, 1000});
 
 	private record Cached(Object value, long expiresAt) {}
 
@@ -83,6 +91,11 @@ public class AuthPolicy implements PolicyBounds {
 			log.warn("인증 정책 {} 값이 허용 범위({}~{}) 밖이라 기본값 {}을 씀", key, spec[1], spec[2], spec[0]);
 			return spec[0];
 		});
+	}
+
+	/** Y/N 정책. 없거나 Y가 아니면 false (켜는 쪽은 명시적으로 Y일 때만) */
+	public boolean flag(String key) {
+		return (boolean) cached(key, () -> "Y".equalsIgnoreCase(String.valueOf(raw(key)).strip()));
 	}
 
 	public Argon2Params argon2() {

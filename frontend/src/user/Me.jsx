@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router';
 import { api, get, logout } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
 import { ConfirmButton } from '../admin/ui.jsx';
@@ -50,7 +50,7 @@ export default function Me() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (member) get('/api/v1/me').then(setMe).catch(setError);
+    if (member) get('/api/v1/me').then((m) => { setMe(m); setMyName(member.sub, m.name, !!m.guest); }).catch(setError);
   }, [member]);
   useEffect(() => () => clearInterval(timer.current), []);
 
@@ -142,6 +142,7 @@ export default function Me() {
     }
   };
 
+  const guest = !!me?.guest;
   const shownName = revealed ? revealed.name : me?.name;
   const shownPhone = revealed ? revealed.phone : me?.phone;
 
@@ -149,7 +150,7 @@ export default function Me() {
     <>
       <header className="top"><h1>내 정보</h1></header>
       <main className="body">
-        <p className="guide"><Icon name="info" /><span>내 계정 정보를 보고 고치고, 로그아웃하거나 탈퇴할 수 있어요.</span></p>
+        <p className="guide"><Icon name="info" /><span>{guest ? '비회원으로 이용 중이에요. 정보를 보고 로그아웃하거나 회원으로 가입할 수 있어요.' : '내 계정 정보를 보고 고치고, 로그아웃하거나 탈퇴할 수 있어요.'}</span></p>
         {error && <div className="alert stop" role="alert"><Icon name="info" /><span>{MESSAGES[error.code] || error.message}</span></div>}
         {editOk && <div className="alert go" role="status"><Icon name="info" /><span>정보를 바꿨어요.</span></div>}
         {me && (
@@ -158,9 +159,9 @@ export default function Me() {
               <section className="card" style={{ order: 1 }}>
                 <div className="row" style={{ gap: 14 }}>
                   <span style={{ width: 52, height: 52, borderRadius: 12, background: 'var(--sign)', color: 'var(--ink)', display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 19, flex: 'none' }}>{(shownName || '?')[0]}</span>
-                  <span className="grow"><b style={{ fontSize: 17 }}>{shownName}</b><br /><span className="mut" style={{ fontSize: 13.5 }}>{me.email}<br />{shownPhone}</span></span>
+                  <span className="grow"><b style={{ fontSize: 17 }}>{shownName}</b><br /><span className="mut" style={{ fontSize: 13.5 }}>{!guest && <>{me.email}<br /></>}{shownPhone}</span></span>
                 </div>
-                {revealed ? (
+                {guest ? null : revealed ? (
                   <div className="row" style={{ marginTop: 12, gap: 10 }}>
                     <span className="mut grow" style={{ fontSize: 13 }}>{left}초 뒤에 다시 가려요.</span>
                     <button type="button" className="btn sm ghost" onClick={hide}>지금 가리기</button>
@@ -185,8 +186,18 @@ export default function Me() {
                 <div className="alert go" style={{ order: 1 }}><Icon name="info" /><span>{new Date(toMs(me.joinedAt)).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })}에 본인인증을 마쳤어요</span></div>
               )}
 
-              <div className="sec" style={{ order: 2 }}>정보 변경</div>
-              <section className="card" style={{ order: 2 }}>
+              {guest && (
+                <section className="card" style={{ order: 2 }}>
+                  <b>비회원으로 이용 중이에요</b>
+                  <p className="mut" style={{ fontSize: 14, margin: '6px 0 10px' }}>
+                    예매·결제·취소·예매 내역은 그대로 쓸 수 있어요. 취소표 대기, 내 정보 변경은 회원만 쓸 수 있고, 표를 탄 뒤 일정 기간이 지나면 이름·연락처가 지워져요.
+                    같은 본인인증으로 가입하면 지금까지의 예매 내역이 그대로 이어져요.
+                  </p>
+                  <Link className="btn sm" to="/signup?next=/reservations">회원가입</Link>
+                </section>
+              )}
+              {!guest && <div className="sec" style={{ order: 2 }}>정보 변경</div>}
+              {!guest && <section className="card" style={{ order: 2 }}>
                 {!editOpen ? (
                   <div className="row">
                     <span className="mut grow" style={{ fontSize: 14 }}>이름, 휴대폰 번호, 비밀번호를 바꿀 수 있어요.</span>
@@ -225,20 +236,20 @@ export default function Me() {
                     </div>
                   </form>
                 )}
-              </section>
+              </section>}
 
               <div className="sec" style={{ order: 4 }}>계정</div>
               <section className="card" style={{ padding: '4px 16px', order: 5 }}>
                 <button type="button" className="row" onClick={out} style={{ width: '100%', border: 0, background: 'none', font: 'inherit', color: 'inherit', cursor: 'pointer', padding: '14px 0', borderBottom: '1px solid var(--line2)' }}>
                   <Icon name="out" /><span className="grow" style={{ textAlign: 'left' }}>로그아웃</span>
                 </button>
-                <div style={{ padding: '12px 0' }}>
+                {!guest && <div style={{ padding: '12px 0' }}>
                   <p className="mut" style={{ fontSize: 14, margin: '0 0 8px' }}>탈퇴하면 이름·연락처는 지워지고 대기 신청은 취소돼요. 지난 예매 기록은 이름·연락처 없이 남아요. 비밀번호를 한 번 더 넣어 주세요.</p>
                   <div className="row">
                     <input type="password" aria-label="비밀번호 확인" placeholder="비밀번호" value={pw} onChange={(e) => setPw(e.target.value)} style={{ flex: 1 }} />
                     <ConfirmButton className="btn warn sm" confirm="한 번 더 누르면 탈퇴" onConfirm={withdraw} disabled={!pw}>탈퇴</ConfirmButton>
                   </div>
-                </div>
+                </div>}
               </section>
             </div>
             <div className="c2">

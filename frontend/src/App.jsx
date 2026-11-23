@@ -18,6 +18,8 @@ import Me from './user/Me.jsx';
 import Notifications from './user/Notifications.jsx';
 import Reservations from './user/Reservations.jsx';
 import Search from './user/Search.jsx';
+import Guest from './user/Guest.jsx';
+import GuestLookup from './user/GuestLookup.jsx';
 import Waitlist from './user/Waitlist.jsx';
 import Seats from './user/Seats.jsx';
 import Signup from './user/Signup.jsx';
@@ -30,6 +32,8 @@ export default function App() {
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/guest" element={<Guest />} />
+        <Route path="/guest/lookup" element={<GuestLookup />} />
       </Route>
       <Route element={<UserLayout />}>
         <Route path="/" element={<Search />} />

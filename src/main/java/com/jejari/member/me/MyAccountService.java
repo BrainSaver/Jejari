@@ -22,6 +22,7 @@ import com.jejari.common.pii.PiiField;
 import com.jejari.common.pii.PiiMasker;
 import com.jejari.member.AuthLimiter;
 import com.jejari.member.AuthPolicy;
+import com.jejari.member.GuestGuard;
 import com.jejari.member.MemberAuthEnabled;
 import com.jejari.member.password.PasswordHasher;
 import com.jejari.member.password.PasswordPolicy;
@@ -59,9 +60,10 @@ public class MyAccountService {
 	private final AuthLimiter limiter;
 	private final AuthPolicy policy;
 	private final Clock clock;
+	private final GuestGuard guestGuard;
 
 	public MyAccountService(JdbcTemplate jdbc, TransactionTemplate tx, PiiCipher cipher, PasswordHasher hasher,
-			Pseudonymizer pseudonymizer, AuthLimiter limiter, AuthPolicy policy, Clock clock) {
+			Pseudonymizer pseudonymizer, AuthLimiter limiter, AuthPolicy policy, Clock clock, GuestGuard guestGuard) {
 		this.jdbc = jdbc;
 		this.tx = tx;
 		this.cipher = cipher;
@@ -70,23 +72,24 @@ public class MyAccountService {
 		this.limiter = limiter;
 		this.policy = policy;
 		this.clock = clock;
+		this.guestGuard = guestGuard;
 	}
 
 	// ------------------------------------------------------------ 내 정보
 
 	/** 이름·휴대폰은 마스킹. 이메일은 로그인 ID라 그대로 */
 	public record Me(long memberId, String email, String name, String phone, boolean identityVerified, String status,
-			Instant joinedAt) {
+			Instant joinedAt, boolean guest) {
 	}
 
 	public Me me(long memberId) {
 		List<Me> rows = jdbc.query("""
 				SELECT m.member_id, m.email, m.name, m.phone_enc, m.enc_key_id, m.status, m.created_at,
-				       (SELECT COUNT(*) FROM identity_verification v WHERE v.member_id = m.member_id)
+				       (SELECT COUNT(*) FROM identity_verification v WHERE v.member_id = m.member_id), m.member_type
 				  FROM member m WHERE m.member_id = ? AND m.withdrawn_at IS NULL""",
 				(rs, i) -> new Me(rs.getLong(1), rs.getString(2), PiiMasker.name(rs.getString(3)),
 						maskedPhone(rs.getLong(1), rs.getString(4), rs.getString(5)), rs.getLong(8) > 0, rs.getString(6),
-						rs.getTimestamp(7).toInstant()),
+						rs.getTimestamp(7).toInstant(), "GUEST".equals(rs.getString(9))),
 				memberId);
 		if (rows.isEmpty()) {
 			throw new BusinessException(MyAccountErrorCode.MEMBER_NOT_FOUND); // 탈퇴했거나 없는 회원 (토큰만 남은 경우)
@@ -109,6 +112,7 @@ public class MyAccountService {
 	// ------------------------------------------------------------ 탈퇴
 
 	public void withdraw(long memberId, String password) {
+		guestGuard.forbidGuest(memberId); // 게스트는 기한이 지나면 자동으로 지워진다
 		verifyPassword(memberId, password);
 
 		Instant now = clock.instant();
@@ -152,6 +156,7 @@ public class MyAccountService {
 	}
 
 	public Revealed reveal(long memberId, String password) {
+		guestGuard.forbidGuest(memberId);
 		verifyPassword(memberId, password);
 		List<Revealed> rows = jdbc.query("""
 				SELECT m.name, m.phone_enc, m.enc_key_id FROM member m
@@ -189,6 +194,7 @@ public class MyAccountService {
 	}
 
 	public UpdateResult update(long memberId, UpdateRequest req) {
+		guestGuard.forbidGuest(memberId);
 		boolean wantName = req.name() != null && !req.name().isBlank();
 		boolean wantPhone = req.phone() != null && !req.phone().isBlank();
 		boolean wantPassword = req.newPassword() != null && !req.newPassword().isEmpty();

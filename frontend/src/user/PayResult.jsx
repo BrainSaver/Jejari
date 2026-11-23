@@ -5,6 +5,7 @@ import Icon from '../admin/Icon.jsx';
 import { seatText, shortDate, won } from './fmt.js';
 import RouteLine from './RouteLine.jsx';
 import { useMember } from './useMember.js';
+import { useMyProfile } from './myName.js';
 
 /**
  * U-07 결제 결과 (PAY-02·03). GET /api/v1/reservations/{id}
@@ -14,6 +15,7 @@ import { useMember } from './useMember.js';
 export default function PayResult() {
   const { reservationId: id } = useParams();
   const { member, checking } = useMember();
+  const { guest } = useMyProfile(member);
   const location = useLocation();
   const [d, setD] = useState(null);
   const [error, setError] = useState(null);
@@ -98,7 +100,8 @@ export default function PayResult() {
               {state === 'ok' ? <span className="st go">확정</span> : <span className="st amber">확인 중</span>}
             </div>
             <RouteLine from={s.from} to={s.to} ride={state === 'ok'} />
-            <div className="kv" style={{ marginTop: 8 }}><span>좌석</span><span>{seatText(d.seats)}</span></div>
+            <div className="kv" style={{ marginTop: 8 }}><span>예약 번호</span><span className="num">{id}</span></div>
+            <div className="kv"><span>좌석</span><span>{seatText(d.seats)}</span></div>
             <div className="kv"><span>결제 금액</span><span>{won(s.totalAmount)}</span></div>
             <div className="perf" />
             <div className="stub">
@@ -108,6 +111,12 @@ export default function PayResult() {
             {/* 확정 도장이 위에서 쾅 찍힌다 */}
             {state === 'ok' && <span className="stamp slam" style={{ position: 'absolute', left: '46%', top: 108, fontSize: 20 }}>확정</span>}
           </article>
+        )}
+        {guest && s && state !== 'fail' && (
+          <div className="alert amber" role="status">
+            <Icon name="info" />
+            <span>비회원이에요. <b>예약 번호 {id}</b>를 적어 두세요. 로그인 없이 예약 번호와 휴대폰 번호로 조회할 수 있어요.</span>
+          </div>
         )}
         {state === 'ok' && (
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>

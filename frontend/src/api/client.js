@@ -111,6 +111,16 @@ export async function memberLogin(email, password, remember = false, onWait = nu
   }
 }
 
+/**
+ * 비회원(게스트) 입장: 본인인증(/auth/verify)으로 받은 1회용 토큰을 보내 로그인과 같은 토큰을 받는다 (비밀번호 없음).
+ * 이미 회원인 사람이면 서버가 GUEST_IS_MEMBER(409)로 거절한다.
+ */
+export async function guestEnter(verificationToken) {
+  const r = await send('POST', '/api/v1/auth/guest', { verificationToken }, { auth: false });
+  setToken(r.accessToken);
+  return tokenClaims();
+}
+
 export async function logout() {
   try {
     if (accessToken) await send('POST', '/api/v1/auth/logout');

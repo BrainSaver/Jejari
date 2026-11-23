@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
-import { memberLogin } from '../api/client.js';
+import { get, memberLogin } from '../api/client.js';
 import Icon, { Seal } from '../admin/Icon.jsx';
 import { useMember } from './useMember.js';
 import { BUSY_MESSAGE, isBusy } from '../lib/busy.js';
@@ -31,6 +31,11 @@ export default function Login() {
   const pwRef = useRef(null);
   const timer = useRef(null);
   useEffect(() => () => clearInterval(timer.current), []);
+  // 비회원 예매를 켜 둔 때만 "비회원으로 예매"를 보여 준다 (app_policy guest.enabled)
+  const [guestOn, setGuestOn] = useState(false);
+  useEffect(() => {
+    get('/api/v1/auth/guest/enabled').then((r) => setGuestOn(!!r.enabled)).catch(() => {});
+  }, []);
 
   if (!checking && member) return <Navigate to={next} replace />;
 
@@ -101,6 +106,16 @@ export default function Login() {
       <p className="mut" style={{ textAlign: 'center', margin: '6px 0 0', fontSize: 14 }}>
         처음이신가요? <Link className="link" to={`/signup?next=${encodeURIComponent(next)}`}>회원가입</Link>
       </p>
+      {guestOn && (
+        <div className="card" style={{ margin: '10px 0 0' }}>
+          <b>가입 없이 예매하시나요?</b>
+          <p className="mut" style={{ fontSize: 13.5, margin: '4px 0 10px' }}>본인인증만 하면 바로 예매할 수 있어요. 취소표 대기와 내 정보 변경은 회원만 쓸 수 있어요.</p>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <Link className="btn ghost" style={{ flex: '1 1 160px' }} to={`/guest?next=${encodeURIComponent(next)}`}>비회원으로 예매</Link>
+            <Link className="btn ghost" style={{ flex: '1 1 160px' }} to="/guest/lookup">비회원 예약 조회</Link>
+          </div>
+        </div>
+      )}
       <p style={{ textAlign: 'center', margin: 0 }}><Link className="link" to="/" style={{ fontSize: 14 }}>로그인 없이 열차 찾기</Link></p>
     </main>
   );

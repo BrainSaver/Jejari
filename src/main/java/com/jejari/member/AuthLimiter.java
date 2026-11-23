@@ -82,6 +82,11 @@ public class AuthLimiter {
 		return "rate:signup:" + ipHash;
 	}
 
+	/** 비회원 예약 조회 시도 (ERD v33 redis_keys) */
+	public static String guestLookupRateKey(String ipHash) {
+		return "rate:guest_lookup:" + ipHash;
+	}
+
 	static String failKey(String emailHash) {
 		return "login:fail:" + emailHash;
 	}
