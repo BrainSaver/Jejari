@@ -77,8 +77,7 @@ heapdump*
 # 봇 대회 날 원래 정책 값 (loadtest/contest/day.sh)
 .contest-day
 
-# 봇 대회 꾸러미 (카톡으로 팀원에게 전달. 원본은 loadtest/contest/)
-/bot/
+# 봇 대회 꾸러미의 카톡 전달용 묶음 (bot/ 폴더 자체는 올린다. 원본은 loadtest/contest/)
 /bot.tar.gz
 
 # 1차 봇 대회 원본은 집계 PC에만 있어서 저장소에 둔다 (전부 해시값, data/ml/contest-c1119/README.md)
