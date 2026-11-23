@@ -103,6 +103,32 @@ groups:
           description: journalctl -u jejari-tago -n 50 확인. 서비스 키(DATA_GO_KR_KEY_DEC) 만료·공공데이터포털 장애가 흔함. 다시 하기 sudo systemctl start jejari-tago
         labels: { severity: warning }
 
+      # 11-23 추가: 모델 갱신이 11-20~23 사흘 동안 매시간 실패했는데 경보가 없어 아무도 몰랐다
+      # (docs/조영준/troubleshooting/20261123-모델-보조의견-3일간-매시간-실패.md). 지표: deploy/model-refresh.sh · model-retrain.sh → Pushgateway
+      - uid: jejari-model-failed
+        title: 위험 점수 모델 보조 의견 갱신 실패
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            # 매시간 갱신: 마지막 실행 실패 또는 3시간 넘게 안 돎 / 주간 재학습: 마지막 실행 실패 또는 8일 넘게 안 돎
+            model: { refId: A, instant: true, expr: '(max(jejari_model_last_success) < 1) or (time() - max(jejari_model_last_run_timestamp_seconds) > 10800) or (max(jejari_model_retrain_last_success) < 1) or (time() - max(jejari_model_retrain_last_run_timestamp_seconds) > 691200)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [-1] } }]   # 위 식에 값이 하나라도 나오면 경보
+        noDataState: OK        # 아직 한 번도 안 돌았으면 조용히
+        execErrState: Error
+        for: 70m               # 매시간 갱신이 두 번 연달아 실패해야 울림 (한 번 실패는 다음 차례에 회복되는 일이 많음)
+        annotations:
+          summary: 위험 점수 모델 보조 의견(매시간) 또는 주간 재학습이 실패하고 있습니다 — 관리자 화면 모델 의견이 멈춤
+          description: 'journalctl -u jejari-model -n 30 (재학습은 -u jejari-model-retrain). "꺼내기 실패"면 Oracle·MongoDB 상태, "점수 매기기 실패"면 /tmp/jejari-model-*.log. 보조 의견뿐이라 예매·대기열에는 영향 없음. 다시 하기 sudo systemctl start jejari-model'
+        labels: { severity: warning }
+
       - uid: jejari-app-down
         title: 앱 한 대가 응답하지 않음
         condition: C
