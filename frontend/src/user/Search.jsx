@@ -26,11 +26,13 @@ export default function Search() {
   const location = useLocation();
   const navigate = useNavigate();
   // 검색 조건. 예전처럼 params.get('from')으로 읽도록 URLSearchParams 모양으로 둔다 (값은 history state의 q)
-  const params = useMemo(() => new URLSearchParams(location.state?.q || {}), [location.state]);
+  // 예전 링크(?from=&to=&date=…)로 들어오면 그 조건을 한 번 읽어 쓴다 (봇·북마크·외부 링크가 이 주소로 들어옴)
+  const legacy = useMemo(() => (location.state?.q ? null : legacyQuery(location.search)), []);
+  const params = useMemo(() => new URLSearchParams(location.state?.q || legacy || {}), [location.state]);
   const setParams = (q) => navigate(location.pathname, { state: { q } });
-  // 예전 링크(?from=&to=&date=)로 들어오면 주소의 조건은 버리고 깨끗한 주소로 바꾼다
+  // 읽은 조건은 history state로 옮기고 주소는 깨끗하게 바꾼다 (이후 검색은 주소에 조건을 남기지 않는다)
   useEffect(() => {
-    if (location.search) navigate(location.pathname, { replace: true, state: location.state });
+    if (location.search) navigate(location.pathname, { replace: true, state: location.state?.q ? location.state : legacy ? { q: legacy } : location.state });
   }, []);
   const [stations, setStations] = useState([]);
   const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday(), time: toHour(params.get('time')) || defaultTime(params.get('date') || seoulToday()), timeSet: false, ...peopleOf(params), grade: GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '' });
@@ -64,6 +66,8 @@ export default function Search() {
   const closeDlg = () => setOpenDlg(null);
   const qGrade = GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '';
   useEffect(() => {
+    // 주소에 옛 쿼리가 남아 있는 첫 렌더는 건너뛴다. 위에서 주소를 정리하면 다시 그려지며 그때 한 번만 검색한다 (검색이 두 번 나가지 않게)
+    if (location.search) return;
     // 검색 조건이 없으면(로고를 눌러 처음 화면으로 돌아옴) 이전 결과를 비워 아무것도 안 보이게 한다
     if (!q.from || !q.to || !q.date) {
       setState({ runs: null, loading: false, error: null });
@@ -234,6 +238,20 @@ const HOURS = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')
 const hourNow = () => `${seoulHm().slice(0, 2)}:00`;
 /** 예전에 저장된 "10:48" 같은 값도 시 단위로 맞춘다 */
 const toHour = (t) => (t && /^\d{2}:\d{2}$/.test(t) ? `${t.slice(0, 2)}:00` : '');
+/** 옛 주소 ?from=&to=&date=(&time=&adult=…)의 검색 조건. 출발·도착·날짜가 모두 있고 형식이 맞아야 한다. 아니면 null */
+function legacyQuery(search) {
+  if (!search) return null;
+  const sp = new URLSearchParams(search);
+  const [from, to, date] = [sp.get('from'), sp.get('to'), sp.get('date')];
+  const id = /^[A-Za-z0-9_-]{1,20}$/;
+  if (!from || !to || !date || !id.test(from) || !id.test(to) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const q = { from, to, date };
+  for (const k of ['time', 'adult', 'child', 'senior', 'people', 'grade']) {
+    const v = sp.get(k);
+    if (v && /^[A-Za-z0-9:_-]{1,12}$/.test(v)) q[k] = v;
+  }
+  return q;
+}
 const num = (v) => Math.max(0, Math.min(MAX_PEOPLE, Math.floor(Number(v)) || 0));
 const total = (p) => p.adult + p.child + p.senior;
 /** 주소에서 유형별 인원을 읽는다. 아무것도 없으면 어른 1명. 옛 주소(?people=3)는 어른 3명 */
