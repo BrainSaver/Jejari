@@ -1,0 +1,8 @@
+{
+  "name": "botb",
+  "owner": "길동현",
+  "blind": true,
+  "run": ["node", "bot.cjs"],
+  "needs": ["playwright"],
+  "env": {}
+}

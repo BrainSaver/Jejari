@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>봇 대회 진행</title>
+<style>
+:root { --bg:#f7f6f2; --card:#fff; --fg:#1d1d1b; --mute:#6b6a65; --line:#e2e0d8; --go:#1f7a4d; --stop:#b3261e; --run:#2456a6; --warn:#9a6700; --code:#f1efe8; }
+@media (prefers-color-scheme: dark) { :root { --bg:#161614; --card:#1f1f1c; --fg:#ecebe6; --mute:#a09e96; --line:#34332e; --go:#4fbf86; --stop:#f08a80; --run:#7aa7f0; --warn:#e0b04a; --code:#262622; } }
+[hidden] { display:none !important; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+main { max-width:1100px; margin:0 auto; padding:20px 16px 60px; display:grid; gap:16px; grid-template-columns: 340px 1fr; }
+@media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+h1 { grid-column:1/-1; margin:0; font-size:22px; }
+h1 small { color:var(--mute); font-weight:400; font-size:14px; margin-left:8px; }
+section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; min-width:0; }
+h2 { margin:0 0 10px; font-size:15px; }
+label { display:block; font-size:13px; color:var(--mute); margin:8px 0 2px; white-space:nowrap; }
+input[type=text], input[type=password], input[type=number] { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); font:inherit; }
+.row { display:flex; gap:10px; } .row > div { flex:1; }
+.bot { display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-top:1px solid var(--line); font-size:14px; }
+.bot:first-child { border-top:0; }
+.bot .why { color:var(--stop); font-size:12px; }
+.badge { font-size:11px; padding:1px 6px; border-radius:9px; border:1px solid var(--line); color:var(--mute); margin-left:4px; }
+button { font:inherit; padding:9px 14px; border-radius:7px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+button.primary { background:var(--go); border-color:var(--go); color:#fff; font-weight:600; width:100%; margin-top:12px; padding:12px; font-size:16px; }
+button.danger { color:var(--stop); border-color:var(--stop); }
+button:disabled { opacity:.45; cursor:not-allowed; }
+.err { color:var(--stop); font-size:13px; margin-top:8px; min-height:1em; }
+ol.steps { list-style:none; margin:0; padding:0; }
+ol.steps li { display:flex; gap:10px; padding:5px 0; align-items:baseline; }
+.dot { width:10px; height:10px; border-radius:50%; flex:none; background:var(--line); position:relative; top:1px; }
+.s-running .dot { background:var(--run); animation:p 1s infinite alternate; } .s-ok .dot { background:var(--go); } .s-failed .dot { background:var(--stop); }
+@keyframes p { to { opacity:.3; } }
+.note { color:var(--stop); font-size:13px; }
+.human { border-color:var(--run); }
+.human .big { font-size:24px; font-weight:700; font-family:ui-monospace, Consolas, monospace; word-break:break-all; }
+.human .count { font-size:32px; font-weight:700; color:var(--run); }
+.mono { font-family:ui-monospace, Consolas, monospace; font-size:13px; }
+pre { margin:0; background:var(--code); border-radius:6px; padding:10px; overflow:auto; font:12.5px/1.45 ui-monospace, Consolas, monospace; white-space:pre; }
+#log { height:360px; }
+.botstate { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.chip { font-size:12px; padding:2px 8px; border-radius:10px; border:1px solid var(--line); }
+.chip.ok { border-color:var(--go); color:var(--go); } .chip.failed { border-color:var(--stop); color:var(--stop); } .chip.running { border-color:var(--run); color:var(--run); }
+.actions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+.right { display:grid; gap:16px; min-width:0; }
+.mute { color:var(--mute); font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>봇 대회 진행 <small id="base"></small></h1>
+
+  <div style="display:grid; gap:16px; align-content:start">
+    <section>
+      <h2>설정</h2>
+      <div class="row">
+        <div><label for="adminId">관리자 ID</label><input id="adminId" type="text" autocomplete="username"></div>
+        <div><label for="adminPw">비밀번호</label><input id="adminPw" type="password" autocomplete="current-password"></div>
+      </div>
+      <div class="row">
+        <div><label for="tag">태그</label><input id="tag" type="text" maxlength="7"></div>
+        <div><label for="humanMin">사람 시간 (분)</label><input id="humanMin" type="number" min="0" max="120" value="10"></div>
+        <div><label for="botDelayMin">봇 늦게 (분)</label><input id="botDelayMin" type="number" min="0" max="60" value="0"></div>
+      </div>
+      <p class="mute" style="margin:8px 0 0">관리자는 SUPERVISOR. 태그는 영문 소문자·숫자로, 대회마다 새로. 비밀번호는 이 PC의 화면 서버 메모리에만 두고, 대회가 끝나면 지웁니다. 봇은 사람 시간이 시작될 때 같이 출발합니다.</p>
+    </section>
+
+    <section>
+      <h2>봇 <span class="mute" id="botcount"></span></h2>
+      <div id="bots"></div>
+      <p class="mute" style="margin:8px 0 0">새 봇은 폴더에 <span class="mono">bot.json</span>을 두면 여기 나타납니다 (새로 고침).</p>
+    </section>
+
+    <section>
+      <button class="primary" id="start">대회 시작</button>
+      <div class="actions">
+        <button id="skip" disabled>사람 시간 지금 끝내기</button>
+        <button id="stop" class="danger" disabled>중지 (정리는 함)</button>
+      </div>
+      <div class="err" id="err"></div>
+    </section>
+  </div>
+
+  <div class="right">
+    <section>
+      <h2>진행</h2>
+      <ol class="steps" id="steps"></ol>
+      <div class="botstate" id="botstate"></div>
+    </section>
+
+    <section class="human" id="human" hidden>
+      <h2>사람 참가자에게 보여 주기</h2>
+      <div class="count" id="count"></div>
+      <label>접속 주소 (같은 와이파이)</label>
+      <div class="big" id="urls"></div>
+      <label>이메일 형식 — 번호는 한 사람에 하나씩</label>
+      <div class="mono" id="email"></div>
+      <label>예매</label>
+      <div>서울 → 부산 · <b id="rdate"></b> · 1~4석 · 카드 끝자리 1</div>
+      <p class="mute">안 열리면 이 PC 방화벽에서 Java(8080)를 허용하세요. 안내문: loadtest/contest/사람-참가-안내.md</p>
+    </section>
+
+    <section>
+      <h2>로그</h2>
+      <pre id="log"></pre>
+    </section>
+
+    <section id="evalbox" hidden>
+      <h2>평가 · 규칙 엔진 <span class="mute">loadtest/contest/results/<span id="rtag"></span>/eval.txt</span></h2>
+      <pre id="eval"></pre>
+    </section>
+    <section id="cmpbox" hidden>
+      <h2>평가 · 모델 비교 <span class="mute">compare.md</span></h2>
+      <pre id="cmp" style="white-space:pre-wrap"></pre>
+    </section>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let state = null;
+let names = {};
+const LOG_MAX = 3000;
+
+function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { return null; } }
+$('adminId').value = store('contest.adminId') || '';
+const d = new Date();
+$('tag').value = 'c' + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function render() {
+  if (!state) return;
+  $('base').textContent = '앱 ' + state.baseUrl + (state.appStartedHere ? ' · 이 화면이 켬' : '');
+  const r = state.run;
+  const busy = r && !r.done;
+  // 봇 목록 (진행 중이면 고정)
+  if (!$('bots').dataset.drawn || !busy) {
+    const prev = new Set([...document.querySelectorAll('#bots input:checked')].map((x) => x.value));
+    const first = !$('bots').dataset.drawn;
+    $('bots').innerHTML = state.bots.map((b) => `<div class="bot">
+      <input type="checkbox" value="${b.name}" ${b.ok ? '' : 'disabled'} ${(first ? b.ok : prev.has(b.name)) ? 'checked' : ''} ${busy ? 'disabled' : ''}>
+      <div><b>${b.name}</b>${b.owner ? ' · ' + esc(b.owner) : ''}${b.blind ? '<span class="badge">블라인드</span>' : ''}
+      ${b.ok ? '' : `<div class="why">${esc(b.problem)}</div>`}</div></div>`).join('') || '<p class="mute">loadtest/contest/bot*/ 에 봇이 없습니다</p>';
+    $('bots').dataset.drawn = '1';
+    $('botcount').textContent = `${state.bots.filter((b) => b.ok).length}개 준비`;
+  }
+  names = Object.fromEntries(state.steps.map(([id, n]) => [id, n]));
+  const st = r ? r.steps : {};
+  $('steps').innerHTML = state.steps.map(([id, n]) => `<li class="s-${st[id] || 'wait'}" id="step-${id}"><span class="dot"></span><div>${n}<div class="note"></div></div></li>`).join('');
+  if (r) for (const [id, n] of Object.entries(r.notes || {})) setNote(id, n);
+  $('botstate').innerHTML = r ? Object.entries(r.bots).map(([n, b]) => `<span class="chip ${b.status}">${n} · ${b.phase === 'signup' ? '명의' : '예매'} ${({ running: '중', ok: '끝', failed: '실패' })[b.status]}</span>`).join('') : '';
+  $('start').disabled = !!busy;
+  for (const id of ['adminId', 'adminPw', 'tag', 'humanMin', 'botDelayMin']) $(id).disabled = !!busy;
+  if (busy) { $('tag').value = r.tag; $('humanMin').value = r.opts.humanMin; $('botDelayMin').value = r.opts.botDelayMin; }
+  $('skip').disabled = !(busy && r.human && r.human.until);
+  $('stop').disabled = !busy;
+  $('start').textContent = busy ? `진행 중 · 태그 ${r.tag}${r.runId ? ' · 운행 ' + r.runId : ''}` : (r && r.done ? '새 대회 시작 (태그를 바꾸세요)' : '대회 시작');
+  const h = r && r.human;
+  $('human').hidden = !(busy && h);
+  if (h) {
+    $('urls').innerHTML = (h.urls.length ? h.urls : ['(주소를 못 찾음 — ipconfig)']).map(esc).join('<br>');
+    $('email').textContent = h.email;
+    $('rdate').textContent = h.runDate;
+  }
+  if (r && r.results.eval) { $('evalbox').hidden = false; $('eval').textContent = r.results.eval; $('rtag').textContent = r.tag; }
+  if (r && r.results.compare) { $('cmpbox').hidden = false; $('cmp').textContent = r.results.compare; }
+  if (r && r.done) $('err').textContent = r.failed ? '멈춘 이유: ' + r.failed : '대회가 끝났습니다. 결과는 loadtest/contest/results/' + r.tag + '/';
+}
+function setNote(id, note) {
+  const li = $('step-' + id);
+  if (li) li.querySelector('.note').textContent = note || '';
+}
+
+setInterval(() => {
+  const h = state && state.run && state.run.human;
+  if (!h || !h.until) { $('count').textContent = h ? '사람 시간 끝 — 남은 봇을 기다리는 중' : ''; return; }
+  const s = Math.max(0, Math.round((h.until - Date.now()) / 1000));
+  $('count').textContent = `남은 시간 ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}, 500);
+
+function addLog(step, line) {
+  const el = $('log');
+  const stick = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
+  el.textContent += `[${names[step] || step}] ${line}\n`;
+  if (el.textContent.length > LOG_MAX * 120) el.textContent = el.textContent.slice(-LOG_MAX * 100);
+  if (stick) el.scrollTop = el.scrollHeight;
+}
+
+const es = new EventSource('/api/events');
+es.onopen = () => { $('log').textContent = ''; };
+es.onmessage = (m) => {
+  const ev = JSON.parse(m.data);
+  if (ev.type === 'state') { state = ev.state; render(); }
+  else if (ev.type === 'log') addLog(ev.step, ev.line);
+  else if (ev.type === 'step' && state && state.run) {
+    state.run.steps[ev.id] = ev.status;
+    state.run.notes = state.run.notes || {};
+    state.run.notes[ev.id] = ev.note;
+    render();
+  }
+};
+
+async function post(p, body) {
+  const r = await fetch(p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+  return j;
+}
+$('start').onclick = async () => {
+  $('err').textContent = '';
+  const bots = [...document.querySelectorAll('#bots input:checked')].map((x) => x.value);
+  store('contest.adminId', $('adminId').value);
+  try {
+    $('log').textContent = '';
+    $('evalbox').hidden = true; $('cmpbox').hidden = true;
+    await post('/api/start', { adminId: $('adminId').value.trim(), adminPw: $('adminPw').value, tag: $('tag').value.trim(),
+      humanMin: Number($('humanMin').value), botDelayMin: Number($('botDelayMin').value), bots });
+    $('adminPw').value = '';
+  } catch (e) { $('err').textContent = e.message; }
+};
+$('skip').onclick = () => post('/api/skip-wait').catch((e) => ($('err').textContent = e.message));
+let stopArmed = false;
+$('stop').onclick = () => {
+  if (!stopArmed) { stopArmed = true; $('stop').textContent = '한 번 더 누르면 중지'; setTimeout(() => { stopArmed = false; $('stop').textContent = '중지 (정리는 함)'; }, 3000); return; }
+  stopArmed = false;
+  $('stop').textContent = '중지 (정리는 함)';
+  post('/api/stop').catch((e) => ($('err').textContent = e.message));
+};
+</script>
+</body>
+</html>
