@@ -184,14 +184,16 @@ function makePath(r, mode, x0, y0, x1, y1) {
   const ease = mode === 'human' || mode === 'template';
   const noise = ease ? 3 : 0;
   const pts = curved ? Math.min(maxPts, Math.max(5, Math.round((350 + 180 * Math.log2(L / 30 + 1) + rr(0, 250)) / step))) : maxPts;
+  // 점의 시각은 녹화기와 같이 "이 묶음 첫 점부터 잰 ms"(누적, 첫 점 0). 간격이 아님 (2026-11-23 고침: 전에는 간격을 보내 속도가 틀렸음)
   const path = [];
+  let t = 0;
   for (let k = 1; k <= pts; k++) {
     const u = k / pts, s = ease ? u * u * u * (10 - 15 * u + 6 * u * u) : u;
     const bx = (1 - s) ** 2 * x0 + 2 * (1 - s) * s * cx + s * s * x1, by = (1 - s) ** 2 * y0 + 2 * (1 - s) * s * cy + s * s * y1;
-    const dt = ease ? Math.round(step * rr(0.85, 1.15)) : step;
-    path.push([dt, Math.round(bx + rr(-noise, noise)), Math.round(by + rr(-noise, noise))]);
+    path.push([Math.round(t), Math.round(bx + rr(-noise, noise)), Math.round(by + rr(-noise, noise))]);
+    t += ease ? step * rr(0.85, 1.15) : step;
   }
-  if (ease) path[path.length - 1] = [step, x1 + Math.round(rr(-2, 2)), y1 + Math.round(rr(-2, 2))];
+  if (ease) path[path.length - 1] = [path[path.length - 1][0], x1 + Math.round(rr(-2, 2)), y1 + Math.round(rr(-2, 2))];
   return path;
 }
 async function recClick(ctx, screen, target) {
@@ -202,7 +204,7 @@ async function recClick(ctx, screen, target) {
   const [x0, y0] = r.pos;
   const x1 = Math.round(150 + R() * 700), y1 = Math.round(150 + R() * 700);
   const noPath = mode === 'clickonly' || mode === 'mobile' || mode === 'keyboard';
-  if (mode === 'jump') recPush(ctx, { type: 'MOUSE_PATH', screen, path: [[r.c.pathSampleMs || 150, x1, y1]] });
+  if (mode === 'jump') recPush(ctx, { type: 'MOUSE_PATH', screen, path: [[0, x1, y1]] });
   else if (!noPath) recPush(ctx, { type: 'MOUSE_PATH', screen, path: makePath(r, mode, x0, y0, x1, y1) });
   if (mode === 'human' || mode === 'template' || mode === 'mobile') await sleep(rand(120, 300)); // 도착(손가락 이동) 뒤 잠깐 멈췄다 누름
   const pointer = mode === 'touch' || mode === 'mobile' ? 't' : mode === 'keyboard' ? 'k' : 'm';
