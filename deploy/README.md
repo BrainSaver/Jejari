@@ -95,6 +95,10 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
 
 - **관리자 화면 "배포" 버튼** (A-08, 11-19~): 위 자동 배포 장치를 **지금 한 번** 실행 (`sudo systemctl start --no-block jejari-autodeploy.service`). 그래서 CI 확인·BLOCKED는 그대로이고 **BLOCKED는 배포 버튼으로 못 풂** → 같은 화면 아래 **"막힌 커밋 승인"**(11-19~, `DeployApprovalService`)에서 DB 패치 [적용]·서버 작업 체크 후 승인하면 그 커밋만 BLOCKED를 건너뛰고 배포 (`~/jejari-app/autodeploy.blocked`·`autodeploy.approved`·`db-patches.applied`·`deploy-approvals.log`, 문서 `docs/길동현/features/배포-승인.md`). 누를 수 있는 사람은 서버 `.env`의 `JEJARI_OPS_DEPLOY_ADMIN_IDS`(관리자 번호), 켜는 스위치 `JEJARI_OPS_DEPLOY_ENABLED=true`. 누른 기록 `~/jejari-app/deploy-requests.log`. 연타는 1분 간격. **프로젝트가 끝나면 끔** (웹에서 서버 명령을 실행하는 기능)
 - **직접 배포**: `bash deploy/deploy.sh` (main 기준) 또는 `DEPLOY_SHA=<커밋> bash deploy/deploy.sh`. DB를 맞춘 뒤, 또는 자동 배포를 끈 동안
+  - **DB 패치 확인 (11-23~)**: 지난 배포 이후 새로 생기거나 바뀐 `db/patch/vNN.sql` 중 적용 기록(`~/jejari-app/db-patches.applied`, A-08 [적용]도 여기에 씀)이 없는 것이 있으면 **빌드 전에 멈추고 목록을 보여 준다**. 11-23에 v33 없이 비회원 예매 코드가 올라가 ORA-00904가 130건 났기 때문
+    - 내용을 보고 `APPLY_PATCHES=1 bash deploy/deploy.sh` → 버전 순서대로 앱 계정으로 넣고 기록한 뒤 배포 (출력에 ORA-·SP2-·PLS-가 있으면 멈춤, 앱은 그대로)
+    - 이미 손으로 넣었으면 `SKIP_PATCH_CHECK=1 bash deploy/deploy.sh`
+  - 끝나면 지난 배포 이후 바뀐 설정 중 사람이 할 일(경보 규칙 → `restart grafana`, Caddy·Prometheus 재시작, compose `up -d`, mongo-init, 유닛·sudoers 설치)을 **알려 주기만** 한다
 
 - **BLOCKED 풀기**: 아래 "운영자 안내 → BLOCKED 풀기 (한 단계씩)" (ERD가 바뀌면 거의 항상 멈춤. 11-19 v25~v28 모두 이렇게 풂)
 - **시연 중에는 자동 배포를 끔** (시연 도중 재시작 방지). 끝나면 다시 켬. **11-19부터 앱 1대라 더 중요** (재시작하는 40초~1분 느려짐)
