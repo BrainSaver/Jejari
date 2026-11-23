@@ -111,6 +111,15 @@ public class SignupService {
 		} catch (DuplicateKeyException e) {
 			// 미리 조회하지 않고 UNIQUE 위반으로 판단한다 (동시 가입 두 건이 둘 다 통과하는 틈이 없음)
 			throw new BusinessException(AuthErrorCode.AUTH_EMAIL_DUPLICATED);
+		} catch (RuntimeException e) {
+			// 저장 실패(가입 몰림에 DB 연결을 못 얻어 503 등) → 트랜잭션이 롤백돼 회원이 없으니 토큰을 되돌린다.
+			// 안 그러면 503의 "잠시 후 다시 시도"를 해도 토큰이 이미 지워져 본인인증부터 다시 해야 한다 (11-23)
+			try {
+				tokens.restore(verificationToken, id);
+			} catch (RuntimeException restoreFailed) {
+				e.addSuppressed(restoreFailed);
+			}
+			throw e;
 		}
 		return PiiMasker.email(email);
 	}

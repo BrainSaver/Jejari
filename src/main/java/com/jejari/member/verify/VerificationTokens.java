@@ -84,6 +84,27 @@ public class VerificationTokens {
 		return decode(hash, redis.opsForValue().getAndDelete(key(hash)));
 	}
 
+	/**
+	 * {@link #consume}로 지운 토큰을 되돌린다. 가입 저장이 실패해(DB 바쁨 503 등) 회원이 만들어지지 않았을 때만 부른다.
+	 * 되돌리지 않으면 "잠시 후 다시 시도"해도 토큰이 없어 본인인증부터 다시 해야 한다 (11-23).
+	 * 원래 인증 시각을 그대로 써서 유효 시간이 늘어나지 않고, 이미 같은 키가 있으면 덮어쓰지 않는다 (SET NX).
+	 *
+	 * @return 되돌렸으면 true (유효 시간이 이미 지났으면 false)
+	 */
+	public boolean restore(String token, VerifiedIdentity id) {
+		String hash = hashOf(token);
+		Duration ttl = Duration.ofSeconds(policy.number(AuthPolicy.VERIFY_TOKEN_TTL_SEC));
+		Duration left = Duration.between(clock.instant(), id.verifiedAt().plus(ttl));
+		if (left.isNegative() || left.isZero()) {
+			return false;
+		}
+		String value = String.join("|", "v1", id.ciHash(), id.provider().name(),
+				Long.toString(id.verifiedAt().toEpochMilli()),
+				B64.encodeToString(id.name().getBytes(StandardCharsets.UTF_8)),
+				cipher.encrypt(id.phone(), PHONE, hash).cipherText());
+		return Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(key(hash), value, left));
+	}
+
 	private VerifiedIdentity decode(String hash, String value) {
 		if (value == null) {
 			throw fail();
