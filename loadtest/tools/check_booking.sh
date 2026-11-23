@@ -68,9 +68,13 @@ val() { awk -F'|' -v k="$1" '$1 == k {print $2}' <<<"$out"; }
 # 행동 로그 (MongoDB): 성공한(2xx) 좌석 선점·결제 요청 수
 mongo=$(docker compose exec -T mongo bash -c 'mongosh --quiet -u "$MONGO_APP_USER" -p "$MONGO_APP_PASSWORD" --authenticationDatabase jejari jejari --eval "$0"' "
 const since = new Date(Date.now() - ${MIN} * 60000);
-const n = (t) => db.behavior_log.countDocuments({ ${MRUN}event_type: t, response_status: { \$gte: 200, \$lt: 300 }, ts: { \$gte: since } });
+// _id(ObjectId)에 저장 시각이 들어 있다. ts가 기간 안이면 저장도 그 뒤라 _id 범위로 먼저 좁힌다 (기본 _id 인덱스).
+// ts로 시작하는 인덱스가 없어 ts만으로 거르면 컬렉션 전체를 읽는다 (2026-11-23 실측: 200만 건에서 829ms, 매시간 서버 점검).
+// 10분 여유는 앱·도구 시계 차이
+const idFrom = ObjectId.createFromTime(Math.floor(since.getTime() / 1000) - 600);
+const n = (t) => db.behavior_log.countDocuments({ _id: { \$gte: idFrom }, ${MRUN}event_type: t, response_status: { \$gte: 200, \$lt: 300 }, ts: { \$gte: since } });
 // 결제 로그는 run_id가 없다 (결제 주소에 운행이 없음 — 예약 번호는 meta.reservationId). 그래서 기간으로만 센다
-const pay = db.behavior_log.countDocuments({ event_type: 'PAY', response_status: { \$gte: 200, \$lt: 300 }, ts: { \$gte: since } });
+const pay = db.behavior_log.countDocuments({ _id: { \$gte: idFrom }, event_type: 'PAY', response_status: { \$gte: 200, \$lt: 300 }, ts: { \$gte: since } });
 print('bhold|' + n('SEAT_HOLD')); print('bpay|' + pay);" | tr -d '\r' | grep -E '^b[a-z]+\|' || true)
 out="${out}"$'\n'"${mongo}"
 
