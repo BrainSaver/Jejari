@@ -10,6 +10,7 @@ import com.jejari.auth.AuthPrincipal;
 import com.jejari.common.error.BusinessException;
 import com.jejari.common.error.CommonErrorCode;
 import com.jejari.queue.domain.QueuePassService;
+import com.jejari.queue.domain.SeatRateLimiter;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -28,9 +29,11 @@ public class QueueSeatTokenInterceptor implements HandlerInterceptor {
 	public static final String HEADER = "X-Queue-Token";
 
 	private final ObjectProvider<QueuePassService> pass;
+	private final ObjectProvider<SeatRateLimiter> rate;
 
-	public QueueSeatTokenInterceptor(ObjectProvider<QueuePassService> pass) {
+	public QueueSeatTokenInterceptor(ObjectProvider<QueuePassService> pass, ObjectProvider<SeatRateLimiter> rate) {
 		this.pass = pass;
+		this.rate = rate;
 	}
 
 	@Override
@@ -53,6 +56,11 @@ public class QueueSeatTokenInterceptor implements HandlerInterceptor {
 			throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
 		}
 		pass.getObject().verify(run, me.memberId(), request.getHeader(HEADER));
+		// 토큰이 맞는 요청만 센다 (토큰 없는 요청으로 남의 한도를 쓰거나 키를 만들 수 없게). 너무 잦으면 429
+		SeatRateLimiter limiter = rate.getIfAvailable();
+		if (limiter != null) {
+			limiter.check(SeatRateLimiter.Kind.MAP, run, me.memberId());
+		}
 		return true;
 	}
 }

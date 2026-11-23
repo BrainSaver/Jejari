@@ -6,6 +6,7 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import com.jejari.queue.domain.QueuePassService;
+import com.jejari.queue.domain.SeatRateLimiter;
 
 /**
  * 좌석 API(배치도 등)에 입장 토큰 검사를 붙입니다.
@@ -17,14 +18,16 @@ import com.jejari.queue.domain.QueuePassService;
 public class QueueWebConfig implements WebMvcConfigurer {
 
 	private final ObjectProvider<QueuePassService> pass;
+	private final ObjectProvider<SeatRateLimiter> rate;
 
-	public QueueWebConfig(ObjectProvider<QueuePassService> pass) {
+	public QueueWebConfig(ObjectProvider<QueuePassService> pass, ObjectProvider<SeatRateLimiter> rate) {
 		this.pass = pass;
+		this.rate = rate;
 	}
 
 	@Override
 	public void addInterceptors(InterceptorRegistry registry) {
-		registry.addInterceptor(new QueueSeatTokenInterceptor(pass))
+		registry.addInterceptor(new QueueSeatTokenInterceptor(pass, rate))
 				.addPathPatterns("/api/v1/runs/*/seats", "/api/v1/runs/*/seats/**");
 	}
 }

@@ -29,6 +29,12 @@ public class AppPolicy implements PolicyBounds {
 	public static final String SCANNER_BATCH_SIZE = "scanner.batch_size";
 	public static final String REOFFER_HOLD_SEC = "waitlist.reoffer_hold_sec";
 	public static final String SEATMAP_CACHE_MS = "seatmap.cache_ms";
+	/** 좌석 조회·선점 속도 제한 (SeatRateLimiter). ERD v34에서 app_policy에 들어가기 전에는 아래 기본값으로 동작 */
+	public static final String SEATMAP_RATE_BURST = "seatmap.rate_burst";
+	public static final String SEATMAP_RATE_PER_SEC = "seatmap.rate_per_sec";
+	public static final String SEATMAP_ABUSE_THRESHOLD = "seatmap.abuse_threshold";
+	public static final String SEATMAP_ABUSE_WINDOW_SEC = "seatmap.abuse_window_sec";
+	public static final String SEATMAP_COOLDOWN_SEC = "seatmap.cooldown_sec";
 	public static final String SALE_OPEN_INTERVAL_SEC = "sale.open_interval_sec";
 	/** 회원당 같은 운행 활성 대기 수 (WL-01) */
 	public static final String WAITLIST_MAX_PER_RUN = "waitlist.max_per_run";
@@ -52,6 +58,11 @@ public class AppPolicy implements PolicyBounds {
 			Map.entry(SCANNER_BATCH_SIZE, "500"),
 			Map.entry(REOFFER_HOLD_SEC, "60"),
 			Map.entry(SEATMAP_CACHE_MS, "1000"),
+			Map.entry(SEATMAP_RATE_BURST, "10"),
+			Map.entry(SEATMAP_RATE_PER_SEC, "1"),
+			Map.entry(SEATMAP_ABUSE_THRESHOLD, "20"),
+			Map.entry(SEATMAP_ABUSE_WINDOW_SEC, "60"),
+			Map.entry(SEATMAP_COOLDOWN_SEC, "60"),
 			Map.entry(SALE_OPEN_INTERVAL_SEC, "10"),
 			Map.entry(WAITLIST_MAX_PER_RUN, "1"),
 			Map.entry(WAITLIST_MAX_ACTIVE, "3"),
@@ -92,7 +103,13 @@ public class AppPolicy implements PolicyBounds {
 				range(REPLAY_BATCH_SEC, 1, 60),
 				range(REPLAY_MAX_EVENTS_PER_SESSION, 100, 50_000),
 				range(REPLAY_FULL_RECORD_SCORE, 0, 100),
-				range(IDEM_TTL_SEC, 600, 86_400));         // 결제 마감 전에 중복 방지 키가 사라지지 않게 (팀장님)
+				range(IDEM_TTL_SEC, 600, 86_400),
+				// 0이면 좌석 화면이 열리지 않거나(burst·rate) 영영 풀리지 않는(cooldown) 값이라 막는다
+				range(SEATMAP_RATE_BURST, 1, 100),
+				range(SEATMAP_RATE_PER_SEC, 1, 50),
+				range(SEATMAP_ABUSE_THRESHOLD, 3, 1000),
+				range(SEATMAP_ABUSE_WINDOW_SEC, 10, 3600),
+				range(SEATMAP_COOLDOWN_SEC, 5, 3600));         // 결제 마감 전에 중복 방지 키가 사라지지 않게 (팀장님)
 	}
 
 	@Override

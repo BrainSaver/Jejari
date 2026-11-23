@@ -15,6 +15,8 @@ public enum QueueErrorCode implements ErrorCode {
 	QUEUE_TOKEN_INVALID(HttpStatus.FORBIDDEN, "입장 토큰이 만료됐거나 맞지 않습니다."),
 	/** 입장 토큰 연장은 회원당 운행마다 1회 */
 	QUEUE_EXTEND_USED(HttpStatus.CONFLICT, "좌석 고르는 시간은 한 번만 늘릴 수 있어요."),
+	/** 좌석 조회·선점이 너무 잦음 (SeatRateLimiter). Retry-After 초만큼 쉬었다가 다시 */
+	SEATMAP_RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "좌석을 너무 자주 불러서 잠시 쉬어요. 잠시 뒤에 다시 해 주세요."),
 	/** 설계서에 없던 코드: 대기 중이 아닌데 번호표를 조회함 */
 	QUEUE_NOT_FOUND(HttpStatus.NOT_FOUND, "대기 중이 아닙니다.");
 

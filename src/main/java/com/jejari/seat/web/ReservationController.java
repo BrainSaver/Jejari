@@ -20,6 +20,7 @@ import com.jejari.behavior.BehaviorType;
 import com.jejari.common.error.BusinessException;
 import com.jejari.common.error.CommonErrorCode;
 import com.jejari.queue.domain.QueuePassService;
+import com.jejari.queue.domain.SeatRateLimiter;
 import com.jejari.seat.SeatHoldService;
 import com.jejari.seat.SeatHoldService.HoldCommand;
 import com.jejari.seat.SeatHoldService.HoldResult;
@@ -44,11 +45,14 @@ public class ReservationController {
 	private final SeatHoldService seatHold;
 	private final ReservationCancelService cancels;
 	private final QueuePassService queuePass;
+	private final SeatRateLimiter rate;
 
-	public ReservationController(SeatHoldService seatHold, ReservationCancelService cancels, QueuePassService queuePass) {
+	public ReservationController(SeatHoldService seatHold, ReservationCancelService cancels, QueuePassService queuePass,
+			SeatRateLimiter rate) {
 		this.seatHold = seatHold;
 		this.cancels = cancels;
 		this.queuePass = queuePass;
+		this.rate = rate;
 	}
 
 	@PostMapping
@@ -68,6 +72,7 @@ public class ReservationController {
 		BehaviorLog.mark(BehaviorType.SEAT_HOLD, body.runId(), meta);
 		try {
 			queuePass.verify(body.runId(), memberId, queueToken);
+			rate.check(SeatRateLimiter.Kind.HOLD, body.runId(), memberId); // 배치도 없이 선점만 두드리는 봇도 같은 한도
 			HoldResult result = seatHold.hold(memberId, new HoldCommand(body.runId(), body.fromStationId(),
 					body.toStationId(), body.seats(), body.channel(), idempotencyKey));
 			meta.put("reservationId", result.reservationId());

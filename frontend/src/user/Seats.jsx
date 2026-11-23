@@ -51,6 +51,14 @@ export default function Seats() {
   const [people, setPeople] = useState({ ADULT: want.adult, CHILD: want.child, SENIOR: want.senior });
   const [picked, setPicked] = useState([]); // [{seatId, seatNo, carNo, grade}]
   const [notice, setNotice] = useState(null); // {kind:'taken'|'error'|'expired', text}
+  // 좌석 조회·선점이 너무 잦아 서버가 429(SEATMAP_RATE_LIMITED)로 쉬라고 한 때: {sec: 남은 초, what: 'map'|'hold'}.
+  // 자동으로 다시 보내지 않는다 (바로 다시 부르면 제한이 의미 없고 더 오래 쉬게 된다). 시간이 지나면 사람이 [다시 불러오기]를 누른다
+  const [rest, setRest] = useState(null);
+  useEffect(() => {
+    if (!rest || rest.sec <= 0) return undefined;
+    const t = setTimeout(() => setRest((r) => (r ? { ...r, sec: r.sec - 1 } : r)), 1000);
+    return () => clearTimeout(t);
+  }, [rest]);
   const [busy, setBusy] = useState(false);
   const [lost, setLost] = useState([]); // 남이 먼저 잡은 좌석: 잠깐 흔들린다
   const idemKey = useRef(null);
@@ -85,9 +93,12 @@ export default function Seats() {
     idemKey.current = null;
   }, [picked, people]);
 
-  function handleError(e) {
+  function handleError(e, what = 'map') {
     const code = e instanceof ApiError ? e.code : '';
-    if (code === 'QUEUE_TOKEN_INVALID' || code === 'QUEUE_TOKEN_REQUIRED') {
+    if (code === 'SEATMAP_RATE_LIMITED') {
+      setNotice(null);
+      setRest({ sec: Math.max(1, Math.ceil(Number(e.retryAfter) || 5)), what });
+    } else if (code === 'QUEUE_TOKEN_INVALID' || code === 'QUEUE_TOKEN_REQUIRED') {
       clearPass(runId);
       setNotice({ kind: 'expired' });
     } else if (code === 'SEAT_ALREADY_TAKEN') {
@@ -174,7 +185,7 @@ export default function Seats() {
       }
       setNotice({ kind: 'error', text: '처리가 오래 걸려요. 예매 내역에서 확인해 주세요.' });
     } catch (e) {
-      handleError(e);
+      handleError(e, 'hold');
     } finally {
       setBusy(false);
     }
@@ -223,6 +234,21 @@ export default function Seats() {
                     </button>
                   ))}
                 </div>
+                {rest && (
+                  <div className="alert amber" role="status" aria-live="polite" style={{ flexWrap: 'wrap', order: 4 }}>
+                    <Icon name="clock" />
+                    <span className="grow">
+                      {rest.sec > 0
+                        ? <>좌석을 너무 자주 {rest.what === 'hold' ? '잡으려 해서' : '불러서'} <b>{rest.sec}초</b> 쉬어요.</>
+                        : <>이제 다시 할 수 있어요.</>}
+                      <span className="faint" style={{ display: 'block', fontSize: 12.5 }}>빈 좌석이 나기를 기다린다면 회원은 [취소표]에서 대기를 신청하는 게 더 빨라요.</span>
+                    </span>
+                    <button type="button" className="btn sm" style={{ marginLeft: 28 }} disabled={rest.sec > 0}
+                      onClick={() => { const w = rest.what; setRest(null); if (w === 'hold') hold(); else loadMap(false); }}>
+                      {rest.what === 'hold' ? '다시 잡기' : '다시 불러오기'}
+                    </button>
+                  </div>
+                )}
                 {notice && notice.kind !== 'expired' && (
                   <div key={notice.text} className="alert stop shake" role="alert" style={{ flexWrap: 'wrap', order: 4 }}>
                     <Icon name="info" />
@@ -232,7 +258,7 @@ export default function Seats() {
                     )}
                   </div>
                 )}
-                {!map && <p className="mut" style={{ order: 5 }}>좌석 배치를 불러오는 중…</p>}
+                {!map && !rest && <p className="mut" style={{ order: 5 }}>좌석 배치를 불러오는 중…</p>}
                 {car && <SeatMap car={car} picked={picked} lost={lost} onToggle={(s) => toggle(car, s)} />}
                 {car && (
                   <button type="button" className="btn ghost" style={{ order: 5 }} onClick={autoPick}>나란히 빈 좌석 골라 주기</button>
