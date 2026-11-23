@@ -97,7 +97,8 @@ public class BehaviorInterceptor implements HandlerInterceptor {
 				"APP".equals(req.getHeader(CHANNEL_HEADER)) ? "APP" : "WEB",
 				userAgent(req),
 				res.getStatus(),
-				meta.meta());
+				meta.meta(),
+				Math.max(0, java.time.Duration.between(start, clock.instant()).toMillis()));
 	}
 
 	private static String deviceHash(HttpServletRequest req, Pseudonymizer hash) {

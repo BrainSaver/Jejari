@@ -37,7 +37,7 @@ import com.mongodb.client.model.Sorts;
  *
  * <pre>
  * 열 조건: 새 증거가 점수를 만들었고(규칙 점수 ≥ 감쇠한 이전 점수)
- *          규칙 점수 ≥ 80 → RISK_THRESHOLD, 아니면 마커 규칙(FAST_CLICK 등 5개, RiskRule.marker)이 하나라도 걸림 → RULE
+ *          규칙 점수 ≥ 80 → RISK_THRESHOLD, 아니면 마커 규칙(FAST_CLICK 등 6개, RiskRule.marker)이 하나라도 걸림 → RULE
  * 열지 않음: 이 대상에 OPEN·REVIEWING 케이스가 이미 있음 / 감쇠만으로 저장한 경우 / 같은 증거로 다시 계산한 경우(저장 안 함)
  * 함께: case_marker(AUTO) 규칙마다 1개, risk_score.review_status NONE → PENDING
  * </pre>
@@ -62,6 +62,13 @@ public class SuspiciousCaseOpener {
 	private final JdbcTemplate jdbc;
 	private final MongoTemplate mongo;
 
+	private MarkerCodes markerCodes; // 없으면(단위 시험) 모든 마커 허용
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setMarkerCodes(MarkerCodes markerCodes) {
+		this.markerCodes = markerCodes;
+	}
+
 	public SuspiciousCaseOpener(JdbcTemplate jdbc, MongoTemplate mongo) {
 		this.jdbc = jdbc;
 		this.mongo = mongo;
@@ -85,13 +92,23 @@ public class SuspiciousCaseOpener {
 
 	/** 케이스 종류. 새 증거가 아니거나 조건을 못 넘으면 null */
 	static String triggerOf(RiskResult r, RiskPolicy policy) {
+		return triggerOf(r, policy, r.markerReasons());
+	}
+
+	/** @param markers DB가 받아 주는 마커 규칙만 ({@link MarkerCodes}) */
+	static String triggerOf(RiskResult r, RiskPolicy policy, List<Reason> markers) {
 		if (r.ruleScore().compareTo(r.finalScore()) < 0) {
 			return null; // 감쇠한 이전 점수가 지배: 새 증거가 아님
 		}
 		if (r.ruleScore().compareTo(BigDecimal.valueOf(policy.caseThreshold())) >= 0) {
 			return "RISK_THRESHOLD";
 		}
-		return r.markerReasons().isEmpty() ? null : "RULE";
+		return markers.isEmpty() ? null : "RULE";
+	}
+
+	/** 케이스 마커로 넣을 수 있는 규칙만 (ERD 패치 전 새 규칙은 점수에만 남기고 마커는 빼서 롤백을 막는다) */
+	List<Reason> allowedMarkers(RiskResult r) {
+		return r.markerReasons().stream().filter(x -> markerCodes == null || markerCodes.allowed(x.rule())).toList();
 	}
 
 	/**
@@ -101,7 +118,8 @@ public class SuspiciousCaseOpener {
 	 * @param purchaseFrom 배치가 구매·취소를 센 시작 시각
 	 */
 	public Plan plan(RiskPolicy policy, RiskSubject s, RiskResult r, Instant behaviorFrom, Instant purchaseFrom) {
-		String trigger = triggerOf(r, policy);
+		List<Reason> allowed = allowedMarkers(r);
+		String trigger = triggerOf(r, policy, allowed);
 		if (trigger == null) {
 			return null;
 		}
@@ -109,7 +127,7 @@ public class SuspiciousCaseOpener {
 		List<Marker> markers = new ArrayList<>();
 		Instant first = null;
 		Instant last = null;
-		for (Reason reason : r.markerReasons()) {
+		for (Reason reason : allowed) {
 			Span span = evidence(policy, s, reason.rule(), behaviorFrom, purchaseFrom);
 			Instant at = span == null ? now : span.last();
 			markers.add(new Marker(reason.rule(), at, span == null ? null : span.sessionId(), cut(label(policy, reason)),
@@ -264,6 +282,14 @@ public class SuspiciousCaseOpener {
 		if (rule == RiskRule.CANCEL_AFTER_PAY) {
 			return cancelSpan(policy, s, purchaseFrom);
 		}
+		if (rule == RiskRule.LINEAR_MOUSE) {
+			return replaySpan(s, behaviorFrom);
+		}
+		if (rule == RiskRule.INHUMAN_STEP || rule == RiskRule.HEADLESS_HOLD) {
+			// 근거 = 선점·결제 요청들 (단계 속도·화면 없는 선점 모두 그 순간이 핵심)
+			return behaviorSpan(s, behaviorFrom, Filters.in("event_type", BehaviorType.SEAT_HOLD.name(),
+					BehaviorType.PAY.name()));
+		}
 		String field = switch (s.type()) {
 			case CI -> "ci_hash";
 			case DEVICE -> "device_hash";
@@ -292,6 +318,52 @@ public class SuspiciousCaseOpener {
 			return null;
 		}
 		return new Span(first.getDate("ts").toInstant(), last.getDate("ts").toInstant(), last.getString("session_id"));
+	}
+
+	private Span behaviorSpan(RiskSubject s, Instant from, Bson extra) {
+		String field = switch (s.type()) {
+			case CI -> "ci_hash";
+			case DEVICE -> "device_hash";
+			case PAYMENT -> null;
+		};
+		if (field == null) {
+			return null;
+		}
+		Bson filter = Filters.and(Filters.eq(field, s.hash()), Filters.gte("ts", Date.from(from)), extra);
+		Document first = one(filter, Sorts.ascending("ts"));
+		Document last = one(filter, Sorts.descending("ts"));
+		if (first == null || last == null || first.getDate("ts") == null || last.getDate("ts") == null) {
+			return null;
+		}
+		return new Span(first.getDate("ts").toInstant(), last.getDate("ts").toInstant(), last.getString("session_id"));
+	}
+
+	/** 마우스 근거 = 그 기간의 화면 녹화 세션 (처음 시작 ~ 마지막 끝, 마지막 세션 ID). 재생으로 바로 확인하게 */
+	private Span replaySpan(RiskSubject s, Instant from) {
+		String field = switch (s.type()) {
+			case CI -> "ci_hash";
+			case DEVICE -> "device_hash";
+			case PAYMENT -> null;
+		};
+		if (field == null) {
+			return null;
+		}
+		Bson filter = Filters.and(Filters.eq(field, s.hash()), Filters.gte("ended_at", Date.from(from)));
+		var coll = mongo.getCollection("replay_session");
+		Document first = coll.find(filter).projection(Projections.include("started_at"))
+				.sort(Sorts.ascending("started_at")).limit(1).first();
+		Document last = coll.find(filter).projection(Projections.include("ended_at"))
+				.sort(Sorts.descending("ended_at")).limit(1).first();
+		if (first == null || last == null || first.getDate("started_at") == null || last.getDate("ended_at") == null) {
+			return null;
+		}
+		// case_marker.session_id는 auth_session FK. 녹화 세션 ID가 로그인 세션이 아니면(예전 녹화기는 회원 번호를 썼다) 비운다
+		String sid = last.get("_id") instanceof String v ? v : null;
+		if (sid != null && jdbc.queryForObject("SELECT COUNT(*) FROM auth_session WHERE session_id = ?", Integer.class,
+				sid) == 0) {
+			sid = null;
+		}
+		return new Span(first.getDate("started_at").toInstant(), last.getDate("ended_at").toInstant(), sid);
 	}
 
 	private Document one(Bson filter, Bson sort) {
@@ -325,6 +397,11 @@ public class SuspiciousCaseOpener {
 			// observed는 변동계수(0.001 같은 작은 수)라 반올림하면 0이 된다 → 소수로
 			case REGULAR_INTERVAL -> "요청 간격이 기계처럼 일정함 (변동계수 "
 					+ String.format(java.util.Locale.ROOT, "%.3f", r.observed()) + ")";
+			case LINEAR_MOUSE -> "마우스가 기계처럼 움직임 (클릭 자리로 순간이동·직선 등속 " + n + "회)";
+			case HEADLESS_HOLD -> "화면 없이 좌석 선점 (녹화 없는 세션 " + n + "개)";
+			case INHUMAN_STEP -> "사람 손으로 불가능한 속도 (좌석표→선점·선점→결제 " + policy.inhumanStepMs() + "ms 미만 " + n
+					+ "번)";
+			case NO_SEARCH_ENTRY -> "열차 조회 없이 대기열 진입";
 			default -> r.rule().name() + " " + n;
 		};
 	}

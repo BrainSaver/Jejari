@@ -22,6 +22,9 @@
 // 라벨은 서버로 보내지 않는다. 이메일 아이디에 종류를 넣어 두고(lt{tag}.{종류}.g{묶음}.{번호}@loadtest.example.com)
 // 평가 스크립트가 Oracle에서 읽어 synthetic_label에 넣는다. 앱 코드는 이 표시를 보지 않는다.
 //
+// 화면 녹화: 선점 전마다 recordScreen()으로 녹화 한 묶음을 보낸다. 실제 사람은 화면으로만 좌석을 고르므로 녹화가 있고,
+//   없으면 HEADLESS_HOLD(브라우저 없이 API만)로 점수가 붙는다 (2026-11-23 강다인). 키보드 클릭이라 LINEAR_MOUSE에는 안 들어감
+//
 // 준비: 시나리오 11과 같음 (docker compose up -d, .env 비밀값 3종, 앱을 신뢰 프록시 옵션으로 실행)
 //   ./run.sh 12                       (또는 ./run.sh botdetect -e NORMAL=80)
 //   끝나면 출력 마지막의 안내대로:  ./tools/eval_risk.sh <tag>     (1분 배치를 기다렸다가 계산)
@@ -31,11 +34,13 @@ import { Counter, Rate } from 'k6/metrics';
 import { RUN_ID } from '../config.js';
 import { identity, fakeIp, verify, signup, login, authSmokeTest, fail, EMAIL_DOMAIN } from '../lib/auth.js';
 import {
-  setDevice, browse, runDate, search, queueUntilAdmitted, queueLeave, emptySeats, hold, pay, cancel, pick, codeOf, uuid,
+  setDevice, browse, runDate, search, queueUntilAdmitted, queueLeave, emptySeats, hold, pay, cancel, pick, codeOf, uuid, recordScreen,
 } from '../lib/journey.js';
 import { safeJson } from '../lib/helpers.js';
 
 const BOUNDARY = __ENV.BOUNDARY === '1';
+// RECORD_SCREEN=0이면 녹화를 안 보낸다 = 브라우저 없이 API만 쓰는 봇 (HEADLESS_HOLD 확인용)
+const RECORD_SCREEN = __ENV.RECORD_SCREEN !== '0';
 // 경계 측정 기본값: 강도마다 PER_LEVEL명
 const B = BOUNDARY
   ? { FAST_LEVELS: '10,15,19,20,21,25,50', RETRY_LEVELS: '3,4,5,6,8', CANCEL_LEVELS: '1,2,3', MULTI_SIZES: '2,3',
@@ -177,6 +182,7 @@ export function setup() {
   const bought = map.seats.slice().sort(() => Math.random() - 0.5).slice(0, 1 + (ROTATE ? ROTATE_SEATS : 0));
   const targetSeat = bought[0];
   const rotateSeats = bought.slice(1);
+  if (RECORD_SCREEN) recordScreen(token); // 화면으로 고른 것처럼 녹화 한 묶음 (HEADLESS_HOLD 오탐 방지)
   const h = hold(token, q.passToken, { from: FROM, to: TO, seatIds: bought });
   const rid = (safeJson(h) || {}).reservationId;
   const p = rid ? pay(token, rid, { cardNumber: decoy.card }) : h;
@@ -208,6 +214,7 @@ function buyOne(u, token, passToken, { slow = true } = {}) {
     const map = emptySeats(token, passToken, { from: FROM, to: TO });
     if (!map.seats || map.seats.length === 0) return null;
     if (slow) think(1, 3); // 좌석 고르는 시간
+    if (RECORD_SCREEN) recordScreen(token); // 화면으로 고른 것처럼 녹화 한 묶음 (HEADLESS_HOLD 오탐 방지)
     const h = hold(token, passToken, { from: FROM, to: TO, seatIds: [pick(map.seats)] });
     if (h.status === 200 || h.status === 201) {
       const rid = (safeJson(h) || {}).reservationId;
@@ -290,6 +297,7 @@ export function seatRetrier(data) {
     let conflicts = 0;
     const times = u.grp; // 강도 (RETRY_LEVELS)
     for (let i = 0; i < times; i++) {
+      if (RECORD_SCREEN) recordScreen(token); // 화면으로 고른 것처럼 녹화 한 묶음 (HEADLESS_HOLD 오탐 방지)
       const h = hold(token, q.passToken, { from: FROM, to: TO, seatIds: [data.targetSeat] });
       if (h.status === 409) conflicts++;
       sleep(rand(0.3, 0.6)); // 200ms 넘게: 연타 규칙은 건드리지 않음
@@ -357,6 +365,7 @@ export function rotateRetrier(data) {
     let conflicts = 0;
     for (let round = 0; round < perSeat; round++) {
       for (const seat of data.rotateSeats) {
+        if (RECORD_SCREEN) recordScreen(token); // 화면으로 고른 것처럼 녹화 한 묶음 (HEADLESS_HOLD 오탐 방지)
         const h = hold(token, q.passToken, { from: FROM, to: TO, seatIds: [seat] });
         if (h.status === 409) conflicts++;
         sleep(rand(0.3, 0.6)); // 200ms 넘게: 연타 규칙은 건드리지 않음

@@ -26,7 +26,8 @@ class RiskEngineTest {
     static final class S {
         SubjectType type = SubjectType.CI;
         Instant from = FROM;
-        long intervals, fast, sameSeat, purchases, seats, maxSingle, cancels, fastCancels, lastMinute, linked, sync;
+        long intervals, fast, sameSeat, purchases, seats, maxSingle, cancels, fastCancels, lastMinute, linked, sync, mouse, headless, inhuman;
+        boolean noSearch;
         double mean, sd;
         Long age;
 
@@ -38,12 +39,16 @@ class RiskEngineTest {
         S cancels(long all, long fast, long lastMinute) { cancels = all; fastCancels = fast; this.lastMinute = lastMinute; return this; }
         S linked(long n) { linked = n; return this; }
         S sync(long n) { sync = n; return this; }
+        S mouse(long n) { mouse = n; return this; }
+        S headless(long n) { headless = n; return this; }
+        S noSearch(boolean b) { noSearch = b; return this; }
+        S inhuman(long n) { inhuman = n; return this; }
         S age(Long d) { age = d; return this; }
         S from(Instant f) { from = f; return this; }
 
         RiskSignals build() {
             return new RiskSignals(type, H, from, intervals, fast, mean, sd, sameSeat, purchases, seats, maxSingle,
-                    cancels, fastCancels, lastMinute, cancels == 0 ? null : 10.0, linked, sync, age);
+                    cancels, fastCancels, lastMinute, cancels == 0 ? null : 10.0, linked, sync, age, 0, mouse, headless, noSearch, inhuman);
         }
     }
 
@@ -132,6 +137,87 @@ class RiskEngineTest {
             assertThat(r.markerReasons()).extracting(Reason::rule).containsExactly(RiskRule.REGULAR_INTERVAL);
             assertThat(r.openCase()).isTrue();
             assertThat(r.triggerType()).isEqualTo("RULE");
+        }
+
+        @Test
+        void LINEAR_MOUSE_7회는_없음_8회_MID_20회_HIGH() {
+            assertThat(score(s().mouse(7)).reasons()).isEmpty(); // 사람도 가끔 빠르게 휙 옮긴다
+            Reason mid = score(s().mouse(8)).reasons().get(0);
+            assertThat(mid.rule()).isEqualTo(RiskRule.LINEAR_MOUSE);
+            assertThat(mid.points()).isEqualTo(25);
+            assertThat(mid.severity()).isEqualTo(Severity.MID);
+            Reason high = score(s().mouse(20)).reasons().get(0);
+            assertThat(high.points()).isEqualTo(40);
+            assertThat(high.severity()).isEqualTo(Severity.HIGH);
+        }
+
+        @Test
+        void LINEAR_MOUSE만_걸려도_케이스가_열린다_마커_규칙() {
+            // 브라우저 자동화 기본 클릭(botb, 계정마다 순간이동 17~29회): 다른 규칙은 하나도 안 걸려도 케이스
+            RiskResult r = score(s().mouse(17));
+            assertThat(r.markerReasons()).extracting(Reason::rule).containsExactly(RiskRule.LINEAR_MOUSE);
+            assertThat(r.openCase()).isTrue();
+            assertThat(r.triggerType()).isEqualTo("RULE");
+        }
+
+        @Test
+        void LINEAR_MOUSE_문턱은_app_policy로_바꾼다() {
+            RiskPolicy p = RiskPolicy.fromMap(java.util.Map.of("risk.rule.linear_mouse.t1", "3",
+                    "risk.rule.linear_mouse.p1", "10", "risk.rule.linear_mouse.t2", "30", "risk.rule.linear_mouse.p2", "50"));
+            RiskResult r = new RiskEngine(p).score(s().mouse(3).build(), null, NOW);
+            assertThat(r.reasons()).extracting(Reason::points).containsExactly(10);
+            assertThatThrownBy(() -> RiskPolicy.fromMap(java.util.Map.of("risk.rule.linear_mouse.t1", "0")))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        void HEADLESS_HOLD_화면_없이_한_번만_잡아도_30점_세_번이면_45점_마커() {
+            assertThat(score(s().headless(0)).reasons()).isEmpty();
+            RiskResult one = score(s().headless(1));
+            assertThat(one.reasons()).extracting(Reason::rule, Reason::points).containsExactly(
+                    org.assertj.core.groups.Tuple.tuple(RiskRule.HEADLESS_HOLD, 30));
+            // 엔진에서는 마커 규칙. CHECK에 값이 없으면 MarkerCodes가 케이스 마커에서 뺀다 (RiskBatchUnitTest·통합 시험)
+            assertThat(one.markerReasons()).extracting(Reason::rule).containsExactly(RiskRule.HEADLESS_HOLD);
+            assertThat(score(s().headless(3)).reasons().get(0).points()).isEqualTo(45);
+        }
+
+        @Test
+        void INHUMAN_STEP_1번은_없음_2번_MID_5번_HIGH_마커() {
+            assertThat(score(s().inhuman(1)).reasons()).isEmpty(); // 더블클릭·우연 한 번은 봐줌
+            RiskResult two = score(s().inhuman(2));
+            assertThat(two.reasons()).extracting(Reason::rule, Reason::points)
+                    .containsExactly(org.assertj.core.groups.Tuple.tuple(RiskRule.INHUMAN_STEP, 30));
+            assertThat(two.markerReasons()).extracting(Reason::rule).containsExactly(RiskRule.INHUMAN_STEP);
+            assertThat(two.triggerType()).isEqualTo("RULE");
+            assertThat(score(s().inhuman(5)).reasons().get(0).points()).isEqualTo(40);
+        }
+
+        @Test
+        void 등급은_경고_30_위험_80_케이스_기준과_같다() {
+            RiskPolicy p = RiskPolicy.defaults();
+            assertThat(RiskGrade.of(new BigDecimal("29.99"), p)).isEqualTo(RiskGrade.NORMAL);
+            assertThat(RiskGrade.of(new BigDecimal("30"), p)).isEqualTo(RiskGrade.WARNING);
+            assertThat(RiskGrade.of(new BigDecimal("79.99"), p)).isEqualTo(RiskGrade.WARNING);
+            assertThat(RiskGrade.of(new BigDecimal("80"), p)).isEqualTo(RiskGrade.DANGER);
+            assertThat(RiskGrade.of(null, p)).isEqualTo(RiskGrade.NORMAL);
+            RiskPolicy moved = RiskPolicy.fromMap(java.util.Map.of("risk.rule.warning_threshold", "50",
+                    "risk.rule.case_threshold", "70"));
+            assertThat(RiskGrade.of(new BigDecimal("70"), moved)).isEqualTo(RiskGrade.DANGER);
+            assertThat(RiskGrade.of(new BigDecimal("49"), moved)).isEqualTo(RiskGrade.NORMAL);
+            // 경고가 위험보다 높거나 같으면 설정 거부 (이전 정책 유지)
+            assertThatThrownBy(() -> RiskPolicy.fromMap(java.util.Map.of("risk.rule.warning_threshold", "80")))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> RiskPolicy.fromMap(java.util.Map.of("risk.rule.inhuman_step.t1", "1")))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        void NO_SEARCH_ENTRY는_낮은_점수만() {
+            Reason r = score(s().noSearch(true)).reasons().get(0);
+            assertThat(r.rule()).isEqualTo(RiskRule.NO_SEARCH_ENTRY);
+            assertThat(r.points()).isEqualTo(10);
+            assertThat(r.severity()).isEqualTo(Severity.LOW);
+            assertThat(score(s().noSearch(true)).openCase()).isFalse();
         }
 
         @Test
@@ -285,6 +371,10 @@ class RiskEngineTest {
             s.linked(rnd.nextInt(8));
             s.sync(rnd.nextInt(6));
             s.age(rnd.nextBoolean() ? null : (long) rnd.nextInt(30));
+            s.mouse(rnd.nextInt(40));
+            s.headless(rnd.nextInt(5));
+            s.noSearch(rnd.nextBoolean());
+            s.inhuman(rnd.nextInt(8));
             return s;
         }
 
@@ -313,6 +403,10 @@ class RiskEngineTest {
                         x -> { x.seats++; return x; },
                         x -> x.linked(x.linked + 1),
                         x -> x.sync(x.sync + 1),
+                        x -> x.mouse(x.mouse + 1),
+                        x -> x.headless(x.headless + 1),
+                        x -> x.noSearch(true),
+                        x -> x.inhuman(x.inhuman + 1),
                         x -> x.age(x.age == null ? null : Math.max(0, x.age - 1)))) {
                     S copy = copyOf(base);
                     BigDecimal after = score(worse.apply(copy)).finalScore();
@@ -326,7 +420,7 @@ class RiskEngineTest {
             c.intervals(o.intervals, o.fast, o.mean, o.sd);
             c.sameSeat = o.sameSeat; c.purchases = o.purchases; c.seats = o.seats; c.maxSingle = o.maxSingle;
             c.cancels = o.cancels; c.fastCancels = o.fastCancels; c.lastMinute = o.lastMinute;
-            c.linked = o.linked; c.sync = o.sync; c.age = o.age;
+            c.linked = o.linked; c.sync = o.sync; c.age = o.age; c.mouse = o.mouse; c.headless = o.headless; c.noSearch = o.noSearch; c.inhuman = o.inhuman;
             return c;
         }
     }

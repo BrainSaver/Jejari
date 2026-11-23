@@ -21,9 +21,11 @@ import com.jejari.common.pii.PiiCipher;
 import com.jejari.common.pii.PiiField;
 import com.jejari.common.pii.PiiMasker;
 import com.jejari.risk.PreviousScore.ReviewStatus;
+import com.jejari.risk.RiskGrade;
 import com.jejari.risk.RiskRule;
 import com.jejari.risk.SubjectType;
 import com.jejari.risk.batch.RiskInputReader;
+import com.jejari.risk.batch.RiskPolicySource;
 import com.jejari.risk.model.ModelOpinionService;
 import com.jejari.risk.model.ModelOpinionService.ListModel;
 import com.jejari.risk.model.ModelOpinionService.SubjectKey;
@@ -57,13 +59,15 @@ public class RiskAdminService {
 	private final ObjectProvider<PiiCipher> cipher;
 	private final JsonMapper json;
 	private final ModelOpinionService models;
+	private final RiskPolicySource policies;
 
 	public RiskAdminService(JdbcTemplate jdbc, ObjectProvider<PiiCipher> cipher, JsonMapper json,
-			ModelOpinionService models) {
+			ModelOpinionService models, RiskPolicySource policies) {
 		this.jdbc = jdbc;
 		this.cipher = cipher;
 		this.json = json;
 		this.models = models;
+		this.policies = policies;
 	}
 
 	public record Filter(BigDecimal minScore, BigDecimal maxScore, Set<ReviewStatus> statuses, Set<SubjectType> types,
@@ -77,7 +81,8 @@ public class RiskAdminService {
 	public record CaseRef(long caseId, String status, String triggerType, Instant openedAt) {
 	}
 
-	public record Row(String subjectType, String subjectHash, BigDecimal finalScore, String reviewStatus,
+	/** @param grade 위험 점수 등급 NORMAL / WARNING / DANGER ({@link RiskGrade}, 경고 30·위험 80 기본) */
+	public record Row(String subjectType, String subjectHash, BigDecimal finalScore, String grade, String reviewStatus,
 			List<String> markers, long linkedAccounts, Holder holder, CaseRef latestCase, Instant calculatedAt,
 			SubjectScore model) {
 	}
@@ -115,10 +120,12 @@ public class RiskAdminService {
 		List<Base> page = rows.subList(0, Math.min(rows.size(), f.size()));
 		SubjectOpinions opinions = models
 				.forSubjects(page.stream().map(b -> new SubjectKey(SubjectType.valueOf(b.type()), b.hash())).toList());
+		var policy = policies.current();
 		List<Row> out = new ArrayList<>();
 		for (Base b : page) {
 			SubjectType type = SubjectType.valueOf(b.type());
-			out.add(new Row(b.type(), b.hash(), b.score(), b.review(), markers(b.reasons()), b.linked(),
+			out.add(new Row(b.type(), b.hash(), b.score(), RiskGrade.of(b.score(), policy).name(), b.review(),
+					markers(b.reasons()), b.linked(),
 					holder(type, b.hash()), latestCase(type, b.hash()), b.at() == null ? null : b.at().toInstant(),
 					opinions.scores().get(new SubjectKey(type, b.hash()))));
 		}

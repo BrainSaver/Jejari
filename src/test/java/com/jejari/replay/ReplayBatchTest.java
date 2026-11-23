@@ -104,4 +104,16 @@ class ReplayBatchTest {
 		assertThat(full).isBetween(1_700, 2_300); // 10% ± 1.5%p
 		assertThat(ReplayService.sampledIn("any", 0)).isFalse();
 	}
+
+	@Test
+	void 클릭_입력_장치는_정해진_값만_클릭에만_남긴다() {
+		List<ReplayBatch.Event> out = ReplayBatch.sanitize(List.of(
+				new ReplayBatch.In(1L, T, "CLICK", "home", null, 1, 1, null, null, null, null, null, "m"),
+				new ReplayBatch.In(2L, T, "CLICK", "home", null, 1, 1, null, null, null, null, null, "t"),
+				new ReplayBatch.In(3L, T, "CLICK", "home", null, 1, 1, null, null, null, null, null, "mouse"), // 모르는 값
+				new ReplayBatch.In(4L, T, "CLICK", "home", null, 1, 1, null, null, null), // 예전 녹화기
+				new ReplayBatch.In(5L, T, "SCROLL", "home", null, 1, 1, null, null, null, null, null, "m")), "FULL", 50,
+				NOW);
+		assertThat(out).extracting(ReplayBatch.Event::pointer).containsExactly("m", "t", null, null, null);
+	}
 }

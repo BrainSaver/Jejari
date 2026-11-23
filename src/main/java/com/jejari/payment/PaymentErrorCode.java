@@ -10,7 +10,9 @@ import com.jejari.common.error.ErrorCode;
  */
 public enum PaymentErrorCode implements ErrorCode {
 	SEAT_LOST(HttpStatus.CONFLICT, "좌석 선점이 이미 풀려 결제를 시작할 수 없습니다. 다시 예매해 주세요."),
-	PAYMENT_DUPLICATED(HttpStatus.CONFLICT, "이미 결제를 시작했거나 결제가 끝난 예약입니다.");
+	PAYMENT_DUPLICATED(HttpStatus.CONFLICT, "이미 결제를 시작했거나 결제가 끝난 예약입니다."),
+	/** 결제 단계 차단 (PaymentRiskGuard): 위험 점수가 케이스 기준 이상. 선점한 좌석은 바로 풀린다 */
+	PAYMENT_RISK_BLOCKED(HttpStatus.FORBIDDEN, "이상 이용이 감지되어 결제가 제한되었습니다. 선점한 좌석은 풀렸습니다. 문의는 고객센터로 해 주세요.");
 
 	private final HttpStatus status;
 	private final String message;

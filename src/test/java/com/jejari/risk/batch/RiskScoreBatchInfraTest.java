@@ -87,6 +87,10 @@ class RiskScoreBatchInfraTest {
 			jdbc.update("DELETE FROM payment_method WHERE method_hash = ?", h);
 			jdbc.update("DELETE FROM member_device WHERE device_hash = ?", h);
 			mongo.getCollection("behavior_log").deleteMany(Filters.or(Filters.eq("ci_hash", h), Filters.eq("device_hash", h)));
+			for (Document rs : mongo.getCollection("replay_session").find(Filters.eq("ci_hash", h))) {
+				mongo.getCollection("replay_event").deleteMany(Filters.eq("session_id", rs.get("_id")));
+			}
+			mongo.getCollection("replay_session").deleteMany(Filters.eq("ci_hash", h));
 		}
 		for (Long m : members) {
 			jdbc.update("DELETE FROM cancellation WHERE reservation_id IN (SELECT reservation_id FROM reservation WHERE member_id = ?)", m);
@@ -358,6 +362,143 @@ class RiskScoreBatchInfraTest {
 		assertThat(markers.get(1).get("LABEL")).asString().startsWith("요청 간격이 기계처럼 일정함 (변동계수 ");
 		assertThat(jdbc.queryForObject("SELECT review_status FROM risk_score WHERE subject_hash = ?", String.class, ci))
 				.isEqualTo("PENDING");
+	}
+
+	/**
+	 * LINEAR_MOUSE (2026-11-23): 화면 녹화에서 클릭 자리끼리 순간이동하는 마우스(브라우저 자동화 기본 클릭) → 케이스.
+	 * 같은 모양이라도 휴대폰 탭(pointer t)이면 세지 않는다.
+	 */
+	@Test
+	void 녹화의_마우스가_클릭_자리로만_순간이동하면_LINEAR_MOUSE_케이스() {
+		String ci = hash();
+		long bot = member(ci, Instant.now().minus(30, ChronoUnit.DAYS));
+		String sid = authSession(bot);
+		replay(sid, bot, ci, "m", 12);
+		String phoneCi = hash();
+		long phone = member(phoneCi, Instant.now().minus(30, ChronoUnit.DAYS));
+		replay(authSession(phone), phone, phoneCi, "t", 12);
+		dirty.mark(new RiskSubject(SubjectType.CI, ci));
+		dirty.mark(new RiskSubject(SubjectType.CI, phoneCi));
+
+		RiskScoreBatch.Result r = batch.run();
+
+		assertThat(r.opened()).isEqualTo(1);
+		var c = jdbc.queryForMap("SELECT case_id, trigger_type, trigger_detail FROM suspicious_case WHERE subject_hash = ?", ci);
+		assertThat(c.get("TRIGGER_TYPE")).isEqualTo("RULE");
+		assertThat((String) c.get("TRIGGER_DETAIL")).contains("마우스가 기계처럼 움직임").contains("11회");
+		var mk = jdbc.queryForMap("SELECT rule_code, severity, session_id FROM case_marker WHERE case_id = ?", c.get("CASE_ID"));
+		assertThat(mk.get("RULE_CODE")).isEqualTo("LINEAR_MOUSE"); // ERD case_marker.rule_code CHECK가 받아 준다
+		assertThat(mk.get("SEVERITY")).isEqualTo("MID");
+		assertThat(mk.get("SESSION_ID")).isEqualTo(sid); // 녹화 재생으로 바로 확인
+		assertThat(finalScore(SubjectType.CI, ci)).isEqualByComparingTo("25.00");
+		// 휴대폰 탭은 같은 모양이어도 0점 → 행 없음
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_score WHERE subject_hash = ?", Integer.class, phoneCi))
+				.isZero();
+	}
+
+	/**
+	 * HEADLESS_HOLD (2026-11-23): 좌석을 선점한 로그인 세션에 화면 녹화가 0건 = 브라우저 없이 API만.
+	 * 같은 시간대 다른 세션은 녹화 중이어야 센다. 녹화가 있는 사람은 0점. 조회 없이 대기열 진입(NO_SEARCH_ENTRY)도 같이 본다.
+	 */
+	@Test
+	void 화면_녹화_없이_선점한_세션은_HEADLESS_HOLD_조회_없이_진입은_NO_SEARCH_ENTRY() {
+		Instant t = Instant.now().minusSeconds(120);
+		String botCi = hash();
+		long bot = member(botCi, Instant.now().minus(30, ChronoUnit.DAYS));
+		String botSid = UUID.randomUUID().toString();
+		mongo.getCollection("behavior_log").insertMany(List.of(
+				event("QUEUE_ENTER", bot, botCi, null, t, 5000, 200, null).append("session_id", botSid),
+				event("SEAT_HOLD", bot, botCi, null, t.plusSeconds(5), 5000, 201, List.of(1L)).append("session_id", botSid)));
+
+		String humanCi = hash();
+		long human = member(humanCi, Instant.now().minus(30, ChronoUnit.DAYS));
+		String humanSid = authSession(human);
+		mongo.getCollection("behavior_log").insertMany(List.of(
+				event("VIEW_TRAIN", human, humanCi, null, t.minusSeconds(30), null, 200, null).append("session_id", humanSid),
+				event("QUEUE_ENTER", human, humanCi, null, t, 5000, 200, null).append("session_id", humanSid),
+				event("SEAT_HOLD", human, humanCi, null, t.plusSeconds(5), 5000, 201, List.of(2L)).append("session_id", humanSid)));
+		replay(humanSid, human, humanCi, "m", 1); // 사람의 화면 녹화 (클릭 1번이라 마우스 규칙엔 안 걸림)
+
+		dirty.mark(new RiskSubject(SubjectType.CI, botCi));
+		dirty.mark(new RiskSubject(SubjectType.CI, humanCi));
+		batch.run();
+
+		String reasons = jdbc.queryForObject("SELECT reasons FROM risk_score WHERE subject_hash = ?", String.class, botCi);
+		assertThat(reasons).contains("HEADLESS_HOLD").contains("NO_SEARCH_ENTRY");
+		assertThat(finalScore(SubjectType.CI, botCi)).isEqualByComparingTo("40.00"); // 30 + 10
+		// 점수만: ERD case_marker CHECK에 값이 생기기 전까지 케이스는 열지 않는다
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM suspicious_case WHERE subject_hash = ?", Integer.class, botCi))
+				.isZero();
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_score WHERE subject_hash = ?", Integer.class, humanCi))
+				.isZero(); // 녹화도 있고 조회도 했다 → 0점
+	}
+
+	/**
+	 * INHUMAN_STEP (2026-11-23): 좌석표 → 0.05초 → 선점 → 0.09초 → 결제 = 사람 손으로 불가능한 단계 2번 → 30점.
+	 * ERD v34 전이라 case_marker CHECK에 값이 없으면 마커에서 빠지고(점수는 저장), 같이 걸린 허용 마커(FAST_CLICK)로만 케이스가 열린다.
+	 * CHECK에 값이 생기면 재배포 없이 마커로 들어간다 (MarkerCodes, 5분 캐시).
+	 */
+	@Test
+	void 사람보다_빠른_단계는_INHUMAN_STEP_ERD_전에는_점수만_다른_마커와_함께면_그_마커로만_케이스() {
+		Instant t = Instant.now().minusSeconds(300);
+		String ci = hash();
+		long bot = member(ci, Instant.now().minus(30, ChronoUnit.DAYS));
+		String sid = UUID.randomUUID().toString();
+		mongo.getCollection("behavior_log").insertMany(List.of(
+				event("VIEW_SEAT", bot, ci, null, t, 5000, 200, null).append("session_id", sid),
+				event("SEAT_HOLD", bot, ci, null, t.plusMillis(50), 5000, 201, List.of(1L)).append("session_id", sid),
+				event("PAY", bot, ci, null, t.plusMillis(140), 5000, 200, null).append("session_id", sid)));
+		replay(sid, bot, ci, "m", 1); // 화면 녹화는 있음 (HEADLESS_HOLD와 섞이지 않게)
+		dirty.mark(new RiskSubject(SubjectType.CI, ci));
+		batch.run();
+
+		assertThat(jdbc.queryForObject("SELECT reasons FROM risk_score WHERE subject_hash = ?", String.class, ci))
+				.contains("INHUMAN_STEP");
+		assertThat(finalScore(SubjectType.CI, ci)).isEqualByComparingTo("30.00");
+		boolean patched = jdbc.queryForObject("""
+				SELECT COUNT(*) FROM user_constraints WHERE constraint_name = 'CK_CASE_MARKER_RULE_CODE'
+				   AND search_condition_vc LIKE '%INHUMAN_STEP%'""", Integer.class) > 0;
+		int cases = jdbc.queryForObject("SELECT COUNT(*) FROM suspicious_case WHERE subject_hash = ?", Integer.class, ci);
+		assertThat(cases).isEqualTo(patched ? 1 : 0); // ERD 전: 점수만 (롤백 없이 저장됨)
+
+		// 허용 마커와 함께 걸리면 케이스는 열리고, 마커는 CHECK가 받아 주는 것만
+		String ci2 = hash();
+		long bot2 = member(ci2, Instant.now().minus(30, ChronoUnit.DAYS));
+		String sid2 = UUID.randomUUID().toString();
+		List<Document> docs = new ArrayList<>(fastClicks(bot2, ci2, t, 30, sid2));
+		docs.add(event("VIEW_SEAT", bot2, ci2, null, t.plusSeconds(10), 5000, 200, null).append("session_id", sid2));
+		docs.add(event("SEAT_HOLD", bot2, ci2, null, t.plusSeconds(10).plusMillis(40), 5000, 201, List.of(2L))
+				.append("session_id", sid2));
+		docs.add(event("PAY", bot2, ci2, null, t.plusSeconds(10).plusMillis(90), 5000, 200, null).append("session_id", sid2));
+		mongo.getCollection("behavior_log").insertMany(docs);
+		replay(sid2, bot2, ci2, "m", 1);
+		dirty.mark(new RiskSubject(SubjectType.CI, ci2));
+		batch.run();
+		var codes = jdbc.queryForList("""
+				SELECT m.rule_code FROM case_marker m JOIN suspicious_case c ON c.case_id = m.case_id
+				 WHERE c.subject_hash = ? ORDER BY m.rule_code""", String.class, ci2);
+		assertThat(codes).contains("FAST_CLICK");
+		assertThat(codes.contains("INHUMAN_STEP")).isEqualTo(patched);
+	}
+
+	/** 녹화 세션 하나: 클릭 n번, 궤적 점은 클릭 자리에만 (중간 점 없음) */
+	void replay(String sid, long memberId, String ci, String pointer, int n) {
+		Date now = new Date();
+		mongo.getCollection("replay_session").insertOne(new Document("_id", sid).append("session_id", sid)
+				.append("member_id", memberId).append("ci_hash", ci).append("recording_mode", "SAMPLED")
+				.append("started_at", new Date(now.getTime() - 600_000)).append("ended_at", now));
+		List<Document> events = new ArrayList<>();
+		List<List<Integer>> path = new ArrayList<>();
+		for (int i = 0; i < n; i++) {
+			int x = i % 2 == 0 ? 200 : 800;
+			int y = 150 + i * 50;
+			events.add(new Document("session_id", sid).append("seq", (long) i * 2).append("ts", now).append("type", "CLICK")
+					.append("x", x).append("y", y).append("pointer", pointer));
+			path.add(List.of(i * 900, x, y));
+		}
+		events.add(new Document("session_id", sid).append("seq", 1000L).append("ts", now).append("type", "MOUSE_PATH")
+				.append("path", path));
+		mongo.getCollection("replay_event").insertMany(events);
 	}
 
 	@Test

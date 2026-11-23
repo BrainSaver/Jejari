@@ -28,6 +28,7 @@ const MESSAGES = {
   RESERVATION_EXPIRED: '결제 기한이 지나 잡아 둔 좌석이 풀렸어요. 결제는 되지 않았어요.',
   SEAT_LOST: '좌석을 잃었어요. 다시 예매해 주세요.',
   PAYMENT_IN_PROGRESS: '결제 중이라 지금은 취소할 수 없어요.',
+  PAYMENT_RISK_BLOCKED: '이상 이용이 감지되어 결제가 제한되었어요. 잡아 둔 좌석은 풀렸고 결제는 되지 않았어요. 문의는 고객센터로 해 주세요.',
 };
 
 export default function Pay() {
@@ -70,6 +71,7 @@ export default function Pay() {
     } catch (e) {
       if (e.code === 'PAYMENT_DUPLICATED') navigate(`/pay/${id}/result`);
       else if (e.code === 'RESERVATION_NOT_HOLD') load();
+      else if (e.code === 'PAYMENT_RISK_BLOCKED') { setError(e); load(); } // 좌석이 풀려 예약이 취소 상태로 바뀜
       else setError(e);
     } finally {
       setBusy(false);
