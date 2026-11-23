@@ -87,6 +87,10 @@ class RiskScoreBatchInfraTest {
 			jdbc.update("DELETE FROM payment_method WHERE method_hash = ?", h);
 			jdbc.update("DELETE FROM member_device WHERE device_hash = ?", h);
 			mongo.getCollection("behavior_log").deleteMany(Filters.or(Filters.eq("ci_hash", h), Filters.eq("device_hash", h)));
+			for (Document rs : mongo.getCollection("replay_session").find(Filters.eq("ci_hash", h))) {
+				mongo.getCollection("replay_event").deleteMany(Filters.eq("session_id", rs.get("_id")));
+			}
+			mongo.getCollection("replay_session").deleteMany(Filters.eq("ci_hash", h));
 		}
 		for (Long m : members) {
 			jdbc.update("DELETE FROM cancellation WHERE reservation_id IN (SELECT reservation_id FROM reservation WHERE member_id = ?)", m);
@@ -358,6 +362,58 @@ class RiskScoreBatchInfraTest {
 		assertThat(markers.get(1).get("LABEL")).asString().startsWith("요청 간격이 기계처럼 일정함 (변동계수 ");
 		assertThat(jdbc.queryForObject("SELECT review_status FROM risk_score WHERE subject_hash = ?", String.class, ci))
 				.isEqualTo("PENDING");
+	}
+
+	/**
+	 * LINEAR_MOUSE (2026-11-23): 화면 녹화에서 클릭 자리끼리 순간이동하는 마우스(브라우저 자동화 기본 클릭) → 케이스.
+	 * 같은 모양이라도 휴대폰 탭(pointer t)이면 세지 않는다.
+	 */
+	@Test
+	void 녹화의_마우스가_클릭_자리로만_순간이동하면_LINEAR_MOUSE_케이스() {
+		String ci = hash();
+		long bot = member(ci, Instant.now().minus(30, ChronoUnit.DAYS));
+		String sid = authSession(bot);
+		replay(sid, bot, ci, "m", 12);
+		String phoneCi = hash();
+		long phone = member(phoneCi, Instant.now().minus(30, ChronoUnit.DAYS));
+		replay(authSession(phone), phone, phoneCi, "t", 12);
+		dirty.mark(new RiskSubject(SubjectType.CI, ci));
+		dirty.mark(new RiskSubject(SubjectType.CI, phoneCi));
+
+		RiskScoreBatch.Result r = batch.run();
+
+		assertThat(r.opened()).isEqualTo(1);
+		var c = jdbc.queryForMap("SELECT case_id, trigger_type, trigger_detail FROM suspicious_case WHERE subject_hash = ?", ci);
+		assertThat(c.get("TRIGGER_TYPE")).isEqualTo("RULE");
+		assertThat((String) c.get("TRIGGER_DETAIL")).contains("마우스가 기계처럼 움직임").contains("11회");
+		var mk = jdbc.queryForMap("SELECT rule_code, severity, session_id FROM case_marker WHERE case_id = ?", c.get("CASE_ID"));
+		assertThat(mk.get("RULE_CODE")).isEqualTo("LINEAR_MOUSE"); // ERD case_marker.rule_code CHECK가 받아 준다
+		assertThat(mk.get("SEVERITY")).isEqualTo("MID");
+		assertThat(mk.get("SESSION_ID")).isEqualTo(sid); // 녹화 재생으로 바로 확인
+		assertThat(finalScore(SubjectType.CI, ci)).isEqualByComparingTo("25.00");
+		// 휴대폰 탭은 같은 모양이어도 0점 → 행 없음
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_score WHERE subject_hash = ?", Integer.class, phoneCi))
+				.isZero();
+	}
+
+	/** 녹화 세션 하나: 클릭 n번, 궤적 점은 클릭 자리에만 (중간 점 없음) */
+	void replay(String sid, long memberId, String ci, String pointer, int n) {
+		Date now = new Date();
+		mongo.getCollection("replay_session").insertOne(new Document("_id", sid).append("session_id", sid)
+				.append("member_id", memberId).append("ci_hash", ci).append("recording_mode", "SAMPLED")
+				.append("started_at", new Date(now.getTime() - 600_000)).append("ended_at", now));
+		List<Document> events = new ArrayList<>();
+		List<List<Integer>> path = new ArrayList<>();
+		for (int i = 0; i < n; i++) {
+			int x = i % 2 == 0 ? 200 : 800;
+			int y = 150 + i * 50;
+			events.add(new Document("session_id", sid).append("seq", (long) i * 2).append("ts", now).append("type", "CLICK")
+					.append("x", x).append("y", y).append("pointer", pointer));
+			path.add(List.of(i * 900, x, y));
+		}
+		events.add(new Document("session_id", sid).append("seq", 1000L).append("ts", now).append("type", "MOUSE_PATH")
+				.append("path", path));
+		mongo.getCollection("replay_event").insertMany(events);
 	}
 
 	@Test

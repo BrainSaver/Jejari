@@ -217,6 +217,7 @@ public class RiskScoreBatch {
 		}
 		SignalCollector c = new SignalCollector(engine.policy(), s.type(), s.hash(), min(behaviorFrom, purchaseFrom));
 		reader.behavior(c, s, behaviorFrom);
+		reader.mouse(c, s, behaviorFrom);
 		reader.transactions(c, s, purchaseFrom);
 		reader.accounts(c, s, now);
 		RiskResult r = engine.score(c.build(), prev, now);

@@ -4,7 +4,7 @@ import { get, post, subscribeAuth, tokenClaims } from '../api/client.js';
  * ADM-11 화면 녹화기 (회원 화면만). rrweb 같은 DOM 녹화가 아니라 "무엇을 어디서 눌렀나"만 가볍게 남긴다.
  *
  *   PAGE_VIEW  화면 이동 (주소의 숫자는 :id로 바꿔 화면 ID로)
- *   CLICK      클릭 위치(화면 비율 0~1000)와 요소 ID (data-rec > id > 태그.클래스)
+ *   CLICK      클릭 위치(화면 비율 0~1000)와 요소 ID (data-rec > id > 태그.클래스), 입력 장치(pointer: m·t·p·k)
  *   MOUSE_PATH 마우스 궤적 [[dt, x, y], …] (사람은 곡선·가감속, 매크로는 직선·순간이동).
  *              FULL은 0.05초마다, 평소(SAMPLED)는 0.15초마다 — 간격·점 수는 서버가 정해 준다(config)
  *   SCROLL / VISIBILITY / INPUT(길이만. 입력값은 절대 보내지 않음)
@@ -130,8 +130,19 @@ function label(el) {
   return LABEL_RE.test(t) ? t : undefined;
 }
 
+/**
+ * 클릭을 만든 입력 장치: m 마우스 · t 터치 · p 펜 · k 키보드(Enter·스페이스, detail 0).
+ * 서버의 마우스 궤적 규칙(LINEAR_MOUSE)은 마우스 클릭만 본다 — 휴대폰은 탭한 자리에 마우스 이동을 흉내 내서
+ * 매크로의 "클릭 자리로 순간이동"과 똑같아 보이기 때문
+ */
+function pointerOf(ev) {
+  const t = ev.pointerType;
+  if (t === 'mouse' || t === 'touch' || t === 'pen') return t[0];
+  return ev.detail === 0 ? 'k' : undefined;
+}
+
 function onClick(ev) {
-  push({ type: 'CLICK', x: nx(ev.clientX), y: ny(ev.clientY), target: target(ev.target), label: label(ev.target) });
+  push({ type: 'CLICK', x: nx(ev.clientX), y: ny(ev.clientY), target: target(ev.target), label: label(ev.target), pointer: pointerOf(ev) });
 }
 
 // ------------------------------------------------------------ 화면 뼈대 (LAYOUT)

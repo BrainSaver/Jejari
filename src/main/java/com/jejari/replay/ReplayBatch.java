@@ -43,12 +43,18 @@ public final class ReplayBatch {
 
 	/** 클라이언트가 보내는 모양 */
 	public record In(Long seq, Long ts, String type, String screen, String target, Integer x, Integer y,
-			List<List<Number>> path, Integer inputLen, Long runId, String label, List<BoxIn> boxes) {
+			List<List<Number>> path, Integer inputLen, Long runId, String label, List<BoxIn> boxes, String pointer) {
+
+		/** 입력 장치 없는 모양 (예전 녹화기) */
+		public In(Long seq, Long ts, String type, String screen, String target, Integer x, Integer y,
+				List<List<Number>> path, Integer inputLen, Long runId, String label, List<BoxIn> boxes) {
+			this(seq, ts, type, screen, target, x, y, path, inputLen, runId, label, boxes, null);
+		}
 
 		/** 문구·뼈대 없는 모양 */
 		public In(Long seq, Long ts, String type, String screen, String target, Integer x, Integer y,
 				List<List<Number>> path, Integer inputLen, Long runId) {
-			this(seq, ts, type, screen, target, x, y, path, inputLen, runId, null, null);
+			this(seq, ts, type, screen, target, x, y, path, inputLen, runId, null, null, null);
 		}
 	}
 
@@ -59,10 +65,18 @@ public final class ReplayBatch {
 	public record Box(String k, int x, int y, int w, int h, String id, String label, boolean off) {
 	}
 
-	/** 검사를 통과한 이벤트 (Kafka로 보내는 모양) */
+	/**
+	 * 검사를 통과한 이벤트 (Kafka로 보내는 모양).
+	 *
+	 * @param pointer CLICK을 만든 입력 장치 m(마우스) · t(터치) · p(펜) · k(키보드). 모르면 null (예전 녹화기).
+	 *                위험 점수의 마우스 궤적 규칙(LINEAR_MOUSE)은 m만 본다
+	 */
 	public record Event(long seq, long ts, String type, String screen, String target, Integer x, Integer y,
-			List<int[]> path, Integer inputLen, Long runId, String label, List<Box> boxes) {
+			List<int[]> path, Integer inputLen, Long runId, String label, List<Box> boxes, String pointer) {
 	}
+
+	/** 클릭 입력 장치로 받는 값 */
+	public static final Set<String> POINTERS = Set.of("m", "t", "p", "k");
 
 	private ReplayBatch() {
 	}
@@ -112,8 +126,11 @@ public final class ReplayBatch {
 				}
 			}
 			Long runId = e.runId() != null && e.runId() > 0 ? e.runId() : null;
+			// Set.of(...).contains(null)은 예외라 null부터 거른다 (예전 녹화기는 pointer를 안 보냄)
+			String pointer = "CLICK".equals(e.type()) && e.pointer() != null && POINTERS.contains(e.pointer())
+					? e.pointer() : null;
 			out.add(new Event(e.seq(), e.ts(), e.type(), screen, code(e.target()), coord(e.x()), coord(e.y()), path,
-					inputLen, runId, label(e.label()), boxes));
+					inputLen, runId, label(e.label()), boxes, pointer));
 		}
 		return out;
 	}

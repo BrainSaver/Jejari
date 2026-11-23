@@ -27,6 +27,7 @@ import java.util.Map;
  * @param linkedAccounts       연결 계정 수 → LINKED_ACCOUNTS
  * @param newAccountDays       가입 후 이 일수 미만이면 신규 계정
  * @param newAccountPoints     NEW_ACCOUNT 배점
+ * @param linearMouse          화면 녹화의 기계적 마우스 이동 수 → LINEAR_MOUSE ({@link MouseMotion})
  * @param halfLifeDays         이전 점수 반감기 (일)
  * @param caseThreshold        최종 점수가 이 이상이면 케이스를 연다 (RISK_THRESHOLD)
  */
@@ -41,6 +42,7 @@ public record RiskPolicy(
         Tier bulkPurchase,
         Tier linkedAccounts,
         long newAccountDays, int newAccountPoints,
+        Tier linearMouse,
         double halfLifeDays, int caseThreshold) {
 
     public RiskPolicy {
@@ -67,7 +69,7 @@ public record RiskPolicy(
             throw new IllegalArgumentException("caseThreshold는 1~100이어야 합니다");
         }
         for (Tier t : new Tier[] {fastClick, sameSeatRetry, cancelAfterPay, multiAccountSync, cancelRatio,
-                lastMinuteCancel, bulkPurchase, linkedAccounts}) {
+                lastMinuteCancel, bulkPurchase, linkedAccounts, linearMouse}) {
             if (t == null) throw new IllegalArgumentException("배점 단계가 비어 있습니다");
         }
         if (cancelRatio.highThreshold() > 1) {
@@ -93,6 +95,7 @@ public record RiskPolicy(
      * 기본값. 근거: 사람은 화면을 보고 누르므로 200ms 미만 간격이 20번 이상 나오기 어렵고,
      * 매진 좌석을 5번 넘게 다시 누르거나 30분 안에 두 번 이상 사고 무르는 일은 드물다.
      * k6 봇 시나리오(정답 라벨)로 탐지율 90%·오탐률 5%를 측정한 뒤 조정한다.
+     * LINEAR_MOUSE 8 / 20: 로컬 실측(2026-11-23) botb 세션마다 17~29, botc·사람 0~1
      */
     public static RiskPolicy defaults() {
         return new RiskPolicy(
@@ -106,6 +109,7 @@ public record RiskPolicy(
                 new Tier(20, 10, 40, 20),
                 new Tier(2, 10, 4, 20),
                 7, 5,
+                new Tier(8, 25, 20, 40),
                 30, 80);
     }
 
@@ -129,6 +133,7 @@ public record RiskPolicy(
                 tier(p, "bulk_purchase", d.bulkPurchase),
                 tier(p, "linked_accounts", d.linkedAccounts),
                 l(p, "new_account_days", d.newAccountDays), i(p, "new_account_points", d.newAccountPoints),
+                tier(p, "linear_mouse", d.linearMouse),
                 dbl(p, "half_life_days", d.halfLifeDays), i(p, "case_threshold", d.caseThreshold));
     }
 

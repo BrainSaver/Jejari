@@ -68,6 +68,7 @@ public final class RiskEngine {
                 Math.max(s.maxSameSeatFailures(), s.seatRetryFailures()));
         tier(reasons, RiskRule.CANCEL_AFTER_PAY, policy.cancelAfterPay(), s.fastCancelCount());
         tier(reasons, RiskRule.MULTI_ACCOUNT_SYNC, policy.multiAccountSync(), s.maxSyncAccounts());
+        tier(reasons, RiskRule.LINEAR_MOUSE, policy.linearMouse(), s.mechanicalMouseMoves());
 
         if (s.intervalCount() >= policy.regularMinSamples() && s.intervalCv() <= policy.regularMaxCv()
                 && policy.regularPoints() > 0) {

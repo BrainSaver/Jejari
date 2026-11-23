@@ -3,7 +3,7 @@ package com.jejari.risk;
 /**
  * 점수 근거 코드.
  *
- * <p>{@code marker = true}인 5개는 ERD {@code case_marker.rule_code} CHECK 제약에 있는 값이라
+ * <p>{@code marker = true}인 6개는 ERD {@code case_marker.rule_code} CHECK 제약에 있는 값이라
  * (REGULAR_INTERVAL은 v24에서 추가, 일정 간격 매크로가 이것에만 걸려 케이스가 안 열리던 것을 막음)
  * 타임라인 마커로 남고, 하나라도 걸리면 의심 케이스를 연다 (RISK-04 "규칙 적중").
  * 나머지는 점수에만 더해지는 보조 신호다. 이름을 바꾸면 저장된 reasons JSON과 맞지 않게 되므로 추가만 한다.
@@ -29,7 +29,13 @@ public enum RiskRule {
     /** 같은 대상에 연결된 계정이 많음 */
     LINKED_ACCOUNTS(false),
     /** 가입한 지 얼마 안 된 계정 (기본 점수를 조금 높게 시작) */
-    NEW_ACCOUNT(false);
+    NEW_ACCOUNT(false),
+
+    /**
+     * 화면 녹화의 마우스가 기계처럼 움직임: 클릭 자리로 순간이동, 직선·등속 이동 ({@link MouseMotion}).
+     * 사람 흉내 브라우저 매크로용 마커 규칙 (ERD case_marker.rule_code CHECK에 처음부터 있던 값, 2026-11-23 구현)
+     */
+    LINEAR_MOUSE(true);
 
     private final boolean marker;
 

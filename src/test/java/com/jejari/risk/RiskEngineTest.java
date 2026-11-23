@@ -26,7 +26,7 @@ class RiskEngineTest {
     static final class S {
         SubjectType type = SubjectType.CI;
         Instant from = FROM;
-        long intervals, fast, sameSeat, purchases, seats, maxSingle, cancels, fastCancels, lastMinute, linked, sync;
+        long intervals, fast, sameSeat, purchases, seats, maxSingle, cancels, fastCancels, lastMinute, linked, sync, mouse;
         double mean, sd;
         Long age;
 
@@ -38,12 +38,13 @@ class RiskEngineTest {
         S cancels(long all, long fast, long lastMinute) { cancels = all; fastCancels = fast; this.lastMinute = lastMinute; return this; }
         S linked(long n) { linked = n; return this; }
         S sync(long n) { sync = n; return this; }
+        S mouse(long n) { mouse = n; return this; }
         S age(Long d) { age = d; return this; }
         S from(Instant f) { from = f; return this; }
 
         RiskSignals build() {
             return new RiskSignals(type, H, from, intervals, fast, mean, sd, sameSeat, purchases, seats, maxSingle,
-                    cancels, fastCancels, lastMinute, cancels == 0 ? null : 10.0, linked, sync, age);
+                    cancels, fastCancels, lastMinute, cancels == 0 ? null : 10.0, linked, sync, age, 0, mouse);
         }
     }
 
@@ -132,6 +133,37 @@ class RiskEngineTest {
             assertThat(r.markerReasons()).extracting(Reason::rule).containsExactly(RiskRule.REGULAR_INTERVAL);
             assertThat(r.openCase()).isTrue();
             assertThat(r.triggerType()).isEqualTo("RULE");
+        }
+
+        @Test
+        void LINEAR_MOUSE_7회는_없음_8회_MID_20회_HIGH() {
+            assertThat(score(s().mouse(7)).reasons()).isEmpty(); // 사람도 가끔 빠르게 휙 옮긴다
+            Reason mid = score(s().mouse(8)).reasons().get(0);
+            assertThat(mid.rule()).isEqualTo(RiskRule.LINEAR_MOUSE);
+            assertThat(mid.points()).isEqualTo(25);
+            assertThat(mid.severity()).isEqualTo(Severity.MID);
+            Reason high = score(s().mouse(20)).reasons().get(0);
+            assertThat(high.points()).isEqualTo(40);
+            assertThat(high.severity()).isEqualTo(Severity.HIGH);
+        }
+
+        @Test
+        void LINEAR_MOUSE만_걸려도_케이스가_열린다_마커_규칙() {
+            // 브라우저 자동화 기본 클릭(botb, 계정마다 순간이동 17~29회): 다른 규칙은 하나도 안 걸려도 케이스
+            RiskResult r = score(s().mouse(17));
+            assertThat(r.markerReasons()).extracting(Reason::rule).containsExactly(RiskRule.LINEAR_MOUSE);
+            assertThat(r.openCase()).isTrue();
+            assertThat(r.triggerType()).isEqualTo("RULE");
+        }
+
+        @Test
+        void LINEAR_MOUSE_문턱은_app_policy로_바꾼다() {
+            RiskPolicy p = RiskPolicy.fromMap(java.util.Map.of("risk.rule.linear_mouse.t1", "3",
+                    "risk.rule.linear_mouse.p1", "10", "risk.rule.linear_mouse.t2", "30", "risk.rule.linear_mouse.p2", "50"));
+            RiskResult r = new RiskEngine(p).score(s().mouse(3).build(), null, NOW);
+            assertThat(r.reasons()).extracting(Reason::points).containsExactly(10);
+            assertThatThrownBy(() -> RiskPolicy.fromMap(java.util.Map.of("risk.rule.linear_mouse.t1", "0")))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
@@ -285,6 +317,7 @@ class RiskEngineTest {
             s.linked(rnd.nextInt(8));
             s.sync(rnd.nextInt(6));
             s.age(rnd.nextBoolean() ? null : (long) rnd.nextInt(30));
+            s.mouse(rnd.nextInt(40));
             return s;
         }
 
@@ -313,6 +346,7 @@ class RiskEngineTest {
                         x -> { x.seats++; return x; },
                         x -> x.linked(x.linked + 1),
                         x -> x.sync(x.sync + 1),
+                        x -> x.mouse(x.mouse + 1),
                         x -> x.age(x.age == null ? null : Math.max(0, x.age - 1)))) {
                     S copy = copyOf(base);
                     BigDecimal after = score(worse.apply(copy)).finalScore();
@@ -326,7 +360,7 @@ class RiskEngineTest {
             c.intervals(o.intervals, o.fast, o.mean, o.sd);
             c.sameSeat = o.sameSeat; c.purchases = o.purchases; c.seats = o.seats; c.maxSingle = o.maxSingle;
             c.cancels = o.cancels; c.fastCancels = o.fastCancels; c.lastMinute = o.lastMinute;
-            c.linked = o.linked; c.sync = o.sync; c.age = o.age;
+            c.linked = o.linked; c.sync = o.sync; c.age = o.age; c.mouse = o.mouse;
             return c;
         }
     }
