@@ -38,7 +38,8 @@ sql() {
 }
 
 # ── 회원: member_id | 종류 | 묶음 | ci | 가입 일수 | 카드들(,) ─────────
-sql <<EOF | tr -d '\r' | grep -E '^[0-9]+\|' > "$OUT/.members.txt"
+# grep은 0건이면 1을 돌려줘 pipefail로 스크립트가 말없이 끝난다 → `|| true` (0건은 아래 n == 0이 처리)
+sql <<EOF | tr -d '\r' | { grep -E '^[0-9]+\|' || true; } > "$OUT/.members.txt"
 SET HEADING OFF FEEDBACK OFF PAGESIZE 0 LINESIZE 2000 TRIMSPOOL ON
 SELECT m.member_id || '|' || REGEXP_SUBSTR(m.email, '^lt[a-z0-9]+\.([a-z]+)\.', 1, 1, NULL, 1)
        || '|' || REGEXP_SUBSTR(m.email, '\.g([0-9]+)\.', 1, 1, NULL, 1)
@@ -78,7 +79,8 @@ docker compose exec -T mongo bash -c \
 db.behavior_log.find(${EVENT_FILTER}, { _id: 0, expire_at: 0, user_agent: 0 })
   .sort({ member_id: 1, ts: 1 })
   .forEach(d => { d.ts = d.ts.toISOString(); print(EJSON.stringify(d, null, 0, { relaxed: true })); })" \
-  | tr -d '\r' | grep '^{' > "$OUT/events.jsonl"
+  | tr -d '\r' | { grep '^{' || true; } > "$OUT/events.jsonl"
+# ↑ 최근 행동 로그 0건도 정상 (model-refresh.sh가 "행동 로그 없음"으로 끝냄). || true가 없으면 11-20~23처럼 매시간 "꺼내기 실패"
 
 # 운영 모드는 기간으로만 꺼내므로, 위에서 고른 회원(부하 시험 계정 제외)의 이벤트만 남긴다
 if [[ -n "$RECENT" ]]; then
