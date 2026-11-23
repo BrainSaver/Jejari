@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v34)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v35)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -1299,6 +1299,12 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.linear_mouse.t2', '20', 1, 'NUMBER', 'LINEAR_MOUSE 2단계 이동 수');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.linear_mouse.p2', '40', 1, 'NUMBER', 'LINEAR_MOUSE 2단계 점수');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.no_search_entry_points', '10', 1, 'NUMBER', 'NO_SEARCH_ENTRY(조회 없이 대기열 진입) 점수. 점수만 (케이스 아님)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('seatmap.rate_burst', '10', 1, 'NUMBER', '한 계정(운행 단위)이 처음에 막힘 없이 보낼 수 있는 좌석 조회·선점 횟수 (물통 크기)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('seatmap.rate_per_sec', '1', 1, 'NUMBER', '그 뒤 초당 다시 채워지는 좌석 조회·선점 횟수');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('seatmap.abuse_threshold', '20', 1, 'NUMBER', '물이 바닥난 채로 이만큼 거절당하면 잠금');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('seatmap.abuse_window_sec', '60', 1, 'NUMBER', '거절을 세는 시간 창(초)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('seatmap.cooldown_sec', '60', 1, 'NUMBER', '잠금 시간(초)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('reservation.hold_release_grace_sec', '10', 1, 'NUMBER', '선점·제안 키를 결제 마감 뒤 이만큼 더 붙잡아, 스캐너가 대기자 제안으로 넘길 때까지 일반 사용자가 못 잡게 함. 0이면 마감 즉시 열림(예전 동작)');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (1, 1, 'PER_RESERVATION', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (2, 1, 'PER_RUN', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (3, 1, 'PER_HOLIDAY', 8, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');

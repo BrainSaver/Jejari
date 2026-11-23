@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v34 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-23
+> 스키마 v35 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-23
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -39,7 +39,7 @@
 | 테이블 | 61개 (운영 57 + 확장 예정 4) |
 | 저장소 | Oracle 44 · MongoDB 12 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 536개 |
+| 컬럼 | 538개 |
 | 관계 (FK) | 87개 (Oracle 제약 60 · 논리 참조 22) |
 
 | 영역 | 저장소 | 테이블 |
@@ -594,6 +594,12 @@ Oracle
 | risk.rule.linear_mouse.t2 | 20 | 1 | NUMBER | LINEAR_MOUSE 2단계 이동 수 |
 | risk.rule.linear_mouse.p2 | 40 | 1 | NUMBER | LINEAR_MOUSE 2단계 점수 |
 | risk.rule.no_search_entry_points | 10 | 1 | NUMBER | NO_SEARCH_ENTRY(조회 없이 대기열 진입) 점수. 점수만 (케이스 아님) |
+| seatmap.rate_burst | 10 | 1 | NUMBER | 한 계정(운행 단위)이 처음에 막힘 없이 보낼 수 있는 좌석 조회·선점 횟수 (물통 크기) |
+| seatmap.rate_per_sec | 1 | 1 | NUMBER | 그 뒤 초당 다시 채워지는 좌석 조회·선점 횟수 |
+| seatmap.abuse_threshold | 20 | 1 | NUMBER | 물이 바닥난 채로 이만큼 거절당하면 잠금 |
+| seatmap.abuse_window_sec | 60 | 1 | NUMBER | 거절을 세는 시간 창(초) |
+| seatmap.cooldown_sec | 60 | 1 | NUMBER | 잠금 시간(초) |
+| reservation.hold_release_grace_sec | 10 | 1 | NUMBER | 선점·제안 키를 결제 마감 뒤 이만큼 더 붙잡아, 스캐너가 대기자 제안으로 넘길 때까지 일반 사용자가 못 잡게 함. 0이면 마감 즉시 열림(예전 동작) |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -2038,7 +2044,7 @@ Redis
 | `queue:ci:{ciHash}` | ZSET |  | 시스템 | member=memberId, score=만료 시각 | CI당 동시 대기 1개. 진입 전 ZREMRANGEBYSCORE로 만료 멤버 정리 |
 | `queue:throughput:{runId}` | STRING |  | 시스템 | 초당 입장 처리 수 | 예상 대기시간 = 내 순번 ÷ 처리량 |
 | `queue:pass:{runId}:{memberId}` | STRING+TTL |  | 시스템 | 입장 토큰 (대기열 통과 증명) | 좌석 조회·선점 API가 토큰을 검사해야 대기열 우회 차단 |
-| `seat:hold:{runId}:{seatId}:{segNo}` | STRING+TTL |  | 시스템 | 값: reservation_id (HOLD), SOLD:reservation_id (확정), REOFFER:reservation_id (대기자 제안 대기) | 만료 = pay_deadline_at, SOLD는 출발 시각, REOFFER는 waitlist.reoffer_hold_sec. 해제·연장은 값이 일치할 때만 (compare-and-delete) |
+| `seat:hold:{runId}:{seatId}:{segNo}` | STRING+TTL |  | 시스템 | 값: reservation_id (HOLD), SOLD:reservation_id (확정), REOFFER:reservation_id (대기자 제안 대기) | 만료 = pay_deadline_at + reservation.hold_release_grace_sec (HOLD·제안. 마감 직후에도 키가 남아 스캐너가 REOFFER로 바꿔 대기자 우선, concurrency.md §9), SOLD는 출발 시각, REOFFER는 waitlist.reoffer_hold_sec. 결제 가능 여부는 DB의 pay_deadline_at이 판정. 해제·연장은 값이 일치할 때만 (compare-and-delete) |
 | `limit:{runId}:{ciHash}` | STRING |  | 시스템 | 구매 매수 | DB 조회 없이 1차 차단 |
 | `limit:event:{saleEventId}:{ciHash}` | STRING |  | 시스템 | 명절 전체 구매 매수 | PER_HOLIDAY 제한의 빠른 체크 |
 | `limit:day:{yyyymmdd}:{ciHash}` | STRING |  | 시스템 | 구매일별 구매 매수 | PER_DAY 제한의 빠른 체크. 만료는 그 날 24:00 + 1시간 |
@@ -2052,6 +2058,8 @@ Redis
 | `rate:login:{ipHash}` | STRING+TTL |  | 시스템 | IP당 분당 로그인 시도 수 | Argon2 연산 남용·크리덴셜 스터핑 차단. 한도 app_policy auth.login_rate_per_min, 넘으면 해시 계산 없이 AUTH_RATE_LIMITED |
 | `rate:signup:{ipHash}` | STRING+TTL |  | 시스템 | IP당 시간당 본인인증·가입 시도 수 | 가입 남용·대량 계정 생성 차단. 한도 app_policy auth.signup_rate_per_hour |
 | `rate:guest_lookup:{ipHash}` | STRING+TTL |  | 시스템 | IP당 시간당 비회원 예약 조회 시도 수 | 예약 번호 + 휴대폰으로 남의 예약을 맞혀 보는 것을 막음. 한도 app_policy guest.lookup_rate_per_hour |
+| `rate:seatmap:{runId}:{memberId}` | HASH+TTL |  | 시스템 | 좌석 배치도 조회 속도 제한 (tok 남은 횟수, ts 마지막 시각 ms, strk·strk_ts 거절 수와 창 시작, lock 잠금 풀리는 시각 ms) | 새로고침 매크로를 늦춤. TTL = max(cooldown, window, burst÷rate) + 1초. 회원·운행 단위(IP 아님, 게스트도 member_id). 절차: docs/김성원/features/좌석-조회-속도-제한.md |
+| `rate:seathold:{runId}:{memberId}` | HASH+TTL |  | 시스템 | 좌석 선점 속도 제한 (필드는 rate:seatmap과 같음) | 선점 반복 매크로를 늦춤. 조회와 따로 셈. 한도 app_policy seatmap.* |
 | `login:fail:{emailHash}` | STRING+TTL |  | 시스템 | 이메일별 연속 로그인 실패 수 | auth.lock_after_failures에 닿으면 auth.lock_minutes 동안 잠금(AUTH_LOCKED). 없는 이메일도 똑같이 세어 잠금 응답으로 계정 존재를 알 수 없게 |
 | `verify:{tokenHash}` | STRING+TTL |  | 시스템 | 본인인증 결과 (1회용, 휴대폰 번호는 AES-256-GCM 암호문) | 본인인증 → 가입을 잇는 토큰. 키는 토큰의 SHA-256 해시, 가입 때 GETDEL로 읽으며 삭제(두 번 가입 불가). 만료 auth.verify_token_ttl_sec |
 | `rate:api:{memberId}` | STRING+TTL |  | 시스템 | 초당 API 호출 수 | 매크로 요청 폭주 1차 차단 |
@@ -2424,6 +2432,7 @@ Oracle
 | v32 | 비고만: model_run.params(dir·gate)와 주간 재학습 후보, suspicious_case의 무작위 점검 표본 표시 약속 (사용자가 많아질수록 똑똑해지는 순환). DB 변경 없음 |
 | v33 | 비회원(게스트) 예매 (김성원 요청, 팀장 범위 확정): member.member_type(NULL = 회원, GUEST)·guest_expires_at, Redis rate:guest_lookup, app_policy guest.enabled(N)·retain_days_after_run(30)·lookup_rate_per_hour(10). 게스트도 CI 규칙 그대로. behavior_log 인덱스 { run_id, ts } 뺌 (쓰기 +12~18%) |
 | v34 | 마커 규칙 2개 (강다인 요청): case_marker.rule_code에 INHUMAN_STEP(사람 손으로 불가능한 단계 속도)·HEADLESS_HOLD(화면 녹화 없이 선점). MongoDB behavior_log.elapsed_ms(서버 처리 시간), replay_event.pointer(m·t·p·k). app_policy risk.rule.* 15행 (warning_threshold·inhuman_step·headless_hold·linear_mouse·no_search_entry_points, 코드 기본값과 같음) |
+| v35 | 좌석 조회·선점 속도 제한 (김성원 요청): app_policy seatmap.rate_burst(10)·rate_per_sec(1)·abuse_threshold(20)·abuse_window_sec(60)·cooldown_sec(60), Redis rate:seatmap·rate:seathold. 결제 기한이 지나 풀린 좌석도 대기자 우선 (A안): reservation.hold_release_grace_sec(10), seat:hold 만료 = pay_deadline_at + 유예 |
 
 ## 참고 자료
 
