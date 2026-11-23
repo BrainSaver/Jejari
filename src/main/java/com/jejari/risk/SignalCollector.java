@@ -58,6 +58,7 @@ public final class SignalCollector {
 
     private long linkedAccounts;
     private Long accountAgeDays;
+    private long mechanicalMouse;
 
     private record Hold(Instant ts, long memberId) {
     }
@@ -147,6 +148,12 @@ public final class SignalCollector {
         return this;
     }
 
+    /** 화면 녹화 한 세션의 마우스 분석 결과를 더한다 ({@link MouseMotion}). 세션마다 한 번 */
+    public SignalCollector mouse(MouseMotion.Result r) {
+        mechanicalMouse = Math.addExact(mechanicalMouse, r.total());
+        return this;
+    }
+
     /** 이 대상에 연결된 계정 수 (자기 포함) */
     public SignalCollector linkedAccounts(long count) {
         if (count < 0) throw new IllegalArgumentException("연결 계정 수가 음수입니다");
@@ -169,6 +176,6 @@ public final class SignalCollector {
                 maxSameSeatFailures,
                 purchaseCount, totalSeats, maxSingle,
                 userCancels, fastCancels, lastMinuteCancels, avgCancel,
-                linkedAccounts, maxSync, accountAgeDays, seatRetryFailures);
+                linkedAccounts, maxSync, accountAgeDays, seatRetryFailures, mechanicalMouse);
     }
 }

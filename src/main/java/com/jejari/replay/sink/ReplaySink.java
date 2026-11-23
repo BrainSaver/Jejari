@@ -187,6 +187,9 @@ public class ReplaySink {
 		if (e.inputLen() != null) {
 			d.append("input_masked", "len:" + e.inputLen()); // 값은 받지도 않는다. 길이만
 		}
+		if (e.pointer() != null) {
+			d.append("pointer", e.pointer());
+		}
 		if (e.runId() != null) {
 			d.append("run_id", e.runId());
 		}

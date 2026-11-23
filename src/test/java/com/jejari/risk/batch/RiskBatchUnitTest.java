@@ -212,4 +212,21 @@ class RiskBatchUnitTest {
 		assertThat(SuspiciousCaseOpener.cut(emoji).getBytes(java.nio.charset.StandardCharsets.UTF_8).length)
 				.isLessThanOrEqualTo(200);
 	}
+
+	@Test
+	void 녹화의_마우스_클릭만_궤적_규칙에_쓴다() {
+		List<List<int[]>> paths = new java.util.ArrayList<>();
+		List<com.jejari.risk.MouseMotion.Click> clicks = new java.util.ArrayList<>();
+		RiskInputReader.readMouse(new Document("type", "CLICK").append("x", 10).append("y", 20).append("pointer", "m"),
+				paths, clicks);
+		RiskInputReader.readMouse(new Document("type", "CLICK").append("x", 30).append("y", 40).append("pointer", "t"),
+				paths, clicks); // 휴대폰 탭
+		RiskInputReader.readMouse(new Document("type", "CLICK").append("x", 50).append("y", 60), paths, clicks); // 장치 모름
+		RiskInputReader.readMouse(new Document("type", "CLICK").append("pointer", "m"), paths, clicks); // 좌표 없음
+		RiskInputReader.readMouse(new Document("type", "MOUSE_PATH").append("path",
+				List.of(List.of(0, 10, 20), List.of(150, 300, 400), List.of(1), "x")), paths, clicks);
+		assertThat(clicks).containsExactly(new com.jejari.risk.MouseMotion.Click(10, 20));
+		assertThat(paths).hasSize(1);
+		assertThat(paths.get(0)).hasSize(2); // 이상한 점 둘은 버림
+	}
 }
