@@ -121,6 +121,7 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
   | 자동 배포가 30분 넘게 돌지 않음 | 타이머·Pushgateway 고장 (5분 지속) | `systemctl list-timers jejari-autodeploy`. 시연 때문에 껐다면 무시 |
   | CI 대기가 1시간 넘게 이어짐 | main 새 커밋이 CI를 못 통과 | GitHub Actions 확인 |
   | 실제 KTX 시간표 갱신 실패 | 마지막 갱신 실패 또는 26시간 넘게 안 돎 | `journalctl -u jejari-tago -n 50`, 서비스 키 확인 → `sudo systemctl start jejari-tago` |
+  | 위험 점수 모델 보조 의견 갱신 실패 (11-23~) | 매시간 갱신이 70분 넘게 실패(두 번 연달아)·3시간 넘게 안 돎, 또는 주간 재학습 실패·8일 넘게 안 돎 | `journalctl -u jejari-model -n 30` → "꺼내기 실패"면 Oracle·MongoDB, "점수 매기기 실패"면 `/tmp/jejari-model-*.log`. 보조 의견뿐이라 예매엔 영향 없음 |
   | 앱 한 대가 응답하지 않음 | `up{job="jejari-app"}`이 2분 넘게 0 | `journalctl -u jejari@8080` |
   | **예매 정합성: 돈·좌석이 어긋남** (critical, 11-20~) | 매시간 점검에서 결제했는데 표 없음·표 있는데 결제 없음·좌석과 예약 상태 어긋남 1건↑ | `bash loadtest/tools/check_booking.sh all 120` 으로 어느 예약인지 → 결제·예약 담당. 관리자 강제 취소·환불로 바로잡기 |
   | 예매 정합성: 이벤트·알림·행동 로그가 빠짐 | 같은 점검에서 안 풀린 선점·발행 안 된 이벤트·확정 알림 빠짐·행동 로그 빠짐 1건↑ | 위 명령 → 알림이면 `tools/dlq.sh list` |
