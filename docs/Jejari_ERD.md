@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v33 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-23
+> 스키마 v34 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-23
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -39,7 +39,7 @@
 | 테이블 | 61개 (운영 57 + 확장 예정 4) |
 | 저장소 | Oracle 44 · MongoDB 12 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 534개 |
+| 컬럼 | 536개 |
 | 관계 (FK) | 87개 (Oracle 제약 60 · 논리 참조 22) |
 
 | 영역 | 저장소 | 테이블 |
@@ -579,6 +579,21 @@ Oracle
 | guest.enabled | N | 1 | STRING | Y면 비회원(게스트) 예매 사용. 기능이 들어가기 전에는 N |
 | guest.retain_days_after_run | 30 | 1 | NUMBER | 게스트 개인정보 보관: 그 게스트의 마지막 운행일 + 이 일수 (조회·환불 문의 기간) |
 | guest.lookup_rate_per_hour | 10 | 1 | NUMBER | IP당 시간당 비회원 예약 조회 시도 한도 (rate:guest_lookup) |
+| risk.rule.warning_threshold | 30 | 1 | NUMBER | 위험 점수가 이 이상이면 주의(경고) 단계 |
+| risk.rule.inhuman_step_ms | 500 | 1 | NUMBER | INHUMAN_STEP: 좌석표 → 선점, 선점 → 결제가 이 ms 미만이면 사람 손으로 불가능한 단계 1회 |
+| risk.rule.inhuman_step.t1 | 2 | 1 | NUMBER | INHUMAN_STEP 1단계 횟수 |
+| risk.rule.inhuman_step.p1 | 30 | 1 | NUMBER | INHUMAN_STEP 1단계 점수 |
+| risk.rule.inhuman_step.t2 | 5 | 1 | NUMBER | INHUMAN_STEP 2단계 횟수 |
+| risk.rule.inhuman_step.p2 | 40 | 1 | NUMBER | INHUMAN_STEP 2단계 점수 |
+| risk.rule.headless_hold.t1 | 1 | 1 | NUMBER | HEADLESS_HOLD 1단계: 화면 녹화 없이 선점한 세션 수 |
+| risk.rule.headless_hold.p1 | 30 | 1 | NUMBER | HEADLESS_HOLD 1단계 점수 |
+| risk.rule.headless_hold.t2 | 3 | 1 | NUMBER | HEADLESS_HOLD 2단계 세션 수 |
+| risk.rule.headless_hold.p2 | 45 | 1 | NUMBER | HEADLESS_HOLD 2단계 점수 |
+| risk.rule.linear_mouse.t1 | 8 | 1 | NUMBER | LINEAR_MOUSE 1단계: 기계적 마우스 이동(순간이동·직선 등속) 수 |
+| risk.rule.linear_mouse.p1 | 25 | 1 | NUMBER | LINEAR_MOUSE 1단계 점수 |
+| risk.rule.linear_mouse.t2 | 20 | 1 | NUMBER | LINEAR_MOUSE 2단계 이동 수 |
+| risk.rule.linear_mouse.p2 | 40 | 1 | NUMBER | LINEAR_MOUSE 2단계 점수 |
+| risk.rule.no_search_entry_points | 10 | 1 | NUMBER | NO_SEARCH_ENTRY(조회 없이 대기열 진입) 점수. 점수만 (케이스 아님) |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -1792,6 +1807,7 @@ MongoDB · 🅱 빅데이터
 | `path` | Array |  | 생성 | 마우스 궤적 [[dt, x, y], …] | 사람은 곡선·가감속, 매크로는 직선·등속·순간이동. 평소(SAMPLED)에도 성기게 남긴다 (0.15초·묶음당 16점) |
 | `input_masked` | String |  | 시스템 | 입력값 마스킹 (길이만) | 개인정보 미보관 |
 | `label` | String |  | 생성 | 버튼·링크 문구 ("결제하기") | 무엇을 눌렀는지. 숫자 없는 짧은 글자만 받아 개인정보가 섞이지 않게 |
+| `pointer` | String |  | 생성 | CLICK을 만든 입력 장치: m 마우스 · t 터치 · p 펜 · k 키보드 (CLICK에만, 모르면 없음) | LINEAR_MOUSE는 마우스 클릭만 본다 (휴대폰 탭은 탭한 자리로 순간이동처럼 보이고 키보드는 좌표가 0) |
 | `boxes` | Array |  | 생성 | 화면 뼈대 [{ k, x, y, w, h, id, label, off }] (LAYOUT 이벤트만) | 재생 배경. k = button / link / input / select / heading / tab / seat-free / seat-hold / seat-taken / seat-mine / seat-lost. 화면 글자는 label만 |
 
 > **제약·비고** 일반 컬렉션 · UNIQUE { session_id: 1, seq: 1 } (ux_session_seq) — 시계열 컬렉션은 유니크 인덱스를 만들 수 없어 Kafka 재전달 중복을 막지 못한다 · TTL { expire_at: 1 } expireAfterSeconds 0 · 케이스가 열리면 expire_at을 지워 삭제 보류 · DOM 녹화(rrweb)는 확장 과제 · 점선은 논리 참조
@@ -1858,7 +1874,7 @@ Oracle
 | `session_id` | VARCHAR2(36) | FK → auth_session | 시스템 | 표시할 세션 (없을 수 있음) | Oracle 기록만으로 찍는 마커(구매 직후 취소 등)는 녹화 세션이 없다. 세션이 있으면 재생기가 그 지점으로 이동 |
 | `at_ts` | TIMESTAMP | NN | 시스템 | 타임라인 위치 | 누르면 그 시점으로 이동 |
 | `marker_type` | VARCHAR2(10) | NN | 시스템 | AUTO / MANUAL | 시스템 탐지와 관리자 메모 구분 |
-| `rule_code` | VARCHAR2(30) | NN | 시스템 | FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / REGULAR_INTERVAL / LINEAR_MOUSE | 어떤 규칙이 잡았는지. 값은 RiskRule 중 마커 규칙(marker=true)과 같게 둔다 |
+| `rule_code` | VARCHAR2(30) | NN | 시스템 | FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / REGULAR_INTERVAL / LINEAR_MOUSE / INHUMAN_STEP / HEADLESS_HOLD | 어떤 규칙이 잡았는지. 값은 RiskRule 중 마커 규칙(marker=true)과 같게 둔다 |
 | `label` | VARCHAR2(200) | NN | 시스템 | 예: 0.1초 간격 좌석 클릭 28회 |  |
 | `severity` | VARCHAR2(6) | NN | 시스템 | LOW / MID / HIGH |  |
 | `created_by` | NUMBER | FK → admin_user | 시스템 | 작성 관리자 (AUTO는 null) |  |
@@ -1968,6 +1984,7 @@ MongoDB · 🅱 빅데이터
 | `user_agent` | String |  | 생성 |  | 헤드리스 브라우저 탐지 |
 | `channel` | String |  | 생성 | WEB / APP |  |
 | `response_status` | Int |  | 시스템 | HTTP 상태 | 차단·에러 분석 |
+| `elapsed_ms` | Int |  | 시스템 | 서버 처리 시간 ms (요청을 받은 시각부터 응답을 다 보낸 시각까지) | INHUMAN_STEP이 "앞 응답을 받은 뒤부터" 다음 요청까지를 잰다 (ts는 받은 시각이라 서버가 느리면 사람도 빨라 보임). 예전 문서는 없음 |
 | `meta` | Object |  | 시스템 | 이벤트별 추가 정보 | 스키마 변경 없이 필드 확장 |
 
 > **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { member_id: 1, ts: 1 } (타임라인 ADM-05) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13 · 유니크 { event_id: 1 }, partialFilterExpression: { event_id: { $type: "string" } } (재전달 중복 방지, 중복 키 오류는 무시. event_id가 없는 옛 문서끼리는 충돌하지 않게 부분 인덱스) · 인덱스 { device_hash: 1, ts: 1 } (기기 단위 집계·의심 구간 조회) · { run_id: 1, ts: 1 }은 v33에서 뺌 (운행별 조회는 _id 범위로, 쓰기 +12~18%)
@@ -2406,6 +2423,7 @@ Oracle
 | v31 | model_run 예시에 두 번째 합성 모델 ens-2026.11-02 (data/ml/model-next, 꺼짐) — 모델 관리 화면(A-09)에서 지금 버전과 비교. 기존 DB는 db/patch/v31.sql |
 | v32 | 비고만: model_run.params(dir·gate)와 주간 재학습 후보, suspicious_case의 무작위 점검 표본 표시 약속 (사용자가 많아질수록 똑똑해지는 순환). DB 변경 없음 |
 | v33 | 비회원(게스트) 예매 (김성원 요청, 팀장 범위 확정): member.member_type(NULL = 회원, GUEST)·guest_expires_at, Redis rate:guest_lookup, app_policy guest.enabled(N)·retain_days_after_run(30)·lookup_rate_per_hour(10). 게스트도 CI 규칙 그대로. behavior_log 인덱스 { run_id, ts } 뺌 (쓰기 +12~18%) |
+| v34 | 마커 규칙 2개 (강다인 요청): case_marker.rule_code에 INHUMAN_STEP(사람 손으로 불가능한 단계 속도)·HEADLESS_HOLD(화면 녹화 없이 선점). MongoDB behavior_log.elapsed_ms(서버 처리 시간), replay_event.pointer(m·t·p·k). app_policy risk.rule.* 15행 (warning_threshold·inhuman_step·headless_hold·linear_mouse·no_search_entry_points, 코드 기본값과 같음) |
 
 ## 참고 자료
 
