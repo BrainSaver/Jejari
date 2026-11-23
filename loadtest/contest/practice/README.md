@@ -36,7 +36,7 @@ loadtest/tools/eval_contest.sh <태그> <운행>
 | 되팔기·한도 | botresell (결제 1~2분 뒤 취소) · botlimit (매수 제한 탐색) |
 | 대기열 남용 | botqueuespam (들어갔다 나갔다) · botrunhop (다른 운행 들렀다) |
 | 사람 흉내 | botmimic (쉬고 둘러봄) · botmimicfast (선점 순간만 빠름) · botlate (1분 늦게 천천히) |
-| 합성 사람 | human (12명) — **진짜 사람이 아닙니다.** 오탐은 대회 사람 참가자로만 잴 수 있습니다 |
+| 합성 사람 | human (12명, 화면 녹화도 보냄) — **진짜 사람이 아닙니다.** 오탐은 대회 사람 참가자로만 잴 수 있습니다 |
 
 ## 2단계 (제안 규칙 피하기, 9종)
 
