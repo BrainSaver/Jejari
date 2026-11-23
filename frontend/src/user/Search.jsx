@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router';
 import { api, get } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
@@ -32,7 +33,7 @@ export default function Search() {
     if (location.search) navigate(location.pathname, { replace: true, state: location.state });
   }, []);
   const [stations, setStations] = useState([]);
-  const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday(), time: params.get('time') || defaultTime(params.get('date') || seoulToday()), timeSet: false, ...peopleOf(params), grade: GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '' });
+  const [form, setForm] = useState({ from: params.get('from') || '', to: params.get('to') || '', date: params.get('date') || seoulToday(), time: toHour(params.get('time')) || defaultTime(params.get('date') || seoulToday()), timeSet: false, ...peopleOf(params), grade: GRADE_KEYS.includes(params.get('grade')) ? params.get('grade') : '' });
   const [state, setState] = useState({ runs: null, loading: false, error: null });
   const [sort, setSort] = useState('dep');
   const [spun, setSpun] = useState(false); // 바꾸기 버튼이 반 바퀴씩 돈다
@@ -56,7 +57,7 @@ export default function Search() {
 
   // 검색 조건이 생기거나 [열차 찾기]를 다시 누르면 검색
   const q = { from: params.get('from'), to: params.get('to'), date: params.get('date') };
-  const qTime = params.get('time') || defaultTime(q.date);
+  const qTime = toHour(params.get('time')) || defaultTime(q.date);
   const qParty = peopleOf(params);
   const qPeople = total(qParty);
   const [peopleOpen, setPeopleOpen] = useState(false);
@@ -80,11 +81,13 @@ export default function Search() {
       return;
     }
     // 이전 검색의 시각은 같은 날짜를 다시 찾을 때만 유지한다
-    const keepTime = form.timeSet || (params.get('time') === form.time && params.get('date') === form.date);
+    // 화면을 오래 열어 둬 지난 시가 됐으면 지금 시로 (state를 직접 바꾸지 않고 지역 변수로)
+    const time = form.date === seoulToday() && form.time < hourNow() ? hourNow() : form.time;
+    const keepTime = form.timeSet || (params.get('time') === time && params.get('date') === form.date);
     // 시각을 직접 고르지 않았으면 조건에 넣지 않는다. 넣으면 "검색한 순간의 지금 시각"이 굳어, 나중에 날짜만 바꿀 때 열차가 걸러진다
     // 고르지 않은 시각은 [열차 찾기]를 누른 지금으로 다시 맞춘다 (화면을 오래 열어 두면 처음 연 시각이 남아 있음)
     if (!keepTime) setForm((f) => ({ ...f, time: defaultTime(f.date) }));
-    setParams({ from: form.from, to: form.to, date: form.date, ...(keepTime ? { time: form.time } : {}), adult: String(form.adult), child: String(form.child), senior: String(form.senior), ...(form.grade ? { grade: form.grade } : {}) });
+    setParams({ from: form.from, to: form.to, date: form.date, ...(keepTime ? { time } : {}), adult: String(form.adult), child: String(form.child), senior: String(form.senior), ...(form.grade ? { grade: form.grade } : {}) });
   };
 
   const name = (id) => stations.find((s) => s.stationId === id)?.stationName || id;
@@ -151,13 +154,17 @@ export default function Search() {
               </label>
               <label className="fld">
                 <span className="k"><Icon name="clock" />출발 시각 이후</span>
-                <span className="v">{timeShort(form.time)}</span>
-                <input
-                  type="time" aria-label="출발 시각" value={form.time} required
-                  onClick={openPicker}
-                  onChange={(e) => e.target.value && setForm({ ...form, time: e.target.value, timeSet: true })}
+                <span className="v">{timeText(form.time)}<i className="chev" aria-hidden="true" /></span>
+                {/* 분은 고르지 않고 시(0~23시)만. 오늘이면 이미 지난 시는 비활성 */}
+                <select
+                  aria-label="출발 시각" value={form.time} required
+                  onChange={(e) => setForm({ ...form, time: e.target.value, timeSet: true })}
                   style={overlay}
-                />
+                >
+                  {HOURS.map((h) => (
+                    <option key={h} value={h} disabled={form.date === seoulToday() && h < hourNow()}>{timeText(h)}</option>
+                  ))}
+                </select>
               </label>
               <button type="button" className="fld" aria-haspopup="dialog" onClick={() => setPeopleOpen(true)}>
                 <span className="k"><Icon name="person" />인원</span>
@@ -235,7 +242,13 @@ const openPicker = (e) => {
   }
 };
 /** 오늘이면 지금 시각, 다른 날이면 0시 */
-const defaultTime = (date) => (date === seoulToday() ? seoulHm() : '00:00');
+const defaultTime = (date) => (date === seoulToday() ? hourNow() : '00:00');
+/** 시(0~23)만 고른다: "00:00" ~ "23:00" */
+const HOURS = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`);
+/** 지금이 속한 시 (10:48 → "10:00"). 이보다 앞선 시는 이미 지난 시각이라 고를 수 없다 */
+const hourNow = () => `${seoulHm().slice(0, 2)}:00`;
+/** 예전에 저장된 "10:48" 같은 값도 시 단위로 맞춘다 */
+const toHour = (t) => (t && /^\d{2}:\d{2}$/.test(t) ? `${t.slice(0, 2)}:00` : '');
 const num = (v) => Math.max(0, Math.min(MAX_PEOPLE, Math.floor(Number(v)) || 0));
 const total = (p) => p.adult + p.child + p.senior;
 /** 주소에서 유형별 인원을 읽는다. 아무것도 없으면 어른 1명. 옛 주소(?people=3)는 어른 3명 */
@@ -254,12 +267,7 @@ const maxTime = (a, b) => (a > b ? a : b);
 /** 날짜를 바꿨을 때의 시각. 이 화면에서 직접 고른 시각은 지키고(오늘이면 지금 이후로만), 아니면 그 날짜의 기본값(오늘 = 지금, 다른 날 = 0시) */
 const timeForDate = (form, date) => {
   if (!form.timeSet) return defaultTime(date);
-  return date === seoulToday() ? maxTime(form.time, seoulHm()) : form.time;
-};
-/** "13:30" → "오후 1:30" (칸이 좁아 "시·분"을 줄여 쓴다) */
-const timeShort = (t) => {
-  const [h, m] = (t || '00:00').split(':').map(Number);
-  return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')}`;
+  return date === seoulToday() ? maxTime(form.time, hourNow()) : form.time;
 };
 const timeText = (t) => {
   const [h, m] = (t || '00:00').split(':').map(Number);
@@ -282,7 +290,7 @@ function PeopleDialog({ value, onClose, onApply }) {
       document.body.style.overflow = prev;
     };
   }, [onClose]);
-  return (
+  const box = (
     <div className="dlg-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="dlg" role="dialog" aria-modal="true" aria-labelledby="pp-title">
         <header>
@@ -309,6 +317,9 @@ function PeopleDialog({ value, onClose, onApply }) {
       </div>
     </div>
   );
+  // 페이지 전환 애니메이션(.page-enter)의 transform이 남아 있으면 position:fixed가 화면이 아니라 그 요소 기준이 돼,
+  // 열차 목록이 길어진 뒤에는 창이 화면 아래로 밀려난다. 그래서 .user 바로 아래(화면 기준)에 그린다
+  return createPortal(box, document.querySelector('.user') || document.body);
 }
 
 // ------------------------------------------------------------ 운행 카드
