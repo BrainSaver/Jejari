@@ -27,7 +27,8 @@ rm -rf "$W" && mkdir -p "$W"
 out=$(bash tools/ml/export_live.sh --recent "$DAYS" "$W/real" 2>&1) || fail "실데이터 꺼내기 실패: $out"
 bash tools/ml/export_labels.sh "$W/labels.jsonl" || fail "판정 꺼내기 실패"
 
-ml() { docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e ML_PICK_FLOOR="$FLOOR" -v "$PWD:/w" jejari-ml bash -c "$1"; }
+# CPU 2개까지만 (일요일 새벽이라 1개보다 넉넉히, 그래도 앱 몫은 남김). 유닛의 Nice는 컨테이너에 닿지 않는다. 바꾸려면 ML_CPUS
+ml() { docker run --rm --cpus "${ML_CPUS:-2}" --user "$(id -u):$(id -g)" -e HOME=/tmp -e ML_PICK_FLOOR="$FLOOR" -v "$PWD:/w" jejari-ml bash -c "$1"; }
 ml "set -e
 for s in 7 8 9; do python -I tools/ml/generate.py --members 6000 --seed \$s --out $W/g\$s >/dev/null; done
 python -I tools/ml/generate.py --members 3000 --seed 99 --out $W/g99 >/dev/null
