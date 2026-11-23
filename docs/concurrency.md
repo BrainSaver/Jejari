@@ -314,6 +314,7 @@ SELECT payment_id, reservation_id, requested_at FROM payment
 | §6.1 HOLD 만료 | HOLD | EXPIRED | `RESERVATION_EXPIRED` | `TIMEOUT` |
 | §5.2 결제 실패 | PAYMENT_PENDING | EXPIRED | `RESERVATION_EXPIRED` | `PAY_FAILED` |
 | §7.4 결제 전 사용자 취소 | HOLD | CANCELED | `RESERVATION_CANCELED` | `USER_BEFORE_PAY` |
+| §7.5 결제 단계 차단 | HOLD | CANCELED | `RESERVATION_CANCELED` | `RISK_BLOCKED` |
 | (§3 재선점은 §3 안에서 같은 단계를 직접 실행) | HOLD | EXPIRED | `RESERVATION_EXPIRED` | `PREEMPTED` |
 
 1. 상태 전이. 1행일 때만 아래를 계속합니다 (0.3).
@@ -353,6 +354,20 @@ SELECT payment_id, reservation_id, requested_at FROM payment
 
 - HOLD 예약: §7.1을 `from = 'HOLD'`, `to = 'CANCELED'`로 실행합니다.
 - PAYMENT_PENDING 예약: "결제 진행 중"으로 거절합니다. PG 결과가 나온 뒤 취소합니다.
+
+### 7.5 결제 단계 차단 (11-23)
+
+위험 점수가 케이스 기준(`risk.rule.case_threshold`, 기본 80) 이상인 회원은 결제를 시작하지 못합니다. 대기열은 점수만큼 늦게 들여보낼 뿐이라, 기다렸다 들어온 봇이 결제까지 가는 것을 마지막에 막습니다.
+
+1. **위치:** §1 멱등 키를 **처음** 잡은 직후, §4.1 결제 트랜잭션과 PG 승인 **전**에 봅니다. 돈이 나가기 전이라 환불이 없습니다. 같은 키 재요청(이미 결제 중)은 막지 않고 상태만 돌려줍니다.
+2. **점수:** 대기열(§2)과 같은 규칙입니다. CI·결제 수단·기기 점수 중 최댓값을 쓰고, `RESTRICTED`는 100입니다.
+3. **모르면 통과:** Redis·Oracle에서 점수를 못 읽으면 막지 않습니다. 대기열은 모르면 100점으로 막지만, 결제에서 같은 규칙을 쓰면 장애 한 번에 모든 결제가 멈추기 때문입니다.
+4. **막으면** 다음을 차례로 합니다.
+   - 멱등 키를 지웁니다.
+   - §7.1을 `from = 'HOLD'`, `to = 'CANCELED'`, actor `SYSTEM`, payload `reason = RISK_BLOCKED`, 본인 예약 조건으로 실행해 좌석을 바로 돌려줍니다.
+   - 403 `PAYMENT_RISK_BLOCKED`를 돌려줍니다.
+   - actor가 `SYSTEM`이라 위험 점수의 사용자 취소 수에는 세지 않습니다.
+5. **끄기:** `jejari.payment.risk-block=false`. 지표는 `jejari_payment_risk_check_total{result=passed|blocked|unknown|off}`입니다.
 
 ---
 

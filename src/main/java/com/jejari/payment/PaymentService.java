@@ -24,6 +24,7 @@ import com.jejari.payment.pg.PgClient;
 import com.jejari.payment.pg.PgClient.ApproveResult;
 import com.jejari.payment.pg.PgClient.Outcome;
 import com.jejari.seat.SeatErrorCode;
+import com.jejari.seat.SeatReleaseService;
 
 /**
  * PAY-01 결제 시작 + EVT-04 결제 요청 멱등 (concurrency.md §1, §4).
@@ -62,10 +63,12 @@ public class PaymentService {
 	private final TransactionTemplate tx;
 	private final ObjectProvider<Pseudonymizer> hmac;
 	private final Clock clock;
+	private final PaymentRiskGuard riskGuard;
+	private final SeatReleaseService seatRelease;
 
 	public PaymentService(PaymentStartTx startTx, PaymentSaga saga, PgClient pg, PaymentPolicy policy,
 			StringRedisTemplate redis, JdbcTemplate jdbc, TransactionTemplate tx, ObjectProvider<Pseudonymizer> hmac,
-			Clock clock) {
+			Clock clock, PaymentRiskGuard riskGuard, SeatReleaseService seatRelease) {
 		this.startTx = startTx;
 		this.saga = saga;
 		this.pg = pg;
@@ -75,6 +78,8 @@ public class PaymentService {
 		this.tx = tx;
 		this.hmac = hmac;
 		this.clock = clock;
+		this.riskGuard = riskGuard;
+		this.seatRelease = seatRelease;
 	}
 
 	public static String idemKey(long reservationId, String key) {
@@ -95,6 +100,17 @@ public class PaymentService {
 		Boolean first = redis.opsForValue().setIfAbsent(idem, mine, policy.getLong(PaymentPolicy.IDEM_TTL_SEC), TimeUnit.SECONDS);
 		if (!Boolean.TRUE.equals(first)) {
 			return replay(memberId, reservationId, idempotencyKey);
+		}
+
+		// 1-1. 결제 단계 차단 (§7.5, PaymentRiskGuard): 위험 점수가 케이스 기준 이상이면 PG 전에 막고 선점 좌석을 바로 돌려준다.
+		//      처음 요청에서만 본다 (위 재요청 = 이미 결제 중이면 상태만 돌려줌). 점수를 모르면 통과
+		PaymentRiskGuard.Verdict risk = riskGuard.check(memberId);
+		if (risk.blocked()) {
+			deleteIdem(idem, mine);
+			boolean released = seatRelease.releaseForRiskBlock(memberId, reservationId);
+			log.info("결제 단계 차단 member={} reservation={} 점수 {} ≥ 기준 {} → 좌석 {}", memberId, reservationId,
+					risk.score(), risk.threshold(), released ? "해제" : "해제할 HOLD 없음");
+			throw new BusinessException(PaymentErrorCode.PAYMENT_RISK_BLOCKED);
 		}
 
 		// 2. DB 트랜잭션 (§4.1). 카드번호는 해시와 끝 4자리만 남긴다
