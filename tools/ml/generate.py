@@ -43,6 +43,12 @@ LIMIT_PER_RUN = 4  # 대회 기본 매수 제한 (특징은 이 값에 대한 �
 #   - 사람마다 속도가 다르다: 페이지당 머문 시간의 로그 표준편차 0.53 (약 ±70%)
 #   - 사람마다 둘러보는 양이 크게 다르다: 페이지 수의 로그 표준편차 0.99 (하위 5%는 중앙값의 약 1/5)
 HUMAN_SPEED_SIGMA = 0.53
+# 실제 대회 계정의 행동 프로필 (tools/ml/calibrate_real.py → real_calibration.json). ML_REAL_CALIB=<경로>일 때만 쓴다
+# (기본 꺼짐 = 지금까지의 학습 데이터와 같게). 켜면 그 프로필 둘레로 사람(h_focused)·봇(b_real_mimic·b_real_macro)을 더 만든다
+REAL = None
+if os.environ.get("ML_REAL_CALIB"):
+    with open(os.environ["ML_REAL_CALIB"], encoding="utf-8") as _f:
+        REAL = json.load(_f)
 HUMAN_BROWSE_SIGMA = 0.99
 
 
@@ -141,10 +147,11 @@ class World:
     PICK_FLOOR_S, PICK_MED_S = 1.0, 3.0
 
     def buy(self, acc: Account, t: datetime, n: int, gap, *, browse=0, retry_same=0, retry_other=0,
-            pay=True, together=False, run=None, refresh=0, want=None, hold_gap=None, queue=(2, 90)
-            ) -> tuple[datetime, int | None]:
+            pay=True, together=False, run=None, refresh=0, want=None, hold_gap=None, queue=(2, 90),
+            pick_gap=None, pay_gap=None) -> tuple[datetime, int | None]:
         """조회 → 대기열 → 좌석 → 선점(실패 포함) → 결제. gap() = 다음 행동까지 초. (끝난 시각, 예약 ID)
-        refresh = 좌석 배치도 새로 고침 횟수, want = 꼭 이 좌석 (넘겨받기), hold_gap = 선점 시도 사이만 다른 속도"""
+        refresh = 좌석 배치도 새로 고침 횟수, want = 꼭 이 좌석 (넘겨받기), hold_gap = 선점 시도 사이만 다른 속도
+        pick_gap = 좌석표 → 선점, pay_gap = 선점 → 결제를 따로 (실제 데이터 둘레 수법이 실제 단계 시간을 넣을 때)"""
         run = run or self.cur_run
         E = lambda *a, **k: self.emit(*a, run=run, **k)
         hg = hold_gap or gap
@@ -161,7 +168,7 @@ class World:
         E(acc, t, "QUEUE_ENTER", ticketNo=self.r.randint(1, 50000), rejected=False)
         t += timedelta(seconds=self.r.uniform(*queue))      # 대기열에서 기다린 시간 (로그 없음)
         E(acc, t, "VIEW_SEAT", availableCount=self.r.randint(0, 900))
-        t += timedelta(seconds=(pick() if human and not refresh else gap()))
+        t += timedelta(seconds=(pick_gap() if pick_gap and not refresh else pick() if human and not refresh else gap()))
         for i in range(refresh):
             E(acc, t, "VIEW_SEAT", availableCount=self.r.randint(0, 900))
             t += timedelta(seconds=(pick() if human and i == refresh - 1 else gap()))
@@ -193,7 +200,7 @@ class World:
         E(acc, t, "SEAT_HOLD", 201, seatIds=seats, seatCount=len(seats), reservationId=resv)
         if not pay:
             return t, resv
-        t += timedelta(seconds=gap() + self.r.uniform(3, 20))  # 결제 화면에서 카드 넣는 시간
+        t += timedelta(seconds=pay_gap() if pay_gap else gap() + self.r.uniform(3, 20))  # 결제 화면에서 카드 넣는 시간
         # 실제 로그와 같은 모양: 예약 번호·결제 상태만 (매수·카드는 없음. 카드 연결은 members.jsonl의 cards로)
         E(acc, t, "PAY", 201, reservationId=resv, paymentStatus="APPROVED")
         return t, resv
@@ -533,6 +540,74 @@ def b_burst_quiet(w: World, g):  # 짧게 몰아치고 한참 쉬었다 다시 (
         t += timedelta(minutes=w.r.uniform(3, 30))
 
 
+# ---------------------------------------------------------------- 실제 데이터 둘레 (ML_REAL_CALIB)
+
+def real_gap(w: World, p, scale=1.0):
+    """실제 계정 하나의 간격 모양(중앙값·p10·변동계수) 둘레로 간격을 뽑는다. 같은 사람이라도 매번 조금씩 다르게"""
+    r = w.r
+    # scale: 생성기는 대기열·카드 입력에 고정 시간을 더하므로(buy) 그만큼 줄여 실제 간격 중앙값에 맞춘다
+    med = max(0.3, p["int_median_s"] * scale * r.lognormvariate(0, 0.25))
+    cv = min(1.5, max(0.2, (p.get("int_cv") or 0.7) * r.lognormvariate(0, 0.2)))
+    sigma = math.sqrt(math.log(1 + cv * cv))
+    lo = max(0.25, min(med / 2, (p.get("int_p10_s") or med / 3) * r.uniform(0.7, 1.1)))
+    return lambda: min(90.0, max(lo, r.lognormvariate(math.log(med), sigma)))
+
+
+def real_stage(w: World, p, key, fallback):
+    """단계 시간(log1p 초) 하나 둘레로 뽑는 함수. 프로필에 없으면 None (생성기 기본 방식)"""
+    v = p.get(key)
+    if v is None:
+        return fallback
+    med = max(0.3, math.expm1(v))
+    return lambda: max(0.3, w.r.lognormvariate(math.log(med), 0.35))
+
+
+def h_focused(w: World, g):  # 명절 예매에 집중한 실제 사람: 빠르고 거의 바로 산다 (2차 대회 실제 사람 둘레)
+    p = w.r.choice(REAL["human"])
+    a = w.account("NORMAL", "h_focused", g)
+    browse = max(0, int(p["browse_before_hold"]) + w.r.choice([-1, 0, 0, 0, 1]))
+    n = max(1, min(LIMIT_PER_RUN, int(p["seats"]) + w.r.choice([0, 0, 0, 1])))
+    # 대회 실제 대기는 대부분 1~25초(입장 지연 포함)라 생성기 기본(2~90초)보다 짧다
+    w.buy(a, w.arrival(rush=0.8), n, real_gap(w, p, 0.6), browse=browse,
+          retry_other=max(0, int(p["n_hold"]) - 1), refresh=w.r.choice([0, 0, 1]), queue=(0.5, 8),
+          pick_gap=real_stage(w, p, "view_to_hold_med_log", None), pay_gap=real_stage(w, p, "hold_to_pay_med_log", None))
+
+
+def b_real_mimic(w: World, g):  # 사람처럼 보이는 브라우저 봇 (실제 botc 둘레): 명의·기기·카드는 따로, 계정마다 1~2분 간격
+    ps = REAL["bot"].get("botc") or []
+    if not ps:
+        return
+    t = w.T + timedelta(seconds=w.r.uniform(0, 60))
+    for _ in range(w.r.randint(4, 6)):
+        p = w.r.choice(ps)
+        a = w.account("RESELLER", "b_real_mimic", g, age=w.r.randint(0, 30))
+        w.buy(a, t, LIMIT_PER_RUN, real_gap(w, p, 0.6), browse=int(p["browse_before_hold"]) + w.r.choice([0, 0, 1]),
+              queue=(0.5, 15), pick_gap=real_stage(w, p, "view_to_hold_med_log", None),
+              pay_gap=real_stage(w, p, "hold_to_pay_med_log", None))
+        t += timedelta(seconds=w.r.uniform(75, 200))
+
+
+def b_real_macro(w: World, g):  # 단순 반복 매크로 (실제 botb 둘레): 카드 하나를 여러 명의가 같이 쓰고, 다 사고도 더 잡으려다 매수 제한
+    ps = REAL["bot"].get("botb") or []
+    if not ps:
+        return
+    card = f"rm{g}"
+    t = w.T + timedelta(seconds=w.r.uniform(0, 20))
+    for _ in range(w.r.randint(4, 6)):
+        p = w.r.choice(ps)
+        a = w.account("RESELLER", "b_real_macro", g, card=card, age=w.r.randint(0, 30))
+        gap = real_gap(w, p)
+        t2, resv = w.buy(a, t, LIMIT_PER_RUN, gap, browse=int(p["browse_before_hold"]),
+                         retry_other=max(0, int(p["n_hold"]) - 1 - int(p.get("limit_rejects") or 0)))
+        for _ in range(int(p.get("limit_rejects") or 0) if resv else 0):
+            t2 += timedelta(seconds=gap())
+            w.emit(a, t2, "VIEW_SEAT", run=w.cur_run, availableCount=w.r.randint(0, 900))
+            t2 += timedelta(seconds=gap())
+            seats = w.r.sample(SEAT_POOL, LIMIT_PER_RUN)
+            w.emit(a, t2, "SEAT_HOLD", 422, run=w.cur_run, seatIds=seats, seatCount=len(seats), errorCode="LIMIT_PER_RUN")
+        t += timedelta(seconds=w.r.uniform(5, 60))
+
+
 # 수법 → 계열. 생성 데이터 안에서 "한 계열을 통째로 빼고 학습 → 그 계열로 시험"할 때 쓴다
 FAMILY = {
     "b_fast": "speed", "b_steady": "speed", "b_jitter": "speed", "b_open_ms": "speed", "b_assist": "speed",
@@ -543,6 +618,7 @@ FAMILY = {
     "b_distributed": "evasive", "b_human_mimic": "evasive", "b_slow_drip": "evasive",
     "b_cancel_rebuy": "cancel", "b_hold_blocker": "cancel", "b_seat_handoff": "cancel",
     "b_limit_prober": "hoard", "b_multi_run_hoarder": "hoard",
+    "b_real_mimic": "evasive", "b_real_macro": "multi_account",
 }
 
 
@@ -564,6 +640,15 @@ STRATEGIES = [
     (b_sleeper_farm, "bot", 1), (b_slow_drip, "bot", 1), (b_seat_handoff, "bot", 1), (b_hold_blocker, "bot", 1),
     (b_multi_run_hoarder, "bot", 1), (b_device_farm, "bot", 1), (b_burst_quiet, "bot", 2),
 ]
+# 오탐 함정 사람을 더 많이 (ML_TRAP_BOOST=배수). 2026-11-24 실제 둘레 1차 모델에서 모임 주선자 64%·오픈 직후 33%·
+# 바로 후회 35%·가족 몫 25%·빠른 사람 15% 오탐 → 이 사람들을 더 많이 보여 줘 "정상인데 이렇게도 산다"를 배우게 한다
+TRAP_HUMANS = {"h_organizer", "h_open_rusher", "h_quick_regret", "h_family_bulk", "h_quick"}
+if os.environ.get("ML_TRAP_BOOST"):
+    _x = float(os.environ["ML_TRAP_BOOST"])
+    STRATEGIES = [(f, side, wt * _x if f.__name__ in TRAP_HUMANS else wt) for f, side, wt in STRATEGIES]
+if REAL:
+    # 실제 데이터 둘레. 사람 쪽은 생성 사람의 약 1/3을 실제 사람 모양으로 (원래 사람 수법은 그대로 둬서 다양함을 잃지 않게)
+    STRATEGIES += [(h_focused, "human", 40), (b_real_mimic, "bot", 2), (b_real_macro, "bot", 2)]
 
 
 def main():

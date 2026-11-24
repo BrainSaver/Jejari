@@ -84,3 +84,6 @@ heapdump*
 !/data/ml/contest-c1119/
 # 2차 봇 대회(사람 참가) 원본도 같은 이유로 (data/ml/contest-c1124d/README.md)
 !/data/ml/contest-c1124d/
+# 2차 대회 리허설(c1124c: 사람 6명 포함)·테스트(c1124w) — 실제 데이터 둘레 학습(tools/ml/train_real.py)의 보류 시험용
+!/data/ml/contest-c1124c/
+!/data/ml/contest-c1124w/
