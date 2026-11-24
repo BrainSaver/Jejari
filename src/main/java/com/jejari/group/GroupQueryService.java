@@ -31,7 +31,7 @@ public class GroupQueryService {
 	}
 
 	public record PassengerView(int passengerNo, String name, String phone, boolean noPhone, String passengerType,
-			boolean rep, Long seatId, String status) {
+			boolean rep, Long seatId, Integer carNo, String seatNo, String status) {
 	}
 
 	public record Detail(Summary summary, List<PassengerView> passengers) {
@@ -86,15 +86,18 @@ public class GroupQueryService {
 				.orElseThrow(() -> new BusinessException(GroupErrorCode.GROUP_NOT_FOUND));
 		List<PassengerView> pax = new ArrayList<>();
 		jdbc.query("""
-				SELECT passenger_no, name_enc, phone_enc, no_phone_yn, passenger_type, rep_yn, seat_id, status
-				  FROM group_passenger WHERE group_id = ? ORDER BY passenger_no""", rs -> {
+				SELECT p.passenger_no, p.name_enc, p.phone_enc, p.no_phone_yn, p.passenger_type, p.rep_yn, p.seat_id, p.status,
+				       s.car_no, s.seat_no
+				  FROM group_passenger p LEFT JOIN seat s ON s.seat_id = p.seat_id
+				 WHERE p.group_id = ? ORDER BY p.passenger_no""", rs -> {
 			int no = rs.getInt(1);
 			String row = groupId + "-" + no;
 			long seat = rs.getLong(7);
 			Long seatId = rs.wasNull() ? null : seat;
 			pax.add(new PassengerView(no, masked(rs.getString(2), PiiField.GROUP_PASSENGER_NAME, row, true),
 					masked(rs.getString(3), PiiField.GROUP_PASSENGER_PHONE, row, false), "Y".equals(rs.getString(4)),
-					rs.getString(5), "Y".equals(rs.getString(6)), seatId, rs.getString(8)));
+					rs.getString(5), "Y".equals(rs.getString(6)), seatId, seatId == null ? null : rs.getInt(9),
+					rs.getString(10), rs.getString(8)));
 		}, groupId);
 		return new Detail(s, pax);
 	}
