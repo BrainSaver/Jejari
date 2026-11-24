@@ -518,6 +518,53 @@ class RiskScoreBatchInfraTest {
 		assertThat(codes.contains("INHUMAN_STEP")).isEqualTo(patched);
 	}
 
+	/**
+	 * 3단계 연습 봇 (2026-11-24): 녹화를 꾸며 보내도 사람 손이 움직인 흔적이 없으면 HEADLESS_HOLD.
+	 * botrecone(녹화 이벤트 하나, 클릭 없음) · botrecjump(클릭 자리로만 순간이동) → 걸림, 지나간 길에 점이 있는 사람 → 0점
+	 */
+	@Test
+	void 녹화를_꾸며도_손이_움직인_흔적이_없으면_HEADLESS_HOLD() {
+		Instant t = Instant.now().minusSeconds(120);
+		java.util.Map<String, String> who = new java.util.LinkedHashMap<>();
+		for (String kind : List.of("one", "jump", "human")) {
+			String ci = hash();
+			long m = member(ci, Instant.now().minus(30, ChronoUnit.DAYS));
+			String sid = authSession(m);
+			mongo.getCollection("behavior_log").insertMany(List.of(
+					event("VIEW_TRAIN", m, ci, null, t.minusSeconds(30), null, 200, null).append("session_id", sid),
+					event("SEAT_HOLD", m, ci, null, t, 5000, 201, List.of((long) kind.hashCode())).append("session_id", sid)));
+			Date now = new Date();
+			mongo.getCollection("replay_session").insertOne(new Document("_id", sid).append("session_id", sid)
+					.append("member_id", m).append("ci_hash", ci).append("recording_mode", "SAMPLED")
+					.append("started_at", new Date(now.getTime() - 600_000)).append("ended_at", now));
+			List<Document> events = new ArrayList<>();
+			if (kind.equals("one")) {
+				events.add(new Document("session_id", sid).append("seq", 0L).append("ts", now).append("type", "PAGE_VIEW"));
+			} else {
+				List<List<Integer>> path = kind.equals("jump")
+						? List.of(List.of(0, 200, 300), List.of(150, 700, 600))
+						: List.of(List.of(0, 200, 300), List.of(150, 380, 360), List.of(300, 610, 520), List.of(450, 700, 600));
+				events.add(new Document("session_id", sid).append("seq", 0L).append("ts", now).append("type", "MOUSE_PATH")
+						.append("path", path));
+				events.add(new Document("session_id", sid).append("seq", 1L).append("ts", now).append("type", "CLICK")
+						.append("x", 200).append("y", 300).append("pointer", "m"));
+				events.add(new Document("session_id", sid).append("seq", 2L).append("ts", now).append("type", "CLICK")
+						.append("x", 700).append("y", 600).append("pointer", "m"));
+			}
+			mongo.getCollection("replay_event").insertMany(events);
+			dirty.mark(new RiskSubject(SubjectType.CI, ci));
+			who.put(kind, ci);
+		}
+		batch.run();
+
+		for (String bot : List.of("one", "jump")) {
+			assertThat(jdbc.queryForObject("SELECT reasons FROM risk_score WHERE subject_hash = ?", String.class, who.get(bot)))
+					.as(bot).contains("HEADLESS_HOLD");
+		}
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_score WHERE subject_hash = ?", Integer.class,
+				who.get("human"))).isZero();
+	}
+
 	/** 녹화 세션 하나: 클릭 n번, 궤적 점은 클릭 자리에만 (중간 점 없음) */
 	void replay(String sid, long memberId, String ci, String pointer, int n) {
 		Date now = new Date();

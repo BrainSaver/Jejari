@@ -236,7 +236,7 @@ public class RiskInputReader {
 					.sort(Sorts.ascending("seq")).limit(MAX_MOUSE_EVENTS)) {
 				readMouse(e, paths, clicks);
 			}
-			if (!clicks.isEmpty() && !paths.isEmpty()) {
+			if (!paths.isEmpty()) { // 마우스 클릭이 없어도 직선·등속은 센다 (클릭을 터치라고 적는 봇, 2026-11-24)
 				c.mouse(MouseMotion.analyze(paths, clicks));
 			}
 		}
@@ -280,11 +280,28 @@ public class RiskInputReader {
 		long headless = 0;
 		for (String sid : due) {
 			if (mongo.getCollection("replay_event").find(Filters.eq("session_id", sid))
-					.projection(Projections.include("_id")).limit(1).first() == null) {
+					.projection(Projections.include("_id")).limit(1).first() == null || handsOff(sid)) {
 				headless++;
 			}
 		}
 		c.headlessHolds(headless);
+	}
+
+	/** 녹화는 있지만 사람 손이 움직인 흔적이 없는 세션 ({@link MouseMotion#handsOff}) */
+	boolean handsOff(String sid) {
+		List<List<int[]>> paths = new ArrayList<>();
+		List<MouseMotion.Click> mouseClicks = new ArrayList<>();
+		int clicks = 0;
+		for (Document e : mongo.getCollection("replay_event")
+				.find(Filters.and(Filters.eq("session_id", sid), Filters.in("type", "MOUSE_PATH", "CLICK")))
+				.projection(Projections.include("type", "x", "y", "path", "pointer"))
+				.sort(Sorts.ascending("seq")).limit(MAX_MOUSE_EVENTS)) {
+			if ("CLICK".equals(e.getString("type"))) {
+				clicks++;
+			}
+			readMouse(e, paths, mouseClicks);
+		}
+		return MouseMotion.handsOff(paths, mouseClicks, clicks);
 	}
 
 	/** 녹화 이벤트 하나 → 궤적 묶음 또는 마우스 클릭 자리. 형식이 이상한 값은 건너뛴다 */

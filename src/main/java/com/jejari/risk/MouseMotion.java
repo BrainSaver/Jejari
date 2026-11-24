@@ -11,7 +11,8 @@ import java.util.List;
  *       = 클릭에서 다음 클릭으로 중간 점 없이 건너뜀. 브라우저 자동화의 기본 클릭(요소 가운데로 한 번에 이동)이 이렇다.
  *       사람은 손이 지나가는 길에 점이 찍히고, 멈춘 자리가 클릭 좌표와 ±{@value #TOL} 안에 두 번 연달아 맞는 일이 드물다.</li>
  *   <li><b>직선·등속 이동</b>: 한 묶음 안 연속한 점 {@value #LINE_POINTS}개가 거의 일직선(현/호 ≥ {@value #STRAIGHT})이고
- *       구간 속도의 변동계수가 {@value #SPEED_CV} 이하. 자동화 도구의 "몇 단계로 나눠 이동"이 이렇다. 사람은 휘고 가감속한다.</li>
+ *       구간 속도의 변동계수가 {@value #SPEED_CV} 이하. 자동화 도구의 "몇 단계로 나눠 이동"이 이렇다. 사람은 휘고 가감속한다.
+ *       클릭의 입력 장치와 상관없이 센다 — 진짜 터치는 마우스 궤적이 거의 없고, 봇이 클릭을 터치(t)라고 적어도 궤적은 남는다.</li>
  * </ol>
  *
  * <h2>시각을 쓰지 않는 이유</h2>
@@ -100,19 +101,92 @@ public final class MouseMotion {
 		return null;
 	}
 
-	/** 묶음 하나에서 겹치지 않는 직선·등속 구간 수 */
+	/**
+	 * 사람 손이 움직인 흔적이 없나 → {@link RiskRule#HEADLESS_HOLD}와 같게 본다 (2026-11-24, 3단계 연습 봇).
+	 * <ul>
+	 *   <li>클릭이 하나도 없다 (녹화 이벤트만 아무거나 보냄). 화면에서 선점하려면 좌석·선점 버튼을 반드시 누른다
+	 *       (키보드 Enter도 CLICK으로 남는다)</li>
+	 *   <li>마우스 클릭이 있는데 궤적 점이 하나도 없거나 모두 클릭 자리에만 있다 (클릭만 보내거나 클릭 자리로 순간이동).
+	 *       녹화기는 마우스가 움직이면 어느 모드에서나 점을 찍으므로, 마우스로 누르는 사람은 지나간 길에 점이 남는다</li>
+	 * </ul>
+	 * 터치·키보드만 쓰는 세션은 궤적이 없는 게 정상이라 두 번째 조건에서 뺀다.
+	 *
+	 * @param clicks      모든 CLICK 수 (입력 장치 상관없이)
+	 * @param mouseClicks 마우스 클릭 자리 (pointer = m)
+	 */
+	public static boolean handsOff(List<List<int[]>> paths, List<Click> mouseClicks, int clicks) {
+		if (clicks == 0) {
+			return true;
+		}
+		if (mouseClicks.isEmpty()) {
+			return false;
+		}
+		for (List<int[]> path : paths) {
+			if (path == null) {
+				continue;
+			}
+			for (int[] p : path) {
+				if (p != null && p.length >= 3 && clickAt(p, mouseClicks) == null) {
+					return false; // 클릭 자리가 아닌 곳을 지나감 = 손이 움직임
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * 묶음 하나에서 겹치지 않는 직선·등속 구간 수.
+	 * 최소 거리({@value #LINE_MIN_CHORD})는 구간마다가 아니라 <b>이어진 직선 전체</b>로 본다 (2026-11-24):
+	 * 짧은 예매 흐름의 이동 한 번(화면의 20~35%)은 점 5개 구간으로 자르면 구간마다 100이 안 돼 놓쳤다 (botreclinear 1/3).
+	 * 이어 붙인 직선도 전체가 곧아야 해서(현/호 ≥ {@value #STRAIGHT}) 꺾인 두 직선은 따로 센다.
+	 */
 	static int linear(List<int[]> path) {
 		int n = 0;
 		int i = 0;
+		int run = 0;
+		int[] runStart = null;
+		int[] runEnd = null;
+		double runArc = 0;
 		while (i + LINE_POINTS <= path.size()) {
 			if (isLinear(path, i)) {
-				n++;
-				i += LINE_POINTS - 1; // 끝점은 다음 구간의 시작으로 써도 되지만 같은 직선을 두 번 세지 않게 건너뜀
+				int[] a = path.get(i);
+				int[] b = path.get(i + LINE_POINTS - 1);
+				double arc = arc(path, i);
+				if (run > 0 && runEnd == a && straight(runStart, b, runArc + arc)) {
+					run++;
+					runEnd = b;
+					runArc += arc;
+				} else {
+					n += closeRun(run, runStart, runEnd);
+					run = 1;
+					runStart = a;
+					runEnd = b;
+					runArc = arc;
+				}
+				i += LINE_POINTS - 1; // 끝점을 다음 구간의 시작으로 (같은 직선을 두 번 세지 않음)
 			} else {
+				n += closeRun(run, runStart, runEnd);
+				run = 0;
 				i++;
 			}
 		}
-		return n;
+		return n + closeRun(run, runStart, runEnd);
+	}
+
+	private static int closeRun(int run, int[] start, int[] end) {
+		return run > 0 && dist(start[1], start[2], end[1], end[2]) >= LINE_MIN_CHORD ? run : 0;
+	}
+
+	private static boolean straight(int[] start, int[] end, double arc) {
+		return arc > 0 && dist(start[1], start[2], end[1], end[2]) / arc >= STRAIGHT;
+	}
+
+	private static double arc(List<int[]> path, int from) {
+		double arc = 0;
+		for (int k = from + 1; k < from + LINE_POINTS; k++) {
+			arc += dist(path.get(k - 1)[1], path.get(k - 1)[2], path.get(k)[1], path.get(k)[2]);
+		}
+		return arc;
 	}
 
 	private static boolean isLinear(List<int[]> path, int from) {
@@ -131,7 +205,7 @@ public final class MouseMotion {
 		int[] first = path.get(from);
 		int[] last = path.get(from + LINE_POINTS - 1);
 		double chord = dist(first[1], first[2], last[1], last[2]);
-		if (chord < LINE_MIN_CHORD || arc <= 0 || chord / arc < STRAIGHT) {
+		if (arc <= 0 || chord / arc < STRAIGHT) {
 			return false;
 		}
 		double mean = 0;
