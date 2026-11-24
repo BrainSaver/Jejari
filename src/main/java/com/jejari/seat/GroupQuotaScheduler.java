@@ -164,7 +164,7 @@ public class GroupQuotaScheduler {
 		picked.sort(null); // (run_id, seat_id, segment_no) 오름차순 INSERT (§0.4-3)
 
 		// 5. DB. 이미 있는 좌석(그 사이 누가 선점)은 건너뛴다
-		int[][] done = tx.execute(st -> jdbc.batchUpdate("""
+		tx.executeWithoutResult(st -> jdbc.batchUpdate("""
 				MERGE INTO seat_inventory t
 				USING (SELECT ? AS run_id, ? AS train_id, ? AS seat_id, ? AS segment_no FROM dual) s
 				   ON (t.run_id = s.run_id AND t.seat_id = s.seat_id AND t.segment_no = s.segment_no)
@@ -177,17 +177,17 @@ public class GroupQuotaScheduler {
 					ps.setLong(3, seatId);
 					ps.setInt(4, HoldPlan.SEGMENT_NO);
 				}));
-		int rows = 0;
-		for (int[] b : done) {
-			for (int n : b) {
-				rows += Math.max(n, 0);
-			}
-		}
+		// 실제로 BLOCKED가 된 좌석만 다시 읽는다. 고른 좌석 중 이미 남의 행(만료된 HOLD 등)이 있던 좌석에 GROUP 키를 걸면
+		// DB는 BLOCKED가 아닌데 Redis만 반납 시각까지 막혀, 반납(§18.4)도 못 푸는 좌석이 된다.
+		// (배치 영향 행 수는 드라이버에 따라 -2 "모름"이 올 수 있어 믿지 않는다)
+		List<Long> blocked = jdbc.queryForList(
+				"SELECT seat_id FROM seat_inventory WHERE run_id = ? AND status = 'BLOCKED' ORDER BY seat_id", Long.class, runId);
+		int rows = blocked.size();
 
 		// 6. COMMIT 뒤 Redis: 반납 시각에 저절로 사라지는 GROUP 키. 실패해도 DB가 최종이라 일반 선점은 §2.2-1에서 막힌다
 		Duration ttl = Duration.between(now, release);
 		try {
-			for (long seatId : picked) {
+			for (long seatId : blocked) {
 				redis.opsForValue().setIfAbsent(SeatKeys.hold(runId, seatId, HoldPlan.SEGMENT_NO), SeatKeys.GROUP, ttl);
 			}
 			seatMap.evict(runId);

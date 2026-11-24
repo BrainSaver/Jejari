@@ -169,7 +169,7 @@ public class SignupService {
 
 	private void checkSignupRate(String ipHash) {
 		long n = limiter.hit(AuthLimiter.signupRateKey(ipHash), Duration.ofHours(1));
-		if (n > policy.number(AuthPolicy.SIGNUP_RATE_PER_HOUR)) {
+		if (n > policy.limitFor(AuthPolicy.SIGNUP_RATE_PER_HOUR, ipHash)) { // 임시 해제 IP면 해제 한도 (ERD v39)
 			throw new BusinessException(CommonErrorCode.RATE_LIMITED);
 		}
 	}

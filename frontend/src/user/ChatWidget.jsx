@@ -10,7 +10,7 @@ import sad from './bot/sad.png';
 // 마스코트 표정: 인사=happy, 평소 답=basic, 찾는 중=surprised, 기본 환영 화면=wink, 속도 제한=angry, 실패=sad
 const MOOD = { basic, happy, wink, surprised, angry, sad };
 const Face = ({ mood = 'basic', size = 36 }) => (
-  <img src={MOOD[mood] || basic} alt="" width={size} height={Math.round(size * 0.78)} style={{ objectFit: 'contain', flex: 'none' }} />
+  <img src={MOOD[mood] || basic} alt="" width={size} height={Math.round(size * 0.9)} style={{ objectFit: 'contain', flex: 'none' }} />
 );
 
 /**

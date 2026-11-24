@@ -123,4 +123,61 @@ class MouseMotionTest {
 		Result r = MouseMotion.analyze(java.util.Arrays.asList(bad, null), List.of(new Click(758, 819)));
 		assertThat(r.total()).isZero();
 	}
+
+	// ------------------------------------------------------------ 3단계 연습 봇 보강 (2026-11-24)
+
+	/** 연습 봇 botreclinear의 이동 한 번: 점 15개, 같은 간격·같은 거리 */
+	static List<int[]> straightMove(int x0, int y0, int x1, int y1, int pts) {
+		List<int[]> line = new ArrayList<>();
+		for (int k = 1; k <= pts; k++) {
+			line.add(p((k - 1) * 150, x0 + (x1 - x0) * k / pts, y0 + (y1 - y0) * k / pts));
+		}
+		return line;
+	}
+
+	@Test
+	void 짧은_구간으로_나뉜_직선_이동도_전체가_100_넘으면_센다() {
+		// 300 이동을 점 15개로: 구간(점 5개) 하나는 약 86이라 예전엔 0 → 이어 붙인 직선 전체로 보면 3구간
+		List<int[]> move = straightMove(200, 300, 500, 300, 15);
+		assertThat(MouseMotion.analyze(paths(move), List.of()).linear()).isEqualTo(3);
+	}
+
+	@Test
+	void 꺾인_두_직선은_따로_보고_각각_짧으면_세지_않는다() {
+		List<int[]> l = new ArrayList<>(straightMove(200, 300, 260, 300, 5)); // 60 오른쪽
+		int[] corner = l.get(l.size() - 1);
+		List<int[]> down = straightMove(corner[1], corner[2], corner[1], corner[2] + 60, 4); // 60 아래
+		for (int[] q : down) l.add(p(l.size() * 150, q[1], q[2]));
+		assertThat(MouseMotion.analyze(paths(l), List.of()).linear()).isZero(); // 이어 붙이면 꺾여서 직선 아님
+	}
+
+	@Test
+	void 마우스_클릭이_없어도_궤적의_직선은_센다() {
+		// 클릭을 터치(t)라고 적은 봇: 마우스 클릭 자리는 없지만 궤적은 직선·등속
+		assertThat(MouseMotion.analyze(paths(straightMove(100, 100, 700, 400, 15)), List.of()).linear()).isEqualTo(3);
+	}
+
+	@Test
+	void 클릭이_하나도_없으면_손이_움직이지_않은_것() {
+		assertThat(MouseMotion.handsOff(List.of(), List.of(), 0)).isTrue(); // 녹화 이벤트 하나만 보낸 봇
+	}
+
+	@Test
+	void 마우스_클릭뿐이고_궤적이_없거나_클릭_자리에만_있으면_손이_움직이지_않은_것() {
+		List<Click> clicks = List.of(new Click(200, 300), new Click(700, 600));
+		assertThat(MouseMotion.handsOff(List.of(), clicks, 2)).isTrue(); // 클릭만
+		assertThat(MouseMotion.handsOff(paths(List.of(p(0, 200, 300)), List.of(p(0, 701, 599))), clicks, 2)).isTrue(); // 순간이동
+	}
+
+	@Test
+	void 클릭_자리가_아닌_곳을_지나가면_사람() {
+		List<Click> clicks = List.of(new Click(200, 300), new Click(700, 600));
+		assertThat(MouseMotion.handsOff(paths(List.of(p(0, 200, 300), p(150, 420, 380), p(300, 700, 600))), clicks, 2))
+				.isFalse();
+	}
+
+	@Test
+	void 터치나_키보드만_쓰면_궤적이_없어도_사람() {
+		assertThat(MouseMotion.handsOff(List.of(), List.of(), 3)).isFalse(); // 클릭 3번, 마우스 클릭은 0
+	}
 }
