@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v39)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v40)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -1413,7 +1413,7 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('guest.retain_days_after_run', '30', 1, 'NUMBER', '게스트 개인정보 보관: 그 게스트의 마지막 운행일 + 이 일수 (조회·환불 문의 기간)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('guest.lookup_rate_per_hour', '10', 1, 'NUMBER', 'IP당 시간당 비회원 예약 조회 시도 한도 (rate:guest_lookup)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.warning_threshold', '30', 1, 'NUMBER', '위험 점수가 이 이상이면 주의(경고) 단계');
-INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.inhuman_step_ms', '500', 1, 'NUMBER', 'INHUMAN_STEP: 좌석표 → 선점, 선점 → 결제가 이 ms 미만이면 사람 손으로 불가능한 단계 1회');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.inhuman_step_ms', '1000', 1, 'NUMBER', 'INHUMAN_STEP: 좌석표 → 선점, 선점 → 결제가 이 ms 미만이면 사람 손으로 불가능한 단계 1회');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.inhuman_step.t1', '2', 1, 'NUMBER', 'INHUMAN_STEP 1단계 횟수');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.inhuman_step.p1', '30', 1, 'NUMBER', 'INHUMAN_STEP 1단계 점수');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.inhuman_step.t2', '5', 1, 'NUMBER', 'INHUMAN_STEP 2단계 횟수');
@@ -1426,7 +1426,7 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.linear_mouse.p1', '25', 1, 'NUMBER', 'LINEAR_MOUSE 1단계 점수');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.linear_mouse.t2', '20', 1, 'NUMBER', 'LINEAR_MOUSE 2단계 이동 수');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.linear_mouse.p2', '40', 1, 'NUMBER', 'LINEAR_MOUSE 2단계 점수');
-INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.no_search_entry_points', '10', 1, 'NUMBER', 'NO_SEARCH_ENTRY(조회 없이 대기열 진입) 점수. 점수만 (케이스 아님)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.no_search_entry_points', '30', 1, 'NUMBER', 'NO_SEARCH_ENTRY(조회 없이 대기열 진입) 점수. 점수만 (케이스 아님)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('seatmap.rate_burst', '10', 1, 'NUMBER', '한 계정(운행 단위)이 처음에 막힘 없이 보낼 수 있는 좌석 조회·선점 횟수 (물통 크기)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('seatmap.rate_per_sec', '1', 1, 'NUMBER', '그 뒤 초당 다시 채워지는 좌석 조회·선점 횟수');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('seatmap.abuse_threshold', '20', 1, 'NUMBER', '물이 바닥난 채로 이만큼 거절당하면 잠금');
@@ -1448,6 +1448,7 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.rate_relax_reason', '-', 1, 'STRING', '임시 해제 사유 (정책 이력에 누가·언제와 함께 남음)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.rate_relax_signup_per_hour', '2000', 1, 'NUMBER', '임시 해제 동안 해제 IP의 시간당 본인인증·가입 한도 (1~5000)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.rate_relax_login_per_min', '3000', 1, 'NUMBER', '임시 해제 동안 해제 IP의 분당 회원 로그인 한도 (1~10000). 관리자 로그인·비회원 조회는 해제하지 않음');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.account_switch_sec', '15', 1, 'NUMBER', '기기(DEVICE) 대상 MULTI_ACCOUNT_SYNC: 그 기기에서 다른 계정으로 이 초 안에 바뀐 계정만 동시 선점으로 셈 (가족이 한 컴퓨터로 차례로 사는 것과 가르기)');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (1, 2880, NULL, NULL, 400, '출발 2일 전까지 1인 400원');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (2, 0, 2880, 0.1, NULL, '1일 전 ~ 출발 전 10%');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (3, -20, 0, 0.15, NULL, '출발 후 20분까지 15%');

@@ -224,8 +224,9 @@ class SignalCollectorTest {
         void 차례로_로그인해_사면_기기_동시_선점이_아니다() {
             SignalCollector col = device();
             Instant end1 = flow(col, 1, NOW);
-            Instant end2 = flow(col, 2, end1.plusSeconds(10)); // 로그아웃·로그인 10초
-            flow(col, 3, end2.plusSeconds(5));
+            // 2차 대회(11-24) 가족 역할의 실제 계정 전환: 31.7 · 61.4 · 89.6 · 100.4 · 429.4초 (로그아웃 → 다시 로그인 → 검색)
+            Instant end2 = flow(col, 2, end1.plusSeconds(32));
+            flow(col, 3, end2.plusSeconds(61));
             assertThat(col.build().maxSyncAccounts()).isZero();
         }
 
@@ -239,10 +240,19 @@ class SignalCollectorTest {
         }
 
         @Test
-        void 차례로_돌려도_전환이_3초_안이면_잡힌다() {
+        void 차례로_돌려도_전환이_15초_안이면_잡힌다() {
             SignalCollector col = device();
             Instant end1 = flow(col, 1, NOW);
             flow(col, 2, end1.plusSeconds(1)); // 봇: 앞 계정이 끝나자마자
+            assertThat(col.build().maxSyncAccounts()).isEqualTo(2);
+        }
+
+        @Test
+        void 계정마다_10초씩_쉬는_다계정_봇도_잡힌다() {
+            // 기준이 3초일 때는 빠져나가던 봇 (ERD v40에서 15초로)
+            SignalCollector col = device();
+            Instant end1 = flow(col, 1, NOW);
+            flow(col, 2, end1.plusSeconds(10));
             assertThat(col.build().maxSyncAccounts()).isEqualTo(2);
         }
 

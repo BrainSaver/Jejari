@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v39 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-24
+> 스키마 v40 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-24
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -592,7 +592,7 @@ Oracle
 | guest.retain_days_after_run | 30 | 1 | NUMBER | 게스트 개인정보 보관: 그 게스트의 마지막 운행일 + 이 일수 (조회·환불 문의 기간) |
 | guest.lookup_rate_per_hour | 10 | 1 | NUMBER | IP당 시간당 비회원 예약 조회 시도 한도 (rate:guest_lookup) |
 | risk.rule.warning_threshold | 30 | 1 | NUMBER | 위험 점수가 이 이상이면 주의(경고) 단계 |
-| risk.rule.inhuman_step_ms | 500 | 1 | NUMBER | INHUMAN_STEP: 좌석표 → 선점, 선점 → 결제가 이 ms 미만이면 사람 손으로 불가능한 단계 1회 |
+| risk.rule.inhuman_step_ms | 1000 | 1 | NUMBER | INHUMAN_STEP: 좌석표 → 선점, 선점 → 결제가 이 ms 미만이면 사람 손으로 불가능한 단계 1회 |
 | risk.rule.inhuman_step.t1 | 2 | 1 | NUMBER | INHUMAN_STEP 1단계 횟수 |
 | risk.rule.inhuman_step.p1 | 30 | 1 | NUMBER | INHUMAN_STEP 1단계 점수 |
 | risk.rule.inhuman_step.t2 | 5 | 1 | NUMBER | INHUMAN_STEP 2단계 횟수 |
@@ -605,7 +605,7 @@ Oracle
 | risk.rule.linear_mouse.p1 | 25 | 1 | NUMBER | LINEAR_MOUSE 1단계 점수 |
 | risk.rule.linear_mouse.t2 | 20 | 1 | NUMBER | LINEAR_MOUSE 2단계 이동 수 |
 | risk.rule.linear_mouse.p2 | 40 | 1 | NUMBER | LINEAR_MOUSE 2단계 점수 |
-| risk.rule.no_search_entry_points | 10 | 1 | NUMBER | NO_SEARCH_ENTRY(조회 없이 대기열 진입) 점수. 점수만 (케이스 아님) |
+| risk.rule.no_search_entry_points | 30 | 1 | NUMBER | NO_SEARCH_ENTRY(조회 없이 대기열 진입) 점수. 점수만 (케이스 아님) |
 | seatmap.rate_burst | 10 | 1 | NUMBER | 한 계정(운행 단위)이 처음에 막힘 없이 보낼 수 있는 좌석 조회·선점 횟수 (물통 크기) |
 | seatmap.rate_per_sec | 1 | 1 | NUMBER | 그 뒤 초당 다시 채워지는 좌석 조회·선점 횟수 |
 | seatmap.abuse_threshold | 20 | 1 | NUMBER | 물이 바닥난 채로 이만큼 거절당하면 잠금 |
@@ -627,6 +627,7 @@ Oracle
 | auth.rate_relax_reason | - | 1 | STRING | 임시 해제 사유 (정책 이력에 누가·언제와 함께 남음) |
 | auth.rate_relax_signup_per_hour | 2000 | 1 | NUMBER | 임시 해제 동안 해제 IP의 시간당 본인인증·가입 한도 (1~5000) |
 | auth.rate_relax_login_per_min | 3000 | 1 | NUMBER | 임시 해제 동안 해제 IP의 분당 회원 로그인 한도 (1~10000). 관리자 로그인·비회원 조회는 해제하지 않음 |
+| risk.rule.account_switch_sec | 15 | 1 | NUMBER | 기기(DEVICE) 대상 MULTI_ACCOUNT_SYNC: 그 기기에서 다른 계정으로 이 초 안에 바뀐 계정만 동시 선점으로 셈 (가족이 한 컴퓨터로 차례로 사는 것과 가르기) |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -2607,6 +2608,7 @@ Oracle
 | v37 | 도용 카드: 카드 한 장에 붙는 서로 다른 명의(CI) 수 상한 app_policy payment.max_ci_per_card (0 = 끔이 기본, 켤 때 권장 3 — 시연·k6·대회가 같은 가상 카드번호를 써서 바로 켜면 막힘). 동시 요청에도 지키려고 카드 해시별 잠금 행 card_lock 추가 (concurrency.md §4.3, 잠금 순서 §0.4-8). 기존 DB는 db/patch/v37.sql |
 | v38 | 단체 신청 번호 시퀀스 group_booking_seq (길동현 요청): group_booking.group_id를 매김 |
 | v39 | 인증 시도 제한 임시 해제 (강동균): app_policy auth.rate_relax_until(OFF)·rate_relax_ip_hashes(NONE)·rate_relax_reason·rate_relax_signup_per_hour(2000)·rate_relax_login_per_min(3000). 지정 IP만 종료 시각까지, 읽을 때 비교로 자동 복구. 관리자 로그인·비회원 조회는 해제 안 함 |
+| v40 | 2차 대회 진짜 사람으로 잰 규칙 기준값: app_policy risk.rule.inhuman_step_ms 500 → 1000(사람 최소 2.74초), account_switch_sec 3 → 15초(가족 계정 전환 최소 31.7초, 행 추가), no_search_entry_points 10 → 30(botc 6/6·사람 0/27, 점수만) |
 
 ## 참고 자료
 

@@ -204,7 +204,7 @@ class RiskScoreBatchInfraTest {
 			docs.add(event("VIEW_TRAIN", m, null, device, t, null, 200, null));
 			docs.add(event("SEAT_HOLD", m, null, device, t.plusSeconds(6), null, 201, List.of(m)));
 			docs.add(event("PAY", m, null, device, t.plusSeconds(12), null, 200, null));
-			t = t.plusSeconds(20); // 결제 8초 뒤 다음 사람이 로그인해 조회
+			t = t.plusSeconds(47); // 결제 35초 뒤 다음 사람이 로그인해 조회 (2차 대회 가족 역할 실측 최소 31.7초, 기준 15초 · ERD v40)
 		}
 		mongo.getCollection("behavior_log").insertMany(docs);
 		dirty.mark(new RiskSubject(SubjectType.DEVICE, device));
@@ -454,8 +454,10 @@ class RiskScoreBatchInfraTest {
 
 		String reasons = jdbc.queryForObject("SELECT reasons FROM risk_score WHERE subject_hash = ?", String.class, botCi);
 		assertThat(reasons).contains("HEADLESS_HOLD").contains("NO_SEARCH_ENTRY");
-		assertThat(finalScore(SubjectType.CI, botCi)).isEqualByComparingTo("40.00"); // 30 + 10
-		// ERD v34부터 case_marker CHECK가 HEADLESS_HOLD를 받으므로 40점(기준 미만)이어도 마커 규칙(RULE)으로 케이스가 열린다.
+		// HEADLESS_HOLD 30 + NO_SEARCH_ENTRY. 조회 없이 진입은 ERD v40(2차 대회 botc 6/6·사람 0/27)부터 30점, v40 전 DB는 10점
+		boolean v40 = jdbc.queryForObject("SELECT COUNT(*) FROM app_policy WHERE policy_key = 'risk.rule.no_search_entry_points' AND policy_value = '30'", Integer.class) > 0;
+		assertThat(finalScore(SubjectType.CI, botCi)).isEqualByComparingTo(v40 ? "60.00" : "40.00");
+		// ERD v34부터 case_marker CHECK가 HEADLESS_HOLD를 받으므로 기준(80) 미만이어도 마커 규칙(RULE)으로 케이스가 열린다.
 		// v34 전 DB면 마커에서 빠져 점수만 남는다. NO_SEARCH_ENTRY는 마커 규칙이 아니라 점수에만 들어간다.
 		boolean patched = jdbc.queryForObject("""
 				SELECT COUNT(*) FROM user_constraints WHERE constraint_name = 'CK_CASE_MARKER_RULE_CODE'
