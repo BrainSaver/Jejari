@@ -339,6 +339,8 @@ async function stepPrep() {
   if ((o.flush || run.codeChanged) && appChild) {
     log('prep', '이 화면이 전에 켠 앱을 끕니다 (새로 켬)');
     killTree(appChild);
+    // 끄는 데 몇 초 걸린다. 기다리지 않으면 아래에서 "아직 켜져 있는데 PID가 없음"으로 멈췄다 (2026-11-24 같은 화면에서 두 번째 시작)
+    for (let s = 0; s < 60 && (await healthy()); s += 2) await sleep(2000);
   }
   if ((o.flush || run.codeChanged || o.restartApp) && (await healthy())) {
     const pids = appPids();
@@ -529,6 +531,14 @@ async function stepPlay() {
   // 사람 시간에 제한을 두지 않는다. 진행자가 [사람 참가 끝내기]를 누를 때까지 받는다 (2026-11-24: 사람마다 걸리는 시간이 달라서)
   run.human = { urls: lanUrls(), open: true, startedAt: Date.now(), runDate: run.runDate, email: `lt${run.tag}.human.g{번호}.{번호}@loadtest.example.com` };
   pushState();
+  // 팀원에게 줄 명단: 틀의 {태그}·{운행일}·{주소}를 채운 사본 (2026-11-24: 사람이 태그를 직접 넣다가 틀려 다시 가입하는 일이 잦아서)
+  try {
+    const tpl = fs.readFileSync(path.join(__dirname, '..', '사람-참가-명단.md'), 'utf8');
+    const out = path.join(RESULTS, run.tag, '사람-참가-명단.md');
+    fs.writeFileSync(out, tpl.replaceAll('{태그}', run.tag).replaceAll('{운행일}', run.runDate)
+      .replaceAll('{주소}', run.human.urls[0] || BASE_URL));
+    log('play', `팀원용 명단: ${path.relative(ROOT, out)} (태그·운행일·주소를 채움)`);
+  } catch (e) { log('play', `명단 사본을 못 만들었습니다: ${e.message}`); }
   log('play', `사람 참가 시작 (다 끝나면 [사람 참가 끝내기]). 접속 주소: ${run.human.urls.join(' · ') || '(못 찾음 — ipconfig로 확인)'}`);
   log('play', `사람 이메일: ${run.human.email} · 서울 → 부산 · ${run.runDate}`);
 
