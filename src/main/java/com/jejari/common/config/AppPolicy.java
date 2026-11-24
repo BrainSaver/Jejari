@@ -41,6 +41,10 @@ public class AppPolicy implements PolicyBounds {
 	public static final String SEATMAP_ABUSE_WINDOW_SEC = "seatmap.abuse_window_sec";
 	public static final String SEATMAP_COOLDOWN_SEC = "seatmap.cooldown_sec";
 	public static final String SALE_OPEN_INTERVAL_SEC = "sale.open_interval_sec";
+	/** 운행별 단체 할당석 비율 (concurrency.md §18.1). 행사 운행은 sale_event.group_quota_rate가 우선. ERD v36 */
+	public static final String GROUP_QUOTA_RATE = "group.quota_rate";
+	/** 출발 며칠 전까지 안 쓰인 할당석을 일반 판매로 돌릴지 (§18.4). ERD v36 */
+	public static final String GROUP_QUOTA_RELEASE_DAYS = "group.quota_release_days";
 	/** 회원당 같은 운행 활성 대기 수 (WL-01) */
 	public static final String WAITLIST_MAX_PER_RUN = "waitlist.max_per_run";
 	/** 회원당 전체 활성 대기 수 (WL-01) */
@@ -70,6 +74,8 @@ public class AppPolicy implements PolicyBounds {
 			Map.entry(SEATMAP_ABUSE_WINDOW_SEC, "60"),
 			Map.entry(SEATMAP_COOLDOWN_SEC, "60"),
 			Map.entry(SALE_OPEN_INTERVAL_SEC, "10"),
+			Map.entry(GROUP_QUOTA_RATE, "0.05"),
+			Map.entry(GROUP_QUOTA_RELEASE_DAYS, "30"),
 			Map.entry(WAITLIST_MAX_PER_RUN, "1"),
 			Map.entry(WAITLIST_MAX_ACTIVE, "3"),
 			Map.entry(WAITLIST_PENALTY_MS_PER_POINT, "180000"),
@@ -116,12 +122,14 @@ public class AppPolicy implements PolicyBounds {
 				range(SEATMAP_RATE_PER_SEC, 1, 50),
 				range(SEATMAP_ABUSE_THRESHOLD, 3, 1000),
 				range(SEATMAP_ABUSE_WINDOW_SEC, 10, 3600),
-				range(SEATMAP_COOLDOWN_SEC, 5, 3600));         // 결제 마감 전에 중복 방지 키가 사라지지 않게 (팀장님)
+				range(SEATMAP_COOLDOWN_SEC, 5, 3600),
+				range(GROUP_QUOTA_RELEASE_DAYS, 0, 60));       // 판매는 출발 2개월 전부터라 그보다 길면 할당석이 만들어지지 않음         // 결제 마감 전에 중복 방지 키가 사라지지 않게 (팀장님)
 	}
 
 	@Override
 	public Map<String, DecimalRange> decimalBounds() {
-		return Map.of(REPLAY_FULL_RECORD_RATIO, DecimalRange.of("0", "1"));
+		return Map.of(REPLAY_FULL_RECORD_RATIO, DecimalRange.of("0", "1"),
+				GROUP_QUOTA_RATE, DecimalRange.of("0", "0.5")); // 절반 넘게 묶으면 개인 예매가 사실상 막힘
 	}
 
 	private static Entry<String, Range> range(String key, long min, long max) {

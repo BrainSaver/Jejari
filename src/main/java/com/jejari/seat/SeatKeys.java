@@ -9,7 +9,13 @@ public final class SeatKeys {
 	private SeatKeys() {
 	}
 
-	/** 좌석 구간 점유. 값: R(HOLD) / SOLD:R / REOFFER:R */
+	/**
+	 * 단체 할당석으로 묶어 둔 좌석의 <b>값</b> (concurrency.md §18.1). 일반 선점의 {@code hold.lua}에는 "다른 값"이라
+	 * 그대로 진다. 키는 반납 시각에 TTL로 사라진다
+	 */
+	public static final String GROUP = "GROUP";
+
+	/** 좌석 구간 점유. 값: R(HOLD) / SOLD:R / REOFFER:R / GROUP(단체 할당석) */
 	public static String hold(long runId, long seatId, int segmentNo) {
 		return "seat:hold:" + runId + ":" + seatId + ":" + segmentNo;
 	}

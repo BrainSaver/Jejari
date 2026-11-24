@@ -76,8 +76,13 @@ public class SeatMapService {
 	private Map<Long, State> rebuild(long runId, List<SeatInfo> seats) {
 		List<String> keys = seats.stream().map(s -> SeatKeys.hold(runId, s.seatId(), HoldPlan.SEGMENT_NO)).toList();
 		List<String> values = keys.isEmpty() ? List.of() : redis.opsForValue().multiGet(keys);
-		Set<Long> soldInDb = new HashSet<>(jdbc.queryForList(
-				"SELECT seat_id FROM seat_inventory WHERE run_id = ? AND status = 'SOLD'", Long.class, runId));
+		Set<Long> soldInDb = new HashSet<>();
+		Set<Long> blockedInDb = new HashSet<>();
+		// BLOCKED(단체 할당석, §18): 반납 시각에 Redis 키가 먼저 사라져도 행이 지워질 때까지는 선택 불가로 보인다
+		jdbc.query("SELECT seat_id, status FROM seat_inventory WHERE run_id = ? AND status IN ('SOLD', 'BLOCKED')",
+				rs -> {
+					("SOLD".equals(rs.getString(2)) ? soldInDb : blockedInDb).add(rs.getLong(1));
+				}, runId);
 
 		Map<Long, State> out = new HashMap<>();
 		Map<String, String> cache = new HashMap<>();
@@ -86,7 +91,7 @@ public class SeatMapService {
 			long seatId = seats.get(i).seatId();
 			String v = values == null ? null : values.get(i);
 			State s = soldInDb.contains(seatId) || (v != null && v.startsWith("SOLD:")) ? State.SOLD
-					: v != null ? State.HELD : State.EMPTY;
+					: v != null || blockedInDb.contains(seatId) ? State.HELD : State.EMPTY; // Redis GROUP 값도 HELD (선택 불가)
 			out.put(seatId, s);
 			if (s != State.EMPTY) {
 				cache.put(Long.toString(seatId), s == State.SOLD ? "S" : "H");

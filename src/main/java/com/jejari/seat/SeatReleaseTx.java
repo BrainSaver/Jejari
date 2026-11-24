@@ -23,19 +23,24 @@ import com.jejari.seat.PurchaseCounters.Change;
 @Component
 class SeatReleaseTx {
 
-	/** 해제한 예약. 커밋 뒤 Redis 보상(§7.2)에 씀 */
+	/** 해제한 예약. 커밋 뒤 Redis 보상(§7.2)에 씀. group = 단체 예약이라 한도를 되돌리지 않음 (§18.5) */
 	record Released(long reservationId, long runId, String ciHash, int seatCount, long purchaseDay, Long saleEventId,
-			List<Long> seatIds, ReleaseReason reason) {
+			List<Long> seatIds, ReleaseReason reason, boolean group) {
 	}
 
-	/** 확정 취소로 돌려준 좌석 (§8.1-2·3). 커밋 뒤 Redis 보상과 이벤트 내용에 씀 */
+	/** 확정 취소로 돌려준 좌석 (§8.1-2·3). 커밋 뒤 Redis 보상과 이벤트 내용에 씀. group은 {@link Released}와 같음 */
 	record ReturnedSold(long reservationId, long runId, String ciHash, int seatCount, long purchaseDay, Long saleEventId,
-			List<Long> seatIds, String fromStationId, String toStationId) {
+			List<Long> seatIds, String fromStationId, String toStationId, boolean group) {
 	}
 
 	/** 해제에 필요한 예약 값. 호출하는 트랜잭션이 reservation 행 락을 이미 쥔 뒤에 읽는다 */
 	private record Row(long runId, String ciHash, int seatCount, LocalDateTime createdAt, String from, String to,
 			String source, Long saleEventId) {
+
+		/** 단체 예약(§18): 승인 때 매수 카운터를 올리지 않았으므로 줄이지도 않는다 */
+		boolean group() {
+			return "GROUP".equals(source);
+		}
 	}
 
 	private final JdbcTemplate jdbc;
@@ -100,7 +105,8 @@ class SeatReleaseTx {
 					UPDATE waitlist SET status = 'EXPIRED', updated_at = SYSTIMESTAMP
 					 WHERE offered_reservation_id = ? AND status = 'OFFERED'""", r);
 		}
-		return new Released(r, row.runId(), row.ciHash(), row.seatCount(), day, row.saleEventId(), seatIds, reason);
+		return new Released(r, row.runId(), row.ciHash(), row.seatCount(), day, row.saleEventId(), seatIds, reason,
+				row.group());
 	}
 
 	/**
@@ -123,7 +129,7 @@ class SeatReleaseTx {
 		Row row = loadRow(r);
 		long day = decrementCounters(row);
 		return new ReturnedSold(r, row.runId(), row.ciHash(), row.seatCount(), day, row.saleEventId(), seatIds,
-				row.from(), row.to());
+				row.from(), row.to(), row.group());
 	}
 
 	/** 빈 좌석 이벤트(RESERVATION_EXPIRED·CANCELED)의 공통 내용. seat-release 소비자(§9)가 이 모양을 읽는다 */
@@ -151,9 +157,12 @@ class SeatReleaseTx {
 		}, r);
 	}
 
-	/** §10.2 감소. 예약을 만든 날(PER_DAY scope_ref_id)을 돌려준다 */
+	/** §10.2 감소. 예약을 만든 날(PER_DAY scope_ref_id)을 돌려준다. 단체 예약은 감소하지 않는다 (§18.5) */
 	private long decrementCounters(Row row) {
 		long day = SeatHoldTx.yyyymmdd(row.createdAt());
+		if (row.group()) {
+			return day;
+		}
 		List<Change> changes = new ArrayList<>();
 		changes.add(Change.decr(LimitScope.PER_RUN, row.runId(), row.ciHash(), row.seatCount()));
 		changes.add(Change.decr(LimitScope.PER_DAY, day, row.ciHash(), row.seatCount()));

@@ -25,8 +25,12 @@ import com.jejari.seat.PurchaseCounters.Change;
 @Component
 class SeatHoldTx {
 
-	/** 재선점으로 만료시킨 이전 예약. 커밋 뒤 그 예약의 Redis 한도를 되돌리는 데 씀 (§3-7) */
-	record Preempted(long reservationId, String ciHash, int seatCount, long purchaseDay, Long saleEventId) {
+	/**
+	 * 재선점으로 만료시킨 이전 예약. 커밋 뒤 그 예약의 Redis 한도를 되돌리는 데 씀 (§3-7).
+	 *
+	 * @param group 단체 예약(source = GROUP)이면 true. 카운터를 올린 적이 없어 되돌리지 않는다 (§18.5)
+	 */
+	record Preempted(long reservationId, String ciHash, int seatCount, long purchaseDay, Long saleEventId, boolean group) {
 	}
 
 	private final JdbcTemplate jdbc;
@@ -52,7 +56,8 @@ class SeatHoldTx {
 		jdbc.query("""
 				SELECT reservation_id, status, CASE WHEN hold_expires_at >= SYSTIMESTAMP THEN 1 ELSE 0 END AS live
 				  FROM seat_inventory WHERE run_id = ? AND segment_no = ? AND seat_id IN (%s)""".formatted(in), rs -> {
-			if ("SOLD".equals(rs.getString("status")) || rs.getInt("live") == 1) {
+			// BLOCKED(단체 할당석, §18.2): 예약이 없는 행이라 만료된 HOLD로 보면 reservation_id 0을 재선점하려다 PK 충돌이 난다
+			if ("SOLD".equals(rs.getString("status")) || "BLOCKED".equals(rs.getString("status")) || rs.getInt("live") == 1) {
 				// Redis 키가 사라졌는데 DB 점유가 유효한 경우. 정상이면 일어나지 않지만 DB가 최종
 				throw new BusinessException(SeatErrorCode.SEAT_ALREADY_TAKEN);
 			}
@@ -109,16 +114,16 @@ class SeatHoldTx {
 	/** §3-1~5. 이 예약을 만료시켰으면 그 정보를, 이미 다른 트랜잭션이 만료시켰으면 null */
 	private Preempted expirePrevious(long prev, List<Change> counterChanges) {
 		record Prev(String status, int seatCount, String ciHash, long runId, LocalDateTime createdAt,
-				String from, String to, Long saleEventId) {
+				String from, String to, Long saleEventId, boolean group) {
 		}
 		Prev old = jdbc.queryForObject("""
-				SELECT r.status, r.seat_count, r.ci_hash, r.run_id, r.created_at, r.from_station_id, r.to_station_id,
+				SELECT r.status, r.seat_count, r.ci_hash, r.run_id, r.created_at, r.from_station_id, r.to_station_id, r.source,
 				       (SELECT tr.sale_event_id FROM train_run tr WHERE tr.run_id = r.run_id) AS sale_event_id
 				  FROM reservation r WHERE r.reservation_id = ? FOR UPDATE OF r.status""", (rs, i) -> {
 			long se = rs.getLong("sale_event_id");
 			return new Prev(rs.getString("status"), rs.getInt("seat_count"), rs.getString("ci_hash"), rs.getLong("run_id"),
 					rs.getObject("created_at", LocalDateTime.class), rs.getString("from_station_id"),
-					rs.getString("to_station_id"), rs.wasNull() ? null : se);
+					rs.getString("to_station_id"), rs.wasNull() ? null : se, "GROUP".equals(rs.getString("source")));
 		}, prev);
 
 		switch (old.status()) {
@@ -144,10 +149,12 @@ class SeatHoldTx {
 		jdbc.update("DELETE FROM seat_inventory WHERE reservation_id = ? AND status = 'HOLD'", prev);
 
 		long day = yyyymmdd(old.createdAt()); // 감소는 그 예약을 만든 날짜 (자정 넘김 버그 방지, T37)
-		counterChanges.add(Change.decr(LimitScope.PER_RUN, old.runId(), old.ciHash(), old.seatCount()));
-		counterChanges.add(Change.decr(LimitScope.PER_DAY, day, old.ciHash(), old.seatCount()));
-		if (old.saleEventId() != null) {
-			counterChanges.add(Change.decr(LimitScope.PER_HOLIDAY, old.saleEventId(), old.ciHash(), old.seatCount()));
+		if (!old.group()) { // 단체 예약은 카운터를 올린 적이 없다 (§3-4, §18.5). 줄이면 대표자 개인 한도가 잘못 줄어듦
+			counterChanges.add(Change.decr(LimitScope.PER_RUN, old.runId(), old.ciHash(), old.seatCount()));
+			counterChanges.add(Change.decr(LimitScope.PER_DAY, day, old.ciHash(), old.seatCount()));
+			if (old.saleEventId() != null) {
+				counterChanges.add(Change.decr(LimitScope.PER_HOLIDAY, old.saleEventId(), old.ciHash(), old.seatCount()));
+			}
 		}
 
 		Map<String, Object> payload = new LinkedHashMap<>();
@@ -163,7 +170,7 @@ class SeatHoldTx {
 		jdbc.update("""
 				UPDATE saga_instance SET status = 'COMPENSATED', updated_at = SYSTIMESTAMP
 				 WHERE reservation_id = ? AND status = 'RUNNING'""", prev);
-		return new Preempted(prev, old.ciHash(), old.seatCount(), day, old.saleEventId());
+		return new Preempted(prev, old.ciHash(), old.seatCount(), day, old.saleEventId(), old.group());
 	}
 
 	private static void addIncrements(HoldPlan p, List<Change> changes) {

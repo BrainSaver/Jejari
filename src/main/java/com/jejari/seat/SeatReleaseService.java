@@ -179,7 +179,7 @@ public class SeatReleaseService {
 			@Override
 			public void afterCommit() {
 				compensate(done.reservationId(), done.runId(), done.ciHash(), done.seatCount(), done.purchaseDay(),
-						done.saleEventId(), done.seatIds(), "CONFIRMED_CANCEL");
+						done.saleEventId(), done.seatIds(), "CONFIRMED_CANCEL", done.group());
 			}
 		});
 		return new ReturnedSeats(done.reservationId(), done.runId(), done.seatCount(), done.seatIds(),
@@ -192,7 +192,7 @@ public class SeatReleaseService {
 			return false;
 		}
 		compensate(done.reservationId(), done.runId(), done.ciHash(), done.seatCount(), done.purchaseDay(),
-				done.saleEventId(), done.seatIds(), done.reason().name());
+				done.saleEventId(), done.seatIds(), done.reason().name(), done.group());
 		return true;
 	}
 
@@ -208,15 +208,16 @@ public class SeatReleaseService {
 	 * <p>예약을 못 읽으면 아무 일도 하지 않는다 (지워졌거나 아직 안 보이는 것이라 다음 전달에 다시 한다).
 	 */
 	public void compensateAfterRelease(long reservationId) {
-		record Row(long runId, String ciHash, int seatCount, LocalDateTime createdAt, Long saleEventId) {
+		record Row(long runId, String ciHash, int seatCount, LocalDateTime createdAt, Long saleEventId, boolean group) {
 		}
 		List<Row> rows = jdbc.query("""
-				SELECT r.run_id, r.ci_hash, r.seat_count, r.created_at,
+				SELECT r.run_id, r.ci_hash, r.seat_count, r.created_at, r.source,
 				       (SELECT tr.sale_event_id FROM train_run tr WHERE tr.run_id = r.run_id) AS sale_event_id
 				  FROM reservation r WHERE r.reservation_id = ?""", (rs, i) -> {
 			long se = rs.getLong("sale_event_id");
 			return new Row(rs.getLong("run_id"), rs.getString("ci_hash"), rs.getInt("seat_count"),
-					rs.getObject("created_at", LocalDateTime.class), rs.wasNull() ? null : se);
+					rs.getObject("created_at", LocalDateTime.class), rs.wasNull() ? null : se,
+					"GROUP".equals(rs.getString("source")));
 		}, reservationId);
 		if (rows.isEmpty()) {
 			return;
@@ -227,15 +228,17 @@ public class SeatReleaseService {
 				Long.class, reservationId);
 		// 감소는 "지금"이 아니라 그 예약을 만든 날짜다 (자정 넘김 버그 방지, §10.2 · T37)
 		compensate(reservationId, row.runId(), row.ciHash(), row.seatCount(),
-				SeatHoldTx.yyyymmdd(row.createdAt()), row.saleEventId(), seatIds, "GUARANTEE");
+				SeatHoldTx.yyyymmdd(row.createdAt()), row.saleEventId(), seatIds, "GUARANTEE", row.group());
 	}
 
 	/**
 	 * 커밋 후 Redis 보상 (§14.3 빠른 경로): 내 값(R 또는 SOLD:R)인 좌석 키를 REOFFER:R로, 한도는 예약당 한 번만 감소.
 	 * 실패해도 예외를 던지지 않는다: DB는 이미 커밋됐고 seat-release 소비자(보장 경로)가 같은 두 스크립트를 다시 돌린다.
+	 *
+	 * @param group 단체 예약이면 한도 감소를 건너뛴다 (§18.5). 좌석 키는 일반 예약과 똑같이 REOFFER로
 	 */
 	private void compensate(long reservationId, long runId, String ciHash, int seatCount, long purchaseDay,
-			Long saleEventId, List<Long> seatIds, String reasonTag) {
+			Long saleEventId, List<Long> seatIds, String reasonTag, boolean group) {
 		meters.counter("jejari.seat.released", "reason", reasonTag).increment();
 		try {
 			List<String> seatKeys = seatIds.stream().map(id -> SeatKeys.hold(runId, id, HoldPlan.SEGMENT_NO)).toList();
@@ -243,6 +246,10 @@ public class SeatReleaseService {
 				// 마감 뒤 유예(reservation.hold_release_grace_sec) 안이면 키가 아직 R이라 REOFFER로 바뀐다. 유예가 지나 사라졌으면(스캐너 지연·유예 0) 아무 일 없음
 				redis.execute(scripts.reoffer, seatKeys, Long.toString(reservationId),
 						Long.toString(policy.getLong(AppPolicy.REOFFER_HOLD_SEC) * 1000));
+			}
+			if (group) {
+				seatMap.evict(runId);
+				return;
 			}
 			RunInfo run = runs.find(runId).orElse(null);
 			List<String> keys = new ArrayList<>();

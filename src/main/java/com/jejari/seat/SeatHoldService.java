@@ -179,6 +179,9 @@ public class SeatHoldService {
 		// 6. 커밋 후: 재선점으로 만료시킨 이전 예약의 Redis 한도를 되돌린다 (빠른 경로, §3-7·§14.3).
 		//    앱이 여기서 죽어도 그 예약의 RESERVATION_EXPIRED 이벤트를 seat-release가 소비하며 같은 일을 한다
 		for (Preempted p : preempted) {
+			if (p.group()) {
+				continue; // 단체 예약은 Redis 한도도 올린 적이 없다 (§18.5)
+			}
 			try {
 				LimitKeys old = limitKeys(run, p.ciHash(), p.purchaseDay(), lim);
 				limitDecr(p.reservationId(), old.keys, p.seatCount(), old.markExpiry);
