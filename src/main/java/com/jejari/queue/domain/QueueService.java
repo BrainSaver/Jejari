@@ -143,16 +143,30 @@ public class QueueService {
 	 * 탈퇴한 계정의 대기 자리가 남으면 같은 명의(CI)로 다시 가입한 사람이 REJECTED_DUPLICATE로 몇 분 막혔다 (2026-11-24 2차 대회).
 	 */
 	public void leaveAny(long memberId) {
+		leaveCurrent(memberId);
+	}
+
+	/**
+	 * 지금 서 있는(또는 입장한) 줄이 어느 운행이든 빠진다 ({@link #leaveAny}와 같은 일, 빠진 운행을 돌려준다).
+	 * "이미 다른 열차를 기다리고 있어요"일 때 그 줄 화면으로 돌아가지 않고 바로 그만두게 하려는 것이다 (DELETE /api/v1/queue/me).
+	 * 회원당 줄은 하나라 지울 대상이 분명하다. 같은 본인인증의 다른 계정 줄은 건드리지 않는다.
+	 *
+	 * @return 빠진 운행 ID, 서 있던 줄이 없거나 모르는 모양이면 null (모르는 모양은 토큰 TTL로 사라진다)
+	 */
+	public Long leaveCurrent(long memberId) {
 		String v = redis.opsForValue().get(QueueKeys.member(memberId));
 		if (v == null) {
-			return;
+			return null;
 		}
 		int bar = v.indexOf('|');
+		long runId;
 		try {
-			leave(memberId, Long.parseLong(bar > 0 ? v.substring(0, bar) : v));
+			runId = Long.parseLong(bar > 0 ? v.substring(0, bar) : v);
 		} catch (NumberFormatException e) {
-			// 모르는 모양이면 건드리지 않는다 (토큰 TTL로 사라진다)
+			return null;
 		}
+		leave(memberId, runId);
+		return runId;
 	}
 
 	private QueueStatus waiting(long runId, long ticket, long rank, long throughputPerSec) {
