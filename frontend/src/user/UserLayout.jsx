@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { get, logout } from '../api/client.js';
 import Icon, { Seal } from '../admin/Icon.jsx';
 import { AUTH_ART } from './art.js';
+import ChatWidget from './ChatWidget.jsx';
 import { EaseBar, EaseRoot } from './ease.jsx';
 import { useMember } from './useMember.js';
 import { useMyProfile } from './myName.js';
@@ -88,6 +89,7 @@ export default function UserLayout() {
             </NavLink>
           ))}
         </nav>
+        <ChatWidget />
       </div>
     </EaseRoot>
   );
