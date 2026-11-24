@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v37)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v38)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -19,6 +19,7 @@ CREATE SEQUENCE admin_action_seq;
 CREATE SEQUENCE identity_verification_seq;
 CREATE SEQUENCE suspicious_case_seq;
 CREATE SEQUENCE case_marker_seq;
+CREATE SEQUENCE group_booking_seq;
 
 CREATE TABLE station (
   station_id                 VARCHAR2(10) NOT NULL,
