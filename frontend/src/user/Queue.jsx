@@ -128,7 +128,9 @@ export default function Queue() {
           <>
             <section style={{ padding: '22px 0 6px' }} aria-live="polite">
               <div style={{ fontSize: 15, color: '#B9C1D3' }}>내 순번</div>
-              <div key={tick} className={'q-num' + (tick ? ' tick' : '')}>{st ? (st.rank ?? st.ticketNo).toLocaleString() : '…'}</div>
+              {/* 입장(ADMITTED) 응답에는 rank가 없다. 번호표(ticketNo)는 그 열차에 줄 설 때마다 1, 2, 3…으로 늘어서
+                  나갔다 다시 줄 서면 입장 순간 "1 → 2"처럼 뒤로 밀린 것처럼 보였다 (2026-11-24) → 입장하면 '차례' */}
+              <div key={tick} className={'q-num' + (tick ? ' tick' : '')}>{st ? (st.state === 'ADMITTED' ? '차례' : (st.rank ?? st.ticketNo).toLocaleString()) : '…'}</div>
               <div style={{ marginTop: 12, fontSize: 16 }}>
                 {st?.state === 'ADMITTED'
                   ? '차례가 됐어요! 좌석 고르는 화면으로 넘어가요.'
