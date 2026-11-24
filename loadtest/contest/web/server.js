@@ -393,7 +393,9 @@ async function stepApp() {
   } else {
     log('app', '앱 빌드·실행: gradlew buildFrontend bootRun (처음이면 3~5분, 로그는 results/app.log)');
     const logFile = fs.openSync(path.join(RESULTS, 'app.log'), 'a');
-    const [cmd, args] = WIN ? ['cmd', ['/c', 'gradlew.bat', 'buildFrontend', 'bootRun']] : ['./gradlew', ['buildFrontend', 'bootRun']];
+    // 전체 경로로 부른다. cmd는 NoDefaultCurrentDirectoryInExePath가 켜진 환경(예: Claude Code에서 띄운 경우)에서는
+    // 지금 폴더의 gradlew.bat을 이름만으로 찾지 않는다 → 앱이 바로 꺼짐 (2026-11-24 리허설에서 겪음)
+    const [cmd, args] = WIN ? ['cmd', ['/c', path.join(ROOT, 'gradlew.bat'), 'buildFrontend', 'bootRun']] : [path.join(ROOT, 'gradlew'), ['buildFrontend', 'bootRun']];
     appChild = spawn(cmd, args, { cwd: ROOT, stdio: ['ignore', logFile, logFile], detached: !WIN, windowsHide: true });
     appChild.on('close', (code) => { log('app', `앱이 꺼졌습니다 (종료 코드 ${code})`); appChild = null; pushState(); });
     for (let s = 0; s < 600 && !(await healthy()); s += 5) {

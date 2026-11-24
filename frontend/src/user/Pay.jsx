@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { formatCard } from '../lib/format.js';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router';
 import { get, post } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
@@ -40,7 +41,7 @@ export default function Pay() {
   const location = useLocation();
   const [d, setD] = useState(null);
   const [error, setError] = useState(null);
-  const [card, setCard] = useState(TEST_CARDS[0][0]);
+  const [card, setCard] = useState(formatCard(TEST_CARDS[0][0])); // 4자리씩 띄워 보여 줌 (보낼 때는 숫자만)
   const [busy, setBusy] = useState(false);
   const key = useRef(null);
   const left = useLeft(d?.summary.payDeadlineAt);
@@ -131,14 +132,14 @@ export default function Pay() {
                 <div className="pms stack">
                   {TEST_CARDS.map(([no, label]) => (
                     <label key={no} className={'pm' + (digits === no ? ' on' : '')}>
-                      <input type="radio" name="card" checked={digits === no} onChange={() => setCard(no)} style={{ width: 18, minHeight: 18 }} />
+                      <input type="radio" name="card" checked={digits === no} onChange={() => setCard(formatCard(no))} style={{ width: 18, minHeight: 18 }} />
                       <span className="grow"><b>시험 카드 ···· {no.slice(-4)}</b><br /><span className="mut" style={{ fontSize: 13 }}>{label}</span></span>
                     </label>
                   ))}
                 </div>
                 <div className="field" style={{ margin: '12px 0 0' }}>
                   <label htmlFor="cn">가상 카드번호 직접 넣기</label>
-                  <input id="cn" inputMode="numeric" value={card} onChange={(e) => setCard(e.target.value)} />
+                  <input id="cn" inputMode="numeric" autoComplete="off" placeholder="4111 2222 3333 4441" value={card} onChange={(e) => setCard(formatCard(e.target.value))} />
                   <span className="hint">실제 카드번호는 넣지 마세요. 12~19자리 숫자, 끝자리로 시험 결과가 정해져요 (0 거절 · 9 결과 모름 · 8 늦은 승인).</span>
                 </div>
               </section>

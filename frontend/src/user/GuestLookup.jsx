@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { formatPhone } from '../lib/format.js';
 import { Link } from 'react-router';
 import { post } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
@@ -49,7 +50,7 @@ export default function GuestLookup() {
         </div>
         <div className="field">
           <label htmlFor="gp">휴대폰 번호</label>
-          <input id="gp" inputMode="tel" autoComplete="tel" placeholder="010-1234-5678" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
+          <input id="gp" inputMode="tel" autoComplete="tel" maxLength={13} placeholder="010-1234-5678" value={form.phone} onChange={(e) => setForm({ ...form, phone: formatPhone(e.target.value) })} required />
         </div>
         <button className="btn ink" type="submit" disabled={busy || !form.reservationId || !form.phone}>{busy ? '찾는 중…' : '조회'}</button>
       </form>
