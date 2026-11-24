@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v36 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-24
+> 스키마 v37 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-24
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -36,16 +36,16 @@
 
 | 항목 | 값 |
 |---|---|
-| 테이블 | 64개 (운영 60 + 확장 예정 4) |
-| 저장소 | Oracle 47 · MongoDB 12 · Redis 1 · 확장 예정 4 |
+| 테이블 | 65개 (운영 61 + 확장 예정 4) |
+| 저장소 | Oracle 48 · MongoDB 12 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 572개 |
+| 컬럼 | 573개 |
 | 관계 (FK) | 95개 (Oracle 제약 68 · 논리 참조 22) |
 
 | 영역 | 저장소 | 테이블 |
 |---|---|---|
 | 기준 데이터 | Oracle | `station`, `route`, `route_station`, `car_type`, `train`, `train_car`, `seat`, `train_run`, `train_stop`, `fare`, `purchase_limit_policy`, `sale_event`, `app_policy`, `common_code`(확장), `app_policy_history` |
-| 회원·식별 | Oracle | `member`, `payment_method`, `member_device`, `member_push_token`(확장) |
+| 회원·식별 | Oracle | `member`, `payment_method`, `member_device`, `member_push_token`(확장), `card_lock` |
 | 보안·인증 | Oracle, MongoDB | `member_credential`, `identity_verification`, `auth_session`, `login_attempt`, `admin_user`, `password_reset_token`(확장) |
 | 예약·결제 | Oracle | `seat_inventory`, `reservation`, `reservation_seat`, `reservation_history`, `payment`, `cancellation`, `cancel_fee_policy`, `ticket_transfer`(확장), `purchase_counter`, `group_fee_policy`, `group_booking`, `group_passenger` |
 | 이벤트 신뢰성 | Oracle | `outbox_event`, `processed_event`, `saga_instance` |
@@ -621,6 +621,7 @@ Oracle
 | group.roster_change_days | 7 | 1 | NUMBER | 예약 후 명단 변경 가능 기간(일), 1회 |
 | group.discount_rate | 0.10 | 1 | NUMBER | 단체 할인율 (어른 운임만, 중복 할인 없음) |
 | group.discount_within_days | 30 | 1 | NUMBER | 출발 며칠 이내 신청분에 할인 적용 |
+| payment.max_ci_per_card | 0 | 1 | NUMBER | 카드 한 장에 붙을 수 있는 서로 다른 명의(CI) 수. 0이면 끔. 켤 때 권장 3(가족 카드). 넘으면 결제 시작 거절 (concurrency.md §4.3) |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -679,6 +680,9 @@ erDiagram
   member_push_token {
     NUMBER token_id PK
     NUMBER member_id FK
+  }
+  card_lock {
+    VARCHAR2 method_hash PK
   }
   reservation {
     NUMBER reservation_id PK
@@ -795,7 +799,7 @@ Oracle
 | `method_type` | VARCHAR2(10) | NN | 생성 | CARD / ACCOUNT / PAY |  |
 | `card_last4` | CHAR(4) |  | 생성 | 끝 4자리 | 화면 표시용 |
 
-> **제약·비고** CREATE SEQUENCE payment_method_seq; · CREATE INDEX ix_pay_method_hash ON payment_method (method_hash);
+> **제약·비고** CREATE SEQUENCE payment_method_seq; · CREATE INDEX ix_pay_method_hash ON payment_method (method_hash); · 새 카드를 붙일 때 명의 상한: concurrency.md §4.3 (card_lock 행을 잠근 뒤 서로 다른 명의 수 확인)
 
 **관계** member_id → [`member`](#member) · [`payment`](#payment).method_id → 이 테이블
 
@@ -834,6 +838,25 @@ Oracle · ┄ 확장 예정
 > **제약·비고** 확장 예정 — 앱 배포 시
 
 **관계** member_id → [`member`](#member)
+
+<a id="card-lock"></a>
+#### `card_lock` 카드 잠금 행
+
+Oracle · updated_at 생략
+
+카드 해시마다 한 행. 같은 카드를 새 명의에 붙이는 결제 시작을 한 줄로 세워, 카드 한 장에 붙는 명의 수 상한(도용 카드)을 동시 요청에도 지킨다.
+
+| 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
+|---|---|---|---|---|---|
+| `method_hash` | VARCHAR2(64) | PK | 시스템 | 카드 해시 (payment_method.method_hash와 같은 값) | 아직 payment_method 행이 없는 처음 보는 카드도 잠글 수 있게 따로 둠 |
+
+> **제약·비고** concurrency.md §4.3 · 개수는 여기 세지 않고 잠근 뒤 payment_method·member에서 매번 센다 (이 경로 밖 INSERT와 어긋나지 않게) · 행을 지우지 않음
+
+**예시 데이터** (팀 확정 전 예시값)
+
+| method_hash |
+|---|
+| 9f2c…(HMAC) |
 
 <a id="g-auth"></a>
 ### 보안·인증
@@ -2576,6 +2599,7 @@ Oracle
 | v34 | 마커 규칙 2개 (강다인 요청): case_marker.rule_code에 INHUMAN_STEP(사람 손으로 불가능한 단계 속도)·HEADLESS_HOLD(화면 녹화 없이 선점). MongoDB behavior_log.elapsed_ms(서버 처리 시간), replay_event.pointer(m·t·p·k). app_policy risk.rule.* 15행 (warning_threshold·inhuman_step·headless_hold·linear_mouse·no_search_entry_points, 코드 기본값과 같음) |
 | v35 | 좌석 조회·선점 속도 제한 (김성원 요청): app_policy seatmap.rate_burst(10)·rate_per_sec(1)·abuse_threshold(20)·abuse_window_sec(60)·cooldown_sec(60), Redis rate:seatmap·rate:seathold. 결제 기한이 지나 풀린 좌석도 대기자 우선 (A안): reservation.hold_release_grace_sec(10), seat:hold 만료 = pay_deadline_at + 유예 |
 | v36 | 단체 예매(여행사, 길동현 요청): 새 표 group_booking(신청 단계 REQUESTED / APPROVED / REJECTED / WITHDRAWN, 승인 뒤는 reservation.status가 원천)·group_passenger(탑승자 명단, 이름·휴대폰 암호문)·group_fee_policy(단체 위약금, cancel_fee_policy와 분리). seat_inventory.status에 BLOCKED(단체 할당석, 예약 없는 행), reservation.source에 GROUP, seat_count NUMBER(3), sale_event.group_quota_rate, app_policy group.* 9행. 절차는 concurrency.md §18 (할당석 먼저 + 모자라면 일반 좌석 선착순, 만료·취소는 일반 흐름, GROUP 예약은 매수 카운터 증감 없음 — §3 재선점 포함) |
+| v37 | 도용 카드: 카드 한 장에 붙는 서로 다른 명의(CI) 수 상한 app_policy payment.max_ci_per_card (0 = 끔이 기본, 켤 때 권장 3 — 시연·k6·대회가 같은 가상 카드번호를 써서 바로 켜면 막힘). 동시 요청에도 지키려고 카드 해시별 잠금 행 card_lock 추가 (concurrency.md §4.3, 잠금 순서 §0.4-8). 기존 DB는 db/patch/v37.sql |
 
 ## 참고 자료
 

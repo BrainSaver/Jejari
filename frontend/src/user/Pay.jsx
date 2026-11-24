@@ -29,6 +29,8 @@ const MESSAGES = {
   SEAT_LOST: '좌석을 잃었어요. 다시 예매해 주세요.',
   PAYMENT_IN_PROGRESS: '결제 중이라 지금은 취소할 수 없어요.',
   PAYMENT_RISK_BLOCKED: '이상 이용이 감지되어 결제가 제한되었어요. 잡아 둔 좌석은 풀렸고 결제는 되지 않았어요. 문의는 고객센터로 해 주세요.',
+  // 도용 카드 상한 (concurrency.md §4.3). 좌석은 그대로라 다른 카드로 바로 다시 결제할 수 있다
+  PAYMENT_CARD_LINK_LIMIT: '이 카드는 여러 사람이 이미 쓰고 있어 결제할 수 없어요. 잡아 둔 좌석은 그대로니 다른 카드로 결제해 주세요.',
 };
 
 export default function Pay() {

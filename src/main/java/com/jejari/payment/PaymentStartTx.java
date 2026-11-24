@@ -97,7 +97,8 @@ class PaymentStartTx {
 					 WHERE offered_reservation_id = ? AND status = 'OFFERED'""", rv.deadline(), r);
 		}
 
-		// 6. 결제 수단(AUTH-07 1차: 해시만 저장)과 결제 행. next_check_at = 마감 → 그때까지 결과가 없으면 §6.2가 PG에 조회
+		// 6. 결제 수단(AUTH-07 1차: 해시만 저장)과 결제 행. 새 카드면 명의 상한부터 (§4.3, 걸리면 전체 롤백 → 예약은 HOLD).
+		//    next_check_at = 마감 → 그때까지 결과가 없으면 §6.2가 PG에 조회
 		long methodId = methodId(c.memberId(), c.methodHash(), c.cardLast4());
 		jdbc.update("""
 				INSERT INTO payment (payment_id, reservation_id, method_id, amount, status, idempotency_key,
@@ -156,6 +157,9 @@ class PaymentStartTx {
 		if (!found.isEmpty()) {
 			return found.get(0);
 		}
+		if (methodHash != null) {
+			checkCardLink(memberId, methodHash); // 새 카드를 붙이는 때만 (같은 회원의 같은 카드는 위에서 이미 돌아감)
+		}
 		for (int i = 0; i < METHOD_ID_RETRIES; i++) {
 			long id = jdbc.queryForObject("SELECT payment_method_seq.NEXTVAL FROM dual", Long.class);
 			try {
@@ -168,5 +172,46 @@ class PaymentStartTx {
 			}
 		}
 		throw new IllegalStateException("결제 수단 번호를 " + METHOD_ID_RETRIES + "번 연속 기존 행과 겹쳐 받지 못함");
+	}
+
+	/**
+	 * 이 카드를 이 회원에게 새로 붙여도 되는지 본다 — 카드 한 장에 붙는 서로 다른 명의 수 상한 (도용 카드, concurrency.md §4.3).
+	 *
+	 * <p><b>센 다음 넣기만 하면 동시 요청에 뚫린다.</b> 새로 훔친 카드로 계정 여러 개가 동시에 결제를 시작하면 모두
+	 * "0명"으로 세고 통과한다. 아직 payment_method 행이 없는 카드라 그 행을 {@code FOR UPDATE}로 잠글 수도 없다.
+	 * 그래서 카드 해시마다 한 행짜리 card_lock을 만들고 잠근 <b>뒤에</b> 센다. 같은 카드를 붙이는 트랜잭션은 그 행에서
+	 * 줄을 서고, 앞 트랜잭션이 커밋한 행까지 보고 센다. 잠금은 트랜잭션 맨 나중의 한 행이라 데드락이 없다 (§0.4-8).
+	 *
+	 * <p>개수를 card_lock에 따로 두지 않고 매번 원천에서 센다. payment_method를 이 경로 밖에서 넣는 곳
+	 * (합성 데이터 생성기, 테스트)이 있어 따로 세면 어긋난다.
+	 */
+	private void checkCardLink(long memberId, String methodHash) {
+		long max = policy.getLong(PaymentPolicy.MAX_CI_PER_CARD);
+		if (max <= 0) {
+			return; // 끔 (기본). 잠금도 만들지 않아 결제 시작에 비용이 없다
+		}
+		try {
+			jdbc.update("""
+					MERGE INTO card_lock t USING (SELECT ? AS method_hash FROM dual) s
+					   ON (t.method_hash = s.method_hash)
+					 WHEN NOT MATCHED THEN INSERT (method_hash) VALUES (s.method_hash)""", methodHash);
+		} catch (DuplicateKeyException e) {
+			// 처음 보는 카드를 다른 트랜잭션이 먼저 만들었다. 이 문장만 되돌아가고 행은 이미 있다 (Oracle은 트랜잭션을 이어 감)
+		}
+		jdbc.queryForObject("SELECT method_hash FROM card_lock WHERE method_hash = ? FOR UPDATE", String.class, methodHash);
+
+		record Link(long linked, long mine) {
+		}
+		// 명의가 빈 계정은 회원 하나를 한 명으로 센다 — 명의 없는 계정으로 상한을 피할 수 없게
+		Link l = jdbc.queryForObject("""
+				SELECT COUNT(DISTINCT NVL(m.ci_hash, 'M' || m.member_id)),
+				       COUNT(CASE WHEN m.ci_hash = (SELECT me.ci_hash FROM member me WHERE me.member_id = ?) THEN 1 END)
+				  FROM payment_method pm JOIN member m ON m.member_id = pm.member_id
+				 WHERE pm.method_hash = ?""",
+				(rs, i) -> new Link(rs.getLong(1), rs.getLong(2)), memberId, methodHash);
+		if (l.mine() == 0 && l.linked() >= max) {
+			log.info("카드 명의 상한: 회원 #{} 거절 (이미 붙은 명의 {})", memberId, l.linked());
+			throw new BusinessException(PaymentErrorCode.PAYMENT_CARD_LINK_LIMIT);
+		}
 	}
 }

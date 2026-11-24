@@ -57,6 +57,7 @@ JPA Auditing을 거치지 않는 모든 네이티브 UPDATE는 다음을 지킵�
 5. `waitlist`는 §9에서만 예약보다 먼저 잠그고, 항상 `SKIP LOCKED`라 기다리지 않습니다. §9가 잠그는 행은 `WAITING`이고, 1의 규칙으로 잠그는 행은 `OFFERED`라 서로 겹치지 않습니다.
 6. 새 PK로 INSERT하는 행(`reservation_history`, `outbox_event`, `notification`, `cancellation`, `saga_instance` 생성)은 다른 트랜잭션과 겹치지 않으므로 순서 제약이 없습니다. 단 `outbox_event`는 §0.5대로 reservation 갱신 **뒤에** INSERT합니다.
 7. `group_booking`은 그 단체의 `reservation`보다 **먼저** 잠급니다 (§18.3). 단체 예약에 딸린 다른 행은 1의 규칙대로 reservation 뒤에 바꿉니다.
+8. `card_lock`은 **트랜잭션에서 맨 나중에, 한 행만** 잠급니다 (§4.3). 결제 시작은 카드 하나만 쓰므로 두 트랜잭션이 카드 행을 서로 엇갈려 기다릴 수 없고, reservation·좌석 행보다 늦게 잡으므로 그쪽과도 순환이 생기지 않습니다.
 
 `outbox_event`(발행 상태), `notification`(발송·확인 시각), `cancellation`(환불 상태·재판매 여부)은 나중에 UPDATE되므로 "INSERT만 하는 테이블"이 아닙니다. INSERT만 하는 테이블(`noUpdatedAt`)은 `processed_event`, `reservation_history`, `app_policy_history`뿐입니다.
 
@@ -209,7 +210,8 @@ K는 선점 때 계산해 쓰고, 이후에는 같은 식으로 다시 계산합
    UPDATE waitlist SET offer_deadline_at = :d, updated_at = SYSTIMESTAMP
     WHERE offered_reservation_id = :R AND status = 'OFFERED'
    ```
-6. `INSERT INTO payment (status = 'REQUESTED', idempotency_key, next_check_at = :d, …)` (§1). `next_check_at`은 §6.2 스캐너가 PG에 결과를 물어볼 시각입니다.
+6. 결제 수단을 정합니다. 같은 회원에게 같은 카드(`method_hash`) 행이 있으면 그 행을 씁니다. 없으면 **새 카드를 붙이는 것이므로 §4.3의 명의 상한을 먼저 확인**하고 `payment_method`를 INSERT합니다. 상한에 걸리면 롤백하고 거절합니다 (예약은 HOLD 그대로라 다른 카드로 다시 결제할 수 있습니다).
+   그다음 `INSERT INTO payment (status = 'REQUESTED', idempotency_key, next_check_at = :d, …)` (§1). `next_check_at`은 §6.2 스캐너가 PG에 결과를 물어볼 시각입니다.
 7. `reservation_history`(HOLD → PAYMENT_PENDING), outbox `PAYMENT_STARTED`
 8. COMMIT
 
@@ -217,6 +219,43 @@ K는 선점 때 계산해 쓰고, 이후에는 같은 식으로 다시 계산합
 
 1. `extend.lua`로 R의 모든 `seat:hold` 키를 값이 R일 때만 `PEXPIREAT :d`로 연장합니다.
 2. PG 승인 요청을 보냅니다 (트랜잭션 밖). 즉시 실패 응답이면 §5.2, 승인 응답이면 §5.1입니다.
+
+### 4.3 카드 한 장에 붙는 명의 상한 (도용 카드)
+
+카드가 도용됐는지는 카드사·PG가 판단합니다. 우리가 볼 수 있는 것은 **한 카드가 여러 사람(명의)에게 쓰이는 모양**입니다. 그래서 카드 한 장에 붙을 수 있는 **서로 다른 명의(CI) 수**를 `policy(payment.max_ci_per_card)`로 제한합니다. **0 이하면 끔**이고 기본이 끔입니다 — 켤 때 권장값은 3(가족 카드 고려).
+
+> **기본이 끔인 이유.** 시연용 결제 화면 버튼(`Pay.jsx`의 "바로 승인"), k6 시나리오 11, 봇 대회 사람 안내의 예시가 모두 **같은 가상 카드번호**를 씁니다. 카드 해시는 번호 전체의 HMAC이라 이들은 한 장의 카드로 보이고, 켜는 순간 네 번째 사람부터 결제가 막힙니다. 모의 PG는 끝자리로만 결과를 정하므로, 그쪽 번호를 사람마다 다르게(끝자리는 유지) 바꾼 뒤 켭니다. 계정 수가 아니라 명의 수로 셉니다 — `member.ci_hash`는 유일하지 않아 한 사람이 계정을 여러 개 가질 수 있고, 본인 카드를 본인 계정 여러 개에 쓰는 것은 정상입니다.
+
+**왜 잠금 행이 따로 필요한가.** "센 다음 넣기"를 그냥 하면, 새로 훔친 카드로 계정 여러 개가 **동시에** 결제를 시작할 때 모두 "0명"으로 세고 전부 통과합니다. 도용 카드를 쓰는 쪽이 바로 이렇게 할 사람들입니다. 아직 `payment_method` 행이 하나도 없는 카드라 `FOR UPDATE`로 잠글 행도 없습니다. 그래서 카드 해시마다 한 행짜리 `card_lock`을 두고, 그 행을 잠가 같은 카드의 등록을 한 줄로 세웁니다 (`purchase_counter`가 매수 판정을 한 행에 모으는 것과 같은 생각입니다).
+
+§4.1-6에서 **새 카드를 붙일 때만** (`method_hash`가 있고 이 회원에게 그 카드 행이 없을 때, 그리고 상한이 켜져 있을 때 — 끔이면 아래를 하지 않으므로 잠금도 없습니다):
+
+1. 잠금 행을 만듭니다. 이미 있으면 아무것도 안 합니다.
+   ```sql
+   MERGE INTO card_lock t USING (SELECT :h AS method_hash FROM dual) s
+      ON (t.method_hash = s.method_hash)
+    WHEN NOT MATCHED THEN INSERT (method_hash) VALUES (s.method_hash)
+   ```
+   처음 보는 카드를 두 트랜잭션이 동시에 MERGE하면 뒤쪽은 앞쪽이 끝날 때까지 PK에서 기다렸다가 ORA-00001을 받습니다. 그 문장만 되돌아가므로(트랜잭션은 이어짐) 무시하고 다음으로 갑니다 — 행은 이미 생겼습니다.
+2. 잠급니다. 같은 카드를 붙이는 다른 트랜잭션은 여기서 줄을 섭니다.
+   ```sql
+   SELECT method_hash FROM card_lock WHERE method_hash = :h FOR UPDATE
+   ```
+3. 잠근 **뒤에** 셉니다 (새 문장이라 앞 트랜잭션이 커밋한 행까지 보입니다).
+   ```sql
+   SELECT COUNT(DISTINCT NVL(m.ci_hash, 'M' || m.member_id)) AS linked,
+          COUNT(CASE WHEN m.ci_hash = :ci THEN 1 END)          AS mine
+     FROM payment_method pm JOIN member m ON m.member_id = pm.member_id
+    WHERE pm.method_hash = :h
+   ```
+   - `mine > 0`이면 같은 명의가 이미 쓰는 카드라 통과합니다 (그 사람의 다른 계정).
+   - 아니면 `linked >= policy(payment.max_ci_per_card)`일 때 거절합니다 (`PAYMENT_CARD_LINK_LIMIT`).
+   - 명의가 없는 회원은 `'M' || member_id`로 한 명씩 셉니다. 지금은 게스트까지 모두 명의가 있어 쓰이지 않지만, 명의가 빈 계정으로 상한을 피할 수 없게 둡니다.
+4. 통과하면 `payment_method`를 INSERT합니다. 잠금은 커밋(8단계)에서 풀립니다.
+
+잠금은 §0.4-8대로 트랜잭션 맨 나중에 한 행만 잡습니다. 잠그는 시간은 결제 시작 트랜잭션의 나머지(결제 행·이력·outbox INSERT)뿐이고, 같은 카드를 쓰는 사람은 많아야 몇 명이라 줄이 길어지지 않습니다.
+
+`payment_method`를 이 경로 밖에서 INSERT하는 곳(합성 데이터 생성기, 테스트)은 상한을 거치지 않습니다. 그래서 개수를 `card_lock`에 따로 세지 않고, 잠근 뒤 원천 테이블에서 매번 셉니다 — 따로 세면 그런 INSERT와 어긋납니다.
 
 ---
 
