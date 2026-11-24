@@ -201,7 +201,7 @@ function CancelSheet({ id, onClose, onDone }) {
           <>
             <div className="kv"><span>결제 금액</span><span>{won(q.paidAmount)}</span></div>
             <div className="kv"><span>출발까지</span><span>{leftText(q.minutesBeforeDeparture)}</span></div>
-            <div className="kv"><span>수수료</span><span>{won(q.fee)} ({Math.round(Number(q.feeRate) * 100)}%)</span></div>
+            <div className="kv"><span>수수료</span><span>{won(q.fee)}{q.feeRate != null ? ` (${Math.round(Number(q.feeRate) * 100)}%)` : ''}</span></div>
             <div className="kv total"><span>돌려받는 돈</span><span className="num">{won(q.refund)}</span></div>
             <div className="stack" style={{ marginTop: 14 }}>
               <ConfirmButton className="btn warn" confirm="한 번 더 누르면 취소돼요" onConfirm={confirm}>취소하기</ConfirmButton>

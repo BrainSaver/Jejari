@@ -12,6 +12,8 @@ end
 local waiting = redis.call('ZREM', 'queue:' .. run, qm)
 redis.call('ZREM', 'queue:active:' .. run, ARGV[2])
 redis.call('DEL', 'queue:pass:' .. run .. ':' .. ARGV[2])
+-- 연장 표시도 지운다. 남겨 두면 다시 줄 서서 새로 입장했을 때 '이미 연장함'으로 막힌다
+redis.call('DEL', 'queue:passext:' .. run .. ':' .. ARGV[2])
 redis.call('DEL', KEYS[1])
 if ci ~= '' then
   redis.call('ZREM', 'queue:ci:' .. ci, ARGV[2])

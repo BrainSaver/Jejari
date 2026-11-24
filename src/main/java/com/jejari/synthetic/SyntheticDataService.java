@@ -499,8 +499,9 @@ public class SyntheticDataService {
 			Instant t = base.plusSeconds(rnd.nextInt(2 * 3600));
 			for (Person p : g) {
 				out.add(event(p, "VIEW_SEAT", t, null, 200, null));
-				out.add(event(p, "SEAT_HOLD", t.plusSeconds(2), 2000, 201, List.of(200_000L + rnd.nextInt(500))));
-				t = t.plusSeconds(3 + rnd.nextInt(5));
+				out.add(event(p, "SEAT_HOLD", t.plusMillis(600), 600, 201, List.of(200_000L + rnd.nextInt(500))));
+				// 한 기기에서 계정을 함께 돌림: 다음 계정이 0.2~0.9초 뒤 (가족은 로그아웃·로그인에 몇 초 이상, risk.rule.account_switch_sec 3초)
+				t = t.plusMillis(800 + rnd.nextInt(700));
 			}
 		}
 		return out;

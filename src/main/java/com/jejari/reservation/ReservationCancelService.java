@@ -47,7 +47,8 @@ import com.jejari.seat.SeatReleaseService.ReturnedSeats;
  * <ul>
  *   <li><b>수수료를 잠근 뒤 다시 계산</b>: 미리보기 값을 클라이언트에서 받지 않는다. 남이 보낸 수수료를 믿으면 0원으로 바꿔 보낼 수 있다.</li>
  *   <li><b>환불은 트랜잭션 밖</b> (§0.6): PG 호출 중에 DB 락을 잡고 있지 않는다. 환불 키 {@code cancel:<cancel_id>}로 재시도해도 한 번만 환불된다.</li>
- *   <li>관리자 강제 취소(ADM-07, {@link #cancelByAdmin})도 같은 트랜잭션을 actor ADMIN으로 쓴다: 수수료 0·전액 환불·admin_action 기록.</li>
+ *   <li>관리자 강제 취소(ADM-07, {@link #cancelByAdmin})도 같은 트랜잭션을 actor ADMIN으로 쓴다: 기본은 수수료 면제·전액 환불,
+ *       면제하지 않으면(매크로 판정) 사용자 취소와 같은 수수료(단체는 단체 위약금). admin_action 기록.</li>
  *   <li>사용자 취소(USER)만 위험 점수 신호다. 이 취소는 예약 이벤트로 risk-signal이 받아 다음 1분 배치에 반영한다.</li>
  * </ul>
  */
@@ -155,7 +156,7 @@ public class ReservationCancelService {
 	}
 
 	/** 관리자 정보 (§8.1 ADMIN). admin_action에 누가·왜를 남긴다 */
-	private record AdminActor(long adminId, String memo) {
+	private record AdminActor(long adminId, String memo, boolean waiveFee) {
 	}
 
 	/**
@@ -167,13 +168,22 @@ public class ReservationCancelService {
 	 * @param memo 사유 (5~500자, 필수)
 	 */
 	public AdminCancelResponse cancelByAdmin(long adminId, long reservationId, String memo) {
+		return cancelByAdmin(adminId, reservationId, memo, true);
+	}
+
+	/**
+	 * @param waiveFee true(기본)면 수수료 면제·전액 환불 (오탐·운영 사유). false면 사용자 취소와 같은 수수료를 받는다
+	 *                 (매크로로 판정한 취소, 단체는 group_fee_policy). 그 계산이 불가(출발 뒤 한도·도착 뒤·정책 없음)면
+	 *                 CANCEL_NOT_ALLOWED로 거절 — 면제로 다시 취소한다 (concurrency.md §8.1-4)
+	 */
+	public AdminCancelResponse cancelByAdmin(long adminId, long reservationId, String memo, boolean waiveFee) {
 		String reason = CaseActionService.memo(memo);
 		List<Long> owner = jdbc.queryForList("SELECT member_id FROM reservation WHERE reservation_id = ?", Long.class,
 				reservationId);
 		if (owner.isEmpty()) {
 			throw new BusinessException(SeatErrorCode.RESERVATION_NOT_FOUND);
 		}
-		AdminActor actor = new AdminActor(adminId, reason);
+		AdminActor actor = new AdminActor(adminId, reason, waiveFee);
 		return cancelConfirmed(owner.get(0), reservationId, actor);
 	}
 
@@ -190,8 +200,9 @@ public class ReservationCancelService {
 				throw new BusinessException(ReservationErrorCode.RESERVATION_NOT_CONFIRMED);
 			}
 			Detail detail = queries.detail(memberId, reservationId);
-			Quote q = admin == null ? toQuote(detail) : adminQuote(detail);
-			Long policyId = admin == null ? detail.cancel().policyId() : null;
+			boolean waived = admin != null && admin.waiveFee();
+			Quote q = waived ? adminQuote(detail) : toQuote(detail); // 단체 여부는 detail.cancel()이 이미 나눔 (§18.6)
+			Long policyId = waived ? null : detail.cancel().policyId();
 
 			int n = jdbc.update("""
 					UPDATE reservation SET status = 'CANCELED', canceled_at = SYSTIMESTAMP, updated_at = SYSTIMESTAMP,
@@ -219,6 +230,9 @@ public class ReservationCancelService {
 					: new LinkedHashMap<>(Map.of("reservationId", (Object) reservationId));
 			payload.put("reason", actorType);
 			payload.put("cancelFee", q.fee());
+			if (admin != null) {
+				payload.put("feeWaived", waived);
+			}
 			payload.put("refundAmount", q.refund());
 			payload.put("minutesAfterPurchase", minutesAfterPurchase);
 			payload.put("minutesBeforeDeparture", q.minutesBeforeDeparture());
