@@ -10,7 +10,7 @@ import sad from './bot/sad.png';
 // 마스코트 표정: 인사=happy, 평소 답=basic, 찾는 중=surprised, 기본 환영 화면=wink, 속도 제한=angry, 실패=sad
 const MOOD = { basic, happy, wink, surprised, angry, sad };
 const Face = ({ mood = 'basic', size = 36 }) => (
-  <img src={MOOD[mood] || basic} alt="" width={size} height={Math.round(size * 0.9)} style={{ objectFit: 'contain', flex: 'none' }} />
+  <img src={MOOD[mood] || basic} alt="" width={size} height={Math.round(size * 0.9)} style={{ display: 'block', objectFit: 'contain', flex: 'none' }} />
 );
 
 /**
@@ -57,19 +57,23 @@ export default function ChatWidget() {
 
   return (
     <>
-      {/* 960px 미만에서는 아래 탭바(내 정보 등)가 보이므로 그 위로 올린다 */}
+      {/* 글자 크기는 .user{zoom}이라 px 여백·버튼·탭바가 같이 커진다. 그래서 여백은 그대로 두고, 화면 단위(vw·vh)만 배율로 나눈다.
+          960px 미만은 아래 탭바(내 정보 등) 위로 올리고, 가로로 눕힌 폰은 높이가 모자라 창을 버튼 왼쪽에 둔다 */}
       <style>{`
-        .chat-fab{bottom:calc((20px + env(safe-area-inset-bottom)) / var(--z,1))}
-        .chat-win{bottom:calc((84px + env(safe-area-inset-bottom)) / var(--z,1))}
+        .chat-fab{right:16px;bottom:calc(20px + env(safe-area-inset-bottom) / var(--z,1))}
+        .chat-win{right:16px;bottom:calc(92px + env(safe-area-inset-bottom) / var(--z,1));width:min(360px,calc(100vw / var(--z,1) - 32px));height:min(480px,calc(100vh / var(--z,1) - 108px))}
         @media (max-width:959px){
-          .chat-fab{bottom:calc((76px + env(safe-area-inset-bottom)) / var(--z,1))}
-          .chat-win{bottom:calc((140px + env(safe-area-inset-bottom)) / var(--z,1));height:min(480px,calc((100vh - 170px) / var(--z,1)))!important}
+          .chat-fab{bottom:calc(76px + env(safe-area-inset-bottom) / var(--z,1))}
+          .chat-win{bottom:calc(148px + env(safe-area-inset-bottom) / var(--z,1));height:min(480px,calc(100vh / var(--z,1) - 160px))}
+        }
+        @media (max-width:959px) and (max-height:500px){
+          .chat-win{right:96px;bottom:calc(76px + env(safe-area-inset-bottom) / var(--z,1));width:min(360px,calc(100vw / var(--z,1) - 112px));height:calc(100vh / var(--z,1) - 88px)}
         }
       `}</style>
       {open && (
         <section className="chat-win" aria-label="예매 안내 챗봇" style={{
-          position: 'fixed', right: 'calc(16px / var(--z, 1))', zIndex: 20,
-          width: 'min(360px, calc((100vw - 32px) / var(--z, 1)))', height: 'min(480px, calc(70vh / var(--z, 1)))', display: 'flex', flexDirection: 'column',
+          position: 'fixed', zIndex: 20,
+          display: 'flex', flexDirection: 'column',
           background: 'var(--card)', border: '2px solid var(--ink)', borderRadius: 14, boxShadow: '0 8px 24px rgba(0,0,0,.25)', overflow: 'hidden',
         }}>
           <header style={{ background: 'var(--ink)', color: '#fff', padding: '10px 14px', fontWeight: 900, display: 'flex', justifyContent: 'space-between' }}>
@@ -107,7 +111,7 @@ export default function ChatWidget() {
         </section>
       )}
       <button type="button" className="chat-fab" aria-label={open ? '예매 도우미 닫기' : '예매 도우미 열기'} onClick={() => setOpen((v) => !v)} style={{
-        position: 'fixed', right: 'calc(16px / var(--z, 1))', zIndex: 20, padding: 0,
+        position: 'fixed', zIndex: 20, padding: 0,
         border: 0, background: 'none', cursor: 'pointer', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,.35))',
       }}><Face mood={open ? 'wink' : 'happy'} size={72} /></button>
     </>
