@@ -138,6 +138,27 @@ public class QueueService {
 		}
 	}
 
+	/**
+	 * 지금 서 있는(또는 입장한) 줄이 어느 운행이든 빠진다. "이미 다른 열차를 기다리고 있어요"일 때 그 줄 화면으로 돌아가지 않고
+	 * 바로 그만두게 하려는 것이다. 회원당 줄은 하나라 지울 대상이 분명하다. 같은 본인인증의 다른 계정 줄은 건드리지 않는다.
+	 *
+	 * @return 빠진 운행 ID, 서 있던 줄이 없으면 null
+	 */
+	public Long leaveCurrent(long memberId) {
+		String v = redis.opsForValue().get(QueueKeys.member(memberId));
+		if (v == null) {
+			return null;
+		}
+		long runId;
+		try {
+			runId = Long.parseLong(v.substring(0, v.indexOf('|')));
+		} catch (RuntimeException e) {
+			return null;
+		}
+		leave(memberId, runId);
+		return runId;
+	}
+
 	private QueueStatus waiting(long runId, long ticket, long rank, long throughputPerSec) {
 		// 입장 속도 기록이 아직 없으면(첫 입장 처리 전) 정책값을 쓴다
 		long throughput = Math.max(1, throughputPerSec > 0 ? throughputPerSec : policy.getLong(PolicyProvider.ADMIT_PER_SEC));

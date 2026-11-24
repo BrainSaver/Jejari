@@ -72,6 +72,22 @@ class QueueServiceTest extends QueueRedisSupport {
     }
 
     @Test
+    void 다른_열차_줄에_남아_있으면_막히고_운행을_몰라도_그_줄을_그만두면_새_열차에_설_수_있다() {
+        long other = RUN + 1;
+        runs.open(other);
+        queue.enter(1, other);
+        admitter.admit(other); // 다른 열차 좌석 화면까지 들어간 상태 (토큰 살아 있음)
+
+        assertThatThrownBy(() -> queue.enter(1, RUN))
+                .isInstanceOfSatisfying(BusinessException.class, e -> assertThat(e.getErrorCode()).isEqualTo(QueueErrorCode.QUEUE_DUPLICATED));
+
+        assertThat(queue.leaveCurrent(1)).isEqualTo(other);
+        assertThat(redis.hasKey("queue:pass:" + other + ":1")).isFalse(); // 그 열차 토큰도 무효
+        assertThat(queue.enter(1, RUN).state()).isEqualTo(QueueStatus.State.WAITING);
+        assertThat(queue.leaveCurrent(2)).isNull(); // 서 있는 줄이 없으면 아무 일 없음
+    }
+
+    @Test
     void 입장하지_않았거나_토큰이_없으면_연장할_수_없다() {
         queue.enter(1, RUN); // 대기 중 (토큰 없음)
         assertThatThrownBy(() -> queue.extend(1, RUN))
