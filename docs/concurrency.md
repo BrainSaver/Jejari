@@ -942,9 +942,9 @@ Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함�
 
 자동 승인이든 관리자 승인이든 같은 절차입니다. 시스템이 대표자 명의로 실행하므로 입장 토큰과 매수 카운터(§10)를 쓰지 않습니다.
 
-1. 좌석 고르기 (락 없음): 그 운행의 BLOCKED 좌석 중 **같은 객차 연속**으로 `passenger_count`개. **모자라면 18.3a**로 일반 좌석을 더 고릅니다. 일반 좌석까지 모자라면 거절(`GROUP_SEAT_SHORT`)하고 신청은 `REQUESTED`로 둡니다.
+1. 좌석 고르기 (락 없음): 그 운행의 BLOCKED 좌석 중 **같은 객차 연속**으로 `passenger_count`개. **모자라면 18.3a**로 일반 좌석을 더 고릅니다. 18.3a를 지금 할 수 없으면(오픈 직후 등) 승인 전체를 미룹니다(18.3b). 일반 좌석까지 모자라면 거절(`GROUP_SEAT_SHORT`)하고 신청은 `REQUESTED`로 둡니다. 할당석 몫만 먼저 배정하지 않습니다 (예약이 두 건으로 쪼개짐).
 2. 마감 `:d = 지금 + policy(group.pay_deadline_days)일`.
-3. Redis: `group_claim.lua`(새 스크립트)로 고른 키 중 값이 `GROUP`인 키만 `SET R PXAT (:d + reservation.hold_release_grace_sec)`. 하나라도 `GROUP`이 아니면 바꾼 키를 되돌리고 0 반환 → 1로 돌아가 다른 좌석을 고릅니다 (최대 3회, 그래도 실패면 거절). 18.3a 일반 좌석은 이 단계에서 함께 잡습니다.
+3. Redis: `group_claim.lua`(새 스크립트)로 고른 키 중 값이 `GROUP`인 키만 `SET R PXAT (:d + reservation.hold_release_grace_sec)`. 하나라도 `GROUP`이 아니면 바꾼 키를 되돌리고 0 반환 → 1로 돌아가 다른 좌석을 고릅니다 (최대 3회, 그래도 실패면 거절). 18.3a 일반 좌석은 이 단계에서 함께 잡습니다 (18.3a-2).
 4. DB 트랜잭션:
    1. `SELECT … FROM group_booking WHERE group_id = :g FOR UPDATE` → `status = 'REQUESTED'`가 아니면 롤백 (멱등, 동시 승인 2건 중 1건만).
    2. `INSERT INTO reservation (… source = 'GROUP', status = 'HOLD', seat_count = n, pay_deadline_at = :d …)`
@@ -954,16 +954,32 @@ Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함�
    6. `UPDATE group_booking SET status = 'APPROVED', reservation_id = R, approved_at, approved_by`
    7. `reservation_history`(actor_type = 'SYSTEM' 또는 'ADMIN'), `saga_instance`(timeout_at = :d), `outbox_event`(SEAT_HELD)
    8. COMMIT
-5. 롤백되면 `group_return.lua`로 할당석 키 중 값이 R인 키만 `GROUP PXAT :rel`로 되돌리고, 18.3a 일반 좌석 키는 `release.lua`로 R 값일 때만 지웁니다.
+5. 롤백되면 `group_return.lua`로 할당석 키 중 값이 R인 키만 `GROUP PXAT :rel`로 되돌리고, 18.3a 일반 좌석 키는 `release.lua`로 R 값일 때만 지웁니다. 할당석 키와 일반 좌석 키를 **둘 다** 되돌립니다.
 
 ### 18.3a 할당석이 모자랄 때: 일반 좌석 선착순
 
 할당석이 `passenger_count`보다 적으면 남은 인원 m을 **일반 좌석에서** 이어 고릅니다. 개인 선점(§2)과 같은 장치로 잡으므로 같은 순간 부딪히면 먼저 잡은 쪽이 이깁니다.
 
-1. 좌석 고르기 (락 없음): 할당석과 같은 객차의 이어지는 좌석 → 가까운 객차 순으로 빈 일반 좌석 m개.
-2. Redis: 18.3-3의 `group_claim.lua`와 함께, 일반 좌석 키는 `hold.lua`(§2.1-4)로 R 값 `SET NX PXAT (:d + reservation.hold_release_grace_sec)`. 하나라도 다른 값이면 그 좌석을 빼고 1로 돌아갑니다 (18.3-3과 같은 3회 한도). **개인 매수 한도(`limit_incr.lua`)는 쓰지 않습니다.**
-3. DB: 18.3-4-3 바로 뒤에 일반 좌석 행을 `INSERT INTO seat_inventory (… status = 'HOLD', hold_expires_at = :d, reservation_id = R)` `(run_id, seat_id, segment_no)` 오름차순으로 (§0.4-3). PK 충돌이면 롤백(§2.2-4와 같음). §2.2-1의 이전 점유자 확인과 만료 HOLD 재선점(§3)도 §2와 똑같이 거칩니다.
+0. **실행 조건 (오픈 러시 새치기 방지)**: 운행이 `ON_SALE`이고, 그 운행의 대기열이 비었을 때만 실행합니다. 대기열이 빈 것은 줄 선 사람(`ZCARD queue:{runId}` = 0)과 입장해 좌석을 고르는 사람(`ZCOUNT queue:active:{runId} (지금 +inf` = 0)이 **둘 다 0**인 것입니다. 단체 신청은 판매 오픈 전부터 받으므로, 이 조건이 없으면 오픈 순간 쌓인 신청이 자동 승인되며 줄 선 사람보다 먼저 일반 좌석을 가져갑니다. 조건이 안 맞으면 18.3b로 미룹니다.
+   - 확인과 잡기 사이에 새로 줄 선 사람과는 2의 `SET NX`로 선착순입니다 (막지 않음).
+1. 좌석 고르기 (락 없음): 할당석과 같은 객차의 이어지는 좌석 → 가까운 객차 순으로 일반 좌석 m개. **`seat_inventory` 행이 없고 Redis `seat:hold` 키도 없는 좌석만** 고릅니다.
+   - 만료된 HOLD 행이 남은 좌석은 건너뜁니다. 단체 트랜잭션 안에서 남의 예약을 잠그고 정리(§3)하지 않습니다. 락 순서(§0.4-7)가 꼬이고 롤백 범위가 커지기 때문입니다. 그 좌석은 스캐너(§6.1)가 풀어 대기자·일반 판매로 넘깁니다.
+   - 대기자에게 제안 중인 좌석(`REOFFER:R`)은 DB 행이 이미 지워져 있으므로, DB만 보면 빈 좌석으로 보입니다. Redis 키를 같이 봐야 합니다.
+2. Redis: 할당석 키와 일반 좌석 키를 **한 번에** 잡습니다. 아래 둘 중 하나로 합니다 (길동현 님 결정).
+   - **(권장) 스크립트 하나**: `group_claim.lua`가 할당석 키는 값이 `GROUP`인지, 일반 좌석 키는 비어 있는지를 전부 검사한 뒤 전부 `SET R PXAT (:d + reservation.hold_release_grace_sec)`합니다. 하나라도 어긋나면 아무것도 쓰지 않고 0을 반환합니다 (`hold.lua`와 같은 "전부 아니면 전무"). 반쯤 잡힌 상태가 생기지 않습니다.
+   - **스크립트 둘**: 할당석은 `group_claim.lua`, 일반 좌석은 `hold.lua`. 일반 좌석에서 실패하면 **할당석 키는 그대로 두고 일반 좌석만 다시 고릅니다** (1로, 18.3-3과 같은 3회 한도). 최종 실패면 18.3-5로 할당석·일반 좌석 키를 둘 다 되돌립니다.
+   - 어느 쪽이든 `hold.lua`의 인계 값(ARGV[3])은 **항상 `''`**입니다. 그래야 `REOFFER:R` 좌석을 덮어쓰지 않습니다 (G5c).
+   - **개인 매수 한도(`limit_incr.lua`)는 쓰지 않습니다.**
+3. DB: 18.3-4-3 바로 뒤에 일반 좌석 행을 `INSERT INTO seat_inventory (… status = 'HOLD', hold_expires_at = :d, reservation_id = R)` `(run_id, seat_id, segment_no)` 오름차순으로 (§0.4-3). 1에서 행이 없는 좌석만 골랐으므로, PK 충돌이면 그 사이 누가 먼저 잡은 것입니다. 전체를 롤백하고(18.3-5) 1로 돌아갑니다 (3회 한도).
 4. 한 예약 안에 할당석에서 바꾼 행과 새로 INSERT한 행이 섞일 수 있습니다. 결제·만료·취소에서는 구분하지 않습니다 (18.5).
+
+### 18.3b 미룬 승인 다시 하기
+
+18.3a-0 조건 때문에 미룬 신청은 `REQUESTED`로 남고, 스캐너가 다시 시도합니다.
+
+1. 주기적으로(예: 1분) 그 운행의 `REQUESTED` 신청을 신청 순서(`created_at`, `group_id` 오름차순)대로 읽어 18.3을 처음부터 다시 실행합니다. 18.3-4-1의 `FOR UPDATE` + `status = 'REQUESTED'` 확인이 있어 두 앱이 같이 돌아도 한 번만 승인됩니다.
+2. 앞 신청이 미뤄지면 그 운행의 뒤 신청도 미룹니다 (신청 순서 유지). 할당석만으로 되는 뒤 신청은 바로 승인해도 됩니다. 할당석은 개인과 겨루지 않기 때문입니다.
+3. 할당석 반납 시각(18.4)까지 승인되지 못하면 `REJECTED`(`cancel_reason` = 일반 좌석 부족)로 끝냅니다. 인기 운행은 대기열이 오래 비지 않으므로 끝이 있어야 합니다.
 
 ### 18.4 반납 (출발 `group.quota_release_days`일 전)
 
@@ -998,6 +1014,9 @@ Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함�
 | G4 | 두 단체가 같은 할당석에 동시 배정 | 한쪽만 그 좌석, 다른 쪽은 다른 좌석 또는 거절 | §18.3 |
 | G5 | 할당석보다 많은 인원 신청 (일반 좌석 남음) | 할당석 전부 + 모자란 만큼 일반 좌석, 행 수 = K, 대표자 개인 카운터 변화 없음 | §18.3a |
 | G5b | G5와 같은 순간 개인 선점이 같은 일반 좌석에 들어옴 | 먼저 `SET NX`한 쪽만 성공, 단체는 다른 좌석을 고르거나 거절, 중복 0 | §18.3a |
+| G5c | 일반 좌석 중 대기자에게 제안 중인 좌석(`REOFFER:R`)이 있음 | 18.3a가 그 좌석을 고르지 않고, 억지로 넘겨도 Redis 단계에서 실패. 대기자 제안은 그대로 | §18.3a |
+| G5d | 판매 오픈 직후(대기열에 사람 있음) 할당석보다 많은 단체 신청 | 승인 미룸(`REQUESTED`), 일반 좌석 변화 없음. 대기열이 비면 18.3b가 승인 | §18.3a-0, §18.3b |
+| G5e | 할당석만으로 되는 단체 신청 (오픈 직후) | 대기열과 상관없이 바로 승인 | §18.3b-2 |
 | G6 | 반납 스캐너와 단체 배정이 동시에 실행 | HOLD로 바뀐 좌석은 남고 BLOCKED만 삭제 | §18.4 |
 | G7 | 단체 예약 결제 기한 만료 | 대기자에게 제안, 대표자 개인 카운터 변화 없음 | §18.5 |
 | G8 | 결제 기한이 지난 단체 HOLD를 일반 사용자가 재선점 (§3) | 재선점 성공, 대표자 개인 카운터 변화 없음 | §3, §18.5 |
