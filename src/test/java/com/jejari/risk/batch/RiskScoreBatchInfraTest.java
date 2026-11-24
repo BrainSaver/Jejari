@@ -446,6 +446,7 @@ class RiskScoreBatchInfraTest {
 				event("QUEUE_ENTER", human, humanCi, null, t, 5000, 200, null).append("session_id", humanSid),
 				event("SEAT_HOLD", human, humanCi, null, t.plusSeconds(5), 5000, 201, List.of(2L)).append("session_id", humanSid)));
 		replay(humanSid, human, humanCi, "m", 1); // 사람의 화면 녹화 (클릭 1번이라 마우스 규칙엔 안 걸림)
+		wander(humanSid); // 손이 움직인 흔적 (없으면 새 HEADLESS_HOLD 기준에 걸림)
 
 		dirty.mark(new RiskSubject(SubjectType.CI, botCi));
 		dirty.mark(new RiskSubject(SubjectType.CI, humanCi));
@@ -486,6 +487,7 @@ class RiskScoreBatchInfraTest {
 				event("SEAT_HOLD", bot, ci, null, t.plusMillis(50), 5000, 201, List.of(1L)).append("session_id", sid),
 				event("PAY", bot, ci, null, t.plusMillis(140), 5000, 200, null).append("session_id", sid)));
 		replay(sid, bot, ci, "m", 1); // 화면 녹화는 있음 (HEADLESS_HOLD와 섞이지 않게)
+		wander(sid);
 		dirty.mark(new RiskSubject(SubjectType.CI, ci));
 		batch.run();
 
@@ -509,6 +511,7 @@ class RiskScoreBatchInfraTest {
 		docs.add(event("PAY", bot2, ci2, null, t.plusSeconds(10).plusMillis(90), 5000, 200, null).append("session_id", sid2));
 		mongo.getCollection("behavior_log").insertMany(docs);
 		replay(sid2, bot2, ci2, "m", 1);
+		wander(sid2);
 		dirty.mark(new RiskSubject(SubjectType.CI, ci2));
 		batch.run();
 		var codes = jdbc.queryForList("""
@@ -566,6 +569,13 @@ class RiskScoreBatchInfraTest {
 	}
 
 	/** 녹화 세션 하나: 클릭 n번, 궤적 점은 클릭 자리에만 (중간 점 없음) */
+	/** 클릭 자리가 아닌 곳을 지나간 궤적 하나 (사람 손이 움직인 흔적, {@code MouseMotion.handsOff}가 false) */
+	void wander(String sid) {
+		mongo.getCollection("replay_event").insertOne(new Document("session_id", sid).append("seq", 5000L)
+				.append("ts", new Date()).append("type", "MOUSE_PATH")
+				.append("path", List.of(List.of(0, 512, 488), List.of(150, 540, 470), List.of(300, 590, 431))));
+	}
+
 	void replay(String sid, long memberId, String ci, String pointer, int n) {
 		Date now = new Date();
 		mongo.getCollection("replay_session").insertOne(new Document("_id", sid).append("session_id", sid)
