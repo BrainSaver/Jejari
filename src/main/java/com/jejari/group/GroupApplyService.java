@@ -265,7 +265,7 @@ public class GroupApplyService {
 				INSERT INTO group_passenger (group_id, passenger_no, name_enc, phone_enc, enc_key_id, phone_hash,
 				       no_phone_yn, passenger_type, rep_yn, status)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')""", pax, 200, (ps, p) -> {
-			String row = groupId + ":" + p.no();
+			String row = groupId + "-" + p.no();
 			Encrypted name = cipher.encrypt(p.name(), PiiField.GROUP_PASSENGER_NAME, row);
 			Encrypted phone = p.phone() == null ? null : cipher.encrypt(p.phone(), PiiField.GROUP_PASSENGER_PHONE, row);
 			ps.setLong(1, groupId);

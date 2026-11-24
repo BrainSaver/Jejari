@@ -88,7 +88,7 @@ public class GroupQueryService {
 				SELECT passenger_no, name_enc, phone_enc, no_phone_yn, passenger_type, rep_yn, seat_id, status
 				  FROM group_passenger WHERE group_id = ? ORDER BY passenger_no""", rs -> {
 			int no = rs.getInt(1);
-			String row = groupId + ":" + no;
+			String row = groupId + "-" + no;
 			long seat = rs.getLong(7);
 			Long seatId = rs.wasNull() ? null : seat;
 			pax.add(new PassengerView(no, masked(rs.getString(2), PiiField.GROUP_PASSENGER_NAME, row, true),

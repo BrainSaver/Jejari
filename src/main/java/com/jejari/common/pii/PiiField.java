@@ -17,7 +17,7 @@ public record PiiField(String table, String column) {
     public static final PiiField MEMBER_PHONE = new PiiField("member", "phone_enc");
     /** 관리자 TOTP 비밀키. rowId = admin_id */
     public static final PiiField ADMIN_MFA_SECRET = new PiiField("admin_user", "mfa_secret_enc");
-    /** 단체 탑승자 이름·휴대폰 (ERD v36). rowId = "{group_id}:{passenger_no}" */
+    /** 단체 탑승자 이름·휴대폰 (ERD v36). rowId = "{group_id}-{passenger_no}" */
     public static final PiiField GROUP_PASSENGER_NAME = new PiiField("group_passenger", "name_enc");
     public static final PiiField GROUP_PASSENGER_PHONE = new PiiField("group_passenger", "phone_enc");
 
