@@ -76,7 +76,7 @@ class ChatServiceTest {
 		FakeModel m = new FakeModel(call("search_runs", "{\"from\":\"서울역\",\"to\":\"부산\",\"date\":\"2026-11-28\"}"),
 				text("09:05 KTX 101이 있어요."));
 
-		String reply = service(m).reply(List.of(new Turn("user", "11/28 서울 부산")));
+		String reply = service(m).reply(List.of(new Turn("user", "11/28 서울 부산"))).text();
 
 		assertThat(reply).isEqualTo("09:05 KTX 101이 있어요.");
 		JsonNode toolMsg = m.seen.get(1).get(m.seen.get(1).size() - 1);
@@ -104,6 +104,54 @@ class ChatServiceTest {
 		assertThat(all).contains("\"운임(원)\":\"정보 없음\"").contains("\"잔여석\":\"정보 없음\"").doesNotContain("depart_after");
 		assertThat(s.runTool("search_runs",
 				"{\"from\":\"서울\",\"to\":\"부산\",\"date\":\"2026-11-28\",\"depart_after\":\"오후\"}")).contains("HH:mm");
+	}
+
+	private RunSummary run(long id, String no, int hour, boolean bookable, String status, Map<String, Integer> left) {
+		return new RunSummary(id, no, "KTX", LocalDateTime.of(2026, 11, 28, hour, 0), LocalDateTime.of(2026, 11, 28, hour + 3, 0),
+				180, status, bookable, LocalDateTime.of(2026, 11, 1, 7, 0), Map.of("GENERAL", 59800L), left);
+	}
+
+	@Test
+	void 실시간_잔여석으로_매진_일부매진_판매전을_가려_모델에_알린다() {
+		when(trains.stations()).thenReturn(List.of(new Station("S1", "서울"), new Station("S2", "부산")));
+		when(trains.search("S1", "S2", LocalDate.of(2026, 11, 28))).thenReturn(List.of(
+				run(1, "00101", 8, true, "ON_SALE", Map.of("GENERAL", 0, "FIRST", 0)),
+				run(2, "00103", 9, true, "ON_SALE", Map.of("GENERAL", 12, "FIRST", 0)),
+				run(3, "00105", 10, true, "ON_SALE", Map.of("GENERAL", 12, "FIRST", 3)),
+				run(4, "00107", 11, false, "SCHEDULED", null),
+				run(5, "00109", 12, false, "DEPARTED", null)));
+
+		String out = service(new FakeModel(text("x"))).runTool("search_runs", "{\"from\":\"서울\",\"to\":\"부산\",\"date\":\"2026-11-28\"}");
+
+		assertThat(out).contains("\"상태\":\"매진\"").contains("\"상태\":\"판매 중 (특실 매진)\"").contains("\"상태\":\"판매 중\"")
+				.contains("\"상태\":\"판매 전\"").contains("\"판매시작\"").contains("\"상태\":\"판매 종료\"").contains("일반실");
+	}
+
+	@Test
+	void 답에_쓴_열차에만_예매_버튼을_붙이고_매진이면_취소표_대기_버튼() {
+		when(trains.stations()).thenReturn(List.of(new Station("S1", "서울"), new Station("S2", "부산")));
+		when(trains.search("S1", "S2", LocalDate.of(2026, 11, 28))).thenReturn(List.of(
+				run(1, "00101", 8, true, "ON_SALE", Map.of("GENERAL", 0)),
+				run(2, "00103", 9, true, "ON_SALE", Map.of("GENERAL", 12)),
+				run(3, "00105", 10, true, "ON_SALE", Map.of("GENERAL", 12)),
+				run(4, "00107", 11, false, "SCHEDULED", null)));
+		FakeModel m = new FakeModel(call("search_runs", "{\"from\":\"서울\",\"to\":\"부산\",\"date\":\"2026-11-28\"}"),
+				text("08:00 → 11:00 KTX 00101 · 매진\nKTX 103(09:00 출발)은 잔여 12석이에요. 11:00 → 14:00 KTX 00107은 판매 전이에요."));
+
+		ChatService.Answer a = service(m).reply(List.of(new Turn("user", "11/28 서울 부산 예매하고 싶어")));
+
+		// 10시 열차(00105)는 답에 없으니 버튼 없음, 판매 전(00107)은 이동할 곳이 없어 버튼 없음
+		assertThat(a.actions()).extracting(ChatService.Action::trainNo).containsExactly("00101", "00103");
+		assertThat(a.actions()).extracting(ChatService.Action::type).containsExactly("WAITLIST", "BOOK");
+		assertThat(a.actions().get(1).fromStationId()).isEqualTo("S1");
+		assertThat(a.actions().get(1).toStationId()).isEqualTo("S2");
+	}
+
+	@Test
+	void 조회하지_않은_열차를_지어내면_버튼이_붙지_않는다() {
+		ChatService.Answer a = service(new FakeModel(text("09:00 → 12:00 KTX 00999가 있어요."))).reply(List.of(new Turn("user", "열차")));
+
+		assertThat(a.actions()).isEmpty();
 	}
 
 	@Test
@@ -135,7 +183,7 @@ class ChatServiceTest {
 		when(trains.stations()).thenReturn(List.of(new Station("S1", "서울")));
 		FakeModel m = new FakeModel(call("list_stations", "{}"));
 
-		String reply = service(m).reply(List.of(new Turn("user", "역 알려줘")));
+		String reply = service(m).reply(List.of(new Turn("user", "역 알려줘"))).text();
 
 		assertThat(m.seen).hasSize(ChatService.MAX_TOOL_ROUNDS + 1);
 		assertThat(reply).contains("다시");
@@ -145,7 +193,7 @@ class ChatServiceTest {
 	void 모델이_쓴_마크다운_표시는_지우고_내용은_남긴다() {
 		FakeModel m = new FakeModel(text("## 안내\n먼저 **'검색'** 화면에서 `KTX 00103`을 고르세요. 1 * 2석"));
 
-		String reply = service(m).reply(List.of(new Turn("user", "예매 방법")));
+		String reply = service(m).reply(List.of(new Turn("user", "예매 방법"))).text();
 
 		assertThat(reply).isEqualTo("안내\n먼저 '검색' 화면에서 KTX 00103을 고르세요. 1 * 2석");
 	}
@@ -154,6 +202,6 @@ class ChatServiceTest {
 	void 시스템_프롬프트에_오늘_날짜가_들어가고_예매_대행은_금지한다() {
 		String p = service(new FakeModel(text("x"))).systemPrompt();
 
-		assertThat(p).contains("2026-11-24").contains("대신하는 것");
+		assertThat(p).contains("2026-11-24").contains("대신하는 것").contains("제자리 예매 도우미").contains("취소표");
 	}
 }
