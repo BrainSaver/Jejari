@@ -73,7 +73,11 @@ public class AuthRelaxService {
 			long maxHours) {
 	}
 
-	public record StartCommand(String ip, Integer hours, String reason) {
+	/**
+	 * @param signupPerHour 해제 동안 가입 한도 (비우면 지금 값 그대로). 부하 시험 칸이 게이지 인원에 맞춰 보낸다
+	 * @param loginPerMin   해제 동안 로그인 한도 (비우면 그대로)
+	 */
+	public record StartCommand(String ip, Integer hours, String reason, Integer signupPerHour, Integer loginPerMin) {
 	}
 
 	public Status status(String requesterIp) {
@@ -119,6 +123,13 @@ public class AuthRelaxService {
 		// 분 단위로 내림 → 저장 검사(지금 + 24시간 이내)를 항상 통과
 		LocalDateTime until = LocalDateTime.now(clock).plusHours(hours).withSecond(0).withNano(0);
 
+		// 한도는 운영 설정과 같은 범위 검사(가입 1~5000, 로그인 1~10000)를 거친다
+		if (c.signupPerHour() != null) {
+			set(adminId, AuthPolicy.RATE_RELAX_SIGNUP_PER_HOUR, Integer.toString(c.signupPerHour()));
+		}
+		if (c.loginPerMin() != null) {
+			set(adminId, AuthPolicy.RATE_RELAX_LOGIN_PER_MIN, Integer.toString(c.loginPerMin()));
+		}
 		set(adminId, AuthPolicy.RATE_RELAX_IP_HASHES, String.join(",", new LinkedHashSet<>(hashes)));
 		set(adminId, AuthPolicy.RATE_RELAX_REASON, reason);
 		set(adminId, AuthPolicy.RATE_RELAX_UNTIL, until.format(AuthPolicy.RELAX_TIME)); // 마지막에 켠다
