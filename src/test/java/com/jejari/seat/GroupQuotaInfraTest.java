@@ -122,6 +122,23 @@ class GroupQuotaInfraTest {
 	}
 
 	@Test
+	void 고른_좌석에_남의_만료된_HOLD_행이_있으면_그_좌석은_건너뛰고_GROUP_키도_걸지_않는다() {
+		// 할당석이 고를 첫 좌석(일반실, 첫 객차의 맨 뒤)을 누가 잡았다가 결제 기한이 지나 Redis 키만 사라진 상태
+		long first = jdbc.queryForList(
+				"SELECT seat_id FROM seat WHERE train_id = ? AND seat_grade = 'GENERAL' ORDER BY car_no, seat_id DESC",
+				Long.class, TRAIN).get(0);
+		long r = hold.hold(newMember(), cmd(first)).reservationId();
+		pastDeadline(r, first);
+
+		int made = quota.create(RUN, TRAIN, new BigDecimal("0.05"), farDeparture);
+
+		assertThat(blockedSeats()).doesNotContain(first).hasSize(made);
+		assertThat(count("SELECT COUNT(*) FROM seat_inventory WHERE reservation_id = ? AND status = 'HOLD'", r)).isEqualTo(1);
+		// 키를 걸면 DB는 BLOCKED가 아닌데 Redis만 반납 시각까지 막혀, 반납으로도 못 푸는 좌석이 된다 (11-24 고침)
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, first, 0))).isNull();
+	}
+
+	@Test
 	void 비율이_0이거나_반납_시각이_지났으면_만들지_않는다() {
 		assertThat(quota.create(RUN, TRAIN, BigDecimal.ZERO, farDeparture)).isZero(); // 명절 행사에서 끈 경우
 		assertThat(quota.create(RUN, TRAIN, new BigDecimal("0.05"), LocalDateTime.now(clock).plusDays(10))).isZero();

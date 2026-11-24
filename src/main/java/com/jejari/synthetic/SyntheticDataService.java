@@ -592,6 +592,7 @@ public class SyntheticDataService {
 			}
 			for (long run : new LinkedHashSet<>(runs)) {
 				if (count("SELECT COUNT(*) FROM reservation WHERE run_id = ?", run) == 0) {
+					jdbc.update("DELETE FROM seat_inventory WHERE run_id = ? AND status = 'BLOCKED'", run); // 단체 할당석 (§18.1)
 					jdbc.update("DELETE FROM train_run WHERE run_id = ?", run);
 				}
 			}
