@@ -57,10 +57,19 @@ export default function ChatWidget() {
 
   return (
     <>
+      {/* 960px 미만에서는 아래 탭바(내 정보 등)가 보이므로 그 위로 올린다 */}
+      <style>{`
+        .chat-fab{bottom:calc((20px + env(safe-area-inset-bottom)) / var(--z,1))}
+        .chat-win{bottom:calc((84px + env(safe-area-inset-bottom)) / var(--z,1))}
+        @media (max-width:959px){
+          .chat-fab{bottom:calc((76px + env(safe-area-inset-bottom)) / var(--z,1))}
+          .chat-win{bottom:calc((140px + env(safe-area-inset-bottom)) / var(--z,1));height:min(480px,calc((100vh - 170px) / var(--z,1)))!important}
+        }
+      `}</style>
       {open && (
-        <section aria-label="예매 안내 챗봇" style={{
-          position: 'fixed', right: 16, bottom: 'calc(84px + env(safe-area-inset-bottom))', zIndex: 20,
-          width: 'min(360px, calc(100vw - 32px))', height: 'min(480px, 70vh)', display: 'flex', flexDirection: 'column',
+        <section className="chat-win" aria-label="예매 안내 챗봇" style={{
+          position: 'fixed', right: 'calc(16px / var(--z, 1))', zIndex: 20,
+          width: 'min(360px, calc((100vw - 32px) / var(--z, 1)))', height: 'min(480px, calc(70vh / var(--z, 1)))', display: 'flex', flexDirection: 'column',
           background: 'var(--card)', border: '2px solid var(--ink)', borderRadius: 14, boxShadow: '0 8px 24px rgba(0,0,0,.25)', overflow: 'hidden',
         }}>
           <header style={{ background: 'var(--ink)', color: '#fff', padding: '10px 14px', fontWeight: 900, display: 'flex', justifyContent: 'space-between' }}>
@@ -97,8 +106,8 @@ export default function ChatWidget() {
           </form>
         </section>
       )}
-      <button type="button" aria-label={open ? '예매 도우미 닫기' : '예매 도우미 열기'} onClick={() => setOpen((v) => !v)} style={{
-        position: 'fixed', right: 16, bottom: 'calc(20px + env(safe-area-inset-bottom))', zIndex: 20, padding: 0,
+      <button type="button" className="chat-fab" aria-label={open ? '예매 도우미 닫기' : '예매 도우미 열기'} onClick={() => setOpen((v) => !v)} style={{
+        position: 'fixed', right: 'calc(16px / var(--z, 1))', zIndex: 20, padding: 0,
         border: 0, background: 'none', cursor: 'pointer', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,.35))',
       }}><Face mood={open ? 'wink' : 'happy'} size={72} /></button>
     </>
