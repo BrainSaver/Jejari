@@ -58,6 +58,9 @@ public class SecurityConfig {
 						.requestMatchers(HttpMethod.HEAD, SPA_PAGES).permitAll()
 						// 열차 조회(TRN-01~03)는 비회원도 (기능설계서 2장). 좌석 배치도 /runs/{runId}/seats는 여전히 로그인 + 입장 토큰
 						.requestMatchers(HttpMethod.GET, "/api/v1/stations", "/api/v1/runs", "/api/v1/runs/{runId}").permitAll()
+						// 예매 안내 챗봇: 비회원도. Groq 호출량은 ChatController가 IP별로 제한
+						.requestMatchers(HttpMethod.GET, "/api/v1/chat/status").permitAll()
+						.requestMatchers(HttpMethod.POST, "/api/v1/chat").permitAll()
 						// 관리자 로그인(AUTH-05)만 토큰 없이. 나머지 관리자 API는 ADMIN, 세부 권한은 @PreAuthorize("hasAuthority('ADMIN_REVIEWER')") 등
 						.requestMatchers(HttpMethod.POST, "/api/v1/admin/auth/login", "/api/v1/admin/auth/refresh").permitAll()
 						.requestMatchers("/api/v1/admin/**").hasRole("ADMIN")

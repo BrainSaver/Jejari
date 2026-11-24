@@ -88,6 +88,10 @@ jejari:
   # 식별정보 가명처리(HMAC) 키. 프로젝트 기간 동안 바꾸지 않습니다 (common/hmac)
   hmac:
     key: ${JEJARI_HMAC_KEY:}
+  # 예매 안내 챗봇 (chat, Groq). 키가 비어 있으면 챗봇이 꺼진다. 키는 환경변수로만 (.env, 커밋 금지)
+  chat:
+    groq-api-key: ${GROQ_API_KEY:}
+    model: ${GROQ_CHAT_MODEL:openai/gpt-oss-120b}
   # 개인정보 암호화(AES-256-GCM) 키 목록과 현재 키 (common/pii). 비어 있으면 앱이 뜨지 않습니다
   pii:
     keys: ${JEJARI_ENC_KEYS:}
