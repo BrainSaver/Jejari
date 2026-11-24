@@ -60,7 +60,7 @@ export default function ChatWidget() {
       const r = await post('/api/v1/chat', { messages: next.filter((m) => m !== HELLO).slice(-KEEP).map(({ role, content }) => ({ role, content })) });
       setMsgs([...next, { role: 'assistant', mood: 'basic', content: r.reply, actions: r.actions || [] }]);
     } catch (err) {
-      setMsgs([...next, { role: 'assistant', mood: err.code === 'RATE_LIMITED' ? 'angry' : 'sad', content: err.message || '지금은 답하지 못해요. 잠시 후 다시 물어봐 주세요.', error: true }]);
+      setMsgs([...next, { role: 'assistant', mood: err.code === 'RATE_LIMITED' ? 'angry' : 'sad', content: err.message || '죄송해요, 지금은 잠깐 답을 드리기 어려워요. 조금 뒤에 다시 물어봐 주세요.', error: true }]);
     } finally {
       setBusy(false);
     }

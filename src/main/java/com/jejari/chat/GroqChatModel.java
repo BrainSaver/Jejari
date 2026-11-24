@@ -52,7 +52,7 @@ public class GroqChatModel implements ChatModel {
 	@Override
 	public Reply complete(List<JsonNode> messages, List<JsonNode> tools) {
 		if (!enabled()) {
-			throw new BusinessException(CommonErrorCode.SERVICE_UNAVAILABLE, "챗봇이 아직 켜져 있지 않습니다.");
+			throw new BusinessException(CommonErrorCode.SERVICE_UNAVAILABLE, "죄송해요, 지금은 예매 도우미가 쉬고 있어요. 열차는 '검색' 화면에서 찾아 주세요.");
 		}
 		ObjectNode body = json.createObjectNode();
 		body.put("model", model);
@@ -70,11 +70,11 @@ public class GroqChatModel implements ChatModel {
 					.build();
 			HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 			if (res.statusCode() == 429) {
-				throw new BusinessException(CommonErrorCode.RATE_LIMITED, "챗봇이 바쁩니다. 잠시 후 다시 물어봐 주세요.");
+				throw new BusinessException(CommonErrorCode.RATE_LIMITED, "지금 질문이 많이 몰려서 조금 바빠요. 30초쯤 뒤에 다시 물어봐 주시겠어요?");
 			}
 			if (res.statusCode() != 200) {
 				log.warn("Groq 응답 {}", res.statusCode());
-				throw new BusinessException(CommonErrorCode.SERVICE_UNAVAILABLE, "챗봇이 지금 답하지 못합니다.");
+				throw new BusinessException(CommonErrorCode.SERVICE_UNAVAILABLE, "죄송해요, 지금은 잠깐 답을 드리기 어려워요. 조금 뒤에 다시 물어봐 주세요.");
 			}
 			JsonNode msg = json.readTree(res.body()).path("choices").path(0).path("message");
 			List<ToolCall> calls = new ArrayList<>();
@@ -87,10 +87,10 @@ public class GroqChatModel implements ChatModel {
 			throw e;
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new BusinessException(CommonErrorCode.SERVICE_UNAVAILABLE, "챗봇이 지금 답하지 못합니다.");
+			throw new BusinessException(CommonErrorCode.SERVICE_UNAVAILABLE, "죄송해요, 지금은 잠깐 답을 드리기 어려워요. 조금 뒤에 다시 물어봐 주세요.");
 		} catch (Exception e) {
 			log.warn("Groq 호출 실패: {}", e.getClass().getSimpleName());
-			throw new BusinessException(CommonErrorCode.SERVICE_UNAVAILABLE, "챗봇이 지금 답하지 못합니다.");
+			throw new BusinessException(CommonErrorCode.SERVICE_UNAVAILABLE, "죄송해요, 지금은 잠깐 답을 드리기 어려워요. 조금 뒤에 다시 물어봐 주세요.");
 		}
 	}
 }
