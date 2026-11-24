@@ -66,6 +66,23 @@ python3 -I loadtest/contest/practice/simulate_rules.py data/ml/practice-<태그>
 | botrecmobile | 휴대폰인 척, 터치 클릭만 |
 | botrecreal | 사람과 같은 녹화 + 2단계 피하기 전부 (상한) |
 
+## 4단계 (진짜 브라우저, 4종) — `browser.cjs`
+
+2차 대회에서 규칙을 다 피한 botc(진짜 브라우저 + 곡선 마우스 + 느린 단계)에서 한 가지씩 더 나아간 봇. Playwright가 필요합니다 (`loadtest/contest/botb`에서 `npm i playwright && npx playwright install chromium`).
+
+```bash
+RUN_ID=<판매 중 운행> TAG=<새 태그> node loadtest/contest/practice/browser.cjs
+```
+
+| 봇 | 더한 것 |
+|---|---|
+| botwsearch | botc + 열차 찾기 → 검색 결과의 [예매하기] (botc의 흔적 "조회 없이 대기열"을 지움) |
+| botwtremor | + 손떨림 1~3px · 피츠 법칙 이동 시간 · 가끔 지나쳤다 되돌아옴 |
+| botwspread | + 명의마다 다른 IP · 30분에 걸쳐 (`SPREAD_LONG_MIN`) |
+| botwfast | 손떨림 + 단계를 최대한 빨리 (INHUMAN_STEP 1초 기준 근처) |
+
+`ACCOUNTS`(기본 3) · `SEATS`(기본 2) · `SPREAD_MIN`(기본 3분) · `HEADLESS=0`(창 띄우기). 결과: [2차 대회 결과 분석 5절](../../../docs/강동균/features/2차-대회-결과-분석.md)
+
 ## 사람 변형 (오탐 시험, 10종)
 
 `GEN=h`로 돌립니다. 진짜 사람이 하는데 규칙에 걸리기 쉬운 행동입니다 (kind가 `human`으로 시작하면 평가가 사람으로 세어, 탐지되면 오탐).
