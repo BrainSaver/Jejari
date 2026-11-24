@@ -99,7 +99,7 @@ public class ReservationQueryService {
 			SELECT r.reservation_id, r.status, r.run_id, tr.run_date, t.train_no,
 			       r.from_station_id, fs.station_name, dep.departure_time,
 			       r.to_station_id, tst.station_name, arr.arrival_time,
-			       r.seat_count, r.total_amount, r.held_at, r.pay_deadline_at, tr.sale_event_id
+			       r.seat_count, r.total_amount, r.held_at, r.pay_deadline_at, tr.sale_event_id, r.source
 			  FROM reservation r
 			  JOIN train_run tr ON tr.run_id = r.run_id
 			  JOIN train t ON t.train_id = tr.train_id
@@ -155,13 +155,15 @@ public class ReservationQueryService {
 
 	// ------------------------------------------------------------ 상세
 
-	private record Head(Summary summary, Long saleEventId) {
+	/** @param group 승인된 단체 예약 (reservation.source = 'GROUP') → 위약금은 group_fee_policy (§18.6) */
+	private record Head(Summary summary, Long saleEventId, boolean group) {
 	}
 
 	public Detail detail(long memberId, long reservationId) {
 		List<Head> heads = jdbc.query(BASE + " AND r.reservation_id = ?", (rs, i) -> {
 			long ev = rs.getLong(16);
-			return new Head(summary(rs), rs.wasNull() ? null : ev);
+			Long event = rs.wasNull() ? null : ev;
+			return new Head(summary(rs), event, "GROUP".equals(rs.getString(17)));
 		}, memberId, reservationId);
 		if (heads.isEmpty()) {
 			throw new BusinessException(SeatErrorCode.RESERVATION_NOT_FOUND); // 없음과 남의 것을 구분하지 않는다
@@ -195,10 +197,10 @@ public class ReservationQueryService {
 				reservationId);
 
 		return new Detail(s, seats, payment, cancels.isEmpty() ? null : cancels.get(0),
-				cancelInfo(s, head.saleEventId(), seats, payment));
+				cancelInfo(s, head.saleEventId(), head.group(), seats, payment));
 	}
 
-	private CancelInfo cancelInfo(Summary s, Long saleEventId, List<Seat> seats, Payment payment) {
+	private CancelInfo cancelInfo(Summary s, Long saleEventId, boolean group, List<Seat> seats, Payment payment) {
 		switch (s.status()) {
 			case "HOLD":
 				return new CancelInfo(true, null, 0, 0, null, null, null); // 결제 전 취소: 수수료 없음 (RSV-05)
@@ -210,17 +212,36 @@ public class ReservationQueryService {
 				return new CancelInfo(false, "ALREADY_CLOSED", 0, 0, null, null, null);
 		}
 		long paid = payment != null && "APPROVED".equals(payment.status()) ? payment.amount() : s.totalAmount();
-		Quote q = CancelFeeCalculator.quote(bands(saleEventId), s.from().time(), clock.instant(),
-				seats.stream().map(Seat::amount).toList(), paid, afterDepartureLimitMin());
+		List<Long> amounts = seats.stream().map(Seat::amount).toList();
+		Quote q = group
+				? GroupFeeCalculator.quote(groupBands(), s.from().time(), s.to().time(), clock.instant(), amounts, paid)
+				: CancelFeeCalculator.quote(bands(saleEventId), s.from().time(), clock.instant(), amounts, paid,
+						afterDepartureLimitMin());
 		if (!q.cancelable()) {
 			if (q.reason() == CancelFeeCalculator.Reason.FEE_POLICY_MISSING) {
-				log.error("취소 수수료 정책이 없거나 겹침 (운행 {}, 행사 {}) → 취소 불가로 표시", s.runId(), saleEventId);
+				log.error("{} 정책이 없거나 겹침 (운행 {}, 행사 {}) → 취소 불가로 표시", group ? "단체 위약금" : "취소 수수료",
+						s.runId(), saleEventId);
 			}
 			String code = q.reason() == CancelFeeCalculator.Reason.AFTER_DEPARTURE_LIMIT ? "CANCEL_NOT_ALLOWED"
 					: q.reason().name();
 			return new CancelInfo(false, code, 0, 0, null, q.minutesBeforeDeparture(), null);
 		}
-		return new CancelInfo(true, null, q.fee(), q.refund(), q.feeRate(), q.minutesBeforeDeparture(), q.policyId());
+		// 단체는 group_fee_policy ID라 cancellation.fee_policy_id(cancel_fee_policy FK)에 넣지 않는다
+		return new CancelInfo(true, null, q.fee(), q.refund(), q.feeRate(), q.minutesBeforeDeparture(),
+				group ? null : q.policyId());
+	}
+
+	/** 단체 위약금 구간 (group_fee_policy, 행사 구분 없음) */
+	List<GroupFeeCalculator.Band> groupBands() {
+		return jdbc.query("""
+				SELECT fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount
+				  FROM group_fee_policy""", (rs, i) -> new GroupFeeCalculator.Band(rs.getLong(1), nullableLong(rs, 2),
+						nullableLong(rs, 3), rs.getBigDecimal(4), nullableLong(rs, 5)));
+	}
+
+	private static Long nullableLong(ResultSet rs, int col) throws SQLException {
+		long v = rs.getLong(col);
+		return rs.wasNull() ? null : v;
 	}
 
 	/** 운행의 행사 정책. 행사가 없거나 그 행사 정책이 비었으면 상시 정책(sale_event_id NULL) */
