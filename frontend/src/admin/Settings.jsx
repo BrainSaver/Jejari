@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router';
-import { get, put } from '../api/client.js';
+import { del, get, post, put } from '../api/client.js';
 import { Who } from './AdminLayout.jsx';
 import RequestLog from './RequestLog.jsx';
 import { ConfirmButton, ErrorBox } from './ui.jsx';
@@ -14,6 +14,9 @@ import { hasRole } from './useAdminAuth.js';
  *
  * 백엔드가 보이게: 버전(낙관적 잠금), Redis 캐시 값이 DB와 다르면 표시, 저장하면 "커밋 → 캐시 갱신 → 각 앱 1초 안에 반영"을 적는다.
  * TTL·임계값을 코드에 박지 않고 여기서 바꾸는 것이 프로젝트 규칙이다 (CLAUDE.md "app_policy에서 읽습니다").
+ *
+ * 인증 제한 임시 해제 (ERD v39, docs/강동균/설계안-인증-시도제한-임시해제.md):
+ *   GET/POST/DELETE /api/v1/admin/auth-relax — IP는 서버가 해시로 바꿔 넣으므로 아래 표에서 직접 고치지 않는다
  */
 export default function Settings() {
   const claims = useOutletContext();
@@ -46,6 +49,7 @@ export default function Settings() {
         {!canWrite && <div style={{ marginTop: 4 }}>지금 권한({claims?.adm})은 보기만 돼요. 저장은 SUPERVISOR.</div>}
       </div>
       <ErrorBox error={error} onClose={() => setError(null)} />
+      <AuthRelax canWrite={canWrite} onChanged={load} />
       <div className="tabs" role="tablist">
         <button type="button" className={group === '' ? 'on' : ''} onClick={() => setGroup('')}>전체 <span className="num" style={{ opacity: 0.7 }}>{list?.length || ''}</span></button>
         {groups.map(([g, n]) => (
@@ -82,7 +86,7 @@ export default function Settings() {
           {cur ? <Editor key={cur.key} p={cur} canWrite={canWrite} onSaved={load} /> : <p className="mut">왼쪽에서 설정을 고르세요.</p>}
         </section>
       </div>
-      <RequestLog filter={(r) => r.path.includes('/admin/policies')} rows={5} />
+      <RequestLog filter={(r) => r.path.includes('/admin/policies') || r.path.includes('/admin/auth-relax')} rows={5} />
     </>
   );
 }
@@ -144,3 +148,80 @@ function Editor({ p, canWrite, onSaved }) {
   );
 }
 
+/**
+ * 인증 시도 제한 임시 해제. k6로 공용 서버에 계정을 많이 만들 때 그 PC의 IP만 정한 시각까지 가입·로그인 한도를 높인다.
+ * 종료 시각이 지나면 아무도 안 눌러도 평소 한도로 돌아간다 (서버가 읽을 때마다 시각을 비교).
+ */
+function AuthRelax({ canWrite, onChanged }) {
+  const [st, setSt] = useState(null);
+  const [ip, setIp] = useState('');
+  const [hours, setHours] = useState(3);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState(null);
+  const load = () => get('/api/v1/admin/auth-relax').then(setSt).catch(setError);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 60_000); // 남은 시간 표시
+    return () => clearInterval(t);
+  }, []);
+  if (!st) return error ? <ErrorBox error={error} onClose={() => setError(null)} /> : null;
+
+  const run = async (fn) => {
+    setError(null);
+    try {
+      setSt(await fn());
+      onChanged();
+    } catch (e) {
+      setError(e);
+    }
+  };
+  const start = () => run(() => post('/api/v1/admin/auth-relax', { ip: ip.trim() || null, hours: Number(hours), reason }));
+  const stop = () => run(() => del('/api/v1/admin/auth-relax'));
+  const left = st.remainingMin >= 60 ? `${Math.floor(st.remainingMin / 60)}시간 ${st.remainingMin % 60}분` : `${st.remainingMin}분`;
+
+  return (
+    <section className="panel" style={{ marginBottom: 16 }}>
+      <h2><span className="grow">인증 제한 임시 해제</span>
+        {st.active ? <span className="st amber">해제 중</span> : <span className="st plain">평소</span>}
+      </h2>
+      {st.active ? (
+        <div className="alert amber">
+          <b>{st.until?.replace('T', ' ').slice(0, 16)}까지 해제 중</b> (남은 {left}) · IP {st.ipCount}개{st.includesMe ? ' (지금 이 PC 포함)' : ''} · 사유: {st.reason}
+          <div style={{ marginTop: 4 }}>
+            해제 IP만 가입 시간당 {st.signupPerHour} · 로그인 분당 {st.loginPerMin} (평소 {st.normalSignupPerHour} · {st.normalLoginPerMin}).
+            시각이 지나면 저절로 평소로 돌아가요. 관리자 로그인·비회원 조회는 풀리지 않아요.
+          </div>
+        </div>
+      ) : (
+        <p className="sub">
+          k6로 공용 서버에 계정을 많이 만들 때 그 PC의 IP만 최대 {st.maxHours}시간 동안 가입·로그인 한도를 높여요
+          (평소 IP당 가입 시간당 {st.normalSignupPerHour} · 로그인 분당 {st.normalLoginPerMin}). 시각이 지나면 저절로 평소로 돌아가요.
+          원본 IP는 저장하지 않고 해시만 남겨요. <b>봇 대회 중에는 켜지 마세요</b> (같은 와이파이의 봇도 같이 풀려요).
+        </p>
+      )}
+      <ErrorBox error={error} onClose={() => setError(null)} />
+      {canWrite && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <label className="field" style={{ margin: 0 }}>
+            <span className="lbl">IP (비우면 지금 이 PC)</span>
+            <input value={ip} onChange={(e) => setIp(e.target.value)} placeholder="예: 203.0.113.7" style={{ width: 170 }} />
+          </label>
+          <label className="field" style={{ margin: 0 }}>
+            <span className="lbl">시간</span>
+            <select value={hours} onChange={(e) => setHours(e.target.value)} style={{ width: 100 }}>
+              {[1, 3, 6, 12, 24].filter((h) => h <= st.maxHours).map((h) => <option key={h} value={h}>{h}시간</option>)}
+            </select>
+          </label>
+          <label className="field" style={{ margin: 0, flex: 1, minWidth: 200 }}>
+            <span className="lbl">사유 (5자 이상)</span>
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="예: k6 시나리오 11 공용 서버 측정" />
+          </label>
+          <ConfirmButton className="btn sm" confirm={`한 번 더 누르면 ${hours}시간 해제`} onConfirm={start} disabled={reason.trim().length < 5}>
+            {st.active ? 'IP 추가·연장' : '해제 시작'}
+          </ConfirmButton>
+          {st.active && <ConfirmButton className="btn ghost sm" confirm="한 번 더 누르면 지금 끝내기" onConfirm={stop}>지금 끝내기</ConfirmButton>}
+        </div>
+      )}
+    </section>
+  );
+}

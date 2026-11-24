@@ -74,7 +74,7 @@ public class LoginService {
 	/** @param remember "로그인 상태 유지" (고르면 14일·브라우저를 닫아도 유지, 아니면 12시간·닫으면 로그아웃) */
 	public IssuedTokens login(String rawEmail, String password, String ipHash, String userAgent, boolean remember) {
 		if (limiter.hit(AuthLimiter.loginRateKey(ipHash), Duration.ofMinutes(1))
-				> policy.number(AuthPolicy.LOGIN_RATE_PER_MIN)) {
+				> policy.limitFor(AuthPolicy.LOGIN_RATE_PER_MIN, ipHash)) { // 임시 해제 IP면 해제 한도 (ERD v39)
 			attempts.record(null, null, Result.RATE_LIMITED, ipHash, userAgent, null, null);
 			throw new BusinessException(AuthErrorCode.AUTH_RATE_LIMITED);
 		}

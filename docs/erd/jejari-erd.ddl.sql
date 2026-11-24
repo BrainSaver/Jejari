@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v38)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v39)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -1443,6 +1443,11 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.discount_rate', '0.10', 1, 'NUMBER', '단체 할인율 (어른 운임만, 중복 할인 없음)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.discount_within_days', '30', 1, 'NUMBER', '출발 며칠 이내 신청분에 할인 적용');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('payment.max_ci_per_card', '0', 1, 'NUMBER', '카드 한 장에 붙을 수 있는 서로 다른 명의(CI) 수. 0이면 끔. 켤 때 권장 3(가족 카드). 넘으면 결제 시작 거절 (concurrency.md §4.3)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.rate_relax_until', 'OFF', 1, 'STRING', '인증 시도 제한 임시 해제 종료 시각 yyyy-MM-dd HH:mm (Asia/Seoul). OFF면 해제 안 함. 지금 + 24시간을 넘는 값은 저장 거절·읽을 때 무시. 시각이 지나면 자동으로 평소 한도');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.rate_relax_ip_hashes', 'NONE', 1, 'STRING', '임시 해제할 IP의 ip_hash(HMAC) 목록, 쉼표로 최대 3개. NONE이면 없음. 원본 IP는 저장하지 않음 (관리자 화면이 IP를 해시로 바꿔 넣음)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.rate_relax_reason', '-', 1, 'STRING', '임시 해제 사유 (정책 이력에 누가·언제와 함께 남음)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.rate_relax_signup_per_hour', '2000', 1, 'NUMBER', '임시 해제 동안 해제 IP의 시간당 본인인증·가입 한도 (1~5000)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.rate_relax_login_per_min', '3000', 1, 'NUMBER', '임시 해제 동안 해제 IP의 분당 회원 로그인 한도 (1~10000). 관리자 로그인·비회원 조회는 해제하지 않음');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (1, 2880, NULL, NULL, 400, '출발 2일 전까지 1인 400원');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (2, 0, 2880, 0.1, NULL, '1일 전 ~ 출발 전 10%');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (3, -20, 0, 0.15, NULL, '출발 후 20분까지 15%');

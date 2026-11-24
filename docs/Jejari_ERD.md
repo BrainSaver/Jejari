@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v38 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-24
+> 스키마 v39 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-24
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -622,6 +622,11 @@ Oracle
 | group.discount_rate | 0.10 | 1 | NUMBER | 단체 할인율 (어른 운임만, 중복 할인 없음) |
 | group.discount_within_days | 30 | 1 | NUMBER | 출발 며칠 이내 신청분에 할인 적용 |
 | payment.max_ci_per_card | 0 | 1 | NUMBER | 카드 한 장에 붙을 수 있는 서로 다른 명의(CI) 수. 0이면 끔. 켤 때 권장 3(가족 카드). 넘으면 결제 시작 거절 (concurrency.md §4.3) |
+| auth.rate_relax_until | OFF | 1 | STRING | 인증 시도 제한 임시 해제 종료 시각 yyyy-MM-dd HH:mm (Asia/Seoul). OFF면 해제 안 함. 지금 + 24시간을 넘는 값은 저장 거절·읽을 때 무시. 시각이 지나면 자동으로 평소 한도 |
+| auth.rate_relax_ip_hashes | NONE | 1 | STRING | 임시 해제할 IP의 ip_hash(HMAC) 목록, 쉼표로 최대 3개. NONE이면 없음. 원본 IP는 저장하지 않음 (관리자 화면이 IP를 해시로 바꿔 넣음) |
+| auth.rate_relax_reason | - | 1 | STRING | 임시 해제 사유 (정책 이력에 누가·언제와 함께 남음) |
+| auth.rate_relax_signup_per_hour | 2000 | 1 | NUMBER | 임시 해제 동안 해제 IP의 시간당 본인인증·가입 한도 (1~5000) |
+| auth.rate_relax_login_per_min | 3000 | 1 | NUMBER | 임시 해제 동안 해제 IP의 분당 회원 로그인 한도 (1~10000). 관리자 로그인·비회원 조회는 해제하지 않음 |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -2601,6 +2606,7 @@ Oracle
 | v36 | 단체 예매(여행사, 길동현 요청): 새 표 group_booking(신청 단계 REQUESTED / APPROVED / REJECTED / WITHDRAWN, 승인 뒤는 reservation.status가 원천)·group_passenger(탑승자 명단, 이름·휴대폰 암호문)·group_fee_policy(단체 위약금, cancel_fee_policy와 분리). seat_inventory.status에 BLOCKED(단체 할당석, 예약 없는 행), reservation.source에 GROUP, seat_count NUMBER(3), sale_event.group_quota_rate, app_policy group.* 9행. 절차는 concurrency.md §18 (할당석 먼저 + 모자라면 일반 좌석 선착순, 만료·취소는 일반 흐름, GROUP 예약은 매수 카운터 증감 없음 — §3 재선점 포함) |
 | v37 | 도용 카드: 카드 한 장에 붙는 서로 다른 명의(CI) 수 상한 app_policy payment.max_ci_per_card (0 = 끔이 기본, 켤 때 권장 3 — 시연·k6·대회가 같은 가상 카드번호를 써서 바로 켜면 막힘). 동시 요청에도 지키려고 카드 해시별 잠금 행 card_lock 추가 (concurrency.md §4.3, 잠금 순서 §0.4-8). 기존 DB는 db/patch/v37.sql |
 | v38 | 단체 신청 번호 시퀀스 group_booking_seq (길동현 요청): group_booking.group_id를 매김 |
+| v39 | 인증 시도 제한 임시 해제 (강동균): app_policy auth.rate_relax_until(OFF)·rate_relax_ip_hashes(NONE)·rate_relax_reason·rate_relax_signup_per_hour(2000)·rate_relax_login_per_min(3000). 지정 IP만 종료 시각까지, 읽을 때 비교로 자동 복구. 관리자 로그인·비회원 조회는 해제 안 함 |
 
 ## 참고 자료
 
