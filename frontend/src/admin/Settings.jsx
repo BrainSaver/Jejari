@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { del, get, post, put } from '../api/client.js';
 import { Who } from './AdminLayout.jsx';
+import LoadTestPanel from './LoadTestPanel.jsx';
 import RequestLog from './RequestLog.jsx';
 import { ConfirmButton, ErrorBox } from './ui.jsx';
 import { hasRole } from './useAdminAuth.js';
@@ -26,6 +27,14 @@ export default function Settings() {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(null);
   const [error, setError] = useState(null);
+  // 임시 해제 상태: 해제 칸과 부하 시험 칸이 같이 쓴다 (부하 시험 칸이 해제하면 해제 칸도 바로 바뀜)
+  const [relax, setRelax] = useState(null);
+  const loadRelax = () => get('/api/v1/admin/auth-relax').then(setRelax).catch(() => setRelax(null));
+  useEffect(() => {
+    loadRelax();
+    const t = setInterval(loadRelax, 60_000); // 남은 시간 표시
+    return () => clearInterval(t);
+  }, []);
 
   const load = () => get('/api/v1/admin/policies').then(setList).catch(setError);
   useEffect(() => {
@@ -49,7 +58,8 @@ export default function Settings() {
         {!canWrite && <div style={{ marginTop: 4 }}>지금 권한({claims?.adm})은 보기만 돼요. 저장은 SUPERVISOR.</div>}
       </div>
       <ErrorBox error={error} onClose={() => setError(null)} />
-      <AuthRelax canWrite={canWrite} onChanged={load} />
+      <AuthRelax canWrite={canWrite} st={relax} setSt={setRelax} onChanged={load} />
+      <LoadTestPanel canWrite={canWrite} relax={relax} onRelaxChanged={() => { loadRelax(); load(); }} />
       <div className="tabs" role="tablist">
         <button type="button" className={group === '' ? 'on' : ''} onClick={() => setGroup('')}>전체 <span className="num" style={{ opacity: 0.7 }}>{list?.length || ''}</span></button>
         {groups.map(([g, n]) => (
@@ -152,19 +162,12 @@ function Editor({ p, canWrite, onSaved }) {
  * 인증 시도 제한 임시 해제. k6로 공용 서버에 계정을 많이 만들 때 그 PC의 IP만 정한 시각까지 가입·로그인 한도를 높인다.
  * 종료 시각이 지나면 아무도 안 눌러도 평소 한도로 돌아간다 (서버가 읽을 때마다 시각을 비교).
  */
-function AuthRelax({ canWrite, onChanged }) {
-  const [st, setSt] = useState(null);
+function AuthRelax({ canWrite, st, setSt, onChanged }) {
   const [ip, setIp] = useState('');
   const [hours, setHours] = useState(3);
   const [reason, setReason] = useState('');
   const [error, setError] = useState(null);
-  const load = () => get('/api/v1/admin/auth-relax').then(setSt).catch(setError);
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 60_000); // 남은 시간 표시
-    return () => clearInterval(t);
-  }, []);
-  if (!st) return error ? <ErrorBox error={error} onClose={() => setError(null)} /> : null;
+  if (!st) return null; // v39 정책이 없거나 회원 인증이 꺼진 서버
 
   const run = async (fn) => {
     setError(null);
