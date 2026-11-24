@@ -35,7 +35,7 @@ public class SecurityConfig {
 	/** 프론트엔드 화면 경로와 빌드 결과물. API(/api/**)는 여기에 없다 */
 	static final String[] SPA_PAGES = { "/", "/index.html", "/assets/**", "/favicon.svg", "/admin", "/admin/**",
 			"/queue/**", "/reservations", "/reservations/**", "/waitlist", "/notifications", "/me", "/login", "/signup",
-			"/runs/**", "/pay/**" };
+			"/runs/**", "/pay/**", "/groups" };
 
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http, ErrorResponseWriter errorWriter,

@@ -15,7 +15,7 @@ import { useMember } from './useMember.js';
  */
 const MESSAGES = {
   RUN_NOT_ON_SALE: '아직 예매가 열리지 않았어요.',
-  QUEUE_DUPLICATED: '이미 다른 열차를 기다리고 있어요. 그 줄을 그만둔 뒤 다시 서 주세요.',
+  QUEUE_DUPLICATED: '이미 다른 열차 줄에 서 있거나 그 열차 좌석 화면에 들어가 있어요. 한 번에 한 열차 줄에만 설 수 있어요.',
 };
 
 export default function Queue() {
@@ -33,6 +33,8 @@ export default function Queue() {
   const [joinedAt, setJoinedAt] = useState(null);
   const [run, setRun] = useState(null);
   const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0); // 다른 줄을 그만두고 다시 서면 늘려 진입을 다시 한다
+  const [switching, setSwitching] = useState(false);
   const timer = useRef(null);
   const backoff = useRef(1);
   const [going, setGoing] = useState(false); // 입장: 기차가 끝까지 달려 나가는 중
@@ -80,7 +82,7 @@ export default function Queue() {
       alive = false;
       clearTimeout(timer.current);
     };
-  }, [member, runId]);
+  }, [member, runId, attempt]);
 
   if (checking) return null;
   if (!member) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
@@ -93,6 +95,21 @@ export default function Queue() {
       /* 이미 빠졌으면 그만 */
     }
     navigate('/', { state: { q: { from, to, date: run?.runDate || '' } } });
+  };
+
+  // 다른 열차 줄(또는 그 좌석 화면)에 남아 있어 못 설 때: 그 줄을 그만두고 이 열차 맨 뒤에 새로 선다
+  const switchHere = async () => {
+    setSwitching(true);
+    try {
+      await del('/api/v1/queue/me');
+    } catch {
+      /* 이미 빠졌으면 그대로 다시 서 본다 */
+    }
+    setError(null);
+    setFirst(null);
+    setSt(null);
+    setSwitching(false);
+    setAttempt((n) => n + 1);
   };
 
   const ahead = st?.ahead ?? 0;
@@ -122,13 +139,20 @@ export default function Queue() {
           <div className="alert stop" role="alert" style={{ flexWrap: 'wrap' }}>
             <Icon name="info" />
             <span className="grow">{MESSAGES[error.code] || error.message}</span>
-            <Link className="btn sm" to="/" state={{ q: { from, to, date: run?.runDate || '' } }} style={{ marginLeft: 28 }}>열차 다시 찾기</Link>
+            {error.code === 'QUEUE_DUPLICATED' && (
+              <button type="button" className="btn sm" disabled={switching} onClick={switchHere} style={{ marginLeft: 28 }}>
+                {switching ? '그만두는 중…' : '기다리던 줄 그만두고 이 열차 줄 서기'}
+              </button>
+            )}
+            <Link className="btn sm ghost" to="/" state={{ q: { from, to, date: run?.runDate || '' } }} style={{ marginLeft: 28 }}>열차 다시 찾기</Link>
           </div>
         ) : (
           <>
             <section style={{ padding: '22px 0 6px' }} aria-live="polite">
               <div style={{ fontSize: 15, color: '#B9C1D3' }}>내 순번</div>
-              <div key={tick} className={'q-num' + (tick ? ' tick' : '')}>{st ? (st.rank ?? st.ticketNo).toLocaleString() : '…'}</div>
+              {/* 입장(ADMITTED) 응답에는 rank가 없다. 번호표(ticketNo)는 그 열차에 줄 설 때마다 1, 2, 3…으로 늘어서
+                  나갔다 다시 줄 서면 입장 순간 "1 → 2"처럼 뒤로 밀린 것처럼 보였다 (2026-11-24) → 입장하면 '차례' */}
+              <div key={tick} className={'q-num' + (tick ? ' tick' : '')}>{st ? (st.state === 'ADMITTED' ? '차례' : (st.rank ?? st.ticketNo).toLocaleString()) : '…'}</div>
               <div style={{ marginTop: 12, fontSize: 16 }}>
                 {st?.state === 'ADMITTED'
                   ? '차례가 됐어요! 좌석 고르는 화면으로 넘어가요.'

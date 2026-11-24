@@ -21,6 +21,8 @@ import Search from './user/Search.jsx';
 import Guest from './user/Guest.jsx';
 import GuestLookup from './user/GuestLookup.jsx';
 import Waitlist from './user/Waitlist.jsx';
+import Groups from './user/Groups.jsx';
+import GroupDetail, { GroupList } from './admin/Groups.jsx';
 import Seats from './user/Seats.jsx';
 import Signup from './user/Signup.jsx';
 import UserLayout, { AuthLayout } from './user/UserLayout.jsx';
@@ -43,6 +45,7 @@ export default function App() {
         <Route path="/pay/:reservationId/result" element={<PayResult />} />
         <Route path="/reservations" element={<Reservations />} />
         <Route path="/waitlist" element={<Waitlist />} />
+        <Route path="/groups" element={<Groups />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/me" element={<Me />} />
       </Route>
@@ -53,6 +56,8 @@ export default function App() {
         <Route path="risk" element={<Risk />} />
         <Route path="cases" element={<CaseList />} />
         <Route path="cases/:caseId" element={<CaseDetail />} />
+        <Route path="groups" element={<GroupList />} />
+        <Route path="groups/:groupId" element={<GroupDetail />} />
         <Route path="master" element={<Master />} />
         <Route path="runs" element={<Runs />} />
         <Route path="settings" element={<Settings />} />

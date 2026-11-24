@@ -45,6 +45,18 @@ public class AppPolicy implements PolicyBounds {
 	public static final String GROUP_QUOTA_RATE = "group.quota_rate";
 	/** 출발 며칠 전까지 안 쓰인 할당석을 일반 판매로 돌릴지 (§18.4). ERD v36 */
 	public static final String GROUP_QUOTA_RELEASE_DAYS = "group.quota_release_days";
+	/** 단체 신청 인원 하한·상한 (대표자 포함, 코레일 단체승차권 11~200명). ERD v36 */
+	public static final String GROUP_MIN_SIZE = "group.min_size";
+	public static final String GROUP_MAX_SIZE = "group.max_size";
+	/** 휴대폰 없음 탑승자 비율이 이 값을 넘으면 관리자 경고 (group_booking.warn_no_phone_yn). ERD v36 */
+	public static final String GROUP_NO_PHONE_WARN_RATE = "group.no_phone_warn_rate";
+	/** 단체 승인 뒤 결제 기한(일). reservation.pay_deadline_at = 승인 시각 + 이 값 (§18.3-2). ERD v36 */
+	public static final String GROUP_PAY_DEADLINE_DAYS = "group.pay_deadline_days";
+	/** 명단 변경 가능 기간(예약 뒤 일, 1회). ERD v36 */
+	public static final String GROUP_ROSTER_CHANGE_DAYS = "group.roster_change_days";
+	/** 단체 할인율(어른만)과 할인 대상 신청 시점(출발 며칠 이내). ERD v36 */
+	public static final String GROUP_DISCOUNT_RATE = "group.discount_rate";
+	public static final String GROUP_DISCOUNT_WITHIN_DAYS = "group.discount_within_days";
 	/** 회원당 같은 운행 활성 대기 수 (WL-01) */
 	public static final String WAITLIST_MAX_PER_RUN = "waitlist.max_per_run";
 	/** 회원당 전체 활성 대기 수 (WL-01) */
@@ -76,6 +88,13 @@ public class AppPolicy implements PolicyBounds {
 			Map.entry(SALE_OPEN_INTERVAL_SEC, "10"),
 			Map.entry(GROUP_QUOTA_RATE, "0.05"),
 			Map.entry(GROUP_QUOTA_RELEASE_DAYS, "30"),
+			Map.entry(GROUP_MIN_SIZE, "11"),
+			Map.entry(GROUP_MAX_SIZE, "200"),
+			Map.entry(GROUP_NO_PHONE_WARN_RATE, "0.3"),
+			Map.entry(GROUP_PAY_DEADLINE_DAYS, "3"),
+			Map.entry(GROUP_ROSTER_CHANGE_DAYS, "7"),
+			Map.entry(GROUP_DISCOUNT_RATE, "0.10"),
+			Map.entry(GROUP_DISCOUNT_WITHIN_DAYS, "30"),
 			Map.entry(WAITLIST_MAX_PER_RUN, "1"),
 			Map.entry(WAITLIST_MAX_ACTIVE, "3"),
 			Map.entry(WAITLIST_PENALTY_MS_PER_POINT, "180000"),
@@ -123,13 +142,20 @@ public class AppPolicy implements PolicyBounds {
 				range(SEATMAP_ABUSE_THRESHOLD, 3, 1000),
 				range(SEATMAP_ABUSE_WINDOW_SEC, 10, 3600),
 				range(SEATMAP_COOLDOWN_SEC, 5, 3600),
+				range(GROUP_MIN_SIZE, 11, 200),            // group_booking CHECK(passenger_count BETWEEN 11 AND 200)과 같게
+				range(GROUP_MAX_SIZE, 11, 200),
+				range(GROUP_PAY_DEADLINE_DAYS, 1, 14),
+				range(GROUP_ROSTER_CHANGE_DAYS, 0, 30),
+				range(GROUP_DISCOUNT_WITHIN_DAYS, 0, 60),
 				range(GROUP_QUOTA_RELEASE_DAYS, 0, 60));       // 판매는 출발 2개월 전부터라 그보다 길면 할당석이 만들어지지 않음         // 결제 마감 전에 중복 방지 키가 사라지지 않게 (팀장님)
 	}
 
 	@Override
 	public Map<String, DecimalRange> decimalBounds() {
 		return Map.of(REPLAY_FULL_RECORD_RATIO, DecimalRange.of("0", "1"),
-				GROUP_QUOTA_RATE, DecimalRange.of("0", "0.5")); // 절반 넘게 묶으면 개인 예매가 사실상 막힘
+				GROUP_QUOTA_RATE, DecimalRange.of("0", "0.5"), // 절반 넘게 묶으면 개인 예매가 사실상 막힘
+				GROUP_NO_PHONE_WARN_RATE, DecimalRange.of("0", "1"),
+				GROUP_DISCOUNT_RATE, DecimalRange.of("0", "0.5"));
 	}
 
 	private static Entry<String, Range> range(String key, long min, long max) {

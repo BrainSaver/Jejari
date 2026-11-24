@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useLocation, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { api, get } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
 import { seoulHm, seoulNowLocal, seoulToday } from '../lib/time.js';
@@ -459,6 +459,9 @@ function RunCard({ r, i, from, to, name, party, grade }) {
         {!Object.keys(r.fares || {}).length && <p className="mut" style={{ margin: '8px 0' }}>운임이 아직 등록되지 않았어요.</p>}
         {view.action === 'book' && (
           <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => navigate(`/queue/${r.runId}?from=${from}&to=${to}&adult=${party.adult}&child=${party.child}&senior=${party.senior}${grade ? `&grade=${grade}` : ''}`)}>예매하기</button>
+        )}
+        {view.action === 'book' && r.fares?.GENERAL != null && (
+          <Link className="link" style={{ display: 'block', marginTop: 8, fontSize: 13.5 }} to={`/groups?run=${r.runId}&from=${from}&to=${to}`}>11명 이상 단체라면 단체 신청</Link>
         )}
         {view.action === 'wait' && (
           <button type="button" className="btn soft" style={{ marginTop: 10 }} onClick={() => navigate(`/waitlist?run=${r.runId}&from=${from}&to=${to}`)}>취소표 대기 신청</button>

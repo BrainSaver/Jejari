@@ -215,7 +215,7 @@ class RiskEngineTest {
         void NO_SEARCH_ENTRY는_낮은_점수만() {
             Reason r = score(s().noSearch(true)).reasons().get(0);
             assertThat(r.rule()).isEqualTo(RiskRule.NO_SEARCH_ENTRY);
-            assertThat(r.points()).isEqualTo(10);
+            assertThat(r.points()).isEqualTo(30); // 2차 대회 botc 6/6 · 사람 0/27 (11-24) → 10에서 30. 순번만 미루고 케이스는 안 염
             assertThat(r.severity()).isEqualTo(Severity.LOW);
             assertThat(score(s().noSearch(true)).openCase()).isFalse();
         }

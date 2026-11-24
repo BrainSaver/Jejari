@@ -376,3 +376,28 @@
 .dlg .opt-list button{width:100%;display:flex;align-items:center;justify-content:space-between;min-height:48px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-size:16px;font-weight:800;cursor:pointer;padding:0 14px;text-align:left}
 .dlg .opt-list button.on{border-color:var(--ink);background:var(--line2)}
 @media (max-width:420px){.dlg .opt-grid{grid-template-columns:repeat(3,1fr)}}
+
+/* U-12 단체 예매 명단 (Groups.jsx). PC는 한 줄, 모바일은 이름·번호 두 줄로 */
+.user .grp-list{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:8px}
+.user .grp-row{display:grid;grid-template-columns:28px minmax(0,1fr) minmax(0,1.2fr) auto 96px auto;align-items:center;gap:8px}
+.user .grp-row .field{margin-bottom:8px}
+.user div.grp-row{grid-template-columns:1fr 1fr;gap:12px}
+.user .grp-row input,.user .grp-row select{min-height:44px;padding:8px 12px}
+.user .grp-row select{padding-right:32px}
+.user .grp-no{color:var(--mut);font-weight:700;text-align:right}
+.user .grp-chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);white-space:nowrap;cursor:pointer}
+.user .grp-list li.grp-row:has(.grow){grid-template-columns:28px minmax(0,1fr) auto auto}
+@media (max-width:599px){
+  .user li.grp-row{grid-template-columns:24px minmax(0,1fr) 92px auto;grid-template-areas:"no name name name" ". phone phone phone" ". chk type btn";row-gap:6px;padding-bottom:10px;border-bottom:1px dashed var(--line)}
+  .user li.grp-row>:nth-child(1){grid-area:no}
+  .user li.grp-row>:nth-child(2){grid-area:name}
+  .user li.grp-row>:nth-child(3){grid-area:phone}
+  .user li.grp-row>:nth-child(4){grid-area:chk}
+  .user li.grp-row>:nth-child(5){grid-area:type}
+  .user li.grp-row>:nth-child(6){grid-area:btn}
+  .user div.grp-row{grid-template-columns:1fr;gap:0}
+  .user .grp-list li.grp-row:has(.grow){grid-template-columns:24px minmax(0,1fr) auto;grid-template-areas:none}
+  .user .grp-list li.grp-row:has(.grow)>*{grid-area:auto}
+}
+.user .grp-chk.wrap{white-space:normal;align-items:flex-start;line-height:1.5}
+.user .grp-list li{font-size:14.5px}
