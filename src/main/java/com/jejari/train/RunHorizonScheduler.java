@@ -93,6 +93,11 @@ public class RunHorizonScheduler {
 	 *
 	 * <p>시각은 {@code 새 운행일 + (원본 정차 시각 - 원본 운행일)}이다. 시·분만 떼어 쓰지 않고
 	 * 원본 운행일로부터의 간격을 쓰는 이유는, 자정을 넘겨 도착하는 열차의 날짜 차이를 보존하기 위해서다.
+	 *
+	 * <p><b>관리자 화면으로 만든 운행(1000000번대, {@code RunAdminService.RUN_ID_BASE})은 원본으로 쓰지 않는다.</b>
+	 * 그 운행은 공식 시각표(TAGO)가 아니라 계산식 시각(거리÷2.7km/분, 09:00 출발)이라, 날짜가 가장 늦다는 이유로
+	 * 골라지면 그 시각이 뒤의 날짜에 계속 옮는다. 2026-11-24 리허설이 화면으로 만든 대회 운행(2027-02-02, 09:00)이
+	 * 가장 늦은 운행이 되어 실제로 그렇게 됐다 (공식 시각표는 09:28).
 	 */
 	private static final String FILL_STOPS = """
 			INSERT INTO train_stop (run_id, station_id, stop_order, arrival_time, departure_time)
@@ -109,7 +114,8 @@ public class RunHorizonScheduler {
 			                       ROW_NUMBER() OVER (PARTITION BY x.train_id
 			                                          ORDER BY x.run_date DESC, x.run_id DESC) AS rn
 			                  FROM train_run x
-			                 WHERE EXISTS (SELECT 1 FROM train_stop y WHERE y.run_id = x.run_id))
+			                 WHERE x.run_id < 1000000
+			                   AND EXISTS (SELECT 1 FROM train_stop y WHERE y.run_id = x.run_id))
 			         WHERE rn = 1) src ON src.train_id = r.train_id
 			  JOIN train_stop s ON s.run_id = src.run_id
 			 WHERE r.train_id IN (%s)
