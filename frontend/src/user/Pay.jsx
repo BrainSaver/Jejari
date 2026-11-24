@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatCard } from '../lib/format.js';
+import { uuid } from '../lib/uuid.js';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router';
 import { get, post } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
@@ -67,7 +68,7 @@ export default function Pay() {
     if (busy || expired) return;
     setBusy(true);
     setError(null);
-    key.current = key.current || crypto.randomUUID();
+    key.current = key.current || uuid();
     try {
       await post(`/api/v1/reservations/${id}/payments`, { cardNumber: digits }, { 'Idempotency-Key': key.current });
       navigate(`/pay/${id}/result`);

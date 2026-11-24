@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } 
 import { ApiError, get, post } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
 import { clearPass, loadPass, savePass } from '../lib/pass.js';
+import { uuid } from '../lib/uuid.js';
 import { useMember } from './useMember.js';
 
 /**
@@ -163,7 +164,7 @@ export default function Seats() {
     if (picked.length !== total || busy) return;
     setBusy(true);
     setNotice(null);
-    idemKey.current = idemKey.current || crypto.randomUUID();
+    idemKey.current = idemKey.current || uuid();
     const types = TYPES.flatMap(([t]) => Array(people[t]).fill(t));
     const body = {
       runId: Number(runId),
