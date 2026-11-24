@@ -130,7 +130,7 @@ CONTRIBUTING.md                 깃 규칙
 | 예시 데이터 | `samples`에는 가짜 값만. 실제 개인정보·키·토큰 금지. **NOT NULL 컬럼은 모든 예시 행에 값이 있어야 함** (없으면 DDL INSERT 실패, 검사 FAIL). 확정 전 값은 결정 사항 상태를 "예시"로 |
 | 수정 없는 테이블 | INSERT만 하는 테이블은 `noUpdatedAt:true` (processed_event, reservation_history, app_policy_history). outbox_event·notification·cancellation은 나중에 UPDATE하므로 해당 없음 |
 | updated_at | DDL 기본값은 INSERT 시각뿐. JPA Auditing(`@LastModifiedDate`)으로 세팅하고, **비고의 네이티브 조건부 UPDATE에는 반드시 `updated_at = SYSTIMESTAMP`** |
-| 마감 시각 | `reservation.pay_deadline_at`이 원천. `seat_inventory.hold_expires_at`, Redis `seat:hold` TTL, `saga_instance.timeout_at`, `waitlist.offer_deadline_at`은 같은 값을 복사하고 바꿀 때도 함께 |
+| 마감 시각 | `reservation.pay_deadline_at`이 원천. `seat_inventory.hold_expires_at`, Redis `seat:hold` TTL(**선점·제안 키만 마감 + `reservation.hold_release_grace_sec`**, concurrency.md §0.2 예외), `saga_instance.timeout_at`, `waitlist.offer_deadline_at`은 같은 값을 복사하고 바꿀 때도 함께 |
 | 참조 전용 | 행을 지우지 않는 참조 테이블은 `refOnly:true` (station, route, car_type). 삭제가 생기면 플래그를 풀어 FK 인덱스를 되살림 |
 | 인덱스 | 쓰기 폭주 테이블(reservation, seat_inventory, outbox_event)에 인덱스를 추가할 땐 쓰는 쿼리를 비고에 같이 적음. 배치 전용이면 오프피크 풀스캔을 먼저 검토 |
 | 빅데이터 | 대량 적재 컬렉션은 `big:true` (편집기 "빅데이터" 버튼이 흐리게 처리) |

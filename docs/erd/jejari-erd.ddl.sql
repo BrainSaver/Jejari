@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v36)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v37)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -1230,6 +1230,15 @@ COMMENT ON COLUMN group_passenger.created_at IS '생성 시각';
 COMMENT ON COLUMN group_passenger.updated_at IS '수정 시각';
 CREATE INDEX ix_group_pax_phone ON group_passenger (phone_hash);
 
+CREATE TABLE card_lock (
+  method_hash                VARCHAR2(64) NOT NULL,
+  created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  CONSTRAINT pk_card_lock PRIMARY KEY (method_hash)
+);
+COMMENT ON TABLE card_lock IS '카드 잠금 행 - 카드 해시마다 한 행. 같은 카드를 새 명의에 붙이는 결제 시작을 한 줄로 세워, 카드 한 장에 붙는 명의 수 상한(도용 카드)을 동시 요청에도 지킨다.';
+COMMENT ON COLUMN card_lock.method_hash IS '카드 해시 (payment_method.method_hash와 같은 값) / 아직 payment_method 행이 없는 처음 보는 카드도 잠글 수 있게 따로 둠';
+COMMENT ON COLUMN card_lock.created_at IS '생성 시각';
+
 -- 외래키와 외래키 인덱스 (Oracle은 FK에 인덱스를 자동으로 만들지 않음. 참조 전용 테이블을 가리키는 FK는 인덱스 생략)
 ALTER TABLE route ADD CONSTRAINT fk_route_origin_station_id FOREIGN KEY (origin_station_id) REFERENCES station (station_id);
 ALTER TABLE route ADD CONSTRAINT fk_route_dest_station_id FOREIGN KEY (dest_station_id) REFERENCES station (station_id);
@@ -1432,11 +1441,13 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.roster_change_days', '7', 1, 'NUMBER', '예약 후 명단 변경 가능 기간(일), 1회');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.discount_rate', '0.10', 1, 'NUMBER', '단체 할인율 (어른 운임만, 중복 할인 없음)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.discount_within_days', '30', 1, 'NUMBER', '출발 며칠 이내 신청분에 할인 적용');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('payment.max_ci_per_card', '0', 1, 'NUMBER', '카드 한 장에 붙을 수 있는 서로 다른 명의(CI) 수. 0이면 끔. 켤 때 권장 3(가족 카드). 넘으면 결제 시작 거절 (concurrency.md §4.3)');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (1, 2880, NULL, NULL, 400, '출발 2일 전까지 1인 400원');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (2, 0, 2880, 0.1, NULL, '1일 전 ~ 출발 전 10%');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (3, -20, 0, 0.15, NULL, '출발 후 20분까지 15%');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (4, -60, -20, 0.4, NULL, '출발 후 20~60분 40%');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (5, NULL, -60, 0.7, NULL, '출발 후 60분 ~ 도착 70%');
+INSERT INTO card_lock (method_hash) VALUES ('9f2c…(HMAC)');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (1, 1, 'PER_RESERVATION', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (2, 1, 'PER_RUN', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (3, 1, 'PER_HOLIDAY', 8, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
