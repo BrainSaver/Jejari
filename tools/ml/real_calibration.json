@@ -1,0 +1,443 @@
+{
+ "source": [
+  "contest-c1124d"
+ ],
+ "note": "실제 대회 계정의 행동 프로필 (calibrate_real.py). 기기·카드·연결 계정·판매 오픈 시각은 대회에서만 생긴 모양이라 뺐다",
+ "human": [
+  {
+   "int_median_s": 6.1605,
+   "int_p10_s": 2.121,
+   "int_cv": 0.5783,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 2.044,
+   "int_p10_s": 1.039,
+   "int_cv": 0.873,
+   "browse_before_hold": 2.0,
+   "n_hold": 1.0,
+   "n_view": 4.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 2.088,
+   "int_p10_s": 1.281,
+   "int_cv": 0.4414,
+   "browse_before_hold": 2.0,
+   "n_hold": 1.0,
+   "n_view": 3.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 2.738,
+   "int_p10_s": 2.062,
+   "int_cv": 0.269,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 2.727,
+   "int_p10_s": 0.826,
+   "int_cv": 0.8414,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 2.062,
+   "int_p10_s": 0.834,
+   "int_cv": 0.8024,
+   "browse_before_hold": 2.0,
+   "n_hold": 1.0,
+   "n_view": 4.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 8.293,
+   "int_p10_s": 1.047,
+   "int_cv": 0.7868,
+   "browse_before_hold": 1.0,
+   "n_hold": 2.0,
+   "n_view": 3.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 4.991,
+   "int_p10_s": 0.955,
+   "int_cv": 1.0217,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 3.6895,
+   "int_p10_s": 0.772,
+   "int_cv": 0.8045,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 3.612,
+   "int_p10_s": 0.606,
+   "int_cv": 0.784,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 4.8215,
+   "int_p10_s": 1.149,
+   "int_cv": 1.1561,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 2.6065,
+   "int_p10_s": 0.807,
+   "int_cv": 0.6941,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 8.412,
+   "int_p10_s": 1.38,
+   "int_cv": 1.4648,
+   "browse_before_hold": 1.0,
+   "n_hold": 3.0,
+   "n_view": 4.0,
+   "limit_rejects": 0.0,
+   "seats": 4,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 2.841,
+   "int_p10_s": 1.193,
+   "int_cv": 0.7517,
+   "browse_before_hold": 1.0,
+   "n_hold": 2.0,
+   "n_view": 5.0,
+   "limit_rejects": 0.0,
+   "seats": 4,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 4.839,
+   "int_p10_s": 1.163,
+   "int_cv": 0.5208,
+   "browse_before_hold": 1.0,
+   "n_hold": 2.0,
+   "n_view": 5.0,
+   "limit_rejects": 0.0,
+   "seats": 4,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 2.7385,
+   "int_p10_s": 1.451,
+   "int_cv": 0.5829,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 2.529,
+   "int_p10_s": 1.14,
+   "int_cv": 0.42,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 2.907,
+   "int_p10_s": 0.693,
+   "int_cv": 1.0634,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 2.59,
+   "int_p10_s": 1.564,
+   "int_cv": 0.8728,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 3.4,
+   "int_p10_s": 0.832,
+   "int_cv": 0.7384,
+   "browse_before_hold": 2.0,
+   "n_hold": 1.0,
+   "n_view": 3.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 2.59,
+   "int_p10_s": 0.976,
+   "int_cv": 0.7523,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 3.0135,
+   "int_p10_s": 2.169,
+   "int_cv": 0.8383,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 3.648,
+   "int_p10_s": 1.432,
+   "int_cv": 0.7945,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 8.544,
+   "int_p10_s": 2.104,
+   "int_cv": 0.4763,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 2,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 6.0165,
+   "int_p10_s": 2.2,
+   "int_cv": 0.8794,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 2,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 2.6565,
+   "int_p10_s": 1.28,
+   "int_cv": 0.9802,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  },
+  {
+   "int_median_s": 3.321,
+   "int_p10_s": 1.462,
+   "int_cv": 0.6585,
+   "browse_before_hold": 1.0,
+   "n_hold": 1.0,
+   "n_view": 2.0,
+   "limit_rejects": 0.0,
+   "seats": 1,
+   "src": "contest-c1124d"
+  }
+ ],
+ "bot": {
+  "botb": [
+   {
+    "int_median_s": 1.264,
+    "int_p10_s": 0.728,
+    "int_cv": 0.3184,
+    "browse_before_hold": 1.0,
+    "n_hold": 5.0,
+    "n_view": 10.0,
+    "limit_rejects": 4.0,
+    "seats": 4,
+    "src": "contest-c1124d"
+   },
+   {
+    "int_median_s": 1.1715,
+    "int_p10_s": 0.731,
+    "int_cv": 0.3958,
+    "browse_before_hold": 1.0,
+    "n_hold": 7.0,
+    "n_view": 10.0,
+    "limit_rejects": 4.0,
+    "seats": 4,
+    "src": "contest-c1124d"
+   },
+   {
+    "int_median_s": 1.145,
+    "int_p10_s": 0.777,
+    "int_cv": 0.3265,
+    "browse_before_hold": 1.0,
+    "n_hold": 8.0,
+    "n_view": 10.0,
+    "limit_rejects": 4.0,
+    "seats": 4,
+    "src": "contest-c1124d"
+   },
+   {
+    "int_median_s": 1.269,
+    "int_p10_s": 0.811,
+    "int_cv": 0.3198,
+    "browse_before_hold": 1.0,
+    "n_hold": 6.0,
+    "n_view": 10.0,
+    "limit_rejects": 4.0,
+    "seats": 4,
+    "src": "contest-c1124d"
+   },
+   {
+    "int_median_s": 1.2615,
+    "int_p10_s": 0.68,
+    "int_cv": 0.3761,
+    "browse_before_hold": 1.0,
+    "n_hold": 9.0,
+    "n_view": 10.0,
+    "limit_rejects": 4.0,
+    "seats": 4,
+    "src": "contest-c1124d"
+   },
+   {
+    "int_median_s": 1.267,
+    "int_p10_s": 0.853,
+    "int_cv": 0.3242,
+    "browse_before_hold": 1.0,
+    "n_hold": 10.0,
+    "n_view": 10.0,
+    "limit_rejects": 4.0,
+    "seats": 4,
+    "src": "contest-c1124d"
+   }
+  ],
+  "botc": [
+   {
+    "int_median_s": 8.671,
+    "int_p10_s": 2.37,
+    "int_cv": 0.6794,
+    "browse_before_hold": 0.0,
+    "n_hold": 1.0,
+    "n_view": 1.0,
+    "limit_rejects": 0.0,
+    "seats": 4,
+    "src": "contest-c1124d"
+   },
+   {
+    "int_median_s": 8.24,
+    "int_p10_s": 2.113,
+    "int_cv": 0.5937,
+    "browse_before_hold": 0.0,
+    "n_hold": 1.0,
+    "n_view": 1.0,
+    "limit_rejects": 0.0,
+    "seats": 4,
+    "src": "contest-c1124d"
+   },
+   {
+    "int_median_s": 8.068,
+    "int_p10_s": 2.071,
+    "int_cv": 0.6003,
+    "browse_before_hold": 0.0,
+    "n_hold": 1.0,
+    "n_view": 1.0,
+    "limit_rejects": 0.0,
+    "seats": 4,
+    "src": "contest-c1124d"
+   },
+   {
+    "int_median_s": 7.93,
+    "int_p10_s": 2.125,
+    "int_cv": 0.6651,
+    "browse_before_hold": 0.0,
+    "n_hold": 1.0,
+    "n_view": 1.0,
+    "limit_rejects": 0.0,
+    "seats": 4,
+    "src": "contest-c1124d"
+   },
+   {
+    "int_median_s": 8.033,
+    "int_p10_s": 2.1,
+    "int_cv": 0.602,
+    "browse_before_hold": 0.0,
+    "n_hold": 1.0,
+    "n_view": 1.0,
+    "limit_rejects": 0.0,
+    "seats": 4,
+    "src": "contest-c1124d"
+   },
+   {
+    "int_median_s": 8.872,
+    "int_p10_s": 2.08,
+    "int_cv": 0.601,
+    "browse_before_hold": 0.0,
+    "n_hold": 1.0,
+    "n_view": 1.0,
+    "limit_rejects": 0.0,
+    "seats": 4,
+    "src": "contest-c1124d"
+   }
+  ]
+ }
+}
