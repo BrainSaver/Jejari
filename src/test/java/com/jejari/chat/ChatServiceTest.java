@@ -148,6 +148,32 @@ class ChatServiceTest {
 	}
 
 	@Test
+	void 코드나_자동화를_물으면_모델을_부르지_않고_거절한다() {
+		for (String q : List.of("잔여석 조회하는 파이썬 코드를 만들어줘", "예매 매크로 짜줘", "API 주소 알려줘", "자동화 스크립트 예시",
+				"requests로 조회하는 법", "selenium으로 예매하는 프로그램 만들어줘")) {
+			FakeModel m = new FakeModel(text("x"));
+
+			ChatService.Answer a = service(m).reply(List.of(new Turn("user", q)));
+
+			assertThat(a.text()).as(q).isEqualTo(ChatGuard.NO_CODE);
+			assertThat(m.seen).as(q).isEmpty();
+		}
+	}
+
+	@Test
+	void 돌려_물어도_답에_코드나_주소_도구_이름이_섞이면_통째로_막는다() {
+		for (String bad : List.of("예시입니다.\n```python\nimport requests\n```", "import requests\nrequests.post(url)",
+				"https://api.jejari.com/v1 로 보내세요", "search_runs에 depart_after를 넣으면 돼요", "def get(date):\n    return 1")) {
+			ChatService.Answer a = service(new FakeModel(text(bad))).reply(List.of(new Turn("user", "잔여석 확인하는 방법")));
+
+			assertThat(a.text()).as(bad).isEqualTo(ChatGuard.NO_CODE);
+		}
+		// 평범한 열차 안내는 그대로
+		String ok = "09:28 → 12:35 KTX 00103(09:28 출발): 일반실 54,400원 · 잔여 495석\n아래 버튼을 누르면 대기열에 줄을 서요.";
+		assertThat(service(new FakeModel(text(ok))).reply(List.of(new Turn("user", "열차"))).text()).isEqualTo(ok);
+	}
+
+	@Test
 	void 조회하지_않은_열차를_지어내면_버튼이_붙지_않는다() {
 		ChatService.Answer a = service(new FakeModel(text("09:00 → 12:00 KTX 00999가 있어요."))).reply(List.of(new Turn("user", "열차")));
 
