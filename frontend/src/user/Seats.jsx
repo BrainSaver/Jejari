@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import { ApiError, get, post } from '../api/client.js';
+import { ApiError, del, get, post } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
 import { clearPass, loadPass, savePass } from '../lib/pass.js';
 import { useMember } from './useMember.js';
@@ -40,6 +40,23 @@ export default function Seats() {
   const [pass, setPass] = useState(() => loadPass(runId));
   const left = useCountdown(pass?.expiresAt);
   const expired = !pass || left <= 0;
+
+  // 좌석 화면을 나가면(다른 메뉴·뒤로 가기·챗봇 버튼 등) 입장을 끝내고 줄에서 뺀다. 다시 예매하면 맨 뒤에 새로 줄을 서고
+  // 차례가 오면 좌석 고르는 시간도 새로 받는다. 나가도 토큰을 살려 두면 돌아왔을 때 줄 없이 들어오면서 시간은 이어지고,
+  // 반대로 줄 없이 시간만 새로 주면 나갔다 들어오기로 시간을 끝없이 늘릴 수 있어서다.
+  // 좌석을 잡아 결제로 가는 것은 나가는 게 아니다. 새로고침은 화면이 내려가지 않아(언마운트 없음) 그대로 이어진다.
+  // StrictMode(개발)는 붙였다 떼었다 다시 붙이므로, 바로 다시 붙으면 취소되게 한 틱 미룬다.
+  const toPay = useRef(false);
+  useEffect(() => {
+    clearTimeout(pendingLeave[runId]);
+    return () => {
+      if (toPay.current) return;
+      pendingLeave[runId] = setTimeout(() => {
+        clearPass(runId);
+        del(`/api/v1/runs/${runId}/queue/me`).catch(() => {});
+      }, 0);
+    };
+  }, [runId]);
 
   const [run, setRun] = useState(null);
   const [map, setMap] = useState(null);
@@ -180,6 +197,7 @@ export default function Seats() {
           continue;
         }
         clearPass(runId); // 좌석을 잡으면 입장 토큰은 다 쓴 것
+        toPay.current = true;
         navigate(`/pay/${r.reservationId}`, { state: { hold: r, picked, run, from, to } });
         return;
       }
@@ -274,6 +292,9 @@ export default function Seats() {
                 <span className="grow">좌석을 고를 수 있는 시간</span>
                 <b>{mmss(left)}</b>
               </div>
+            )}
+            {pass && !expired && (
+              <p className="mut" style={{ order: 1, margin: 0, fontSize: 13 }}>다른 화면으로 나가면 입장이 끝나요. 다시 예매하면 맨 뒤에 새로 줄을 서고, 차례가 되면 시간을 새로 받아요.</p>
             )}
             {pass && !expired && (
               <button type="button" className={'btn sm' + (pass.extended ? ' off' : ' soft')} style={{ order: 1 }}
@@ -445,6 +466,8 @@ function pickTogether(car, n) {
 const firstFreeCar = (m, grade) => (m.cars.find((c) => c.grade === (grade || 'GENERAL') && c.available > 0) || m.cars.find((c) => c.available > 0) || m.cars[0])?.carNo ?? null;
 
 // ------------------------------------------------------------ 시간
+
+const pendingLeave = {}; // runId → 미뤄 둔 이탈 타이머 (StrictMode 재마운트 때 취소)
 
 function useCountdown(expiresAt) {
   const calc = () => (expiresAt ? Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)) : 0);
