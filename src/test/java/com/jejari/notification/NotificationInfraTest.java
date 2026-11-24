@@ -170,7 +170,9 @@ class NotificationInfraTest {
 		String withConfirmed = "type IN ('WAITLIST_OFFER', 'PAY_REMINDER', 'EXPIRED', 'WAITLIST_SKIPPED', 'REFUNDED', 'CONFIRMED')";
 		String old = "type IN ('WAITLIST_OFFER', 'PAY_REMINDER', 'EXPIRED', 'WAITLIST_SKIPPED', 'REFUNDED')";
 		jdbc.execute("ALTER TABLE notification DROP CONSTRAINT ck_notification_type");
-		jdbc.execute("ALTER TABLE notification ADD CONSTRAINT ck_notification_type CHECK (" + old + ")"); // ERD 패치 전 DB
+		// NOVALIDATE: 새 행만 검사. 이미 CONFIRMED 알림이 있는 DB(대회·리허설을 돌린 PC)에서도 옛 제약을 걸 수 있게.
+		// 없으면 ORA-02293으로 여기서 실패하고, finally의 DROP도 실패해 제약이 사라진 채 남는다 (2026-11-24 겪음)
+		jdbc.execute("ALTER TABLE notification ADD CONSTRAINT ck_notification_type CHECK (" + old + ") ENABLE NOVALIDATE"); // ERD 패치 전 DB
 		try {
 			NotificationEventHandler fresh = new NotificationEventHandler(jdbc, writer); // 확인 결과를 기억하지 않은 새것
 			tx.executeWithoutResult(st -> fresh.handle(event(EventType.RESERVATION_CONFIRMED, r))); // 예외 없이 끝남
