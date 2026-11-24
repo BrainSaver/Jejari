@@ -9,6 +9,7 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -26,6 +27,7 @@ import com.jejari.member.GuestGuard;
 import com.jejari.member.MemberAuthEnabled;
 import com.jejari.member.password.PasswordHasher;
 import com.jejari.member.password.PasswordPolicy;
+import com.jejari.queue.domain.QueueService;
 
 /**
  * AUTH-06 내 정보 조회·탈퇴 (U-09).
@@ -61,9 +63,12 @@ public class MyAccountService {
 	private final AuthPolicy policy;
 	private final Clock clock;
 	private final GuestGuard guestGuard;
+	/** 탈퇴 때 대기열 자리 비우기. 대기열 빈이 없는 구성(테스트 슬라이스)에서도 뜨게 ObjectProvider */
+	private final ObjectProvider<QueueService> queues;
 
 	public MyAccountService(JdbcTemplate jdbc, TransactionTemplate tx, PiiCipher cipher, PasswordHasher hasher,
-			Pseudonymizer pseudonymizer, AuthLimiter limiter, AuthPolicy policy, Clock clock, GuestGuard guestGuard) {
+			Pseudonymizer pseudonymizer, AuthLimiter limiter, AuthPolicy policy, Clock clock, GuestGuard guestGuard,
+			ObjectProvider<QueueService> queues) {
 		this.jdbc = jdbc;
 		this.tx = tx;
 		this.cipher = cipher;
@@ -73,6 +78,7 @@ public class MyAccountService {
 		this.policy = policy;
 		this.clock = clock;
 		this.guestGuard = guestGuard;
+		this.queues = queues;
 	}
 
 	// ------------------------------------------------------------ 내 정보
@@ -147,6 +153,15 @@ public class MyAccountService {
 					 WHERE member_id = ? AND revoked_at IS NULL""", memberId);
 		});
 		log.info("회원 {} 탈퇴", memberId);
+		// 대기열 자리도 비운다 (커밋 뒤, 실패해도 탈퇴는 끝난 것 — 남은 자리는 토큰 TTL로 사라진다)
+		QueueService queue = queues.getIfAvailable();
+		if (queue != null) {
+			try {
+				queue.leaveAny(memberId);
+			} catch (RuntimeException e) {
+				log.warn("회원 {} 탈퇴 뒤 대기열 정리 실패: {}", memberId, e.toString());
+			}
+		}
 	}
 
 	// ------------------------------------------------------------ 원본 보기

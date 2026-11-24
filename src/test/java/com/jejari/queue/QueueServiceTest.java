@@ -535,6 +535,24 @@ class QueueServiceTest extends QueueRedisSupport {
         assertThat(queue.status(1, RUN).rank()).isEqualTo(1);
     }
 
+    @Test
+    void 운행을_몰라도_탈퇴하면_입장_자리와_명의_자리가_비어_같은_명의로_다시_줄설_수_있다() {
+        // 2026-11-24 2차 대회: 이메일을 잘못 쳐 가입한 계정을 탈퇴하고 같은 휴대폰(명의)으로 다시 가입했더니 REJECTED_DUPLICATE
+        members.register(new MemberIdentity(11, "ACTIVE", "ci-same", List.of(), List.of()));
+        members.register(new MemberIdentity(12, "ACTIVE", "ci-same", List.of(), List.of()));
+        queue.enter(11, RUN);
+        admitter.admit(RUN);
+        assertCode(() -> queue.enter(12, RUN), QueueErrorCode.QUEUE_DUPLICATED); // 같은 명의라 막힘
+
+        queue.leaveAny(11);
+
+        assertThat(redis.hasKey("queue:member:11")).isFalse();
+        assertThat(redis.opsForZSet().score("queue:active:" + RUN, "11")).isNull();
+        assertThat(redis.opsForZSet().score("queue:ci:ci-same", "11")).isNull();
+        assertThat(queue.enter(12, RUN).state()).isEqualTo(QueueStatus.State.WAITING);
+        queue.leaveAny(11); // 이미 비었으면 아무 일도 없다
+    }
+
     // ---------- 동시성 ----------
 
     @Test
