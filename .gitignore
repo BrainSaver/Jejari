@@ -82,3 +82,5 @@ heapdump*
 
 # 1차 봇 대회 원본은 집계 PC에만 있어서 저장소에 둔다 (전부 해시값, data/ml/contest-c1119/README.md)
 !/data/ml/contest-c1119/
+# 2차 봇 대회(사람 참가) 원본도 같은 이유로 (data/ml/contest-c1124d/README.md)
+!/data/ml/contest-c1124d/
