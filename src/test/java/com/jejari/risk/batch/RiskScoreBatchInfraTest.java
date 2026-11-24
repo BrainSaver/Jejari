@@ -426,9 +426,18 @@ class RiskScoreBatchInfraTest {
 		String reasons = jdbc.queryForObject("SELECT reasons FROM risk_score WHERE subject_hash = ?", String.class, botCi);
 		assertThat(reasons).contains("HEADLESS_HOLD").contains("NO_SEARCH_ENTRY");
 		assertThat(finalScore(SubjectType.CI, botCi)).isEqualByComparingTo("40.00"); // 30 + 10
-		// 점수만: ERD case_marker CHECK에 값이 생기기 전까지 케이스는 열지 않는다
-		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM suspicious_case WHERE subject_hash = ?", Integer.class, botCi))
-				.isZero();
+		// ERD v34부터 case_marker CHECK가 HEADLESS_HOLD를 받으므로 40점(기준 미만)이어도 마커 규칙(RULE)으로 케이스가 열린다.
+		// v34 전 DB면 마커에서 빠져 점수만 남는다. NO_SEARCH_ENTRY는 마커 규칙이 아니라 점수에만 들어간다.
+		boolean patched = jdbc.queryForObject("""
+				SELECT COUNT(*) FROM user_constraints WHERE constraint_name = 'CK_CASE_MARKER_RULE_CODE'
+				   AND search_condition_vc LIKE '%HEADLESS_HOLD%'""", Integer.class) > 0;
+		var triggers = jdbc.queryForList("SELECT trigger_type FROM suspicious_case WHERE subject_hash = ?", String.class,
+				botCi);
+		assertThat(triggers).isEqualTo(patched ? List.of("RULE") : List.of());
+		var codes = jdbc.queryForList("""
+				SELECT m.rule_code FROM case_marker m JOIN suspicious_case c ON c.case_id = m.case_id
+				 WHERE c.subject_hash = ?""", String.class, botCi);
+		assertThat(codes).isEqualTo(patched ? List.of("HEADLESS_HOLD") : List.of());
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_score WHERE subject_hash = ?", Integer.class, humanCi))
 				.isZero(); // 녹화도 있고 조회도 했다 → 0점
 	}
