@@ -418,6 +418,81 @@ class ReservationCancelInfraTest {
 
 	// ------------------------------------------------------------ 도우미
 
+	// ------------------------------------------------------------ 단체 (§18.6)
+
+	/** 승인된 단체 예약 = source GROUP인 일반 예약 한 건 (배정 절차는 좌석 쪽 테스트 몫이라 여기선 표시만 바꾼다) */
+	long groupConfirmed(long m, long... seats) {
+		long r = confirmed(m, true, seats);
+		jdbc.update("UPDATE reservation SET source = 'GROUP', updated_at = SYSTIMESTAMP WHERE reservation_id = ?", r);
+		return r;
+	}
+
+	/** 지금 단체 위약금 표로 계산한 수수료 (출발까지 남은 분은 미리보기 응답에서) */
+	long groupFee(JsonNode quote, long... seatAmounts) {
+		List<GroupFeeCalculator.Band> bands = jdbc.query("""
+				SELECT fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount FROM group_fee_policy""",
+				(rs, i) -> new GroupFeeCalculator.Band(rs.getLong(1), (Long) rs.getObject(2, Long.class),
+						(Long) rs.getObject(3, Long.class), rs.getBigDecimal(4), (Long) rs.getObject(5, Long.class)));
+		long m = quote.get("minutesBeforeDeparture").asLong();
+		java.time.Instant dep = java.time.Instant.parse("2030-01-01T00:00:00Z");
+		List<Long> amounts = java.util.Arrays.stream(seatAmounts).boxed().toList();
+		return GroupFeeCalculator.quote(bands, dep, null, dep.minusSeconds(m * 60 + 30), amounts, Long.MAX_VALUE).fee();
+	}
+
+	@Test
+	void 단체_예약_취소는_단체_위약금_표로_계산하고_정책_ID는_비운다() throws Exception {
+		long m = member();
+		long r = groupConfirmed(m, seatIds.get(20), seatIds.get(21));
+		List<Long> amounts = jdbc.queryForList("SELECT amount FROM reservation_seat WHERE reservation_id = ?", Long.class, r);
+		JsonNode q = json.readTree(mvc.perform(get("/api/v1/reservations/" + r + "/cancel-quote")
+				.header("Authorization", bearer(m))).andReturn().getResponse().getContentAsString());
+		long expected = groupFee(q, amounts.stream().mapToLong(Long::longValue).toArray());
+		assertThat(q.get("fee").asLong()).isEqualTo(expected);
+		if (q.get("minutesBeforeDeparture").asLong() >= 2880) {
+			assertThat(expected).isEqualTo(800); // 출발 2일 전까지 1인 400원 × 2명
+			assertThat(q.get("feeRate").isNull()).isTrue(); // 비율이 아니라 고정 금액
+		}
+
+		mvc.perform(post("/api/v1/reservations/" + r + "/cancel").header("Authorization", bearer(m)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.cancelFee").value(expected))
+				.andExpect(jsonPath("$.refundAmount").value(q.get("refund").asLong()));
+		Map<String, Object> c = jdbc.queryForMap("SELECT * FROM cancellation WHERE reservation_id = ?", r);
+		assertThat(((Number) c.get("CANCEL_FEE")).longValue()).isEqualTo(expected);
+		assertThat(c.get("FEE_POLICY_ID")).isNull(); // cancel_fee_policy FK라 단체 구간 ID는 넣지 않음
+		assertThat(c.get("CANCEL_TYPE")).isEqualTo("USER");
+	}
+
+	@Test
+	void 관리자_취소는_기본_면제_면제를_끄면_단체_위약금을_받는다() throws Exception {
+		long m = member();
+		long waived = groupConfirmed(m, seatIds.get(22));
+		long charged = groupConfirmed(m, seatIds.get(24));
+		long paid = jdbc.queryForObject("SELECT amount FROM payment WHERE reservation_id = ?", Long.class, charged);
+		JsonNode q = json.readTree(mvc.perform(get("/api/v1/reservations/" + charged + "/cancel-quote")
+				.header("Authorization", bearer(m))).andReturn().getResponse().getContentAsString());
+
+		mvc.perform(post("/api/v1/admin/reservations/" + waived + "/cancel").header("Authorization", admin(AdminRole.SUPERVISOR))
+				.contentType("application/json").content("{\"memo\":\"오탐 확인, 위약금 면제\"}"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.cancel.cancelFee").value(0));
+		mvc.perform(post("/api/v1/admin/reservations/" + charged + "/cancel").header("Authorization", admin(AdminRole.SUPERVISOR))
+				.contentType("application/json").content("{\"memo\":\"매크로 확정 케이스 조치\",\"waiveFee\":false}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.cancel.cancelFee").value(q.get("fee").asLong()))
+				.andExpect(jsonPath("$.cancel.refundAmount").value(paid - q.get("fee").asLong()));
+
+		assertThat(q.get("fee").asLong()).isPositive();
+		Map<String, Object> c = jdbc.queryForMap("SELECT * FROM cancellation WHERE reservation_id = ?", charged);
+		assertThat(c.get("CANCEL_TYPE")).isEqualTo("ADMIN"); // 위험 점수는 여전히 USER만 셈
+		assertThat(c.get("FEE_POLICY_ID")).isNull();
+		assertThat(one("""
+				SELECT payload FROM outbox_event WHERE aggregate_id = TO_CHAR(?) AND event_type = 'RESERVATION_CANCELED'""",
+				charged)).contains("\"feeWaived\":false");
+		assertThat(one("""
+				SELECT payload FROM outbox_event WHERE aggregate_id = TO_CHAR(?) AND event_type = 'RESERVATION_CANCELED'""",
+				waived)).contains("\"feeWaived\":true");
+	}
+
 	void cancel(long m, long r) throws Exception {
 		mvc.perform(post("/api/v1/reservations/" + r + "/cancel").header("Authorization", bearer(m)))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELED"));
