@@ -8,6 +8,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,6 +20,8 @@ import com.jejari.group.GroupApplyService.ApplyResult;
 import com.jejari.group.GroupQueryService;
 import com.jejari.group.GroupQueryService.Detail;
 import com.jejari.group.GroupQueryService.Summary;
+import com.jejari.group.GroupRosterService;
+import com.jejari.group.GroupRosterService.Change;
 import com.jejari.member.MemberAuthEnabled;
 
 /**
@@ -29,6 +32,8 @@ import com.jejari.member.MemberAuthEnabled;
  * GET  /api/v1/groups/me              내 신청 목록
  * GET  /api/v1/groups/{id}            내 신청 상세 (탑승자 마스킹)
  * POST /api/v1/groups/{id}/withdraw   승인 전 철회
+ * PUT  /api/v1/groups/{id}/passengers {"changes":[{"passengerNo":3,"name":"김철수","phone":"010…","noPhone":false}]}
+ *                                     명단 변경 (승인 뒤 7일 이내 1회, 대표자·인원·좌석은 그대로)
  * </pre>
  */
 @RestController
@@ -36,12 +41,24 @@ import com.jejari.member.MemberAuthEnabled;
 @MemberAuthEnabled
 public class GroupController {
 
+	public record RosterRequest(List<Change> changes) {
+	}
+
 	private final GroupApplyService apply;
 	private final GroupQueryService query;
+	private final GroupRosterService roster;
 
-	public GroupController(GroupApplyService apply, GroupQueryService query) {
+	public GroupController(GroupApplyService apply, GroupQueryService query, GroupRosterService roster) {
 		this.apply = apply;
 		this.query = query;
+		this.roster = roster;
+	}
+
+	@PutMapping("/{groupId}/passengers")
+	public Detail changeRoster(@AuthenticationPrincipal AuthPrincipal me, @PathVariable long groupId,
+			@RequestBody RosterRequest body) {
+		roster.change(me.memberId(), groupId, body == null ? null : body.changes());
+		return query.mineDetail(me.memberId(), groupId);
 	}
 
 	@PostMapping

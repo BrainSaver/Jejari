@@ -15,6 +15,7 @@ public enum GroupErrorCode implements ErrorCode {
 	GROUP_ALREADY_REQUESTED(HttpStatus.CONFLICT, "이 열차에 처리 중인 단체 신청이 이미 있습니다."),
 	GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "단체 신청을 찾을 수 없습니다."),
 	GROUP_NOT_REQUESTED(HttpStatus.CONFLICT, "승인 대기 중인 신청이 아닙니다."),
+	GROUP_ROSTER_LOCKED(HttpStatus.CONFLICT, "명단은 승인 뒤 정해진 기간(기본 7일) 안에 한 번만 바꿀 수 있습니다."),
 	GROUP_SEAT_SHORT(HttpStatus.CONFLICT, "남은 좌석이 모자라 배정하지 못했습니다.");
 
 	private final HttpStatus status;

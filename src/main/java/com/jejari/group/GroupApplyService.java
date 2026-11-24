@@ -132,7 +132,7 @@ public class GroupApplyService {
 		boolean warnDup = phoneUsedElsewhere(pax);
 		boolean discount = !run.departureAt().isAfter(now.plusDays(policy.getLong(AppPolicy.GROUP_DISCOUNT_WITHIN_DAYS)));
 
-		long groupId = jdbc.queryForObject("SELECT reservation_seq.NEXTVAL FROM dual", Long.class); // [가정] 전용 시퀀스가 생기면 교체
+		long groupId = jdbc.queryForObject("SELECT group_booking_seq.NEXTVAL FROM dual", Long.class); // ERD v38
 		tx.executeWithoutResult(st -> insert(groupId, memberId, run.runId(), cmd, pax, now, discount, warnNoPhone, warnDup));
 		log.info("단체 신청 {} run={} 인원={} 휴대폰없음={} 번호겹침={}", groupId, run.runId(), n, noPhone, warnDup);
 
@@ -181,10 +181,7 @@ public class GroupApplyService {
 			if (p == null) {
 				throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
 			}
-			String name = p.name() == null ? null : p.name().strip();
-			if (name == null || !NAME.matcher(name).matches()) {
-				throw new BusinessException(CommonErrorCode.INVALID_REQUEST, "탑승자 이름 형식이 올바르지 않습니다.");
-			}
+			String name = validName(p.name());
 			String type = p.passengerType() == null ? "ADULT" : p.passengerType();
 			if (!TYPES.contains(type)) {
 				throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
@@ -235,6 +232,15 @@ public class GroupApplyService {
 				 WHERE p.phone_hash IN (%s) AND p.status = 'ACTIVE' AND b.status IN ('REQUESTED', 'APPROVED')""".formatted(in),
 				Integer.class, hashes.toArray());
 		return n != null && n > 0;
+	}
+
+	/** 탑승자 이름 형식 (본인인증 이름과 같은 규칙). 명단 변경도 같이 쓴다 */
+	static String validName(String raw) {
+		String name = raw == null ? null : raw.strip();
+		if (name == null || !NAME.matcher(name).matches()) {
+			throw new BusinessException(CommonErrorCode.INVALID_REQUEST, "탑승자 이름 형식이 올바르지 않습니다.");
+		}
+		return name;
 	}
 
 	static String normalizePhone(String phone) {

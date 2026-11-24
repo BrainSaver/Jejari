@@ -27,7 +27,7 @@ public class GroupQueryService {
 	public record Summary(long groupId, long repMemberId, long runId, String fromStationId, String toStationId,
 			int passengerCount, String status, Long reservationId, String reservationStatus, LocalDateTime payDeadlineAt,
 			boolean discount, boolean warnNoPhone, boolean warnDupPhone, boolean autoApproved, String cancelReason,
-			LocalDateTime createdAt, LocalDateTime approvedAt) {
+			LocalDateTime createdAt, LocalDateTime approvedAt, LocalDateTime rosterChangedAt) {
 	}
 
 	public record PassengerView(int passengerNo, String name, String phone, boolean noPhone, String passengerType,
@@ -40,7 +40,8 @@ public class GroupQueryService {
 	private static final String SUMMARY = """
 			SELECT b.group_id, b.rep_member_id, b.run_id, b.from_station_id, b.to_station_id, b.passenger_count, b.status,
 			       b.reservation_id, r.status AS rstatus, r.pay_deadline_at, b.discount_yn, b.warn_no_phone_yn,
-			       b.warn_dup_phone_yn, b.approved_by, b.cancel_reason, b.created_at, b.approved_at
+			       b.warn_dup_phone_yn, b.approved_by, b.cancel_reason, b.created_at, b.approved_at,
+			       b.roster_changed_at
 			  FROM group_booking b LEFT JOIN reservation r ON r.reservation_id = b.reservation_id""";
 
 	private final JdbcTemplate jdbc;
@@ -124,6 +125,6 @@ public class GroupQueryService {
 				rs.getString(7), reservationId, rs.getString(9), rs.getObject(10, LocalDateTime.class),
 				"Y".equals(rs.getString(11)), "Y".equals(rs.getString(12)), "Y".equals(rs.getString(13)),
 				reservationId != null && auto, rs.getString(15), rs.getObject(16, LocalDateTime.class),
-				rs.getObject(17, LocalDateTime.class));
+				rs.getObject(17, LocalDateTime.class), rs.getObject(18, LocalDateTime.class));
 	}
 }

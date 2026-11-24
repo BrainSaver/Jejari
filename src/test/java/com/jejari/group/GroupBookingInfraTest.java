@@ -73,6 +73,8 @@ class GroupBookingInfraTest {
 	@Autowired
 	GroupApplyService apply;
 	@Autowired
+	GroupRosterService roster;
+	@Autowired
 	AppPolicy policy;
 	@Autowired
 	Pseudonymizer pseudonymizer;
@@ -281,6 +283,43 @@ class GroupBookingInfraTest {
 		assertThat(count("SELECT COUNT(*) FROM seat_inventory WHERE run_id = ? AND status = 'BLOCKED'", RUN)).isEqualTo(20);
 	}
 
+	// ------------------------------------------------------------ 명단 변경
+
+	@Test
+	void 명단은_승인_뒤_한_번만_바꿀_수_있고_대표자는_못_바꾼다() {
+		makeQuota(20);
+		Rep rep = newRep();
+		ApplyResult r = apply.apply(rep.memberId(), command(rep, 11, 0));
+		long g = r.groupId();
+		String before = str("SELECT phone_hash FROM group_passenger WHERE group_id = ? AND passenger_no = 3", g);
+
+		assertThatThrownBy(() -> roster.change(rep.memberId(), g, List.of(new GroupRosterService.Change(1, "바꿈", "01011112222", false))))
+				.isInstanceOf(BusinessException.class);
+
+		roster.change(rep.memberId(), g, List.of(new GroupRosterService.Change(3, "새사람", null, true)));
+
+		assertThat(str("SELECT no_phone_yn FROM group_passenger WHERE group_id = ? AND passenger_no = 3", g)).isEqualTo("Y");
+		assertThat(before).isNotNull();
+		assertThat(count("SELECT COUNT(*) FROM group_passenger WHERE group_id = ? AND passenger_no = 3 AND phone_hash IS NULL", g)).isEqualTo(1);
+		assertThat(count("SELECT COUNT(*) FROM group_booking WHERE group_id = ? AND roster_changed_at IS NOT NULL", g)).isEqualTo(1);
+		assertThat(count("SELECT COUNT(*) FROM group_passenger WHERE group_id = ? AND seat_id IS NOT NULL", g)).as("좌석 그대로").isEqualTo(11);
+
+		assertThatThrownBy(() -> roster.change(rep.memberId(), g, List.of(new GroupRosterService.Change(4, "또바꿈", null, true))))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(GroupErrorCode.GROUP_ROSTER_LOCKED);
+	}
+
+	@Test
+	void 승인_뒤_기간이_지나면_명단을_못_바꾼다() {
+		makeQuota(20);
+		Rep rep = newRep();
+		long g = apply.apply(rep.memberId(), command(rep, 11, 0)).groupId();
+		jdbc.update("UPDATE group_booking SET approved_at = SYSTIMESTAMP - INTERVAL '8' DAY WHERE group_id = ?", g);
+
+		assertThatThrownBy(() -> roster.change(rep.memberId(), g, List.of(new GroupRosterService.Change(3, "새사람", null, true))))
+				.extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(GroupErrorCode.GROUP_ROSTER_LOCKED);
+	}
+
 	// ------------------------------------------------------------ 도우미
 
 	record Rep(long memberId, String ciHash, String phone) {
@@ -310,7 +349,7 @@ class GroupBookingInfraTest {
 
 	/** 승인 시도 없이 신청만 (승인 절차를 따로 확인할 때) */
 	private long request(Rep rep, int n) {
-		long g = jdbc.queryForObject("SELECT reservation_seq.NEXTVAL FROM dual", Long.class);
+		long g = jdbc.queryForObject("SELECT group_booking_seq.NEXTVAL FROM dual", Long.class);
 		jdbc.update("""
 				INSERT INTO group_booking (group_id, rep_member_id, run_id, from_station_id, to_station_id, passenger_count,
 				       status, discount_yn, consent_at, warn_no_phone_yn, warn_dup_phone_yn)
