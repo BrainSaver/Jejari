@@ -3,6 +3,7 @@ package com.jejari.chat;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -111,6 +112,8 @@ public class ChatService {
 				할 수 있는 일: 열차 시간표·운임·잔여석 조회, 예매 방법과 흐름 안내.
 				할 수 없는 일: 예매·결제·취소를 대신하는 것. 사용자가 예매하려 하면 화면의 '검색'에서 열차를 골라 대기열을 거쳐 진행하라고 안내해.
 				열차 정보는 반드시 search_runs 도구 결과만 근거로 말하고, 없는 열차·시각·가격을 지어내지 마.
+				시각 조건("12시 이후", "오전" 등)이 있으면 depart_after·depart_before로 조회해. 조건에 안 맞는 열차를 나열하지 마. 결과에 안내가 있을 때만 일부만 보여 준 것이라고 말하고, 없으면 전부 보여 준 것이니 일부라고 말하지 마. 도구·옵션 이름(search_runs, depart_after 등)은 사용자에게 말하지 마.
+				열차 번호는 결과에 나온 그대로(예: 00103) 써.
 				역 이름이 불확실하면 list_stations로 확인해. 날짜가 없으면 사용자에게 물어봐.
 				개인정보(주민번호·카드번호·비밀번호)는 받지도 말하지도 말고, 입력하지 말라고 안내해.
 				예매·열차와 무관한 요청은 정중히 거절해.
@@ -128,6 +131,10 @@ public class ChatService {
 		props.set("from", json.createObjectNode().put("type", "string").put("description", "출발역 이름 (예: 서울)"));
 		props.set("to", json.createObjectNode().put("type", "string").put("description", "도착역 이름 (예: 부산)"));
 		props.set("date", json.createObjectNode().put("type", "string").put("description", "탑승일 YYYY-MM-DD"));
+		props.set("depart_after", json.createObjectNode().put("type", "string")
+				.put("description", "이 시각 이후(포함)에 출발하는 열차만, HH:mm 24시간 (예: 오후 3시 이후면 15:00). 시각 조건이 없으면 생략"));
+		props.set("depart_before", json.createObjectNode().put("type", "string")
+				.put("description", "이 시각 이전(포함)에 출발하는 열차만, HH:mm 24시간. 시각 조건이 없으면 생략"));
 		ObjectNode s = json.createObjectNode().put("type", "object");
 		s.set("properties", props);
 		s.set("required", json.valueToTree(List.of("from", "to", "date")));
@@ -154,7 +161,7 @@ public class ChatService {
 				case "list_stations" -> json.writeValueAsString(
 						trains.stations().stream().map(Station::stationName).toList());
 				case "search_runs" -> searchRuns(a.path("from").asString(""), a.path("to").asString(""),
-						a.path("date").asString(""));
+						a.path("date").asString(""), a.path("depart_after").asString(""), a.path("depart_before").asString(""));
 				default -> "알 수 없는 도구입니다.";
 			};
 		} catch (Exception e) {
@@ -162,7 +169,7 @@ public class ChatService {
 		}
 	}
 
-	private String searchRuns(String from, String to, String date) throws Exception {
+	private String searchRuns(String from, String to, String date, String after, String before) throws Exception {
 		List<Station> all = trains.stations();
 		Station f = find(all, from);
 		Station t = find(all, to);
@@ -175,7 +182,17 @@ public class ChatService {
 		} catch (DateTimeParseException e) {
 			return "날짜는 YYYY-MM-DD 형식이어야 합니다.";
 		}
-		List<RunSummary> runs = trains.search(f.stationId(), t.stationId(), day);
+		LocalTime from0 = parseTime(after);
+		LocalTime to0 = parseTime(before);
+		if ((!after.isBlank() && from0 == null) || (!before.isBlank() && to0 == null)) {
+			return "시각은 HH:mm 형식이어야 합니다 (예: 15:00).";
+		}
+		// 시각 조건은 앞 N건을 자르기 전에 건다: 안 그러면 이른 열차 N건만 보고 "그 시각 이후"라고 답하게 된다
+		List<RunSummary> runs = trains.search(f.stationId(), t.stationId(), day).stream()
+				.filter(r -> r.departureAt() != null
+						&& (from0 == null || !r.departureAt().toLocalTime().isBefore(from0))
+						&& (to0 == null || !r.departureAt().toLocalTime().isAfter(to0)))
+				.toList();
 		List<Map<String, Object>> rows = new ArrayList<>();
 		for (RunSummary r : runs.stream().limit(MAX_RUNS_IN_RESULT).toList()) {
 			Map<String, Object> m = new LinkedHashMap<>();
@@ -188,15 +205,29 @@ public class ChatService {
 			if (r.saleOpenAt() != null && !r.bookable()) {
 				m.put("판매시작", r.saleOpenAt().toString());
 			}
-			m.put("운임(원)", r.fares());
-			m.put("잔여석", r.remaining());
+			// 비어 있는 값을 그대로 주면 모델이 "0원·0석"이라고 말한다
+			m.put("운임(원)", r.fares() == null || r.fares().isEmpty() ? "정보 없음" : r.fares());
+			m.put("잔여석", r.remaining() == null || r.remaining().isEmpty() ? "정보 없음" : r.remaining());
 			rows.add(m);
 		}
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("조회", f.stationName() + " → " + t.stationName() + " " + day);
+		out.put("조건", (from0 == null ? "" : from0 + " 이후 ") + (to0 == null ? "" : to0 + " 이전 ") + "출발");
 		out.put("전체건수", runs.size());
+		out.put("표시건수", rows.size());
+		if (runs.size() > rows.size()) {
+			out.put("안내", "출발 시각순으로 앞의 " + rows.size() + "건만 보여 준 것입니다. 사용자에게는 '나머지는 원하는 시간대를 알려 주시면 찾아볼게요'라고 안내하고, 도구 이름이나 옵션 이름은 말하지 마세요.");
+		}
 		out.put("열차", rows);
 		return json.writeValueAsString(out);
+	}
+
+	private static LocalTime parseTime(String t) {
+		try {
+			return t == null || t.isBlank() ? null : LocalTime.parse(t.strip());
+		} catch (DateTimeParseException e) {
+			return null;
+		}
 	}
 
 	/** 정확히 같거나, "서울역"처럼 '역'이 붙어도 찾는다 */

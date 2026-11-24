@@ -85,6 +85,28 @@ class ChatServiceTest {
 	}
 
 	@Test
+	void 시각_조건은_앞_건수를_자르기_전에_걸려_늦은_열차도_나온다() {
+		when(trains.stations()).thenReturn(List.of(new Station("S1", "서울"), new Station("S2", "부산")));
+		List<RunSummary> day = new ArrayList<>();
+		for (int h = 6; h <= 20; h++) { // 06시~20시 매시 출발 15건 (표시 한도 8건보다 많다)
+			day.add(new RunSummary(h, String.format("%05d", h), "KTX", LocalDateTime.of(2026, 11, 28, h, 0),
+					LocalDateTime.of(2026, 11, 28, h + 3, 0), 180, "ON_SALE", true, null, Map.of(), Map.of()));
+		}
+		when(trains.search("S1", "S2", LocalDate.of(2026, 11, 28))).thenReturn(day);
+		ChatService s = service(new FakeModel(text("x")));
+
+		String out = s.runTool("search_runs",
+				"{\"from\":\"서울\",\"to\":\"부산\",\"date\":\"2026-11-28\",\"depart_after\":\"12:00\"}");
+
+		assertThat(out).contains("\"전체건수\":9").contains("20:00").contains("12:00").doesNotContain("11:00");
+		String all = s.runTool("search_runs", "{\"from\":\"서울\",\"to\":\"부산\",\"date\":\"2026-11-28\"}");
+		assertThat(all).contains("\"전체건수\":15").contains("안내").doesNotContain("20:00");
+		assertThat(all).contains("\"운임(원)\":\"정보 없음\"").contains("\"잔여석\":\"정보 없음\"").doesNotContain("depart_after");
+		assertThat(s.runTool("search_runs",
+				"{\"from\":\"서울\",\"to\":\"부산\",\"date\":\"2026-11-28\",\"depart_after\":\"오후\"}")).contains("HH:mm");
+	}
+
+	@Test
 	void 없는_역이나_틀린_날짜는_오류_글로_돌려주고_검색하지_않는다() {
 		when(trains.stations()).thenReturn(List.of(new Station("S1", "서울")));
 		ChatService s = service(new FakeModel(text("x")));
