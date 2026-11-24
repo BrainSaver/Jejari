@@ -314,6 +314,10 @@
 .dlg .step button:disabled{background:var(--line2);color:var(--faint);opacity:.6;cursor:not-allowed}
 .dlg .note{margin:0;padding:12px 0 16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--mut)}
 .dlg footer{display:flex;justify-content:center;gap:10px}
+.dlg.pop{width:min(400px,100%);padding:22px 22px 20px;text-align:center}
+.dlg.pop h2{font-size:19px;margin:0 0 8px}
+.dlg.pop p{margin:0 0 18px;font-size:15px;line-height:1.55;color:var(--mut);word-break:keep-all}
+.dlg.pop footer{flex-wrap:wrap}
 .dlg .pill{min-width:84px;min-height:42px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:15px;font-weight:800;cursor:pointer;padding:0 18px}
 .dlg .pill.on{border-color:var(--ink);background:var(--ink);color:#fff}
 

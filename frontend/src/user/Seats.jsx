@@ -52,6 +52,9 @@ export default function Seats() {
   const [people, setPeople] = useState({ ADULT: want.adult, CHILD: want.child, SENIOR: want.senior });
   const [picked, setPicked] = useState([]); // [{seatId, seatNo, carNo, grade}]
   const [notice, setNotice] = useState(null); // {kind:'taken'|'error'|'expired', text}
+  // 화면 가운데 작은 창 (2026-11-24 2차 대회 사람 참가 의견: 위쪽 알림은 좌석을 보느라 못 본다)
+  // {title, text, actions:[{label, primary, run}]}
+  const [popup, setPopup] = useState(null);
   // 좌석 조회·선점이 너무 잦아 서버가 429(SEATMAP_RATE_LIMITED)로 쉬라고 한 때: {sec: 남은 초, what: 'map'|'hold'}.
   // 자동으로 다시 보내지 않는다 (바로 다시 부르면 제한이 의미 없고 더 오래 쉬게 된다). 시간이 지나면 사람이 [다시 불러오기]를 누른다
   const [rest, setRest] = useState(null);
@@ -103,10 +106,22 @@ export default function Seats() {
       clearPass(runId);
       setNotice({ kind: 'expired' });
     } else if (code === 'SEAT_ALREADY_TAKEN') {
-      setNotice({ kind: 'taken', text: `방금 다른 분이 ${picked.map((p) => p.seatNo).join(', ')} 중 일부를 먼저 잡았어요. 다른 좌석을 고르거나, 나란히 빈 좌석을 대신 골라 드릴게요.` });
-      setLost(picked.map((p) => p.seatId));
+      // 서버는 어느 좌석인지 알려 주지 않는다 → 고른 좌석을 바로 "판매됨"으로 칠하고, 배치도를 다시 불러 실제 상태로 맞춘다
+      const ids = new Set(picked.map((p) => p.seatId));
+      const seatNos = picked.map((p) => `${p.carNo}-${p.seatNo}`).join(', ');
+      setMap((m) => (m ? { ...m, cars: m.cars.map((c) => ({ ...c, seats: c.seats.map((s) => (ids.has(s.seatId) ? { ...s, state: 'SOLD' } : s)) })) } : m));
+      setLost([...ids]);
       setTimeout(() => setLost([]), 1300);
       setPicked([]);
+      setNotice(null);
+      setPopup({
+        title: '이미 선택된 좌석이에요',
+        text: `방금 다른 분이 ${seatNos} ${picked.length > 1 ? '중 일부를' : '좌석을'} 먼저 잡았어요. 다른 좌석을 골라 주세요.`,
+        actions: [
+          { label: '나란히 빈 좌석 골라 주기', run: () => autoPickRef.current() },
+          { label: '직접 고르기', primary: true },
+        ],
+      });
       loadMap(true);
     } else {
       setNotice({ kind: 'error', text: MESSAGES[code] || e.message || '좌석을 잡지 못했어요.' });
@@ -144,8 +159,23 @@ export default function Seats() {
       setPicked(picked.filter((p) => p.seatId !== s.seatId));
     } else if (picked.length < total) {
       setPicked([...picked, { seatId: s.seatId, seatNo: s.seatNo, carNo: c.carNo, grade: c.grade }]);
+    } else if (total === 1) {
+      // 1명인데 다른 좌석을 누름: 바꿀지 묻는다
+      const now = picked[0];
+      setPopup({
+        title: '좌석을 바꿀까요?',
+        text: `1명이라 1석만 고를 수 있어요. ${now.carNo}-${now.seatNo} 대신 ${c.carNo}-${s.seatNo}로 바꿀까요?`,
+        actions: [
+          { label: '그대로 두기' },
+          { label: `${c.carNo}-${s.seatNo}로 바꾸기`, primary: true, run: () => setPicked([{ seatId: s.seatId, seatNo: s.seatNo, carNo: c.carNo, grade: c.grade }]) },
+        ],
+      });
     } else {
-      setNotice({ kind: 'error', text: `${total}명이라 ${total}석까지 고를 수 있어요. 바꾸려면 고른 좌석을 다시 눌러 빼 주세요.` });
+      setPopup({
+        title: `${total}석까지 고를 수 있어요`,
+        text: `${total}명이라 ${total}석을 이미 골랐어요. 바꾸려면 고른 좌석을 다시 눌러 뺀 뒤 새 좌석을 눌러 주세요.`,
+        actions: [{ label: '확인', primary: true }],
+      });
     }
   };
 
@@ -159,6 +189,9 @@ export default function Seats() {
     setNotice(null);
     setPicked(seats.map((s) => ({ seatId: s.seatId, seatNo: s.seatNo, carNo: car.carNo, grade: car.grade })));
   };
+
+  const autoPickRef = useRef(autoPick);
+  autoPickRef.current = autoPick;
 
   const hold = async () => {
     if (picked.length !== total || busy) return;
@@ -326,7 +359,33 @@ export default function Seats() {
           </aside>
         </div>
       </main>
+      {popup && <Popup {...popup} onClose={() => setPopup(null)} />}
     </>
+  );
+}
+
+/** 화면 가운데 작은 창. 바깥을 누르거나 Esc면 닫힌다 (아무것도 안 함) */
+function Popup({ title, text, actions = [{ label: '확인', primary: true }], onClose }) {
+  const first = useRef(null);
+  useEffect(() => {
+    first.current?.focus();
+    const onKey = (e) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="dlg-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dlg pop" role="alertdialog" aria-modal="true" aria-labelledby="seat-pop-t" aria-describedby="seat-pop-d">
+        <h2 id="seat-pop-t">{title}</h2>
+        <p id="seat-pop-d">{text}</p>
+        <footer>
+          {actions.map((a, i) => (
+            <button key={a.label} ref={a.primary ? first : null} type="button" className={'pill' + (a.primary ? ' on' : '')}
+              onClick={() => { onClose(); a.run?.(); }}>{a.label}</button>
+          ))}
+        </footer>
+      </div>
+    </div>
   );
 }
 
