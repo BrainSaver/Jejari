@@ -142,6 +142,15 @@ class ChatServiceTest {
 	}
 
 	@Test
+	void 모델이_쓴_마크다운_표시는_지우고_내용은_남긴다() {
+		FakeModel m = new FakeModel(text("## 안내\n먼저 **'검색'** 화면에서 `KTX 00103`을 고르세요. 1 * 2석"));
+
+		String reply = service(m).reply(List.of(new Turn("user", "예매 방법")));
+
+		assertThat(reply).isEqualTo("안내\n먼저 '검색' 화면에서 KTX 00103을 고르세요. 1 * 2석");
+	}
+
+	@Test
 	void 시스템_프롬프트에_오늘_날짜가_들어가고_예매_대행은_금지한다() {
 		String p = service(new FakeModel(text("x"))).systemPrompt();
 

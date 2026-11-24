@@ -68,7 +68,7 @@ public class ChatService {
 			// 마지막 바퀴는 도구 없이 불러 반드시 글로 답하게 한다
 			ChatModel.Reply r = model.complete(messages, round == MAX_TOOL_ROUNDS ? List.of() : tools);
 			if (!r.wantsTools()) {
-				String text = r.content() == null ? "" : r.content().strip();
+				String text = r.content() == null ? "" : plain(r.content());
 				return text.isEmpty() ? "잘 모르겠어요. 출발역·도착역·날짜를 알려 주시면 열차를 찾아볼게요." : text;
 			}
 			messages.add(r.rawMessage());
@@ -245,6 +245,11 @@ public class ChatService {
 			}
 		}
 		return null;
+	}
+
+	/** 채팅창은 글자 그대로 보여 준다. 프롬프트로 금지해도 모델이 가끔 쓰는 굵게(**)·코드(`)·제목(#) 표시를 지운다 */
+	static String plain(String s) {
+		return s.replaceAll("\\*\\*|`", "").replaceAll("(?m)^#{1,6}\\s+", "").strip();
 	}
 
 	private static String hm(LocalDateTime t) {
