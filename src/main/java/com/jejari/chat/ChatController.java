@@ -31,7 +31,7 @@ public class ChatController {
 	public record ChatRequest(List<Turn> messages) {
 	}
 
-	public record ChatResponse(String reply) {
+	public record ChatResponse(String reply, List<ChatService.Action> actions) {
 	}
 
 	private final ChatService chat;
@@ -55,7 +55,8 @@ public class ChatController {
 			throw new BusinessException(CommonErrorCode.SERVICE_UNAVAILABLE, "챗봇이 아직 켜져 있지 않습니다.");
 		}
 		allow(ips.resolve(http));
-		return new ChatResponse(chat.reply(req == null ? null : req.messages()));
+		ChatService.Answer a = chat.reply(req == null ? null : req.messages());
+		return new ChatResponse(a.text(), a.actions());
 	}
 
 	private void allow(String ip) {

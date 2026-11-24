@@ -52,6 +52,26 @@ class QueueServiceTest extends QueueRedisSupport {
     }
 
     @Test
+    void 좌석_화면을_나가_이탈한_뒤_다시_줄을_서면_새_토큰과_새_시간을_받고_연장도_다시_된다() {
+        setPolicy("queue.pass_ttl_sec", "60");
+        setPolicy("queue.pass_extend_sec", "300");
+        queue.enter(1, RUN);
+        admitter.admit(RUN);
+        QueueStatus first = queue.extend(1, RUN); // 첫 입장에서 연장을 써 둔다
+
+        queue.leave(1, RUN); // 좌석 화면을 나감
+        QueueStatus again = queue.enter(1, RUN);
+        assertThat(again.state()).isEqualTo(QueueStatus.State.WAITING); // 바로 들어오지 않고 다시 줄을 선다
+        admitter.admit(RUN);
+        QueueStatus second = queue.status(1, RUN);
+
+        assertThat(second.state()).isEqualTo(QueueStatus.State.ADMITTED);
+        assertThat(second.passToken()).isNotEqualTo(first.passToken());
+        assertThat(second.passExpiresAt()).isBefore(first.passExpiresAt()); // 연장 전 기본 시간(60초)으로 새로 시작
+        assertThat(queue.extend(1, RUN).passExpiresAt()).isAfter(second.passExpiresAt().plusSeconds(290)); // 새 차례라 다시 연장 가능
+    }
+
+    @Test
     void 입장하지_않았거나_토큰이_없으면_연장할_수_없다() {
         queue.enter(1, RUN); // 대기 중 (토큰 없음)
         assertThatThrownBy(() -> queue.extend(1, RUN))
