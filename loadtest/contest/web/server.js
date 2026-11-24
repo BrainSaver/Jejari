@@ -27,7 +27,7 @@ const BOT_MAX_MIN = Number(process.env.BOT_MAX_MIN || 30); // 봇 하나가 이�
 
 // ── 상태 ──────────────────────────────────────────────────────────
 const STEPS = [
-  ['check', '점검'], ['app', '앱·인프라'], ['clean', '지난 기록 정리'], ['setup', '대회 운행 만들기'],
+  ['check', '점검'], ['prep', '준비 (최신 코드·도커·DB 패치·Redis)'], ['app', '앱 켜기'], ['clean', '지난 기록 정리'], ['setup', '대회 운행 만들기'],
   ['signup', '봇 명의 만들기'], ['probe', '사람 흐름 확인'], ['play', '사람·봇 예매'],
   ['eval', '평가'], ['restore', '정리 (가입 제한 되돌리기)'],
 ];
@@ -193,7 +193,7 @@ function killTree(p) {
 }
 
 // 명령 하나를 돌리고 줄마다 log. {code, out}을 돌려준다
-function sh(step, cmd, args, { cwd = ROOT, env = {}, prefix = '', timeoutMin = 30, quiet = false } = {}) {
+function sh(step, cmd, args, { cwd = ROOT, env = {}, prefix = '', timeoutMin = 30, quiet = false, input = null } = {}) {
   return new Promise((resolve) => {
     const p = spawn(cmd, args, {
       cwd, env: { ...process.env, MSYS_NO_PATHCONV: '1', PYTHONIOENCODING: 'utf-8', ...env },
@@ -212,6 +212,7 @@ function sh(step, cmd, args, { cwd = ROOT, env = {}, prefix = '', timeoutMin = 3
     };
     p.stdout.on('data', onData);
     p.stderr.on('data', onData);
+    if (input != null) { p.stdin.on('error', () => {}); p.stdin.end(input); }
     const timer = setTimeout(() => { log(step, `${prefix}${timeoutMin}분이 지나 멈춥니다`); killTree(p); }, timeoutMin * 60000);
     p.on('error', (e) => { out += String(e.message); });
     p.on('close', (code) => {
@@ -232,6 +233,34 @@ function python() {
   return null;
 }
 
+// 저장소의 .env (관리자 계정·Oracle 비밀번호). 값은 메모리에서만 쓰고 로그·파일에 남기지 않는다
+function readEnv() {
+  const out = {};
+  try {
+    for (const line of fs.readFileSync(path.join(ROOT, '.env'), 'utf8').split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (m) out[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
+    }
+  } catch {}
+  return out;
+}
+function git(args) {
+  const r = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8', windowsHide: true });
+  return { code: r.status, out: (r.stdout || '').trim(), err: (r.stderr || '').trim() };
+}
+// 8080을 듣고 있는 프로세스 (다른 창·IntelliJ에서 켠 앱). 못 찾으면 []
+function appPids() {
+  const port = new URL(BASE_URL).port || '8080';
+  if (WIN) {
+    const r = spawnSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8', windowsHide: true });
+    return [...new Set((r.stdout || '').split(/\r?\n/).map((l) => l.trim().split(/\s+/))
+      .filter((c) => c.length >= 5 && /LISTENING/i.test(c[3]) && c[1].endsWith(':' + port)).map((c) => c[4]))].filter((x) => x !== '0');
+  }
+  const r = spawnSync('sh', ['-c', `lsof -t -iTCP:${port} -sTCP:LISTEN 2>/dev/null || fuser ${port}/tcp 2>/dev/null`], { encoding: 'utf8' });
+  return [...new Set((r.stdout || '').split(/\s+/).filter((x) => /^\d+$/.test(x)))];
+}
+async function dockerReady() { return spawnSync('docker', ['info'], { windowsHide: true, stdio: 'ignore' }).status === 0; }
+
 async function get(p, opts = {}) {
   const r = await fetch(BASE_URL + p, { ...opts, signal: AbortSignal.timeout(opts.timeout || 10000) });
   return r;
@@ -248,13 +277,31 @@ async function stepCheck() {
   const problems = [];
   const major = Number(process.versions.node.split('.')[0]);
   if (major < 18) problems.push(`Node ${process.versions.node} → 18 이상이 필요합니다`);
-  if (!has('docker', ['compose', 'version'])) problems.push('docker compose가 없습니다 (Docker Desktop을 켜세요)');
+  if (!has('docker', ['compose', 'version'])) problems.push('docker가 없습니다 (Docker Desktop을 설치하세요)');
+  else if (!(await dockerReady())) {
+    // Docker Desktop이 꺼져 있으면 켜 본다 (Windows 기본 설치 위치)
+    const exe = 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe';
+    if (WIN && fs.existsSync(exe)) {
+      log('check', 'Docker Desktop이 꺼져 있어 켭니다 (1~2분)');
+      spawn(exe, [], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+      for (let s = 0; s < 180 && !(await dockerReady()); s += 5) { checkStop(); await sleep(5000); }
+    }
+    if (!(await dockerReady())) problems.push('Docker가 꺼져 있습니다 → Docker Desktop을 켜고 "Engine running"이 되면 다시 [대회 시작]');
+  }
   if (!has('bash')) problems.push('bash가 없습니다 (Windows는 Git Bash에서 이 화면을 실행하세요)');
   for (const b of run.chosen) {
     for (const n of b.needs) {
       const r = spawnSync(process.execPath, ['-e', `require.resolve(${JSON.stringify(n)})`],
         { cwd: b.dir, windowsHide: true, env: { ...process.env, NODE_PATH: nodePath(discoverBots()) } });
-      if (r.status !== 0) problems.push(`${b.name}: ${n}를 찾지 못함 → 봇 폴더 하나에서 npm i ${n} && npx ${n} install chromium (모든 봇이 같이 씀)`);
+      if (r.status !== 0) {
+        // 봇이 쓰는 패키지(보통 Playwright)가 없으면 그 봇 폴더에 설치한다. 모든 봇이 NODE_PATH로 같이 씀
+        log('check', `${b.name}: ${n}가 없어 설치합니다 (처음 한 번, 2~5분)`);
+        const npm = WIN ? 'npm.cmd' : 'npm';
+        const npx = WIN ? 'npx.cmd' : 'npx';
+        const i1 = await sh('check', npm, ['i', n], { cwd: b.dir, timeoutMin: 10 });
+        const i2 = i1.code === 0 && n === 'playwright' ? await sh('check', npx, ['playwright', 'install', 'chromium'], { cwd: b.dir, timeoutMin: 15 }) : i1;
+        if (i1.code !== 0 || i2.code !== 0) problems.push(`${b.name}: ${n} 설치 실패 → 봇 폴더에서 직접: npm i ${n} && npx ${n} install chromium`);
+      }
     }
   }
   if (!python()) log('check', '참고: Python 3.9+가 없어 모델 비교(compare_dl.py)는 건너뜁니다');
@@ -262,14 +309,88 @@ async function stepCheck() {
   log('check', `봇 ${run.chosen.length}개: ${run.chosen.map((b) => b.name).join(', ')} · 태그 ${o.tag} · 사람 ${o.humanMin}분`);
 }
 
+// 1단계 "깨끗하게 시작"을 화면이 대신 한다 (2026-11-24): 최신 코드 → 켜져 있던 앱 끄기 → 도커 → DB 패치 → Redis 비우기
+async function stepPrep() {
+  const o = run.opts;
+  // 1. 최신 코드 (main이고 고친 파일이 없을 때만 받음. 이 화면 코드가 바뀌면 화면을 다시 켜야 함)
+  if (o.pull) {
+    const branch = git(['rev-parse', '--abbrev-ref', 'HEAD']).out;
+    if (git(['fetch', '-q', 'origin', 'main']).code !== 0) log('prep', '참고: git fetch 실패 (인터넷?) — 지금 코드로 진행합니다');
+    else {
+      const behind = Number(git(['rev-list', '--count', 'HEAD..origin/main']).out || 0);
+      const dirty = git(['status', '--porcelain', '--untracked-files=no']).out;
+      if (!behind) log('prep', `코드: 최신입니다 (${branch})`);
+      else if (branch !== 'main' || dirty) log('prep', `참고: main보다 ${behind}개 뒤인데 ${branch !== 'main' ? `지금 브랜치가 ${branch}` : '고친 파일이 있어'} 자동으로 받지 않습니다`);
+      else {
+        const before = git(['rev-parse', 'HEAD']).out;
+        const pull = await sh('prep', 'git', ['pull', '--ff-only', 'origin', 'main']);
+        if (pull.code !== 0) throw new Error('git pull 실패 (위 로그) — 직접 git pull origin main 뒤 다시');
+        const changed = git(['diff', '--name-only', before, 'HEAD']).out.split('\n');
+        if (changed.some((f) => f.startsWith('loadtest/contest/web/'))) {
+          throw new Error('최신 코드에 진행 화면이 바뀌었습니다 → 이 화면 창에서 Ctrl+C, node loadtest/contest/web/server.js를 다시 켜고 [대회 시작]');
+        }
+        run.codeChanged = true;
+        log('prep', `코드: ${behind}개 새로 받음`);
+      }
+    }
+  }
+  checkStop();
+  // 2. 켜져 있던 앱 끄기 — Redis를 비우거나 코드가 바뀌면 앱을 새로 켜야 한다 (켜 둔 앱이 Redis에 다시 쓰고, 옛 화면이면 봇이 멈춤)
+  if ((o.flush || run.codeChanged) && appChild) {
+    log('prep', '이 화면이 전에 켠 앱을 끕니다 (새로 켬)');
+    killTree(appChild);
+  }
+  if ((o.flush || run.codeChanged || o.restartApp) && (await healthy())) {
+    const pids = appPids();
+    if (!pids.length) throw new Error('8080에 앱이 켜져 있는데 끄지 못했습니다 → 그 창(IntelliJ·bootRun)에서 직접 끄고 다시 [대회 시작]');
+    log('prep', `다른 곳에서 켠 앱을 끕니다 (PID ${pids.join(', ')}) — 대회는 최신 화면으로 새로 켠 앱으로 합니다`);
+    for (const pid of pids) {
+      if (WIN) spawnSync('taskkill', ['/PID', pid, '/T', '/F'], { windowsHide: true });
+      else { try { process.kill(Number(pid), 'SIGTERM'); } catch {} }
+    }
+    for (let s = 0; s < 60 && (await healthy()); s += 2) await sleep(2000);
+    if (await healthy()) throw new Error('앱이 꺼지지 않았습니다 → 그 창에서 직접 끄고 다시');
+  }
+  checkStop();
+  // 3. 도커 (Oracle·MongoDB·Redis·Kafka)
+  log('prep', '도커 켜기: docker compose up -d --wait (Oracle이 처음이면 몇 분)');
+  const up = await sh('prep', 'docker', ['compose', 'up', '-d', '--wait'], { timeoutMin: 15 });
+  if (up.code !== 0) throw new Error('docker compose up 실패 (위 로그). Docker Desktop이 켜져 있는지, .env가 있는지 확인하세요');
+  checkStop();
+  // 4. DB 패치: db/patch의 모든 패치를 번호 순서대로 (패치는 다시 돌려도 안전하게 쓰는 것이 규칙).
+  //    중간 패치가 예전 값을 넣으려다 실패해도(예: v24의 옛 규칙 목록) 뒤 패치가 최신으로 다시 만들어서, 끝 상태를 마지막에 확인한다
+  const pw = readEnv().ORACLE_APP_PASSWORD;
+  if (!pw) throw new Error('.env에 ORACLE_APP_PASSWORD가 없습니다');
+  const ver = (f) => Number((f.match(/^v(\d+)/) || [0, 0])[1]);
+  const files = fs.readdirSync(path.join(ROOT, 'db/patch')).filter((f) => /^v\d+.*\.sql$/.test(f)).sort((a, b) => ver(a) - ver(b) || a.localeCompare(b));
+  const connect = `CONNECT jejari/"${pw}"@localhost:1521/FREEPDB1\n`;
+  const sqlplus = (input) => sh('prep', 'docker', ['compose', 'exec', '-T', '-e', 'NLS_LANG=AMERICAN_AMERICA.AL32UTF8', 'oracle',
+    'bash', '-lc', 'sqlplus -S -L /nolog'], { input, quiet: true, timeoutMin: 5 });
+  const warned = [];
+  for (const f of files) {
+    const r = await sqlplus(connect + fs.readFileSync(path.join(ROOT, 'db/patch', f), 'utf8') + '\nEXIT\n');
+    const errs = r.out.split('\n').filter((l) => /ORA-\d|SP2-\d/.test(l));
+    if (errs.some((l) => /ORA-01017|ORA-12541|ORA-12514|SP2-0640|SP2-0306/.test(l))) throw new Error(`Oracle 접속 실패: ${errs[0].trim()}`);
+    if (errs.length) warned.push(`${f}: ${errs[0].trim()}`);
+  }
+  log('prep', `DB 패치 ${files.length}개 적용 (${files[0]} ~ ${files[files.length - 1]})`);
+  for (const w of warned) log('prep', `  참고 (뒤 패치가 다시 맞춤): ${w}`);
+  const chk = await sqlplus(connect + "SET HEADING OFF FEEDBACK OFF\nSELECT 'CHECK=' || COUNT(*) FROM user_constraints WHERE constraint_name = 'CK_CASE_MARKER_RULE_CODE' AND status = 'ENABLED';\nEXIT\n");
+  if (!/CHECK=1/.test(chk.out)) throw new Error('DB 패치 뒤 규칙 이름 제약(ck_case_marker_rule_code)이 없습니다 → 진행자에게 알려 주세요');
+  checkStop();
+  // 5. Redis 비우기 (앱이 꺼진 뒤에. 1차 대회 사람이 결제에서 막힌 원인이 남은 리허설 기록이었음). 원본은 Oracle에 있음
+  if (o.flush) {
+    if (await healthy()) throw new Error('앱이 아직 켜져 있어 Redis를 비우지 않았습니다');
+    const r = await sh('prep', 'docker', ['compose', 'exec', '-T', 'redis', 'redis-cli', 'FLUSHALL']);
+    if (r.code !== 0 || !/OK/.test(r.out)) throw new Error('Redis 비우기 실패 (위 로그)');
+    log('prep', 'Redis를 비웠습니다 (대기열·좌석 표시·시도 횟수. 원본 예약은 Oracle에 그대로)');
+  }
+}
+
 async function stepApp() {
   if (await healthy()) {
     log('app', `앱이 이미 떠 있습니다 (${BASE_URL})`);
   } else {
-    log('app', '앱이 꺼져 있어 켭니다: docker compose up -d --wait (Oracle이 처음이면 몇 분)');
-    const up = await sh('app', 'docker', ['compose', 'up', '-d', '--wait'], { timeoutMin: 15 });
-    if (up.code !== 0) throw new Error('docker compose up 실패 (위 로그). Docker Desktop이 켜져 있는지, .env가 있는지 확인하세요');
-    checkStop();
     log('app', '앱 빌드·실행: gradlew buildFrontend bootRun (처음이면 3~5분, 로그는 results/app.log)');
     const logFile = fs.openSync(path.join(RESULTS, 'app.log'), 'a');
     const [cmd, args] = WIN ? ['cmd', ['/c', 'gradlew.bat', 'buildFrontend', 'bootRun']] : ['./gradlew', ['buildFrontend', 'bootRun']];
@@ -461,7 +582,7 @@ async function stepRestore() {
 }
 
 async function pipeline() {
-  const steps = { check: stepCheck, app: stepApp, clean: stepClean, setup: stepSetup, signup: stepSignup,
+  const steps = { check: stepCheck, prep: stepPrep, app: stepApp, clean: stepClean, setup: stepSetup, signup: stepSignup,
     probe: stepProbe, play: stepPlay, eval: stepEval };
   try {
     for (const [id] of STEPS) {
@@ -544,7 +665,10 @@ http.createServer(async (req, res) => {
     const tag = String(b.tag || '').trim();
     if (!/^[a-z0-9]{1,7}$/.test(tag)) return json(res, 400, { error: '태그는 영문 소문자·숫자 1~7자' });
     if (fs.existsSync(path.join(RESULTS, tag, 'summary.json'))) return json(res, 400, { error: `태그 ${tag}는 이미 쓴 적이 있습니다. 다른 태그를 고르세요` });
-    if (!b.adminId || !b.adminPw) return json(res, 400, { error: '관리자 ID와 비밀번호를 넣으세요' });
+    const env = readEnv(); // 비워 두면 .env의 처음 관리자 계정 (JEJARI_ADMIN_BOOTSTRAP_ID / _PASSWORD)
+    b.adminId = String(b.adminId || '').trim() || env.JEJARI_ADMIN_BOOTSTRAP_ID;
+    b.adminPw = b.adminPw || env.JEJARI_ADMIN_BOOTSTRAP_PASSWORD;
+    if (!b.adminId || !b.adminPw) return json(res, 400, { error: '관리자 ID와 비밀번호를 넣으세요 (.env에도 없습니다)' });
     const all = discoverBots().filter((x) => x.ok);
     const chosen = all.filter((x) => (b.bots || []).includes(x.name));
     if (!chosen.length) return json(res, 400, { error: '봇을 하나 이상 고르세요' });
@@ -552,7 +676,8 @@ http.createServer(async (req, res) => {
     const botDelayMin = Math.min(60, Math.max(0, Number(b.botDelayMin ?? 0)));
     fs.mkdirSync(path.join(RESULTS, tag), { recursive: true });
     recent.length = 0;
-    run = fresh({ tag, adminId: String(b.adminId), adminPw: String(b.adminPw), humanMin, botDelayMin, bots: chosen.map((x) => x.name) });
+    run = fresh({ tag, adminId: String(b.adminId), adminPw: String(b.adminPw), humanMin, botDelayMin, bots: chosen.map((x) => x.name),
+      pull: b.pull !== false, flush: b.flush !== false, restartApp: !!b.restartApp });
     run.chosen = chosen;
     pushState();
     pipeline();
