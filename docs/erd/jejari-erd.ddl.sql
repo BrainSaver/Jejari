@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v35)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v36)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -318,23 +318,23 @@ CREATE TABLE seat_inventory (
   train_id                   NUMBER NOT NULL,
   seat_id                    NUMBER NOT NULL,
   segment_no                 NUMBER(3) NOT NULL,
-  reservation_id             NUMBER NOT NULL,
+  reservation_id             NUMBER,
   status                     VARCHAR2(10) NOT NULL,
   hold_expires_at            TIMESTAMP,
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_seat_inventory PRIMARY KEY (run_id, seat_id, segment_no),
-  CONSTRAINT ck_seat_inventory_r1 CHECK ((status = 'HOLD' AND hold_expires_at IS NOT NULL) OR (status = 'SOLD' AND hold_expires_at IS NULL)),
-  CONSTRAINT ck_seat_inventory_status CHECK (status IN ('HOLD', 'SOLD'))
+  CONSTRAINT ck_seat_inventory_r1 CHECK ((status = 'HOLD' AND hold_expires_at IS NOT NULL AND reservation_id IS NOT NULL) OR (status = 'SOLD' AND hold_expires_at IS NULL AND reservation_id IS NOT NULL) OR (status = 'BLOCKED' AND hold_expires_at IS NULL AND reservation_id IS NULL)),
+  CONSTRAINT ck_seat_inventory_status CHECK (status IN ('HOLD', 'SOLD', 'BLOCKED'))
 );
 COMMENT ON TABLE seat_inventory IS '좌석 구간 재고 ★ - 운행·좌석·구간 단위 점유. PK와 열차 일치 복합 FK로 중복 예약과 다른 열차 좌석 판매를 DB가 막고, HOLD는 hold_expires_at이 지나면 다음 사람이 이어받는다.';
 COMMENT ON COLUMN seat_inventory.run_id IS '운행';
 COMMENT ON COLUMN seat_inventory.train_id IS '좌석이 속한 열차 (= train_run.train_id) / 복합 FK 두 개로 다른 열차 좌석 판매를 DB가 차단';
 COMMENT ON COLUMN seat_inventory.seat_id IS '좌석';
 COMMENT ON COLUMN seat_inventory.segment_no IS '구간 번호 (역 순번 i → i+1 = i) / 구간 단위 점유';
-COMMENT ON COLUMN seat_inventory.reservation_id IS '점유 예약 / 반환 시 이 예약 행만 삭제';
-COMMENT ON COLUMN seat_inventory.status IS 'HOLD / SOLD / 선점과 확정 구분';
-COMMENT ON COLUMN seat_inventory.hold_expires_at IS 'HOLD 만료 시각 (SOLD면 null) / = reservation.pay_deadline_at 복사. Redis TTL이 끝난 뒤 남은 HOLD 행을 다른 사람이 이어받는 기준';
+COMMENT ON COLUMN seat_inventory.reservation_id IS '점유 예약 (BLOCKED면 null) / 반환 시 이 예약 행만 삭제';
+COMMENT ON COLUMN seat_inventory.status IS 'HOLD / SOLD / BLOCKED / 선점과 확정 구분. BLOCKED = 단체 할당석으로 묶어 둔 좌석';
+COMMENT ON COLUMN seat_inventory.hold_expires_at IS 'HOLD 만료 시각 (SOLD·BLOCKED면 null) / = reservation.pay_deadline_at 복사. Redis TTL이 끝난 뒤 남은 HOLD 행을 다른 사람이 이어받는 기준';
 COMMENT ON COLUMN seat_inventory.created_at IS '생성 시각';
 COMMENT ON COLUMN seat_inventory.updated_at IS '수정 시각';
 
@@ -345,7 +345,7 @@ CREATE TABLE reservation (
   run_id                     NUMBER NOT NULL,
   from_station_id            VARCHAR2(10) NOT NULL,
   to_station_id              VARCHAR2(10) NOT NULL,
-  seat_count                 NUMBER(2) NOT NULL,
+  seat_count                 NUMBER(3) NOT NULL,
   total_amount               NUMBER(10) NOT NULL,
   status                     VARCHAR2(16) NOT NULL,
   channel                    VARCHAR2(10) NOT NULL,
@@ -362,7 +362,7 @@ CREATE TABLE reservation (
   CONSTRAINT uq_reservation_1jld6p UNIQUE (member_id, idempotency_key),
   CONSTRAINT ck_reservation_status CHECK (status IN ('HOLD', 'PAYMENT_PENDING', 'CONFIRMED', 'CANCELED', 'EXPIRED')),
   CONSTRAINT ck_reservation_channel CHECK (channel IN ('WEB', 'APP')),
-  CONSTRAINT ck_reservation_source CHECK (source IN ('NORMAL', 'WAITLIST'))
+  CONSTRAINT ck_reservation_source CHECK (source IN ('NORMAL', 'WAITLIST', 'GROUP'))
 );
 COMMENT ON TABLE reservation IS '예약 - 예약 상태 머신의 중심. reservation_id가 Kafka 파티션 키.';
 COMMENT ON COLUMN reservation.reservation_id IS '예약 ID (reservation_seq.NEXTVAL) / Kafka 파티션 키·Saga 추적. Redis 좌석 키 값으로 쓰려고 DB 쓰기 전에 먼저 발급 (concurrency.md §2.1)';
@@ -371,11 +371,11 @@ COMMENT ON COLUMN reservation.ci_hash IS '예약 시점 CI / 매수 제한 집�
 COMMENT ON COLUMN reservation.run_id IS '운행';
 COMMENT ON COLUMN reservation.from_station_id IS '승차역';
 COMMENT ON COLUMN reservation.to_station_id IS '하차역';
-COMMENT ON COLUMN reservation.seat_count IS '예약 매수 / 1회 구매 매수 위험 신호';
+COMMENT ON COLUMN reservation.seat_count IS '예약 매수 / 1회 구매 매수 위험 신호. 단체는 최대 200명이라 3자리';
 COMMENT ON COLUMN reservation.total_amount IS '예약 시점 금액 / 운임 변경과 무관하게 보존';
 COMMENT ON COLUMN reservation.status IS 'HOLD / PAYMENT_PENDING / CONFIRMED / CANCELED / EXPIRED / 상태 머신';
 COMMENT ON COLUMN reservation.channel IS 'WEB / APP / 채널별 트래픽 분석';
-COMMENT ON COLUMN reservation.source IS 'NORMAL / WAITLIST / 취소표 재배정 여부';
+COMMENT ON COLUMN reservation.source IS 'NORMAL / WAITLIST / GROUP / 취소표 재배정 여부, 단체 예매 구분';
 COMMENT ON COLUMN reservation.held_at IS '좌석 선점 시각';
 COMMENT ON COLUMN reservation.pay_deadline_at IS '결제 기한 (마감 시각의 원천) / seat_inventory.hold_expires_at, seat:hold TTL, saga_instance.timeout_at, waitlist.offer_deadline_at은 이 값을 한 번 계산해 복사. 바꿀 땐 다섯 곳을 같은 트랜잭션·같은 값으로';
 COMMENT ON COLUMN reservation.confirmed_at IS '확정 시각 / 구매→취소 시간 계산 시작점';
@@ -1000,6 +1000,7 @@ CREATE TABLE sale_event (
   holiday_to                 DATE NOT NULL,
   sale_open_at               TIMESTAMP NOT NULL,
   priority_open_at           TIMESTAMP,
+  group_quota_rate           NUMBER(4,3),
   status                     VARCHAR2(10) NOT NULL,
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
@@ -1012,6 +1013,7 @@ COMMENT ON COLUMN sale_event.holiday_from IS '연휴 시작 / PER_HOLIDAY 매수
 COMMENT ON COLUMN sale_event.holiday_to IS '연휴 끝';
 COMMENT ON COLUMN sale_event.sale_open_at IS '일반 예매 오픈 / 부하 테스트 시나리오 기준';
 COMMENT ON COLUMN sale_event.priority_open_at IS '교통약자 사전 예매 오픈 / 확장 시 사용';
+COMMENT ON COLUMN sale_event.group_quota_rate IS '이 행사 운행의 단체 할당석 비율 (null이면 app_policy group.quota_rate) / 명절엔 0으로 꺼서 개인 예매에 좌석을 모두 돌림';
 COMMENT ON COLUMN sale_event.status IS 'PLANNED / OPEN / CLOSED';
 COMMENT ON COLUMN sale_event.created_at IS '생성 시각';
 COMMENT ON COLUMN sale_event.updated_at IS '수정 시각';
@@ -1125,6 +1127,109 @@ COMMENT ON COLUMN app_policy_history.changed_by IS '변경한 관리자 / 시스
 COMMENT ON COLUMN app_policy_history.changed_at IS '변경 시각';
 COMMENT ON COLUMN app_policy_history.created_at IS '생성 시각';
 
+CREATE TABLE group_fee_policy (
+  fee_policy_id              NUMBER NOT NULL,
+  min_minutes_before         NUMBER,
+  max_minutes_before         NUMBER,
+  fee_rate                   NUMBER(4,3),
+  fixed_amount               NUMBER(10),
+  description                VARCHAR2(100),
+  created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  CONSTRAINT pk_group_fee_policy PRIMARY KEY (fee_policy_id)
+);
+COMMENT ON TABLE group_fee_policy IS '단체 위약금 정책 - 단체승차권 반환 위약금 구간 (코레일 현행). 개인 취소 수수료(cancel_fee_policy)와 계산 규칙이 달라 따로 둔다.';
+COMMENT ON COLUMN group_fee_policy.min_minutes_before IS '구간 시작(분, 음수 = 출발 후)';
+COMMENT ON COLUMN group_fee_policy.max_minutes_before IS '구간 끝(분, 음수 = 출발 후)';
+COMMENT ON COLUMN group_fee_policy.fee_rate IS '위약금 비율';
+COMMENT ON COLUMN group_fee_policy.fixed_amount IS '1인당 고정 위약금(원) / 출발 2일 전까지 1인 400원';
+COMMENT ON COLUMN group_fee_policy.description IS '관리자 화면 표시용 설명';
+COMMENT ON COLUMN group_fee_policy.created_at IS '생성 시각';
+COMMENT ON COLUMN group_fee_policy.updated_at IS '수정 시각';
+
+CREATE TABLE group_booking (
+  group_id                   NUMBER NOT NULL,
+  rep_member_id              NUMBER NOT NULL,
+  run_id                     NUMBER NOT NULL,
+  from_station_id            VARCHAR2(10) NOT NULL,
+  to_station_id              VARCHAR2(10) NOT NULL,
+  passenger_count            NUMBER(3) NOT NULL,
+  status                     VARCHAR2(12) NOT NULL,
+  reservation_id             NUMBER,
+  approved_at                TIMESTAMP,
+  approved_by                NUMBER,
+  discount_yn                CHAR(1) NOT NULL,
+  consent_at                 TIMESTAMP NOT NULL,
+  roster_changed_at          TIMESTAMP,
+  warn_no_phone_yn           CHAR(1) NOT NULL,
+  warn_dup_phone_yn          CHAR(1) NOT NULL,
+  cancel_reason              VARCHAR2(100),
+  created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  CONSTRAINT pk_group_booking PRIMARY KEY (group_id),
+  CONSTRAINT ck_group_booking_r1 CHECK (passenger_count BETWEEN 11 AND 200),
+  CONSTRAINT ck_group_booking_r2 CHECK (status <> 'APPROVED' OR reservation_id IS NOT NULL),
+  CONSTRAINT ck_group_booking_status CHECK (status IN ('REQUESTED', 'APPROVED', 'REJECTED', 'WITHDRAWN')),
+  CONSTRAINT ck_group_booking_discount_yn CHECK (discount_yn IN ('Y', 'N')),
+  CONSTRAINT ck_group_booking_9467l5 CHECK (warn_no_phone_yn IN ('Y', 'N')),
+  CONSTRAINT ck_group_booking_tllj59 CHECK (warn_dup_phone_yn IN ('Y', 'N'))
+);
+COMMENT ON TABLE group_booking IS '단체 신청 - 여행사 단체 예매 신청 (코레일 단체승차권 기준: 같은 구간 11명 이상). 대표자 1명이 전화 인증하고 일괄 결제한다. 매크로 신호가 없으면 자동 승인, 승인되면 단체 할당석에서 붙여 배정해 reservation(source=GROUP) 한 건을 만든다. 할당석이 모자라면 남은 일반 좌석에서 선착순으로 이어 배정한다 (대기열은 거치지 않고, 대표자 전화 인증·매크로 신호 검사가 별도 관문, concurrency.md §18.3a).';
+COMMENT ON COLUMN group_booking.rep_member_id IS '대표자 회원 (전화 인증, 본인도 탑승) / 단체 신청 이력을 대표자 번호에 쌓아 반복 신청 탐지';
+COMMENT ON COLUMN group_booking.run_id IS '운행';
+COMMENT ON COLUMN group_booking.from_station_id IS '출발역 (전원 같음) / 같은 구간만 단체 허용';
+COMMENT ON COLUMN group_booking.to_station_id IS '도착역 (전원 같음)';
+COMMENT ON COLUMN group_booking.passenger_count IS '신청 인원 (대표자 포함) / 11~200 (app_policy group.min_size·max_size)';
+COMMENT ON COLUMN group_booking.status IS 'REQUESTED / APPROVED / REJECTED / WITHDRAWN / 신청 단계만. 승인 뒤 결제·만료·취소는 reservation.status가 원천';
+COMMENT ON COLUMN group_booking.reservation_id IS '배정된 단체 예약 (승인 전 null) / 좌석·결제·취소는 기존 예약 흐름 재사용';
+COMMENT ON COLUMN group_booking.approved_at IS '승인 시각';
+COMMENT ON COLUMN group_booking.approved_by IS '승인 관리자 (null이면 자동 승인) / 매크로 신호 없으면 자동 승인';
+COMMENT ON COLUMN group_booking.discount_yn IS '단체 할인 적용 여부 Y/N / 출발 1개월 이내 신청분만 10%';
+COMMENT ON COLUMN group_booking.consent_at IS '대표자가 탑승자 개인정보 제공 동의를 확인한 시각 / 남의 번호를 받는 근거';
+COMMENT ON COLUMN group_booking.roster_changed_at IS '명단 변경 시각 (null이면 아직 변경 안 함) / 변경은 1회, 예약 후 group.roster_change_days 이내';
+COMMENT ON COLUMN group_booking.warn_no_phone_yn IS '휴대폰 없음 비율 경고 Y/N / group.no_phone_warn_rate 초과 시 관리자 화면 표시';
+COMMENT ON COLUMN group_booking.warn_dup_phone_yn IS '다른 단체와 번호 중복 경고 Y/N / 같은 명단을 돌려 쓰는 표팔이 탐지';
+COMMENT ON COLUMN group_booking.cancel_reason IS '반려·취소 사유 / 관리자 감사 추적';
+COMMENT ON COLUMN group_booking.created_at IS '생성 시각';
+COMMENT ON COLUMN group_booking.updated_at IS '수정 시각';
+
+CREATE TABLE group_passenger (
+  group_id                   NUMBER NOT NULL,
+  passenger_no               NUMBER(3) NOT NULL,
+  name_enc                   VARCHAR2(200) NOT NULL,
+  phone_enc                  VARCHAR2(200),
+  enc_key_id                 VARCHAR2(20) NOT NULL,
+  phone_hash                 VARCHAR2(64),
+  no_phone_yn                CHAR(1) NOT NULL,
+  passenger_type             VARCHAR2(10) NOT NULL,
+  rep_yn                     CHAR(1) NOT NULL,
+  seat_id                    NUMBER,
+  status                     VARCHAR2(10) NOT NULL,
+  created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  CONSTRAINT pk_group_passenger PRIMARY KEY (group_id, passenger_no),
+  CONSTRAINT ck_group_passenger_r1 CHECK ((no_phone_yn = 'Y' AND phone_hash IS NULL) OR (no_phone_yn = 'N' AND phone_hash IS NOT NULL)),
+  CONSTRAINT ck_group_passenger_no_phone_yn CHECK (no_phone_yn IN ('Y', 'N')),
+  CONSTRAINT ck_group_passenger_1r2fl8 CHECK (passenger_type IN ('ADULT', 'CHILD')),
+  CONSTRAINT ck_group_passenger_rep_yn CHECK (rep_yn IN ('Y', 'N')),
+  CONSTRAINT ck_group_passenger_status CHECK (status IN ('ACTIVE', 'REFUNDED'))
+);
+COMMENT ON TABLE group_passenger IS '단체 탑승자 - 단체 신청의 탑승자 명단. 대표자가 이름·전화번호를 입력하고, 각 번호로 승차권을 전달한다. 휴대폰이 없는 탑승자는 대표자 번호로 전달.';
+COMMENT ON COLUMN group_passenger.group_id IS '단체 신청';
+COMMENT ON COLUMN group_passenger.passenger_no IS '명단 순번';
+COMMENT ON COLUMN group_passenger.name_enc IS '탑승자 이름 암호문 (AES-256-GCM) / 승차권 표시에 원문 필요';
+COMMENT ON COLUMN group_passenger.phone_enc IS '탑승자 휴대폰 암호문 (휴대폰 없음이면 null) / 승차권 전달에 원문 필요';
+COMMENT ON COLUMN group_passenger.enc_key_id IS 'name_enc·phone_enc 암호화 키 버전';
+COMMENT ON COLUMN group_passenger.phone_hash IS '탑승자 휴대폰 HMAC / 여러 단체에 같은 번호 반복 탐지';
+COMMENT ON COLUMN group_passenger.no_phone_yn IS '휴대폰 없음 여부 Y/N / Y면 대표자 번호로 승차권 전달';
+COMMENT ON COLUMN group_passenger.passenger_type IS 'ADULT / CHILD / 단체 할인은 어른만';
+COMMENT ON COLUMN group_passenger.rep_yn IS '대표자 본인 여부 Y/N';
+COMMENT ON COLUMN group_passenger.seat_id IS '배정 좌석 (배정 전 null)';
+COMMENT ON COLUMN group_passenger.status IS 'ACTIVE / REFUNDED / 일부 환불 시 해당 탑승자만 REFUNDED';
+COMMENT ON COLUMN group_passenger.created_at IS '생성 시각';
+COMMENT ON COLUMN group_passenger.updated_at IS '수정 시각';
+CREATE INDEX ix_group_pax_phone ON group_passenger (phone_hash);
+
 -- 외래키와 외래키 인덱스 (Oracle은 FK에 인덱스를 자동으로 만들지 않음. 참조 전용 테이블을 가리키는 FK는 인덱스 생략)
 ALTER TABLE route ADD CONSTRAINT fk_route_origin_station_id FOREIGN KEY (origin_station_id) REFERENCES station (station_id);
 ALTER TABLE route ADD CONSTRAINT fk_route_dest_station_id FOREIGN KEY (dest_station_id) REFERENCES station (station_id);
@@ -1224,6 +1329,19 @@ ALTER TABLE app_policy_history ADD CONSTRAINT fk_app_policy_history_1to7gd FOREI
 CREATE INDEX ix_app_policy_history_1vuo6y ON app_policy_history (policy_key);
 ALTER TABLE app_policy_history ADD CONSTRAINT fk_app_policy_history_1k33d7 FOREIGN KEY (changed_by) REFERENCES admin_user (admin_id);
 CREATE INDEX ix_app_policy_history_1jzu2w ON app_policy_history (changed_by);
+ALTER TABLE group_booking ADD CONSTRAINT fk_group_booking_rep_member_id FOREIGN KEY (rep_member_id) REFERENCES member (member_id);
+CREATE INDEX ix_group_booking_rep_member_id ON group_booking (rep_member_id);
+ALTER TABLE group_booking ADD CONSTRAINT fk_group_booking_run_id FOREIGN KEY (run_id) REFERENCES train_run (run_id);
+CREATE INDEX ix_group_booking_run_id ON group_booking (run_id);
+ALTER TABLE group_booking ADD CONSTRAINT fk_group_booking_1i6x9o FOREIGN KEY (from_station_id) REFERENCES station (station_id);
+ALTER TABLE group_booking ADD CONSTRAINT fk_group_booking_to_station_id FOREIGN KEY (to_station_id) REFERENCES station (station_id);
+ALTER TABLE group_booking ADD CONSTRAINT fk_group_booking_umzwyh FOREIGN KEY (reservation_id) REFERENCES reservation (reservation_id);
+CREATE INDEX ix_group_booking_vy83jr ON group_booking (reservation_id);
+ALTER TABLE group_booking ADD CONSTRAINT fk_group_booking_approved_by FOREIGN KEY (approved_by) REFERENCES admin_user (admin_id);
+CREATE INDEX ix_group_booking_approved_by ON group_booking (approved_by);
+ALTER TABLE group_passenger ADD CONSTRAINT fk_group_passenger_group_id FOREIGN KEY (group_id) REFERENCES group_booking (group_id);
+ALTER TABLE group_passenger ADD CONSTRAINT fk_group_passenger_seat_id FOREIGN KEY (seat_id) REFERENCES seat (seat_id);
+CREATE INDEX ix_group_passenger_seat_id ON group_passenger (seat_id);
 
 -- 예시 데이터 (팀 확정 전 예시값)
 INSERT INTO model_run (model_version, algorithm, params, train_source, trained_at, threshold, decay_half_life_days, is_active) VALUES ('rule-2026.11-01', 'RULE', '{"weights":"risk_score 신호별 가중치"}', 'synthetic v1', TIMESTAMP '2026-11-18 10:00:00', 80, 30, 'Y');
@@ -1305,6 +1423,20 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('seatmap.abuse_window_sec', '60', 1, 'NUMBER', '거절을 세는 시간 창(초)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('seatmap.cooldown_sec', '60', 1, 'NUMBER', '잠금 시간(초)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('reservation.hold_release_grace_sec', '10', 1, 'NUMBER', '선점·제안 키를 결제 마감 뒤 이만큼 더 붙잡아, 스캐너가 대기자 제안으로 넘길 때까지 일반 사용자가 못 잡게 함. 0이면 마감 즉시 열림(예전 동작)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.min_size', '11', 1, 'NUMBER', '단체 최소 인원 (같은 구간, 어린이 포함)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.max_size', '200', 1, 'NUMBER', '단체 신청 1건 최대 인원');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.quota_rate', '0.05', 1, 'NUMBER', '운행별 단체 할당석 비율 (행사 운행은 sale_event.group_quota_rate 우선)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.quota_release_days', '30', 1, 'NUMBER', '출발 며칠 전까지 안 쓰인 할당석을 일반 판매로 돌릴지');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.no_phone_warn_rate', '0.3', 1, 'NUMBER', '휴대폰 없음 탑승자 비율이 이 값을 넘으면 관리자 경고');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.pay_deadline_days', '3', 1, 'NUMBER', '승인 후 결제 기한(일). 넘기면 배정 취소·할당석 반납');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.roster_change_days', '7', 1, 'NUMBER', '예약 후 명단 변경 가능 기간(일), 1회');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.discount_rate', '0.10', 1, 'NUMBER', '단체 할인율 (어른 운임만, 중복 할인 없음)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('group.discount_within_days', '30', 1, 'NUMBER', '출발 며칠 이내 신청분에 할인 적용');
+INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (1, 2880, NULL, NULL, 400, '출발 2일 전까지 1인 400원');
+INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (2, 0, 2880, 0.1, NULL, '1일 전 ~ 출발 전 10%');
+INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (3, -20, 0, 0.15, NULL, '출발 후 20분까지 15%');
+INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (4, -60, -20, 0.4, NULL, '출발 후 20~60분 40%');
+INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (5, NULL, -60, 0.7, NULL, '출발 후 60분 ~ 도착 70%');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (1, 1, 'PER_RESERVATION', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (2, 1, 'PER_RUN', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (3, 1, 'PER_HOLIDAY', 8, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');

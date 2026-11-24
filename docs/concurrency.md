@@ -56,6 +56,7 @@ JPA Auditing을 거치지 않는 모든 네이티브 UPDATE는 다음을 지킵�
 4. `purchase_counter`는 `(scope, scope_ref_id, ci_hash)` 오름차순으로, 갱신할 행을 모아 한 번에 갱신합니다 (§10.3).
 5. `waitlist`는 §9에서만 예약보다 먼저 잠그고, 항상 `SKIP LOCKED`라 기다리지 않습니다. §9가 잠그는 행은 `WAITING`이고, 1의 규칙으로 잠그는 행은 `OFFERED`라 서로 겹치지 않습니다.
 6. 새 PK로 INSERT하는 행(`reservation_history`, `outbox_event`, `notification`, `cancellation`, `saga_instance` 생성)은 다른 트랜잭션과 겹치지 않으므로 순서 제약이 없습니다. 단 `outbox_event`는 §0.5대로 reservation 갱신 **뒤에** INSERT합니다.
+7. `group_booking`은 그 단체의 `reservation`보다 **먼저** 잠급니다 (§18.3). 단체 예약에 딸린 다른 행은 1의 규칙대로 reservation 뒤에 바꿉니다.
 
 `outbox_event`(발행 상태), `notification`(발송·확인 시각), `cancellation`(환불 상태·재판매 여부)은 나중에 UPDATE되므로 "INSERT만 하는 테이블"이 아닙니다. INSERT만 하는 테이블(`noUpdatedAt`)은 `processed_event`, `reservation_history`, `app_policy_history`뿐입니다.
 
@@ -118,6 +119,7 @@ PG 호출, Kafka 발행 같은 네트워크 호출은 **DB 트랜잭션 밖**에
 
 1. 이전 점유자 확인 (락 없음): `SELECT reservation_id, status, hold_expires_at FROM seat_inventory WHERE (run_id, seat_id, segment_no) IN (…)`.
    - 행이 없으면 **3으로** 갑니다.
+   - `status = 'BLOCKED'`(단체 할당석, §18) 행이 있으면 거절합니다. `reservation_id`가 NULL이라 만료된 HOLD로 보면 안 됩니다.
    - `status = 'SOLD'`이거나 `hold_expires_at >= SYSTIMESTAMP`인 행이 있으면 거절합니다. Redis 키가 사라졌는데 DB 점유가 유효한 경우로, 정상이면 일어나지 않지만 DB가 최종입니다.
    - 만료된 HOLD만 있으면 **2(재선점)로** 갑니다.
 2. (재선점일 때만) §3을 같은 트랜잭션에서 실행합니다.
@@ -158,7 +160,7 @@ K는 선점 때 계산해 쓰고, 이후에는 같은 식으로 다시 계산합
 
 1. 이전 예약 잠금: ID를 앱에서 오름차순 정렬한 뒤 **한 건씩** 잠급니다 (§0.4-2).
    ```sql
-   SELECT reservation_id, status, seat_count, ci_hash, run_id FROM reservation
+   SELECT reservation_id, status, seat_count, ci_hash, run_id, source FROM reservation
     WHERE reservation_id = :Ri FOR UPDATE
    ```
 2. 이전 예약마다:
@@ -174,7 +176,7 @@ K는 선점 때 계산해 쓰고, 이후에는 같은 식으로 다시 계산합
    ```sql
    DELETE FROM seat_inventory WHERE reservation_id = :R1 AND status = 'HOLD'
    ```
-4. R1의 `purchase_counter`를 R1의 `seat_count` 전체만큼 감소합니다. 새 예약의 증가와 합쳐 정렬 순서로 갱신합니다 (§10.3).
+4. R1의 `purchase_counter`를 R1의 `seat_count` 전체만큼 감소합니다. 새 예약의 증가와 합쳐 정렬 순서로 갱신합니다 (§10.3). **R1이 단체 예약(`source = 'GROUP'`)이면 건너뜁니다** — 카운터를 올린 적이 없습니다 (§18.5). 커밋 후 `limit:*` 감소도 같습니다.
 5. R1의 `reservation_history`(HOLD → EXPIRED, `actor_type = 'SYSTEM'`), `saga_instance.status = 'COMPENSATED'`, outbox `RESERVATION_EXPIRED`(`partition_key = R1`, payload `reason = 'PREEMPTED'`)를 기록합니다.
 6. 이어서 §2.2의 3~10을 진행합니다.
 7. 커밋 후: R1의 Redis 정리(다른 좌석 키, `limit:*` 감소)는 §14.3의 커밋 후 보상으로 합니다. 5의 outbox 이벤트가 보장 경로이자 취소표 제안(§9)의 시작입니다.
@@ -510,6 +512,8 @@ UPDATE purchase_counter SET seat_count = seat_count - :n, updated_at = SYSTIMEST
 
 `CHECK(seat_count >= 0)`이 마지막 방어입니다.
 
+단체 예약(`reservation.source = 'GROUP'`)은 카운터를 올린 적이 없으므로 감소하지 않습니다 (§3, §7.1, §8 모두, Redis `limit_decr.lua` 포함). §18.5
+
 ### 10.3 갱신 순서
 
 한 트랜잭션에서 갱신할 카운터 행을 전부 모은 뒤 `(scope, scope_ref_id, ci_hash)` 오름차순으로 갱신합니다. 재선점처럼 새 예약의 증가와 이전 예약(다른 CI)의 감소가 섞여도 이 정렬 하나로 데드락을 막습니다 (0.4).
@@ -696,7 +700,7 @@ Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함�
 | `queue:adm:{runId}:{초}` | 그 운행에서 그 1초에 입장시킨 수. 앱이 여러 대여도 합쳐서 `queue.admit_per_sec`를 넘지 않게 `admit.lua`가 남은 만큼만 입장시킨다 | 3초 |
 | `queue:pass:{runId}:{memberId}` | 입장 토큰 | `queue.pass_ttl_sec` |
 | `queue:passext:{runId}:{memberId}` | 입장 토큰을 이미 한 번 연장했다는 표시 (`POST /runs/{runId}/queue/me/extend`, `extend.lua`가 PTTL 확인·표시·`PEXPIRE`를 원자적으로 처리. 연장분은 `queue.pass_extend_sec`, 기본 300초, 회원·운행당 1회) | 토큰과 함께 |
-| `seat:hold:{runId}:{seatId}:{segNo}` | `R`(HOLD), `SOLD:R`(확정), `REOFFER:R`(대기자 제안 대기) | `pay_deadline_at + reservation.hold_release_grace_sec` / 운행 출발 시각 / `waitlist.reoffer_hold_sec` |
+| `seat:hold:{runId}:{seatId}:{segNo}` | `R`(HOLD), `SOLD:R`(확정), `REOFFER:R`(대기자 제안 대기), `GROUP`(단체 할당석, §18) | `pay_deadline_at + reservation.hold_release_grace_sec` / 운행 출발 시각 / `waitlist.reoffer_hold_sec` / 할당석 반납 시각 |
 | `limit:{runId}:{ciHash}`, `limit:event:{saleEventId}:{ciHash}` | 보유 매수 | 운행 출발·행사 종료 |
 | `limit:day:{yyyymmdd}:{ciHash}` | 그 날 구매한 매수 | 그 날 24:00 + 1시간 |
 | `limit:dec:{reservationId}` | 1 (이 예약의 한도 감소를 이미 했다는 표시) | 운행 출발·행사 종료 중 늦은 쪽 |
@@ -867,3 +871,98 @@ Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함�
 | PG 결과 모름 | 복구율 분모에서 빼고, 건수와 관리자 처리까지 걸린 시간으로 따로 보고 |
 | 중복 예약·중복 결제 | 같은 좌석·구간의 SOLD 행 2개 이상 / 예약당 APPROVED 2개 이상. 목표 0 |
 | 재배정 순서 보장 | 대기자 제안 순서가 `priority_at` 순서와 다른 건수 (SKIPPED·조건 불일치 제외). 목표 0 |
+
+---
+
+## §18 단체 할당석 (`seat_inventory.status = 'BLOCKED'`)
+
+여행사 단체 예매(`group_booking`)를 위해 운행마다 좌석 일부를 미리 묶어 둡니다. 묶어 둔 좌석은 `seat_inventory`에 **예약 없는 행**(`status = 'BLOCKED'`, `reservation_id = NULL`, `hold_expires_at = NULL`)으로 있으므로, 일반 선점(§2)은 Redis 키와 PK 충돌로 자동으로 실패합니다.
+
+**원칙**
+- 단체는 **할당석에서 먼저** 좌석을 받고, 모자라면 **남은 일반 좌석에서 선착순**으로 이어 받습니다(18.3a, 길동현 결정 2026-11-24). 단체 배정은 대기열·입장 토큰을 거치지 않습니다. 대신 단체 신청 자체가 대표자 전화 인증·매크로 신호 검사·같은 번호 반복 감지를 거치는 별도 관문입니다.
+- 승인으로 예약(`reservation.source = 'GROUP'`)이 생기면, 그 뒤 결제·만료·취소는 **기존 §4~§9를 그대로** 탑니다. 결제 기한 원천은 `reservation.pay_deadline_at` 하나이고, `group_booking`은 신청 단계 상태만 가집니다.
+
+### 18.1 만들기 (판매 오픈 전)
+
+판매 오픈 스케줄러가 운행을 `ON_SALE`로 바꾸기 **전에** 실행합니다.
+
+1. 비율 r = 행사 운행이면 `sale_event.group_quota_rate`, NULL이면 `policy(group.quota_rate)`. r = 0이면 끝.
+2. 개수 q = floor(운행 좌석 수 × r).
+3. 좌석 고르기: **같은 객차 안 연속 좌석**을 객차 뒤쪽 열부터 q개. 한 객차로 모자라면 다음 객차에서 이어서.
+4. 반납 시각 `:rel = 출발 시각 − policy(group.quota_release_days)일`.
+5. DB 트랜잭션: `INSERT INTO seat_inventory (…, reservation_id = NULL, status = 'BLOCKED', hold_expires_at = NULL)`를 `(run_id, seat_id, segment_no)` 오름차순으로 (§0.4-3). ORA-00001이면 이미 만든 좌석이므로 건너뜁니다 (재실행 안전).
+6. COMMIT 뒤 Redis: 각 구간 키 `seat:hold:{runId}:{seatId}:{segNo}`를 `GROUP` 값으로 `SET NX PXAT :rel`. 반납 시각에 키가 저절로 사라지므로 18.4가 늦어도 Redis는 제때 풀립니다.
+
+### 18.2 일반 선점과의 관계 (§2 보완)
+
+- §2.1-4 `hold.lua`: 값이 `GROUP`인 키는 "다른 값"이라 그대로 패배. 변경 없음.
+- §2.2-1 이전 점유자 확인에 **`status = 'BLOCKED'` 행이 있으면 거절**을 추가합니다. 반납 시각에 Redis 키가 먼저 만료되고 18.4가 아직 행을 안 지운 사이에 들어온 요청을 DB가 막습니다.
+- 좌석 지도: BLOCKED는 "선택 불가"로 표시합니다.
+
+### 18.3 배정 (단체 승인)
+
+자동 승인이든 관리자 승인이든 같은 절차입니다. 시스템이 대표자 명의로 실행하므로 입장 토큰과 매수 카운터(§10)를 쓰지 않습니다.
+
+1. 좌석 고르기 (락 없음): 그 운행의 BLOCKED 좌석 중 **같은 객차 연속**으로 `passenger_count`개. **모자라면 18.3a**로 일반 좌석을 더 고릅니다. 일반 좌석까지 모자라면 거절(`GROUP_SEAT_SHORT`)하고 신청은 `REQUESTED`로 둡니다.
+2. 마감 `:d = 지금 + policy(group.pay_deadline_days)일`.
+3. Redis: `group_claim.lua`(새 스크립트)로 고른 키 중 값이 `GROUP`인 키만 `SET R PXAT (:d + reservation.hold_release_grace_sec)`. 하나라도 `GROUP`이 아니면 바꾼 키를 되돌리고 0 반환 → 1로 돌아가 다른 좌석을 고릅니다 (최대 3회, 그래도 실패면 거절). 18.3a 일반 좌석은 이 단계에서 함께 잡습니다.
+4. DB 트랜잭션:
+   1. `SELECT … FROM group_booking WHERE group_id = :g FOR UPDATE` → `status = 'REQUESTED'`가 아니면 롤백 (멱등, 동시 승인 2건 중 1건만).
+   2. `INSERT INTO reservation (… source = 'GROUP', status = 'HOLD', seat_count = n, pay_deadline_at = :d …)`
+   3. `UPDATE seat_inventory SET status = 'HOLD', reservation_id = R, hold_expires_at = :d, updated_at = SYSTIMESTAMP WHERE (run_id, seat_id, segment_no) IN (…) AND status = 'BLOCKED'` → **영향 행 수 ≠ 할당석에서 고른 행 수면 롤백**. 18.3a 일반 좌석이 있으면 이어서 INSERT하고, 두 단계를 합친 행 수가 K(§2.4)여야 합니다.
+   4. `INSERT INTO reservation_seat` (할인 적용 시 어른만 `group.discount_rate`)
+   5. `UPDATE group_passenger SET seat_id = …` (명단 순서대로)
+   6. `UPDATE group_booking SET status = 'APPROVED', reservation_id = R, approved_at, approved_by`
+   7. `reservation_history`(actor_type = 'SYSTEM' 또는 'ADMIN'), `saga_instance`(timeout_at = :d), `outbox_event`(SEAT_HELD)
+   8. COMMIT
+5. 롤백되면 `group_return.lua`로 할당석 키 중 값이 R인 키만 `GROUP PXAT :rel`로 되돌리고, 18.3a 일반 좌석 키는 `release.lua`로 R 값일 때만 지웁니다.
+
+### 18.3a 할당석이 모자랄 때: 일반 좌석 선착순
+
+할당석이 `passenger_count`보다 적으면 남은 인원 m을 **일반 좌석에서** 이어 고릅니다. 개인 선점(§2)과 같은 장치로 잡으므로 같은 순간 부딪히면 먼저 잡은 쪽이 이깁니다.
+
+1. 좌석 고르기 (락 없음): 할당석과 같은 객차의 이어지는 좌석 → 가까운 객차 순으로 빈 일반 좌석 m개.
+2. Redis: 18.3-3의 `group_claim.lua`와 함께, 일반 좌석 키는 `hold.lua`(§2.1-4)로 R 값 `SET NX PXAT (:d + reservation.hold_release_grace_sec)`. 하나라도 다른 값이면 그 좌석을 빼고 1로 돌아갑니다 (18.3-3과 같은 3회 한도). **개인 매수 한도(`limit_incr.lua`)는 쓰지 않습니다.**
+3. DB: 18.3-4-3 바로 뒤에 일반 좌석 행을 `INSERT INTO seat_inventory (… status = 'HOLD', hold_expires_at = :d, reservation_id = R)` `(run_id, seat_id, segment_no)` 오름차순으로 (§0.4-3). PK 충돌이면 롤백(§2.2-4와 같음). §2.2-1의 이전 점유자 확인과 만료 HOLD 재선점(§3)도 §2와 똑같이 거칩니다.
+4. 한 예약 안에 할당석에서 바꾼 행과 새로 INSERT한 행이 섞일 수 있습니다. 결제·만료·취소에서는 구분하지 않습니다 (18.5).
+
+### 18.4 반납 (출발 `group.quota_release_days`일 전)
+
+스캐너가 반납 시각이 지난 운행을 찾아 실행합니다.
+
+1. `DELETE FROM seat_inventory WHERE run_id = :run AND status = 'BLOCKED'` (HOLD·SOLD는 건드리지 않음. 18.3과 동시에 돌아도 `status = 'BLOCKED'` 조건 때문에 이미 배정된 좌석은 남음)
+2. COMMIT 뒤 Redis: 값이 `GROUP`인 키만 삭제(대부분 18.1-6 만료로 이미 없음), `seatmap:{runId}` 캐시 삭제.
+3. 풀린 좌석은 일반 판매로 돌아갑니다.
+
+### 18.5 승인 뒤 (§4~§9 그대로, 분기 하나)
+
+- 결제(§4·§5), 결제 기한 만료(§6), 해제(§7), 확정 취소(§8), 취소표 제안(§9)은 **일반 예약과 똑같이** 동작합니다. 단체 예약이 만료·취소되면 좌석은 BLOCKED로 돌아가지 않고 `REOFFER:R`로 대기자에게 먼저 갑니다.
+- **분기 하나**: §3 재선점·§7·§8의 매수 카운터 감소(§10.2, `limit_decr.lua`)는 `reservation.source = 'GROUP'`이면 건너뜁니다. 결제 기한이 지난 단체 HOLD를 다른 사람이 재선점(§3-4)할 때도 같습니다. 단체는 카운터를 올린 적이 없으므로, 그대로 두면 대표자 개인 20매가 잘못 줄어듭니다.
+- 결제·만료 결과는 `reservation.status`를 보면 되므로 `group_booking`은 바꾸지 않습니다.
+
+### 18.6 취소 수수료 (다인님 취소 코드와 맞출 것)
+
+- 단체 위약금은 `group_fee_policy`(별도 표)에 있습니다. 개인용 `cancel_fee_policy`와 `CancelFeeCalculator`는 바꾸지 않습니다.
+- §8 확정 취소에서 `reservation.source = 'GROUP'`이면 `group_fee_policy`로 계산하는 분기가 필요합니다. 일부 환불(탑승자 일부만 취소)은 지금 §8이 예약 전체 취소만 다루므로 **§8 확장 과제**로 따로 정합니다.
+
+### 18.7 락 순서 (§0.4-7)
+
+`group_booking`은 그 단체의 `reservation`보다 **먼저** 잠급니다 (18.3-4, §0.4-7). 단체 예약의 다른 행은 §0.4-1대로 reservation 뒤에 바꿉니다.
+
+### 18.8 테스트 (§16과 함께 통합 테스트로)
+
+| # | 시나리오 | 기대 결과 | 절 |
+|---|---|---|---|
+| G1 | BLOCKED 좌석에 일반 선점 100건 | 전부 실패, DB 쓰기 0건 | §18.2 |
+| G2 | Redis `GROUP` 키 만료 직후, 행 삭제 전 일반 선점 | DB에서 거절 | §18.2 |
+| G3 | 같은 단체 승인 요청 동시 2건 | 예약 1건만 생성 | §18.3 |
+| G4 | 두 단체가 같은 할당석에 동시 배정 | 한쪽만 그 좌석, 다른 쪽은 다른 좌석 또는 거절 | §18.3 |
+| G5 | 할당석보다 많은 인원 신청 (일반 좌석 남음) | 할당석 전부 + 모자란 만큼 일반 좌석, 행 수 = K, 대표자 개인 카운터 변화 없음 | §18.3a |
+| G5b | G5와 같은 순간 개인 선점이 같은 일반 좌석에 들어옴 | 먼저 `SET NX`한 쪽만 성공, 단체는 다른 좌석을 고르거나 거절, 중복 0 | §18.3a |
+| G6 | 반납 스캐너와 단체 배정이 동시에 실행 | HOLD로 바뀐 좌석은 남고 BLOCKED만 삭제 | §18.4 |
+| G7 | 단체 예약 결제 기한 만료 | 대기자에게 제안, 대표자 개인 카운터 변화 없음 | §18.5 |
+| G8 | 결제 기한이 지난 단체 HOLD를 일반 사용자가 재선점 (§3) | 재선점 성공, 대표자 개인 카운터 변화 없음 | §3, §18.5 |
+
+### 18.9 정책 값 (§15와 같은 `app_policy`)
+
+`group.quota_rate`, `group.quota_release_days`, `group.pay_deadline_days` (ERD v36 `app_policy` 예시 행)

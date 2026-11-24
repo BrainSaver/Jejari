@@ -29,7 +29,7 @@ const hasK = (c, k) => c.keys.split(',').includes(k);
 const base = s => (s || '').replace(/\(.*$/, '').trim();
 const RESERVED = new Set('ACCESS ADD ALL ALTER AND ANY AS ASC AUDIT BETWEEN BY CHAR CHECK CLUSTER COLUMN COMMENT COMPRESS CONNECT CREATE CURRENT DATE DECIMAL DEFAULT DELETE DESC DISTINCT DROP ELSE EXCLUSIVE EXISTS FILE FLOAT FOR FROM GRANT GROUP HAVING IDENTIFIED IMMEDIATE IN INCREMENT INDEX INITIAL INSERT INTEGER INTERSECT INTO IS LEVEL LIKE LOCK LONG MAXEXTENTS MINUS MLSLABEL MODE MODIFY NOAUDIT NOCOMPRESS NOT NOWAIT NULL NUMBER OF OFFLINE ON ONLINE OPTION OR ORDER PCTFREE PRIOR PUBLIC RAW RENAME RESOURCE REVOKE ROW ROWID ROWNUM ROWS SELECT SESSION SET SHARE SIZE SMALLINT START SUCCESSFUL SYNONYM SYSDATE TABLE THEN TO TRIGGER UID UNION UNIQUE UPDATE USER VALIDATE VALUES VARCHAR VARCHAR2 VIEW WHENEVER WHERE WITH'.split(' '));
 // FK를 일부러 걸지 않는 ID 컬럼 (외부 값, 다형 참조, 묶음 번호)
-const NO_FK_OK = new Set(['reservation_history.event_id', 'payment.pg_tx_id', 'cancellation.refund_pg_tx_id', 'outbox_event.aggregate_id',
+const NO_FK_OK = new Set(['reservation_history.event_id', 'group_passenger.enc_key_id', 'payment.pg_tx_id', 'cancellation.refund_pg_tx_id', 'outbox_event.aggregate_id',
   'notification.ref_id', 'synthetic_label.group_id', 'member_credential.pepper_key_id', 'auth_session.token_family_id',
   'ext_bot_detection.session_id', 'admin_user.login_id', 'member.enc_key_id', 'purchase_counter.scope_ref_id', 'behavior_log.event_id']);
 // 값이 열려 있어 CHECK를 걸지 않는 코드성 컬럼

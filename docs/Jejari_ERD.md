@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v35 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-23
+> 스키마 v36 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-24
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -36,18 +36,18 @@
 
 | 항목 | 값 |
 |---|---|
-| 테이블 | 61개 (운영 57 + 확장 예정 4) |
-| 저장소 | Oracle 44 · MongoDB 12 · Redis 1 · 확장 예정 4 |
+| 테이블 | 64개 (운영 60 + 확장 예정 4) |
+| 저장소 | Oracle 47 · MongoDB 12 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 538개 |
-| 관계 (FK) | 87개 (Oracle 제약 60 · 논리 참조 22) |
+| 컬럼 | 572개 |
+| 관계 (FK) | 95개 (Oracle 제약 68 · 논리 참조 22) |
 
 | 영역 | 저장소 | 테이블 |
 |---|---|---|
 | 기준 데이터 | Oracle | `station`, `route`, `route_station`, `car_type`, `train`, `train_car`, `seat`, `train_run`, `train_stop`, `fare`, `purchase_limit_policy`, `sale_event`, `app_policy`, `common_code`(확장), `app_policy_history` |
 | 회원·식별 | Oracle | `member`, `payment_method`, `member_device`, `member_push_token`(확장) |
 | 보안·인증 | Oracle, MongoDB | `member_credential`, `identity_verification`, `auth_session`, `login_attempt`, `admin_user`, `password_reset_token`(확장) |
-| 예약·결제 | Oracle | `seat_inventory`, `reservation`, `reservation_seat`, `reservation_history`, `payment`, `cancellation`, `cancel_fee_policy`, `ticket_transfer`(확장), `purchase_counter` |
+| 예약·결제 | Oracle | `seat_inventory`, `reservation`, `reservation_seat`, `reservation_history`, `payment`, `cancellation`, `cancel_fee_policy`, `ticket_transfer`(확장), `purchase_counter`, `group_fee_policy`, `group_booking`, `group_passenger` |
 | 이벤트 신뢰성 | Oracle | `outbox_event`, `processed_event`, `saga_instance` |
 | 취소표 재배정 | Oracle | `waitlist`, `notification` |
 | 위험 점수·관리자 | Oracle, MongoDB | `risk_score`, `risk_score_history`, `admin_action`, `model_run`, `model_score` |
@@ -92,6 +92,7 @@
 | 결제 실패 처리 | 예약 EXPIRED, 사용자는 다시 예매 (결제 재시도 없음) | reservation.status | 재시도마다 마감이 연장돼 좌석을 오래 붙잡는 것 방지. 원인은 payment.status·이벤트 reason (concurrency.md §5.2) | 검토 중 |
 | 시간대 | Asia/Seoul (Oracle 컨테이너 OS·JVM·DB 세션), 마감 시각은 앱 시계로 계산 | 인프라 | SYSTIMESTAMP가 DB 서버 OS 시간대를 따라 UTC면 9시간 어긋남 (concurrency.md §0.7) | 검토 중 |
 | 구현 범위 | MVP(1~2주차): 기준 데이터·회원·인증·대기열·예약·결제·취소·취소표·outbox/inbox·매수 제한·행동 로그·규칙 위험 점수·의심 구간 타임라인 / 2주차 말 판단: 구간 재고·녹화 재생·외부 데이터 분석 / 발표 후: 증거 해시·legal_hold·열람 감사·Isolation Forest·확장 예정 4개 | 기획서 | 5명 3주에 Oracle 44·MongoDB 11개는 많음. 핵심 수치(중복 0, 복구율, 탐지율)에 필요한 것부터 | 검토 중 |
+| 단체 예매 | 같은 구간 11~200명 · 2개월 전 07시부터 신청 · 1개월 이내 신청분 어른 10% 할인 · 할당석 5%(명절 0%), 1개월 전 미사용분 일반 판매 · 승인 후 3일 내 결제 · 명단 변경 1회(예약 후 7일) | group_booking, group_passenger, app_policy group.*, sale_event.group_quota_rate | 코레일 현행 단체승차권 기준 + 표팔이 방지 보강 (2026-11-24 길동현) | 확정 |
 
 ## 공통 규칙
 
@@ -234,6 +235,12 @@ erDiagram
   admin_user {
     NUMBER admin_id PK
   }
+  group_booking {
+    NUMBER group_id PK
+  }
+  group_passenger {
+    NUMBER group_id PK
+  }
   station ||--o{ route : "origin_station_id"
   station ||--o{ route : "dest_station_id"
   route ||--o{ route_station : "route_id"
@@ -264,6 +271,10 @@ erDiagram
   admin_user |o--o{ app_policy : "updated_by"
   app_policy ||--o{ app_policy_history : "policy_key"
   admin_user |o--o{ app_policy_history : "changed_by"
+  train_run ||--o{ group_booking : "run_id"
+  station ||--o{ group_booking : "from_station_id"
+  station ||--o{ group_booking : "to_station_id"
+  seat |o--o{ group_passenger : "seat_id"
 ```
 
 <a id="station"></a>
@@ -282,7 +293,7 @@ Oracle · 참조 전용(행 삭제 없음)
 
 > **제약·비고** 참조 전용: 행 삭제 금지 (이 테이블을 가리키는 FK에는 인덱스를 만들지 않음)
 
-**관계** [`route`](#route).origin_station_id → 이 테이블 · [`route`](#route).dest_station_id → 이 테이블 · [`route_station`](#route-station).station_id → 이 테이블 · [`train_stop`](#train-stop).station_id → 이 테이블 · [`fare`](#fare).from_station_id → 이 테이블 · [`fare`](#fare).to_station_id → 이 테이블 · [`reservation`](#reservation).from_station_id → 이 테이블 · [`reservation`](#reservation).to_station_id → 이 테이블 · [`waitlist`](#waitlist).from_station_id → 이 테이블 · [`waitlist`](#waitlist).to_station_id → 이 테이블
+**관계** [`route`](#route).origin_station_id → 이 테이블 · [`route`](#route).dest_station_id → 이 테이블 · [`route_station`](#route-station).station_id → 이 테이블 · [`train_stop`](#train-stop).station_id → 이 테이블 · [`fare`](#fare).from_station_id → 이 테이블 · [`fare`](#fare).to_station_id → 이 테이블 · [`reservation`](#reservation).from_station_id → 이 테이블 · [`reservation`](#reservation).to_station_id → 이 테이블 · [`waitlist`](#waitlist).from_station_id → 이 테이블 · [`waitlist`](#waitlist).to_station_id → 이 테이블 · [`group_booking`](#group-booking).from_station_id → 이 테이블 · [`group_booking`](#group-booking).to_station_id → 이 테이블
 
 <a id="route"></a>
 #### `route` 노선
@@ -389,7 +400,7 @@ Oracle
 
 > **제약·비고** UNIQUE(train_id, car_no, seat_no) · train_car × car_type.seat_count로 스크립트 자동 생성 · UNIQUE(train_id, seat_id) — seat_inventory 복합 FK의 참조 대상
 
-**관계** train_id → [`train`](#train) · [`seat_inventory`](#seat-inventory).seat_id → 이 테이블 · [`reservation_seat`](#reservation-seat).seat_id → 이 테이블
+**관계** train_id → [`train`](#train) · [`seat_inventory`](#seat-inventory).seat_id → 이 테이블 · [`reservation_seat`](#reservation-seat).seat_id → 이 테이블 · [`group_passenger`](#group-passenger).seat_id → 이 테이블
 
 <a id="train-run"></a>
 #### `train_run` 날짜별 운행
@@ -410,7 +421,7 @@ Oracle
 
 > **제약·비고** UNIQUE(train_id, run_date) · UNIQUE(run_id, train_id) — seat_inventory 복합 FK의 참조 대상 · 일반 예매 오픈은 코레일 규칙대로 출발일 2개월 전 07:00: sale_open_at = run_date - 2개월 + 07:00. 명절 운행은 sale_event.sale_open_at을 그대로 복사합니다 (특별예매 일괄 오픈) · 상태 전이 순서: 출발 → 마감 → 오픈 (센 것부터 봐서 뒤 단계가 앞 단계 결과를 건드리지 않게). 정차 정보가 없는 운행은 출발 시각을 알 수 없어 DEPARTED로 가지 않는다 ·  · CREATE SEQUENCE train_run_seq START WITH 100000 INCREMENT BY 1 MAXVALUE 399999 NOCYCLE CACHE 50;
 
-**관계** train_id → [`train`](#train) · sale_event_id → [`sale_event`](#sale-event) · [`train_stop`](#train-stop).run_id → 이 테이블 · [`seat_inventory`](#seat-inventory).run_id → 이 테이블 · [`reservation`](#reservation).run_id → 이 테이블 · [`waitlist`](#waitlist).run_id → 이 테이블 · [`behavior_log`](#behavior-log).run_id → 이 테이블 · [`queue_log`](#queue-log).run_id → 이 테이블
+**관계** train_id → [`train`](#train) · sale_event_id → [`sale_event`](#sale-event) · [`train_stop`](#train-stop).run_id → 이 테이블 · [`seat_inventory`](#seat-inventory).run_id → 이 테이블 · [`reservation`](#reservation).run_id → 이 테이블 · [`waitlist`](#waitlist).run_id → 이 테이블 · [`behavior_log`](#behavior-log).run_id → 이 테이블 · [`queue_log`](#queue-log).run_id → 이 테이블 · [`group_booking`](#group-booking).run_id → 이 테이블
 
 <a id="train-stop"></a>
 #### `train_stop` 정차 시각
@@ -492,6 +503,7 @@ Oracle
 | `holiday_to` | DATE | NN | 생성 | 연휴 끝 |  |
 | `sale_open_at` | TIMESTAMP | NN | 생성 | 일반 예매 오픈 | 부하 테스트 시나리오 기준 |
 | `priority_open_at` | TIMESTAMP |  | 생성 | 교통약자 사전 예매 오픈 | 확장 시 사용 |
+| `group_quota_rate` | NUMBER(4,3) |  | 생성 | 이 행사 운행의 단체 할당석 비율 (null이면 app_policy group.quota_rate) | 명절엔 0으로 꺼서 개인 예매에 좌석을 모두 돌림 |
 | `status` | VARCHAR2(10) | NN | 시스템 | PLANNED / OPEN / CLOSED |  |
 
 **관계** [`train_run`](#train-run).sale_event_id → 이 테이블 · [`purchase_limit_policy`](#purchase-limit-policy).sale_event_id → 이 테이블 · [`cancel_fee_policy`](#cancel-fee-policy).sale_event_id → 이 테이블
@@ -600,6 +612,15 @@ Oracle
 | seatmap.abuse_window_sec | 60 | 1 | NUMBER | 거절을 세는 시간 창(초) |
 | seatmap.cooldown_sec | 60 | 1 | NUMBER | 잠금 시간(초) |
 | reservation.hold_release_grace_sec | 10 | 1 | NUMBER | 선점·제안 키를 결제 마감 뒤 이만큼 더 붙잡아, 스캐너가 대기자 제안으로 넘길 때까지 일반 사용자가 못 잡게 함. 0이면 마감 즉시 열림(예전 동작) |
+| group.min_size | 11 | 1 | NUMBER | 단체 최소 인원 (같은 구간, 어린이 포함) |
+| group.max_size | 200 | 1 | NUMBER | 단체 신청 1건 최대 인원 |
+| group.quota_rate | 0.05 | 1 | NUMBER | 운행별 단체 할당석 비율 (행사 운행은 sale_event.group_quota_rate 우선) |
+| group.quota_release_days | 30 | 1 | NUMBER | 출발 며칠 전까지 안 쓰인 할당석을 일반 판매로 돌릴지 |
+| group.no_phone_warn_rate | 0.3 | 1 | NUMBER | 휴대폰 없음 탑승자 비율이 이 값을 넘으면 관리자 경고 |
+| group.pay_deadline_days | 3 | 1 | NUMBER | 승인 후 결제 기한(일). 넘기면 배정 취소·할당석 반납 |
+| group.roster_change_days | 7 | 1 | NUMBER | 예약 후 명단 변경 가능 기간(일), 1회 |
+| group.discount_rate | 0.10 | 1 | NUMBER | 단체 할인율 (어른 운임만, 중복 할인 없음) |
+| group.discount_within_days | 30 | 1 | NUMBER | 출발 며칠 이내 신청분에 할인 적용 |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -707,6 +728,9 @@ erDiagram
   model_score {
     ObjectId _id PK
   }
+  group_booking {
+    NUMBER group_id PK
+  }
   member ||--o{ payment_method : "member_id"
   member ||--o{ member_device : "member_id"
   member ||--o{ reservation : "member_id"
@@ -727,6 +751,7 @@ erDiagram
   member |o--o{ member_push_token : "member_id"
   member |o--o{ password_reset_token : "member_id"
   member ||--o{ model_score : "member_id"
+  member ||--o{ group_booking : "rep_member_id"
 ```
 
 <a id="member"></a>
@@ -753,7 +778,7 @@ Oracle
 
 > **제약·비고** ci_hash는 UNIQUE를 걸지 않음. 다계정 어뷰저를 재현하려면 같은 CI가 여러 계정에 있어야 함. · ci_hash는 변경 불가 (본인인증 결과가 바뀌면 신규 회원으로 처리). 그래서 reservation.ci_hash 비정규화가 안전함 · CREATE SEQUENCE member_seq; · CREATE INDEX ix_member_ci_hash ON member (ci_hash); · CHECK(member_type IN ('MEMBER', 'GUEST')) · 게스트: 같은 CI는 게스트 행 하나를 다시 쓴다(다계정으로 잡히지 않게) · email은 guest-{member_id}@guest.invalid(NOT NULL·UNIQUE 유지) · member_credential 행 없음 · 로그인 세션(auth_session)은 회원처럼 만든다(행동 로그·녹화가 빠지지 않게) · 신규 계정 점수(NEW_ACCOUNT)도 회원과 같게 · 게스트 만료 배치는 guest_expires_at < 지금인 게스트의 이름·연락처를 지움 (게스트 수가 적어 인덱스 없이 오프피크 풀스캔)
 
-**관계** [`payment_method`](#payment-method).member_id → 이 테이블 · [`member_device`](#member-device).member_id → 이 테이블 · [`reservation`](#reservation).member_id → 이 테이블 · [`waitlist`](#waitlist).member_id → 이 테이블 · [`notification`](#notification).member_id → 이 테이블 · [`behavior_log`](#behavior-log).member_id → 이 테이블 · [`queue_log`](#queue-log).member_id → 이 테이블 · [`synthetic_label`](#synthetic-label).member_id → 이 테이블 · [`member_credential`](#member-credential).member_id → 이 테이블 · [`identity_verification`](#identity-verification).member_id → 이 테이블 · [`auth_session`](#auth-session).member_id → 이 테이블 · [`login_attempt`](#login-attempt).member_id → 이 테이블 · [`replay_session`](#replay-session).member_id → 이 테이블 · [`case_session`](#case-session).member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).from_member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).to_member_id → 이 테이블 · [`member_push_token`](#member-push-token).member_id → 이 테이블 · [`password_reset_token`](#password-reset-token).member_id → 이 테이블 · [`model_score`](#model-score).member_id → 이 테이블
+**관계** [`payment_method`](#payment-method).member_id → 이 테이블 · [`member_device`](#member-device).member_id → 이 테이블 · [`reservation`](#reservation).member_id → 이 테이블 · [`waitlist`](#waitlist).member_id → 이 테이블 · [`notification`](#notification).member_id → 이 테이블 · [`behavior_log`](#behavior-log).member_id → 이 테이블 · [`queue_log`](#queue-log).member_id → 이 테이블 · [`synthetic_label`](#synthetic-label).member_id → 이 테이블 · [`member_credential`](#member-credential).member_id → 이 테이블 · [`identity_verification`](#identity-verification).member_id → 이 테이블 · [`auth_session`](#auth-session).member_id → 이 테이블 · [`login_attempt`](#login-attempt).member_id → 이 테이블 · [`replay_session`](#replay-session).member_id → 이 테이블 · [`case_session`](#case-session).member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).from_member_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).to_member_id → 이 테이블 · [`member_push_token`](#member-push-token).member_id → 이 테이블 · [`password_reset_token`](#password-reset-token).member_id → 이 테이블 · [`model_score`](#model-score).member_id → 이 테이블 · [`group_booking`](#group-booking).rep_member_id → 이 테이블
 
 <a id="payment-method"></a>
 #### `payment_method` 결제 수단
@@ -876,6 +901,9 @@ erDiagram
   app_policy_history {
     NUMBER history_id PK
   }
+  group_booking {
+    NUMBER group_id PK
+  }
   admin_user ||--o{ admin_action : "admin_id"
   auth_session |o--o{ behavior_log : "session_id"
   auth_session |o--o{ queue_log : "session_id"
@@ -897,6 +925,7 @@ erDiagram
   admin_user |o--o{ app_policy : "updated_by"
   member |o--o{ password_reset_token : "member_id"
   admin_user |o--o{ app_policy_history : "changed_by"
+  admin_user |o--o{ group_booking : "approved_by"
 ```
 
 <a id="member-credential"></a>
@@ -1014,7 +1043,7 @@ Oracle
 | `status` | VARCHAR2(10) | NN | 시스템 | ACTIVE / DISABLED |  |
 | `last_login_at` | TIMESTAMP |  | 시스템 | 마지막 로그인 |  |
 
-**관계** [`admin_action`](#admin-action).admin_id → 이 테이블 · [`auth_session`](#auth-session).admin_id → 이 테이블 · [`login_attempt`](#login-attempt).admin_id → 이 테이블 · [`suspicious_case`](#suspicious-case).assignee_id → 이 테이블 · [`case_marker`](#case-marker).created_by → 이 테이블 · [`evidence_snapshot`](#evidence-snapshot).frozen_by → 이 테이블 · [`replay_access_log`](#replay-access-log).admin_id → 이 테이블 · [`app_policy`](#app-policy).updated_by → 이 테이블 · [`app_policy_history`](#app-policy-history).changed_by → 이 테이블
+**관계** [`admin_action`](#admin-action).admin_id → 이 테이블 · [`auth_session`](#auth-session).admin_id → 이 테이블 · [`login_attempt`](#login-attempt).admin_id → 이 테이블 · [`suspicious_case`](#suspicious-case).assignee_id → 이 테이블 · [`case_marker`](#case-marker).created_by → 이 테이블 · [`evidence_snapshot`](#evidence-snapshot).frozen_by → 이 테이블 · [`replay_access_log`](#replay-access-log).admin_id → 이 테이블 · [`app_policy`](#app-policy).updated_by → 이 테이블 · [`app_policy_history`](#app-policy-history).changed_by → 이 테이블 · [`group_booking`](#group-booking).approved_by → 이 테이블
 
 <a id="password-reset-token"></a>
 #### `password_reset_token` 비밀번호 재설정 (확장)
@@ -1087,6 +1116,23 @@ erDiagram
     NUMBER scope_ref_id PK
     VARCHAR2 ci_hash PK
   }
+  group_fee_policy {
+    NUMBER fee_policy_id PK
+  }
+  group_booking {
+    NUMBER group_id PK
+    NUMBER rep_member_id FK
+    NUMBER run_id FK
+    VARCHAR2 from_station_id FK
+    VARCHAR2 to_station_id FK
+    NUMBER reservation_id FK
+    NUMBER approved_by FK
+  }
+  group_passenger {
+    NUMBER group_id PK, FK
+    NUMBER passenger_no PK
+    NUMBER seat_id FK
+  }
   train_run {
     NUMBER run_id PK
   }
@@ -1111,9 +1157,12 @@ erDiagram
   sale_event {
     NUMBER sale_event_id PK
   }
+  admin_user {
+    NUMBER admin_id PK
+  }
   train_run ||--o{ seat_inventory : "run_id"
   seat ||--o{ seat_inventory : "seat_id"
-  reservation ||--o{ seat_inventory : "reservation_id"
+  reservation |o--o{ seat_inventory : "reservation_id"
   member ||--o{ reservation : "member_id"
   train_run ||--o{ reservation : "run_id"
   station ||--o{ reservation : "from_station_id"
@@ -1131,6 +1180,14 @@ erDiagram
   reservation |o--o{ ticket_transfer : "reservation_id"
   member |o--o{ ticket_transfer : "from_member_id"
   member |o--o{ ticket_transfer : "to_member_id"
+  member ||--o{ group_booking : "rep_member_id"
+  train_run ||--o{ group_booking : "run_id"
+  station ||--o{ group_booking : "from_station_id"
+  station ||--o{ group_booking : "to_station_id"
+  reservation |o--o{ group_booking : "reservation_id"
+  admin_user |o--o{ group_booking : "approved_by"
+  group_booking ||--o{ group_passenger : "group_id"
+  seat |o--o{ group_passenger : "seat_id"
 ```
 
 <a id="seat-inventory"></a>
@@ -1146,11 +1203,11 @@ Oracle
 | `train_id` | NUMBER | NN | 시스템 | 좌석이 속한 열차 (= train_run.train_id) | 복합 FK 두 개로 다른 열차 좌석 판매를 DB가 차단 |
 | `seat_id` | NUMBER | PK, FK → seat | 시스템 | 좌석 |  |
 | `segment_no` | NUMBER(3) | PK | 시스템 | 구간 번호 (역 순번 i → i+1 = i) | 구간 단위 점유 |
-| `reservation_id` | NUMBER | FK, NN → reservation | 시스템 | 점유 예약 | 반환 시 이 예약 행만 삭제 |
-| `status` | VARCHAR2(10) | NN | 시스템 | HOLD / SOLD | 선점과 확정 구분 |
-| `hold_expires_at` | TIMESTAMP |  | 시스템 | HOLD 만료 시각 (SOLD면 null) | = reservation.pay_deadline_at 복사. Redis TTL이 끝난 뒤 남은 HOLD 행을 다른 사람이 이어받는 기준 |
+| `reservation_id` | NUMBER | FK → reservation | 시스템 | 점유 예약 (BLOCKED면 null) | 반환 시 이 예약 행만 삭제 |
+| `status` | VARCHAR2(10) | NN | 시스템 | HOLD / SOLD / BLOCKED | 선점과 확정 구분. BLOCKED = 단체 할당석으로 묶어 둔 좌석 |
+| `hold_expires_at` | TIMESTAMP |  | 시스템 | HOLD 만료 시각 (SOLD·BLOCKED면 null) | = reservation.pay_deadline_at 복사. Redis TTL이 끝난 뒤 남은 HOLD 행을 다른 사람이 이어받는 기준 |
 
-> **제약·비고** PK(run_id, seat_id, segment_no) · FK(train_id, seat_id) → seat(train_id, seat_id) · FK(run_id, train_id) → train_run(run_id, train_id) — 같은 대상의 단일 FK는 DDL에서 생략, 편집기 선만 유지 · CHECK((status = 'HOLD' AND hold_expires_at IS NOT NULL) OR (status = 'SOLD' AND hold_expires_at IS NULL)) · 인덱스는 PK·복합 FK만 (hold_expires_at으로 찾는 쿼리가 없어 부분 인덱스를 두지 않음) · 확장 과제를 안 하면 segment_no = 0 · 예약 하나의 행 수 K = seat_count × 구간 수 (concurrency.md §2.4) · 절차: concurrency.md §2 선점, §3 재선점(이전 예약의 HOLD 행 전부 삭제), §5 확정(K행 SOLD), §7 해제, §8 취소
+> **제약·비고** PK(run_id, seat_id, segment_no) · FK(train_id, seat_id) → seat(train_id, seat_id) · FK(run_id, train_id) → train_run(run_id, train_id) — 같은 대상의 단일 FK는 DDL에서 생략, 편집기 선만 유지 · CHECK((status = 'HOLD' AND hold_expires_at IS NOT NULL AND reservation_id IS NOT NULL) OR (status = 'SOLD' AND hold_expires_at IS NULL AND reservation_id IS NOT NULL) OR (status = 'BLOCKED' AND hold_expires_at IS NULL AND reservation_id IS NULL)) · 인덱스는 PK·복합 FK만 (hold_expires_at으로 찾는 쿼리가 없어 부분 인덱스를 두지 않음) · 확장 과제를 안 하면 segment_no = 0 · 예약 하나의 행 수 K = seat_count × 구간 수 (concurrency.md §2.4) · 절차: concurrency.md §2 선점, §3 재선점(이전 예약의 HOLD 행 전부 삭제), §5 확정(K행 SOLD), §7 해제, §8 취소 · BLOCKED(단체 할당석): 판매 오픈 때 group_quota_rate만큼 같은 객차 연속 좌석에 미리 만든다. 행이 이미 있으므로 일반 선점(§2)은 그대로 실패해 자동으로 빠진다. 단체 배정 = BLOCKED → HOLD(단체 예약 id). 단체 예약이 만료·취소되면 일반 좌석처럼 §7·§8로 풀린다(BLOCKED로 되돌리지 않음). 출발 1개월 전 미사용 BLOCKED 행은 삭제해 일반 판매로 돌린다 (concurrency.md §18)
 
 **관계** run_id → [`train_run`](#train-run) · seat_id → [`seat`](#seat) · reservation_id → [`reservation`](#reservation)
 
@@ -1169,11 +1226,11 @@ Oracle
 | `run_id` | NUMBER | FK, NN → train_run | 생성 | 운행 |  |
 | `from_station_id` | VARCHAR2(10) | FK, NN → station | 공공 | 승차역 |  |
 | `to_station_id` | VARCHAR2(10) | FK, NN → station | 공공 | 하차역 |  |
-| `seat_count` | NUMBER(2) | NN | 생성 | 예약 매수 | 1회 구매 매수 위험 신호 |
+| `seat_count` | NUMBER(3) | NN | 생성 | 예약 매수 | 1회 구매 매수 위험 신호. 단체는 최대 200명이라 3자리 |
 | `total_amount` | NUMBER(10) | NN | 시스템 | 예약 시점 금액 | 운임 변경과 무관하게 보존 |
 | `status` | VARCHAR2(16) | NN | 시스템 | HOLD / PAYMENT_PENDING / CONFIRMED / CANCELED / EXPIRED | 상태 머신 |
 | `channel` | VARCHAR2(10) | NN | 생성 | WEB / APP | 채널별 트래픽 분석 |
-| `source` | VARCHAR2(10) | NN | 시스템 | NORMAL / WAITLIST | 취소표 재배정 여부 |
+| `source` | VARCHAR2(10) | NN | 시스템 | NORMAL / WAITLIST / GROUP | 취소표 재배정 여부, 단체 예매 구분 |
 | `held_at` | TIMESTAMP | NN | 시스템 | 좌석 선점 시각 |  |
 | `pay_deadline_at` | TIMESTAMP | NN | 시스템 | 결제 기한 (마감 시각의 원천) | seat_inventory.hold_expires_at, seat:hold TTL, saga_instance.timeout_at, waitlist.offer_deadline_at은 이 값을 한 번 계산해 복사. 바꿀 땐 다섯 곳을 같은 트랜잭션·같은 값으로 |
 | `confirmed_at` | TIMESTAMP |  | 시스템 | 확정 시각 | 구매→취소 시간 계산 시작점 |
@@ -1183,7 +1240,7 @@ Oracle
 
 > **제약·비고** CREATE INDEX ix_resv_hold_due ON reservation (CASE WHEN status = 'HOLD' THEN pay_deadline_at END); HOLD 만료 스캐너용 (조회도 같은 CASE 식, concurrency.md §6.1). 결제 중 예약은 payment.next_check_at으로 따로 조회 · UNIQUE(member_id, idempotency_key) · 마감 시각 원천 = pay_deadline_at (복사본 4곳은 §0.2, 앱 시계로 계산 §0.7) · 결제 시작 연장은 GREATEST로 늘리기만 (§4) · 네이티브 UPDATE는 updated_at·version 갱신 (§0.3) · 결제 실패는 별도 상태 없이 EXPIRED (§5.2) · from·to 역은 운행의 정차역이고 from 순번 < to 순번 (애플리케이션 검증) · 절차: concurrency.md §1~§8 · CREATE SEQUENCE reservation_seq CACHE 100;
 
-**관계** member_id → [`member`](#member) · run_id → [`train_run`](#train-run) · from_station_id → [`station`](#station) · to_station_id → [`station`](#station) · [`seat_inventory`](#seat-inventory).reservation_id → 이 테이블 · [`reservation_seat`](#reservation-seat).reservation_id → 이 테이블 · [`reservation_history`](#reservation-history).reservation_id → 이 테이블 · [`payment`](#payment).reservation_id → 이 테이블 · [`cancellation`](#cancellation).reservation_id → 이 테이블 · [`saga_instance`](#saga-instance).reservation_id → 이 테이블 · [`waitlist`](#waitlist).offered_reservation_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).reservation_id → 이 테이블
+**관계** member_id → [`member`](#member) · run_id → [`train_run`](#train-run) · from_station_id → [`station`](#station) · to_station_id → [`station`](#station) · [`seat_inventory`](#seat-inventory).reservation_id → 이 테이블 · [`reservation_seat`](#reservation-seat).reservation_id → 이 테이블 · [`reservation_history`](#reservation-history).reservation_id → 이 테이블 · [`payment`](#payment).reservation_id → 이 테이블 · [`cancellation`](#cancellation).reservation_id → 이 테이블 · [`saga_instance`](#saga-instance).reservation_id → 이 테이블 · [`waitlist`](#waitlist).offered_reservation_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).reservation_id → 이 테이블 · [`group_booking`](#group-booking).reservation_id → 이 테이블
 
 <a id="reservation-seat"></a>
 #### `reservation_seat` 예약 좌석
@@ -1347,6 +1404,89 @@ CI별 보유 매수. 매수 제한의 최종 판정을 조건부 UPDATE 한 번�
 | `seat_count` | NUMBER(3) | NN | 시스템 | 현재 보유 매수 | 조건부 UPDATE로 한도 초과 차단 |
 
 > **제약·비고** CHECK(seat_count >= 0) · 증가는 reservation INSERT와 같은 트랜잭션, 감소는 예약 상태 UPDATE가 1행일 때만, 한 트랜잭션의 카운터 행은 (scope, scope_ref_id, ci_hash) 정렬 순서로 갱신, sale_event_id가 NULL이면 PER_HOLIDAY 미적용 · 절차: concurrency.md §10 · PER_DAY의 scope_ref_id는 구매일 YYYYMMDD 숫자. 증가는 선점 시각(앱 시계)의 날짜, 감소는 그 예약의 created_at 날짜를 씁니다 — 자정을 넘겨 만료·취소되는 예약이 다른 날 카운터를 깎지 않게 하려는 것입니다
+
+<a id="group-fee-policy"></a>
+#### `group_fee_policy` 단체 위약금 정책
+
+Oracle
+
+단체승차권 반환 위약금 구간 (코레일 현행). 개인 취소 수수료(cancel_fee_policy)와 계산 규칙이 달라 따로 둔다.
+
+| 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
+|---|---|---|---|---|---|
+| `fee_policy_id` | NUMBER | PK | 생성 |  |  |
+| `min_minutes_before` | NUMBER |  | 생성 | 구간 시작(분, 음수 = 출발 후) |  |
+| `max_minutes_before` | NUMBER |  | 생성 | 구간 끝(분, 음수 = 출발 후) |  |
+| `fee_rate` | NUMBER(4,3) |  | 생성 | 위약금 비율 |  |
+| `fixed_amount` | NUMBER(10) |  | 생성 | 1인당 고정 위약금(원) | 출발 2일 전까지 1인 400원 |
+| `description` | VARCHAR2(100) |  | 생성 | 관리자 화면 표시용 설명 |  |
+
+> **제약·비고** 구간은 [min, max) 반열림, null이면 그쪽 한도 없음 · 분은 출발까지 남은 분, 음수는 출발 후 경과 분 · 구간이 겹치면 안 됨 · fixed_amount가 있으면 1인당 고정 금액, 없으면 운임 × fee_rate · 일부 환불은 줄어든 좌석에만 부과 · 개인 취소 계산기는 이 표를 읽지 않음
+
+**예시 데이터** (팀 확정 전 예시값)
+
+| fee_policy_id | min_minutes_before | max_minutes_before | fee_rate | fixed_amount | description |
+|---|---|---|---|---|---|
+| 1 | 2880 | null | null | 400 | 출발 2일 전까지 1인 400원 |
+| 2 | 0 | 2880 | 0.1 | null | 1일 전 ~ 출발 전 10% |
+| 3 | -20 | 0 | 0.15 | null | 출발 후 20분까지 15% |
+| 4 | -60 | -20 | 0.4 | null | 출발 후 20~60분 40% |
+| 5 | null | -60 | 0.7 | null | 출발 후 60분 ~ 도착 70% |
+
+<a id="group-booking"></a>
+#### `group_booking` 단체 신청
+
+Oracle
+
+여행사 단체 예매 신청 (코레일 단체승차권 기준: 같은 구간 11명 이상). 대표자 1명이 전화 인증하고 일괄 결제한다. 매크로 신호가 없으면 자동 승인, 승인되면 단체 할당석에서 붙여 배정해 reservation(source=GROUP) 한 건을 만든다. 할당석이 모자라면 남은 일반 좌석에서 선착순으로 이어 배정한다 (대기열은 거치지 않고, 대표자 전화 인증·매크로 신호 검사가 별도 관문, concurrency.md §18.3a).
+
+| 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
+|---|---|---|---|---|---|
+| `group_id` | NUMBER | PK | 시스템 |  |  |
+| `rep_member_id` | NUMBER | FK, NN → member | 시스템 | 대표자 회원 (전화 인증, 본인도 탑승) | 단체 신청 이력을 대표자 번호에 쌓아 반복 신청 탐지 |
+| `run_id` | NUMBER | FK, NN → train_run | 시스템 | 운행 |  |
+| `from_station_id` | VARCHAR2(10) | FK, NN → station | 공공 | 출발역 (전원 같음) | 같은 구간만 단체 허용 |
+| `to_station_id` | VARCHAR2(10) | FK, NN → station | 공공 | 도착역 (전원 같음) |  |
+| `passenger_count` | NUMBER(3) | NN | 생성 | 신청 인원 (대표자 포함) | 11~200 (app_policy group.min_size·max_size) |
+| `status` | VARCHAR2(12) | NN | 시스템 | REQUESTED / APPROVED / REJECTED / WITHDRAWN | 신청 단계만. 승인 뒤 결제·만료·취소는 reservation.status가 원천 |
+| `reservation_id` | NUMBER | FK → reservation | 시스템 | 배정된 단체 예약 (승인 전 null) | 좌석·결제·취소는 기존 예약 흐름 재사용 |
+| `approved_at` | TIMESTAMP |  | 시스템 | 승인 시각 |  |
+| `approved_by` | NUMBER | FK → admin_user | 시스템 | 승인 관리자 (null이면 자동 승인) | 매크로 신호 없으면 자동 승인 |
+| `discount_yn` | CHAR(1) | NN | 시스템 | 단체 할인 적용 여부 Y/N | 출발 1개월 이내 신청분만 10% |
+| `consent_at` | TIMESTAMP | NN | 생성 | 대표자가 탑승자 개인정보 제공 동의를 확인한 시각 | 남의 번호를 받는 근거 |
+| `roster_changed_at` | TIMESTAMP |  | 시스템 | 명단 변경 시각 (null이면 아직 변경 안 함) | 변경은 1회, 예약 후 group.roster_change_days 이내 |
+| `warn_no_phone_yn` | CHAR(1) | NN | 시스템 | 휴대폰 없음 비율 경고 Y/N | group.no_phone_warn_rate 초과 시 관리자 화면 표시 |
+| `warn_dup_phone_yn` | CHAR(1) | NN | 시스템 | 다른 단체와 번호 중복 경고 Y/N | 같은 명단을 돌려 쓰는 표팔이 탐지 |
+| `cancel_reason` | VARCHAR2(100) |  | 생성 | 반려·취소 사유 | 관리자 감사 추적 |
+
+> **제약·비고** CHECK(passenger_count BETWEEN 11 AND 200) · CHECK(status <> 'APPROVED' OR reservation_id IS NOT NULL) · 결제 기한은 reservation.pay_deadline_at 하나가 원천 (승인 때 승인 시각 + group.pay_deadline_days로 넣음). 만료·결제·취소는 기존 §4~§8 스캐너·절차가 처리하고, 이 표는 바꾸지 않음 · 락 순서: group_booking → reservation (concurrency.md §0.4-7) · 절차: concurrency.md §18 · 단체 표는 purchase_counter(개인 20매)에 넣지 않음 · 할인은 출발 group.discount_within_days 이내 신청분만, 어른 운임만
+
+**관계** rep_member_id → [`member`](#member) · run_id → [`train_run`](#train-run) · from_station_id → [`station`](#station) · to_station_id → [`station`](#station) · reservation_id → [`reservation`](#reservation) · approved_by → [`admin_user`](#admin-user) · [`group_passenger`](#group-passenger).group_id → 이 테이블
+
+<a id="group-passenger"></a>
+#### `group_passenger` 단체 탑승자
+
+Oracle
+
+단체 신청의 탑승자 명단. 대표자가 이름·전화번호를 입력하고, 각 번호로 승차권을 전달한다. 휴대폰이 없는 탑승자는 대표자 번호로 전달.
+
+| 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
+|---|---|---|---|---|---|
+| `group_id` | NUMBER | PK, FK → group_booking | 시스템 | 단체 신청 |  |
+| `passenger_no` | NUMBER(3) | PK | 시스템 | 명단 순번 |  |
+| `name_enc` | VARCHAR2(200) | NN | 생성 | 탑승자 이름 암호문 (AES-256-GCM) | 승차권 표시에 원문 필요 |
+| `phone_enc` | VARCHAR2(200) |  | 생성 | 탑승자 휴대폰 암호문 (휴대폰 없음이면 null) | 승차권 전달에 원문 필요 |
+| `enc_key_id` | VARCHAR2(20) | NN | 시스템 | name_enc·phone_enc 암호화 키 버전 |  |
+| `phone_hash` | VARCHAR2(64) |  | 생성 | 탑승자 휴대폰 HMAC | 여러 단체에 같은 번호 반복 탐지 |
+| `no_phone_yn` | CHAR(1) | NN | 생성 | 휴대폰 없음 여부 Y/N | Y면 대표자 번호로 승차권 전달 |
+| `passenger_type` | VARCHAR2(10) | NN | 생성 | ADULT / CHILD | 단체 할인은 어른만 |
+| `rep_yn` | CHAR(1) | NN | 시스템 | 대표자 본인 여부 Y/N |  |
+| `seat_id` | NUMBER | FK → seat | 시스템 | 배정 좌석 (배정 전 null) |  |
+| `status` | VARCHAR2(10) | NN | 시스템 | ACTIVE / REFUNDED | 일부 환불 시 해당 탑승자만 REFUNDED |
+
+> **제약·비고** PK(group_id, passenger_no) · CREATE INDEX ix_group_pax_phone ON group_passenger (phone_hash); · CHECK((no_phone_yn = 'Y' AND phone_hash IS NULL) OR (no_phone_yn = 'N' AND phone_hash IS NOT NULL)) · 같은 phone_hash가 다른 단체에 반복되면 group_booking.warn_dup_phone_yn = Y · 탑승자 번호는 인증하지 않으므로 개인 20매 카운터에 넣지 않음
+
+**관계** group_id → [`group_booking`](#group-booking) · seat_id → [`seat`](#seat)
 
 <a id="g-event"></a>
 ### 이벤트 신뢰성
@@ -2283,6 +2423,7 @@ Oracle
 
 | 기능 | 테이블·키 | 검증 |
 |---|---|---|
+| 단체 예매 (여행사) | group_booking, group_passenger, group_fee_policy, seat_inventory(BLOCKED), reservation(source = GROUP), group.* | 할당석 먼저, 모자라면 일반 좌석 선착순 (개인 선점과 중복 0) · 동시 승인 1건만 · 대표자 개인 카운터 변화 없음 (concurrency.md §18.8) |
 | 회원가입·모의 본인인증 | member, member_credential, identity_verification | 같은 CI 다계정 생성 테스트 |
 | 로그인 (Argon2id) | member_credential, auth_session, login_attempt, rate:login | verify_ms p95, 잠금 동작 |
 | 비회원(게스트) 예매 | member(member_type = GUEST, guest_expires_at), identity_verification, auth_session, rate:guest_lookup, guest.* | 같은 CI 게스트 행 재사용 · 회원과 같은 매수 제한 · 예약 번호 + 휴대폰 조회 시도 제한 |
@@ -2304,6 +2445,7 @@ Oracle
 
 | 시나리오 | 막는 장치 | 결과 |
 |---|---|---|
+| 단체 할당석에 일반 선점 | seat:hold 값 GROUP → seat_inventory BLOCKED 행 | 일반 선점은 실패, 반납 시각 뒤 일반 판매 |
 | 같은 좌석 동시 클릭 | seat:hold SET NX → seat_inventory PK | 한 명만 성공 |
 | 구간이 다른 같은 좌석 | segment_no가 달라 PK 다름 | 둘 다 성공 (구간 재판매) |
 | 결제 버튼 연타 | UNIQUE(reservation_id, idempotency_key) | 첫 요청만 처리 |
@@ -2433,6 +2575,7 @@ Oracle
 | v33 | 비회원(게스트) 예매 (김성원 요청, 팀장 범위 확정): member.member_type(NULL = 회원, GUEST)·guest_expires_at, Redis rate:guest_lookup, app_policy guest.enabled(N)·retain_days_after_run(30)·lookup_rate_per_hour(10). 게스트도 CI 규칙 그대로. behavior_log 인덱스 { run_id, ts } 뺌 (쓰기 +12~18%) |
 | v34 | 마커 규칙 2개 (강다인 요청): case_marker.rule_code에 INHUMAN_STEP(사람 손으로 불가능한 단계 속도)·HEADLESS_HOLD(화면 녹화 없이 선점). MongoDB behavior_log.elapsed_ms(서버 처리 시간), replay_event.pointer(m·t·p·k). app_policy risk.rule.* 15행 (warning_threshold·inhuman_step·headless_hold·linear_mouse·no_search_entry_points, 코드 기본값과 같음) |
 | v35 | 좌석 조회·선점 속도 제한 (김성원 요청): app_policy seatmap.rate_burst(10)·rate_per_sec(1)·abuse_threshold(20)·abuse_window_sec(60)·cooldown_sec(60), Redis rate:seatmap·rate:seathold. 결제 기한이 지나 풀린 좌석도 대기자 우선 (A안): reservation.hold_release_grace_sec(10), seat:hold 만료 = pay_deadline_at + 유예 |
+| v36 | 단체 예매(여행사, 길동현 요청): 새 표 group_booking(신청 단계 REQUESTED / APPROVED / REJECTED / WITHDRAWN, 승인 뒤는 reservation.status가 원천)·group_passenger(탑승자 명단, 이름·휴대폰 암호문)·group_fee_policy(단체 위약금, cancel_fee_policy와 분리). seat_inventory.status에 BLOCKED(단체 할당석, 예약 없는 행), reservation.source에 GROUP, seat_count NUMBER(3), sale_event.group_quota_rate, app_policy group.* 9행. 절차는 concurrency.md §18 (할당석 먼저 + 모자라면 일반 좌석 선착순, 만료·취소는 일반 흐름, GROUP 예약은 매수 카운터 증감 없음 — §3 재선점 포함) |
 
 ## 참고 자료
 
