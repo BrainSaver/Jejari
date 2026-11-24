@@ -136,7 +136,7 @@ const GENH = [
   PH('humanmobile', '휴대폰 사용자 (터치만, 마우스 궤적 없음, 모바일 브라우저)', { rec: 'mobile', ua: MOBILE_UA }),
   PH('humankeyboard', '키보드로 쓰는 사람 (Tab·Enter, 클릭 좌표 0, 궤적 없음)', { rec: 'keyboard' }),
   PH('humanlink', '조회 없이 링크로 바로 줄 서기 (취소표 "예매하기"·공유 링크)', { searches: 0 }),
-  PH('humanfamily', '가족 3명 표를 한 컴퓨터에서 차례로 (같은 기기·같은 IP, 명의는 각자, 앞사람 결제 끝나고 5~20초 뒤 로그인)', { device: 'shared', ip: 'shared', start: 'chain', staggerMs: [5000, 20000], count: 3 }),
+  PH('humanfamily', '가족 3명 표를 한 컴퓨터에서 차례로 (같은 기기·같은 IP, 명의는 각자, 앞사람 결제 끝나고 30~90초 뒤 로그인 — 2차 진짜 사람 최소 31.7초)', { device: 'shared', ip: 'shared', start: 'chain', staggerMs: [30000, 90000], count: 3 }),
   PH('humannat', '회사·학교 같은 IP 뒤 6명이 오픈 순간 동시에 (기기는 각자)', { ip: 'shared', count: 6 }),
   PH('humancancel', '결제 뒤 1~2분 만에 날짜를 잘못 고른 걸 알고 취소', { cancelAfterPayMs: [60000, 120000] }),
   PH('humanslow', '천천히 고르는 사람 (날짜 4번 조회, 생각 3~10초)', { searches: 4, think: () => Math.min(20000, logn(5000, 0.5)) }),
