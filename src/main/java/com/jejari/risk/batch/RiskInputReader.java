@@ -316,6 +316,10 @@ public class RiskInputReader {
 		if (interval instanceof Number num) {
 			c.interval(num.longValue());
 		}
+		Date actedAt = d.getDate("ts");
+		if (actedAt != null && d.get("member_id") instanceof Number actor) {
+			c.actor(actor.longValue(), actedAt.toInstant()); // 기기 대상의 계정 전환 간격 (MULTI_ACCOUNT_SYNC)
+		}
 		String type = d.getString("event_type");
 		if (BehaviorType.VIEW_TRAIN.name().equals(type)) {
 			// 화면이 사람 조작 없이 스스로 부른 조회(meta.auto)는 사람이 직접 찾은 것이 아니다
@@ -350,7 +354,8 @@ public class RiskInputReader {
 		Date ts = d.getDate("ts");
 		if (ts != null && d.get("session_id") instanceof String sid) {
 			c.holdSession(sid, ts.toInstant());
-			c.holdStep(sid, ts.toInstant(), ts.toInstant().plusMillis(elapsed));
+			Object seats = d.get("meta") instanceof Document md && md.get("seatIds") instanceof List<?> l ? l : null;
+			c.holdStep(sid, ts.toInstant(), ts.toInstant().plusMillis(elapsed), seats);
 		}
 		Object member = d.get("member_id");
 		if (ts != null && member instanceof Number m) {

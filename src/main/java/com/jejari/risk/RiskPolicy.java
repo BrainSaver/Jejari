@@ -19,6 +19,7 @@ import java.util.Map;
  * @param cancelAfterPay       단시간 취소 수 → CANCEL_AFTER_PAY
  * @param multiAccountWindowSec 이 시간(초) 안에 선점한 서로 다른 계정 수를 센다
  * @param multiAccountSync     창 안의 최대 서로 다른 계정 수 → MULTI_ACCOUNT_SYNC
+ * @param accountSwitchSec     기기 대상: 직전 다른 계정의 마지막 행동에서 이 초 안에 행동한 계정만 동시 선점으로 센다
  * @param cancelRatioMinPurchases 취소 비율을 보려면 필요한 최소 구매 수 (1건 사고 1건 취소한 정상 사용자 보호)
  * @param cancelRatio          취소 비율 → HIGH_CANCEL_RATIO
  * @param lastMinuteMin        출발 전 이 시간(분) 이내 취소를 "출발 직전 취소"로 센다
@@ -41,7 +42,7 @@ public record RiskPolicy(
         long regularMinSamples, double regularMaxCv, int regularPoints, long statsMaxGapMs,
         Tier sameSeatRetry,
         long cancelAfterPayMin, Tier cancelAfterPay,
-        long multiAccountWindowSec, Tier multiAccountSync,
+        long multiAccountWindowSec, Tier multiAccountSync, long accountSwitchSec,
         long cancelRatioMinPurchases, Tier cancelRatio,
         long lastMinuteMin, Tier lastMinuteCancel,
         Tier bulkPurchase,
@@ -64,6 +65,7 @@ public record RiskPolicy(
         }
         positive(cancelAfterPayMin, "cancelAfterPayMin");
         positive(multiAccountWindowSec, "multiAccountWindowSec");
+        positive(accountSwitchSec, "accountSwitchSec");
         positive(cancelRatioMinPurchases, "cancelRatioMinPurchases");
         positive(lastMinuteMin, "lastMinuteMin");
         positive(newAccountDays, "newAccountDays");
@@ -115,6 +117,8 @@ public record RiskPolicy(
      * 등급: 경고 30 이상(규칙 하나가 MID로 걸린 수준), 위험 = caseThreshold 80 이상(케이스·결제 차단).
      * HEADLESS_HOLD 1 / 3: 사람은 화면으로만 선점하므로 한 번이라도 화면 없이 잡으면 의심 (녹화 장애 보호는 읽는 쪽).
      * NO_SEARCH_ENTRY 10 (LOW): 정상 경로로도 생겨 낮게.
+     * 계정 전환 3초: 기기(DEVICE) 대상의 MULTI_ACCOUNT_SYNC는 그 기기에서 다른 계정으로 3초 안에 바뀐 계정만 센다.
+     *   봇은 계정을 ms 단위로 오가고, 가족이 한 컴퓨터로 차례로 사면 로그아웃·로그인에 몇 초 이상 걸린다 (오탐 시험 humanfamily).
      * LINEAR_MOUSE 8 / 20: 로컬 실측(2026-11-23) botb 세션마다 17~29, botc·사람 0~1
      */
     public static RiskPolicy defaults() {
@@ -123,7 +127,7 @@ public record RiskPolicy(
                 30, 0.05, 15, 600_000,
                 new Tier(5, 20, 15, 30),
                 30, new Tier(2, 15, 5, 25),
-                60, new Tier(2, 30, 3, 40),
+                60, new Tier(2, 30, 3, 40), 3,
                 4, new Tier(0.5, 10, 0.8, 20),
                 180, new Tier(3, 10, 6, 15),
                 new Tier(20, 10, 40, 20),
@@ -150,6 +154,7 @@ public record RiskPolicy(
                 tier(p, "same_seat_retry", d.sameSeatRetry),
                 l(p, "cancel_after_pay_min", d.cancelAfterPayMin), tier(p, "cancel_after_pay", d.cancelAfterPay),
                 l(p, "multi_account_window_sec", d.multiAccountWindowSec), tier(p, "multi_account_sync", d.multiAccountSync),
+                l(p, "account_switch_sec", d.accountSwitchSec),
                 l(p, "cancel_ratio_min_purchases", d.cancelRatioMinPurchases), tier(p, "cancel_ratio", d.cancelRatio),
                 l(p, "last_minute_min", d.lastMinuteMin), tier(p, "last_minute_cancel", d.lastMinuteCancel),
                 tier(p, "bulk_purchase", d.bulkPurchase),

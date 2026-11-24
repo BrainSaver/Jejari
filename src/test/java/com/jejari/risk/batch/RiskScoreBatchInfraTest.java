@@ -178,8 +178,8 @@ class RiskScoreBatchInfraTest {
 		Instant t = Instant.now().minusSeconds(300);
 		mongo.getCollection("behavior_log").insertMany(List.of(
 				event("SEAT_HOLD", m1, null, device, t, null, 201, List.of(1L)),
-				event("SEAT_HOLD", m2, null, device, t.plusSeconds(5), null, 201, List.of(2L)),
-				event("SEAT_HOLD", m3, null, device, t.plusSeconds(9), null, 201, List.of(3L))));
+				event("SEAT_HOLD", m2, null, device, t.plusSeconds(1), null, 201, List.of(2L)),
+				event("SEAT_HOLD", m3, null, device, t.plusSeconds(2), null, 201, List.of(3L))));
 		dirty.mark(new RiskSubject(SubjectType.DEVICE, device));
 
 		batch.run();
@@ -188,6 +188,34 @@ class RiskScoreBatchInfraTest {
 				String.class, device);
 		assertThat(reasons).contains("MULTI_ACCOUNT_SYNC").contains("LINKED_ACCOUNTS");
 		assertThat(finalScore(SubjectType.DEVICE, device)).isEqualByComparingTo("50.00"); // 동시 선점 HIGH 40 + 연결 계정 MID 10(3계정)
+	}
+
+	/** 오탐 시험 humanfamily (2026-11-24): 가족 3명 표를 한 컴퓨터로 차례로 — 계정 전환에 3초 이상 걸리면 동시 선점이 아니다 */
+	@Test
+	void 한_기기로_가족_계정이_차례로_사면_동시_선점이_아니다() {
+		String device = hash();
+		Instant old = Instant.now().minus(30, ChronoUnit.DAYS);
+		List<Long> family = List.of(member(hash(), old), member(hash(), old), member(hash(), old));
+		Instant t = Instant.now().minusSeconds(300);
+		List<Document> docs = new ArrayList<>();
+		for (long m : family) {
+			jdbc.update("INSERT INTO member_device (device_hash, member_id, first_seen_at, last_seen_at) "
+					+ "VALUES (?, ?, SYSTIMESTAMP, SYSTIMESTAMP)", device, m);
+			docs.add(event("VIEW_TRAIN", m, null, device, t, null, 200, null));
+			docs.add(event("SEAT_HOLD", m, null, device, t.plusSeconds(6), null, 201, List.of(m)));
+			docs.add(event("PAY", m, null, device, t.plusSeconds(12), null, 200, null));
+			t = t.plusSeconds(20); // 결제 8초 뒤 다음 사람이 로그인해 조회
+		}
+		mongo.getCollection("behavior_log").insertMany(docs);
+		dirty.mark(new RiskSubject(SubjectType.DEVICE, device));
+
+		batch.run();
+
+		String reasons = jdbc.queryForObject("SELECT reasons FROM risk_score WHERE subject_type = 'DEVICE' AND subject_hash = ?",
+				String.class, device);
+		assertThat(reasons).doesNotContain("MULTI_ACCOUNT_SYNC").contains("LINKED_ACCOUNTS"); // 연결 계정 점수만
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM suspicious_case WHERE subject_hash = ?", Integer.class, device))
+				.isZero();
 	}
 
 	// ------------------------------------------------------------ Oracle 신호

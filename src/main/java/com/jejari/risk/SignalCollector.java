@@ -3,9 +3,13 @@ package com.jejari.risk;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 이벤트를 하나씩 흘려 넣어 {@link RiskSignals}를 만든다. MongoDB 커서·Oracle 결과를 그대로 넣으면 된다.
@@ -56,6 +60,14 @@ public final class SignalCollector {
     private Instant lastHoldTs;
     private long maxSync;
 
+    // 기기 대상: 계정 전환 간격 (가족이 한 컴퓨터로 차례로 사는 경우를 다계정 봇과 가르기)
+    /** 빠른 전환으로 표시해 두는 계정 수 상한 */
+    static final int MAX_SWITCH_MEMBERS = 10_000;
+    private Long lastActor;
+    private Instant lastActorTs;
+    private final Set<Long> quickSwitchMembers = new HashSet<>();
+    private final List<Hold> deviceHolds = new ArrayList<>();
+
     private long linkedAccounts;
     private Long accountAgeDays;
     private long mechanicalMouse;
@@ -69,6 +81,11 @@ public final class SignalCollector {
     static final int MAX_STEP_SESSIONS = 5_000;
     private final Map<String, Instant> lastSeatView = new HashMap<>();
     private final Map<String, Instant> lastHold = new HashMap<>();
+    /** 세션마다 마지막 선점 요청 (받은 시각·좌석) — 같은 좌석 두 번 누름 판정용 */
+    private final Map<String, HoldReq> lastHoldReq = new HashMap<>();
+
+    private record HoldReq(Instant ts, Object seats) {
+    }
     private long inhumanSteps;
 
     private record Hold(Instant ts, long memberId) {
@@ -156,7 +173,49 @@ public final class SignalCollector {
         window.addLast(new Hold(t, memberId));
         windowMembers.merge(memberId, 1, Integer::sum);
         maxSync = Math.max(maxSync, windowMembers.size());
+        actor(memberId, t);
+        if (subjectType == SubjectType.DEVICE && deviceHolds.size() < MAX_WINDOW_EVENTS) {
+            deviceHolds.add(new Hold(t, memberId));
+        }
         return this;
+    }
+
+    /**
+     * 계정이 한 행동 (행동 로그 한 건, 시각 오름차순). 기기 대상에서 직전 다른 계정의 마지막 행동으로부터
+     * {@link RiskPolicy#accountSwitchSec()} 안에 행동하면 두 계정을 "빠른 전환"으로 표시한다.
+     * 봇은 계정을 ms 단위로 오가지만, 한 컴퓨터로 가족 표를 차례로 사면 로그아웃·로그인에 몇 초 이상 걸린다.
+     * 시각이 거꾸로 들어오면(서버 간 시계 차이) 빠른 전환으로 본다 (숨기는 쪽이 아니라 잡는 쪽).
+     */
+    public SignalCollector actor(long memberId, Instant ts) {
+        if (ts == null) return this;
+        if (lastActor != null && lastActor != memberId
+                && Duration.between(lastActorTs, ts).toMillis() < policy.accountSwitchSec() * 1000
+                && quickSwitchMembers.size() < MAX_SWITCH_MEMBERS) {
+            quickSwitchMembers.add(lastActor);
+            quickSwitchMembers.add(memberId);
+        }
+        lastActor = memberId;
+        lastActorTs = lastActorTs != null && ts.isBefore(lastActorTs) ? lastActorTs : ts;
+        return this;
+    }
+
+    /** 기기 대상의 동시 선점 계정 수: 빠른 전환으로 표시된 계정의 선점만 같은 창으로 센다 */
+    private long deviceSync() {
+        ArrayDeque<Hold> w = new ArrayDeque<>();
+        Map<Long, Integer> members = new HashMap<>();
+        long max = 0;
+        for (Hold h : deviceHolds) {
+            if (!quickSwitchMembers.contains(h.memberId())) continue;
+            Instant cutoff = h.ts().minus(Duration.ofSeconds(policy.multiAccountWindowSec()));
+            while (!w.isEmpty() && w.peekFirst().ts().isBefore(cutoff)) {
+                Hold old = w.pollFirst();
+                members.computeIfPresent(old.memberId(), (k, c) -> c == 1 ? null : c - 1);
+            }
+            w.addLast(h);
+            members.merge(h.memberId(), 1, Integer::sum);
+            max = Math.max(max, members.size());
+        }
+        return max;
     }
 
     /** 화면 녹화 한 세션의 마우스 분석 결과를 더한다 ({@link MouseMotion}). 세션마다 한 번 */
@@ -193,18 +252,34 @@ public final class SignalCollector {
         return this;
     }
 
-    /** 선점 시도 (처리 시간을 모를 때) */
+    /** 선점 시도 (처리 시간·좌석을 모를 때) */
     public SignalCollector holdStep(String sessionId, Instant ts) {
-        return holdStep(sessionId, ts, ts);
+        return holdStep(sessionId, ts, ts, null);
+    }
+
+    /** 선점 시도 (좌석을 모를 때) */
+    public SignalCollector holdStep(String sessionId, Instant ts, Instant readyAt) {
+        return holdStep(sessionId, ts, readyAt, null);
     }
 
     /**
      * 선점 시도: 같은 세션의 마지막 좌석표 응답에서 문턱보다 빨랐으면 센다.
+     * 같은 세션이 바로 전 선점과 <b>같은 좌석</b>을 문턱 안에 다시 보낸 요청은 선점 버튼 두 번 누름으로 보고 단계에서 뺀다
+     * (첫 요청이 뺏겨 좌석표가 새로 그려진 직후 두 번째 요청이 닿으면 "좌석표 → 선점"이 0.1초가 됨 — 오탐 시험 humandouble).
+     * 첫 요청은 그대로 재므로 숨는 길이 되지 않고, 연타 자체는 FAST_CLICK·SAME_SEAT_RETRY가 본다.
      *
      * @param ts      선점 요청을 받은 시각
      * @param readyAt 선점 응답을 다 보낸 시각 (다음 결제 단계의 출발점)
+     * @param seatKey 선점한 좌석 (behavior_log meta.seatIds). 모르면 null = 두 번 누름 판정 안 함
      */
-    public SignalCollector holdStep(String sessionId, Instant ts, Instant readyAt) {
+    public SignalCollector holdStep(String sessionId, Instant ts, Instant readyAt, Object seatKey) {
+        HoldReq prev = sessionId == null ? null : lastHoldReq.get(sessionId);
+        if (prev != null && seatKey != null && seatKey.equals(prev.seats()) && fast(prev.ts(), ts)) {
+            return this; // 같은 좌석 두 번 누름: 좌석표·선점 기준 시각을 건드리지 않음
+        }
+        if (sessionId != null && ts != null && (lastHoldReq.containsKey(sessionId) || lastHoldReq.size() < MAX_STEP_SESSIONS)) {
+            lastHoldReq.put(sessionId, new HoldReq(ts, seatKey));
+        }
         if (fast(lastSeatView.get(sessionId), ts)) {
             inhumanSteps++;
             lastSeatView.remove(sessionId); // 같은 좌석표 한 번으로 선점 연타를 여러 번 세지 않음 (연타는 FAST_CLICK 몫)
@@ -267,7 +342,7 @@ public final class SignalCollector {
                 maxSameSeatFailures,
                 purchaseCount, totalSeats, maxSingle,
                 userCancels, fastCancels, lastMinuteCancels, avgCancel,
-                linkedAccounts, maxSync, accountAgeDays, seatRetryFailures, mechanicalMouse,
+                linkedAccounts, subjectType == SubjectType.DEVICE ? deviceSync() : maxSync, accountAgeDays, seatRetryFailures, mechanicalMouse,
                 headlessHolds, queueEnters > 0 && searches == 0, inhumanSteps);
     }
 }

@@ -202,4 +202,101 @@ class SignalCollectorTest {
         assertThat(r.finalScore()).isEqualByComparingTo("0");
         assertThat(r.openCase()).isFalse();
     }
+
+    // ==================== 오탐 시험 보강 (2026-11-24) ====================
+
+    @Nested
+    class 가족_한_컴퓨터 {
+
+        private SignalCollector device() {
+            return new SignalCollector(policy, SubjectType.DEVICE, H, FROM);
+        }
+
+        /** 한 계정의 흐름: 조회 → 좌석표 → 선점 → 결제 (사람 속도), 끝난 시각을 돌려줌 */
+        private Instant flow(SignalCollector col, long member, Instant start) {
+            col.actor(member, start).actor(member, start.plusSeconds(4));
+            col.seatHold(start.plusSeconds(8), member);
+            col.actor(member, start.plusSeconds(12));
+            return start.plusSeconds(12);
+        }
+
+        @Test
+        void 차례로_로그인해_사면_기기_동시_선점이_아니다() {
+            SignalCollector col = device();
+            Instant end1 = flow(col, 1, NOW);
+            Instant end2 = flow(col, 2, end1.plusSeconds(10)); // 로그아웃·로그인 10초
+            flow(col, 3, end2.plusSeconds(5));
+            assertThat(col.build().maxSyncAccounts()).isZero();
+        }
+
+        @Test
+        void 계정을_빠르게_오가며_선점하면_그대로_잡힌다() {
+            SignalCollector col = device();
+            for (long m = 1; m <= 3; m++) col.actor(m, NOW.plusMillis(m * 100)); // 세 계정이 함께 준비
+            col.seatHold(NOW.plusSeconds(1), 1).seatHold(NOW.plusSeconds(1).plusMillis(50), 2)
+                    .seatHold(NOW.plusSeconds(1).plusMillis(90), 3);
+            assertThat(col.build().maxSyncAccounts()).isEqualTo(3);
+        }
+
+        @Test
+        void 차례로_돌려도_전환이_3초_안이면_잡힌다() {
+            SignalCollector col = device();
+            Instant end1 = flow(col, 1, NOW);
+            flow(col, 2, end1.plusSeconds(1)); // 봇: 앞 계정이 끝나자마자
+            assertThat(col.build().maxSyncAccounts()).isEqualTo(2);
+        }
+
+        @Test
+        void 명의_대상은_그대로_창_안의_계정을_센다() {
+            RiskSignals s = c().seatHold(NOW, 1).seatHold(NOW.plusSeconds(30), 2).build();
+            assertThat(s.maxSyncAccounts()).isEqualTo(2);
+        }
+    }
+
+    @Nested
+    class 선점_버튼_두_번 {
+
+        @Test
+        void 첫_선점이_밀려_좌석표가_다시_그려진_직후_두_번째_요청은_세지_않는다() {
+            SignalCollector col = c();
+            Instant t = NOW;
+            for (int i = 0; i < 2; i++) {
+                col.seatView("s", t);
+                col.holdStep("s", t.plusSeconds(3), t.plusSeconds(3).plusMillis(30), java.util.List.of(10L + i)); // 사람 속도, 409
+                col.seatView("s", t.plusSeconds(3).plusMillis(60)); // 화면이 좌석표를 새로 받음
+                col.holdStep("s", t.plusSeconds(3).plusMillis(100), t.plusSeconds(3).plusMillis(120),
+                        java.util.List.of(10L + i)); // 같은 좌석 두 번째 클릭
+                t = t.plusSeconds(10);
+            }
+            assertThat(col.build().inhumanSteps()).isZero();
+        }
+
+        @Test
+        void 다른_좌석을_바로_누르면_센다() {
+            SignalCollector col = c();
+            col.seatView("s", NOW);
+            col.holdStep("s", NOW.plusSeconds(3), NOW.plusSeconds(3), java.util.List.of(1L));
+            col.seatView("s", NOW.plusSeconds(3).plusMillis(50));
+            col.holdStep("s", NOW.plusSeconds(3).plusMillis(100), NOW.plusSeconds(3).plusMillis(100), java.util.List.of(2L));
+            assertThat(col.build().inhumanSteps()).isEqualTo(1);
+        }
+
+        @Test
+        void 두_번_누름의_기준은_첫_요청이라_결제_단계는_첫_응답부터_잰다() {
+            SignalCollector col = c();
+            col.holdStep("s", NOW, NOW.plusMillis(20), java.util.List.of(1L));
+            col.holdStep("s", NOW.plusMillis(100), NOW.plusMillis(120), java.util.List.of(1L)); // 두 번째 (무시)
+            col.payStep("s", NOW.plusMillis(400)); // 첫 응답부터 0.38초 → 셈
+            assertThat(col.build().inhumanSteps()).isEqualTo(1);
+        }
+
+        @Test
+        void 좌석표를_보자마자_선점한_첫_요청은_두_번_눌러도_센다() {
+            SignalCollector col = c();
+            col.seatView("s", NOW);
+            col.holdStep("s", NOW.plusMillis(50), NOW.plusMillis(60), java.util.List.of(1L));
+            col.holdStep("s", NOW.plusMillis(120), NOW.plusMillis(130), java.util.List.of(1L));
+            assertThat(col.build().inhumanSteps()).isEqualTo(1);
+        }
+    }
 }

@@ -136,7 +136,7 @@ const GENH = [
   PH('humanmobile', '휴대폰 사용자 (터치만, 마우스 궤적 없음, 모바일 브라우저)', { rec: 'mobile', ua: MOBILE_UA }),
   PH('humankeyboard', '키보드로 쓰는 사람 (Tab·Enter, 클릭 좌표 0, 궤적 없음)', { rec: 'keyboard' }),
   PH('humanlink', '조회 없이 링크로 바로 줄 서기 (취소표 "예매하기"·공유 링크)', { searches: 0 }),
-  PH('humanfamily', '가족 3명 표를 한 컴퓨터에서 차례로 (같은 기기·같은 IP, 명의는 각자, 20~40초 간격)', { device: 'shared', ip: 'shared', start: 'stagger', count: 3 }),
+  PH('humanfamily', '가족 3명 표를 한 컴퓨터에서 차례로 (같은 기기·같은 IP, 명의는 각자, 앞사람 결제 끝나고 5~20초 뒤 로그인)', { device: 'shared', ip: 'shared', start: 'chain', staggerMs: [5000, 20000], count: 3 }),
   PH('humannat', '회사·학교 같은 IP 뒤 6명이 오픈 순간 동시에 (기기는 각자)', { ip: 'shared', count: 6 }),
   PH('humancancel', '결제 뒤 1~2분 만에 날짜를 잘못 고른 걸 알고 취소', { cancelAfterPayMs: [60000, 120000] }),
   PH('humanslow', '천천히 고르는 사람 (날짜 4번 조회, 생각 3~10초)', { searches: 4, think: () => Math.min(20000, logn(5000, 0.5)) }),
@@ -412,6 +412,14 @@ async function runProfile(p, count, runDate) {
       await buyOne(ctx, runDate);
     } catch (e) { ctx.errors.push(e.message); }
   };
+  if (p.start === 'chain') {
+    // 한 컴퓨터를 차례로: 앞사람이 결제까지 끝나면 staggerMs만큼 쉬고(로그아웃·로그인) 다음 사람 — 실제로 겹칠 수 없음
+    for (const [i, ctx] of ctxs.entries()) {
+      if (i > 0) await sleep(rand(...p.staggerMs));
+      await go(ctx, 0);
+    }
+    return ctxs;
+  }
   await Promise.all(ctxs.map(go));
   return ctxs;
 }
