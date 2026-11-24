@@ -436,8 +436,8 @@ SELECT payment_id, reservation_id, requested_at FROM payment
 2. `DELETE FROM seat_inventory WHERE reservation_id = :R AND status = 'SOLD'`
 3. `purchase_counter` 감소: §10.2. **확정 예약도 집계 대상이므로 감소합니다.**
 4. `cancellation` INSERT (`refund_status = 'REQUESTED'`, `resold_yn = 'N'`):
-   - `USER`: `cancel_fee_policy`에서 출발까지 남은 분으로 수수료를 정합니다. `refund_amount = 결제 금액 − cancel_fee`, `fee_policy_id`, `minutes_after_purchase`, `minutes_before_departure`를 채웁니다.
-   - `ADMIN`: 운영 사유 취소라 `cancel_fee = 0`, `refund_amount = 결제 금액`. 관리자와 사유는 `admin_action`에 남깁니다.
+   - `USER`: `cancel_fee_policy`에서 출발까지 남은 분으로 수수료를 정합니다. `refund_amount = 결제 금액 − cancel_fee`, `fee_policy_id`, `minutes_after_purchase`, `minutes_before_departure`를 채웁니다. **단체 예약(`reservation.source = 'GROUP'`)은 `group_fee_policy`로 계산하고 `fee_policy_id`는 NULL**입니다 (§18.6).
+   - `ADMIN`: 기본은 운영 사유 취소라 `cancel_fee = 0`, `refund_amount = 결제 금액`(면제). 관리자가 **면제하지 않음**(`waiveFee = false`, 매크로로 판정한 취소)을 고르면 `USER`와 같은 계산으로 수수료를 받습니다 (단체면 단체 위약금). 그 계산이 불가(출발 뒤 한도·도착 뒤·정책 없음)면 취소하지 않고 거절하며, 관리자는 면제로 다시 취소합니다. 관리자와 사유는 `admin_action`에 남깁니다.
 5. `reservation_history`(CONFIRMED → CANCELED, `actor_type = :actor`), outbox `RESERVATION_CANCELED`
 6. COMMIT
 
@@ -998,7 +998,12 @@ Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함�
 ### 18.6 취소 수수료 (다인님 취소 코드와 맞출 것)
 
 - 단체 위약금은 `group_fee_policy`(별도 표)에 있습니다. 개인용 `cancel_fee_policy`와 `CancelFeeCalculator`는 바꾸지 않습니다.
-- §8 확정 취소에서 `reservation.source = 'GROUP'`이면 `group_fee_policy`로 계산하는 분기가 필요합니다. 일부 환불(탑승자 일부만 취소)은 지금 §8이 예약 전체 취소만 다루므로 **§8 확장 과제**로 따로 정합니다.
+- §8 확정 취소에서 `reservation.source = 'GROUP'`이면 `group_fee_policy`로 계산합니다 (`GroupFeeCalculator`, 분기는 `ReservationQueryService.cancelInfo` 한 곳 — 미리보기·사용자 취소·관리자 유료 취소가 모두 이 계산을 씀).
+  - 남은 분 m(출발 후는 음수)이 들어가는 `[min, max)` 구간 하나. 좌석(탑승자)마다 `fixed_amount`가 있으면 그 금액(출발 2일 전까지 1인 400원), 아니면 좌석 금액 × `fee_rate`(원 미만 버림). 좌석 금액을 넘지 않음
+  - 도착 시각이 지나면 취소 불가. 구간이 없거나 겹치면 취소 불가(fail-closed)
+  - `cancellation.fee_policy_id`는 `cancel_fee_policy` FK라 단체는 NULL (어느 구간이었는지는 `minutes_before_departure`로 다시 알 수 있음)
+- 관리자 취소: 매크로로 판정한 취소는 위약금을 받고(`waiveFee = false`), 오탐이면 면제합니다(기본) — §8.1-4 `ADMIN`.
+- 일부 환불(탑승자 일부만 취소)은 지금 §8이 예약 전체 취소만 다루므로 **§8 확장 과제**로 따로 정합니다.
 
 ### 18.7 락 순서 (§0.4-7)
 

@@ -26,7 +26,8 @@ import com.jejari.reservation.ReservationCancelService.AdminCancelResponse;
 @RequestMapping("/api/v1/admin/reservations")
 public class AdminReservationController {
 
-	public record CancelRequest(String memo) {
+	/** @param waiveFee 위약금 면제 (없으면 true = 면제). 매크로로 판정해 위약금을 받을 때만 false */
+	public record CancelRequest(String memo, Boolean waiveFee) {
 	}
 
 	private final ReservationCancelService cancels;
@@ -39,6 +40,7 @@ public class AdminReservationController {
 	@PreAuthorize("hasAuthority('ADMIN_SUPERVISOR')")
 	public AdminCancelResponse cancel(@AuthenticationPrincipal AuthPrincipal me, @PathVariable long reservationId,
 			@RequestBody(required = false) CancelRequest body) {
-		return cancels.cancelByAdmin(me.actorId(), reservationId, body == null ? null : body.memo());
+		return cancels.cancelByAdmin(me.actorId(), reservationId, body == null ? null : body.memo(),
+				body == null || body.waiveFee() == null || body.waiveFee());
 	}
 }

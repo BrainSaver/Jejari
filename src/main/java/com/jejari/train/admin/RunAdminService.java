@@ -448,6 +448,9 @@ public class RunAdminService {
 					throw new BusinessException(TrainAdminErrorCode.RUN_NOT_SCHEDULED);
 				}
 				jdbc.update("DELETE FROM train_stop WHERE run_id = ?", runId);
+				// 단체 할당석(BLOCKED, 예약 없는 행)은 오픈 10분 전에 미리 생기므로 운행과 함께 지운다 (concurrency.md §18.1).
+				// 예약이 잡은 행(HOLD·SOLD)은 그대로 두어 FK가 막게 한다
+				jdbc.update("DELETE FROM seat_inventory WHERE run_id = ? AND status = 'BLOCKED'", runId);
 				jdbc.update("DELETE FROM train_run WHERE run_id = ?", runId);
 			});
 		} catch (DataIntegrityViolationException e) {

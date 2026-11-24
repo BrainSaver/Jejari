@@ -52,6 +52,26 @@ class QueueServiceTest extends QueueRedisSupport {
     }
 
     @Test
+    void 좌석_화면을_나가_이탈한_뒤_다시_줄을_서면_새_토큰과_새_시간을_받고_연장도_다시_된다() {
+        setPolicy("queue.pass_ttl_sec", "60");
+        setPolicy("queue.pass_extend_sec", "300");
+        queue.enter(1, RUN);
+        admitter.admit(RUN);
+        QueueStatus first = queue.extend(1, RUN); // 첫 입장에서 연장을 써 둔다
+
+        queue.leave(1, RUN); // 좌석 화면을 나감
+        QueueStatus again = queue.enter(1, RUN);
+        assertThat(again.state()).isEqualTo(QueueStatus.State.WAITING); // 바로 들어오지 않고 다시 줄을 선다
+        admitter.admit(RUN);
+        QueueStatus second = queue.status(1, RUN);
+
+        assertThat(second.state()).isEqualTo(QueueStatus.State.ADMITTED);
+        assertThat(second.passToken()).isNotEqualTo(first.passToken());
+        assertThat(second.passExpiresAt()).isBefore(first.passExpiresAt()); // 연장 전 기본 시간(60초)으로 새로 시작
+        assertThat(queue.extend(1, RUN).passExpiresAt()).isAfter(second.passExpiresAt().plusSeconds(290)); // 새 차례라 다시 연장 가능
+    }
+
+    @Test
     void 입장하지_않았거나_토큰이_없으면_연장할_수_없다() {
         queue.enter(1, RUN); // 대기 중 (토큰 없음)
         assertThatThrownBy(() -> queue.extend(1, RUN))
@@ -513,6 +533,24 @@ class QueueServiceTest extends QueueRedisSupport {
         queue.enter(1, RUN);
         queue.leave(1, 2002);
         assertThat(queue.status(1, RUN).rank()).isEqualTo(1);
+    }
+
+    @Test
+    void 운행을_몰라도_탈퇴하면_입장_자리와_명의_자리가_비어_같은_명의로_다시_줄설_수_있다() {
+        // 2026-11-24 2차 대회: 이메일을 잘못 쳐 가입한 계정을 탈퇴하고 같은 휴대폰(명의)으로 다시 가입했더니 REJECTED_DUPLICATE
+        members.register(new MemberIdentity(11, "ACTIVE", "ci-same", List.of(), List.of()));
+        members.register(new MemberIdentity(12, "ACTIVE", "ci-same", List.of(), List.of()));
+        queue.enter(11, RUN);
+        admitter.admit(RUN);
+        assertCode(() -> queue.enter(12, RUN), QueueErrorCode.QUEUE_DUPLICATED); // 같은 명의라 막힘
+
+        queue.leaveAny(11);
+
+        assertThat(redis.hasKey("queue:member:11")).isFalse();
+        assertThat(redis.opsForZSet().score("queue:active:" + RUN, "11")).isNull();
+        assertThat(redis.opsForZSet().score("queue:ci:ci-same", "11")).isNull();
+        assertThat(queue.enter(12, RUN).state()).isEqualTo(QueueStatus.State.WAITING);
+        queue.leaveAny(11); // 이미 비었으면 아무 일도 없다
     }
 
     // ---------- 동시성 ----------

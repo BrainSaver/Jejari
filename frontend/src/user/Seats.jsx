@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
-import { ApiError, get, post } from '../api/client.js';
+import { ApiError, del, get, post } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
 import { clearPass, loadPass, savePass } from '../lib/pass.js';
+import { uuid } from '../lib/uuid.js';
 import { useMember } from './useMember.js';
 
 /**
@@ -41,6 +42,23 @@ export default function Seats() {
   const left = useCountdown(pass?.expiresAt);
   const expired = !pass || left <= 0;
 
+  // 좌석 화면을 나가면(다른 메뉴·뒤로 가기·챗봇 버튼 등) 입장을 끝내고 줄에서 뺀다. 다시 예매하면 맨 뒤에 새로 줄을 서고
+  // 차례가 오면 좌석 고르는 시간도 새로 받는다. 나가도 토큰을 살려 두면 돌아왔을 때 줄 없이 들어오면서 시간은 이어지고,
+  // 반대로 줄 없이 시간만 새로 주면 나갔다 들어오기로 시간을 끝없이 늘릴 수 있어서다.
+  // 좌석을 잡아 결제로 가는 것은 나가는 게 아니다. 새로고침은 화면이 내려가지 않아(언마운트 없음) 그대로 이어진다.
+  // StrictMode(개발)는 붙였다 떼었다 다시 붙이므로, 바로 다시 붙으면 취소되게 한 틱 미룬다.
+  const toPay = useRef(false);
+  useEffect(() => {
+    clearTimeout(pendingLeave[runId]);
+    return () => {
+      if (toPay.current) return;
+      pendingLeave[runId] = setTimeout(() => {
+        clearPass(runId);
+        del(`/api/v1/runs/${runId}/queue/me`).catch(() => {});
+      }, 0);
+    };
+  }, [runId]);
+
   const [run, setRun] = useState(null);
   const [map, setMap] = useState(null);
   const [carNo, setCarNo] = useState(null);
@@ -51,6 +69,9 @@ export default function Seats() {
   const [people, setPeople] = useState({ ADULT: want.adult, CHILD: want.child, SENIOR: want.senior });
   const [picked, setPicked] = useState([]); // [{seatId, seatNo, carNo, grade}]
   const [notice, setNotice] = useState(null); // {kind:'taken'|'error'|'expired', text}
+  // 화면 가운데 작은 창 (2026-11-24 2차 대회 사람 참가 의견: 위쪽 알림은 좌석을 보느라 못 본다)
+  // {title, text, actions:[{label, primary, run}]}
+  const [popup, setPopup] = useState(null);
   // 좌석 조회·선점이 너무 잦아 서버가 429(SEATMAP_RATE_LIMITED)로 쉬라고 한 때: {sec: 남은 초, what: 'map'|'hold'}.
   // 자동으로 다시 보내지 않는다 (바로 다시 부르면 제한이 의미 없고 더 오래 쉬게 된다). 시간이 지나면 사람이 [다시 불러오기]를 누른다
   const [rest, setRest] = useState(null);
@@ -102,10 +123,22 @@ export default function Seats() {
       clearPass(runId);
       setNotice({ kind: 'expired' });
     } else if (code === 'SEAT_ALREADY_TAKEN') {
-      setNotice({ kind: 'taken', text: `방금 다른 분이 ${picked.map((p) => p.seatNo).join(', ')} 중 일부를 먼저 잡았어요. 다른 좌석을 고르거나, 나란히 빈 좌석을 대신 골라 드릴게요.` });
-      setLost(picked.map((p) => p.seatId));
+      // 서버는 어느 좌석인지 알려 주지 않는다 → 고른 좌석을 바로 "판매됨"으로 칠하고, 배치도를 다시 불러 실제 상태로 맞춘다
+      const ids = new Set(picked.map((p) => p.seatId));
+      const seatNos = picked.map((p) => `${p.carNo}-${p.seatNo}`).join(', ');
+      setMap((m) => (m ? { ...m, cars: m.cars.map((c) => ({ ...c, seats: c.seats.map((s) => (ids.has(s.seatId) ? { ...s, state: 'SOLD' } : s)) })) } : m));
+      setLost([...ids]);
       setTimeout(() => setLost([]), 1300);
       setPicked([]);
+      setNotice(null);
+      setPopup({
+        title: '이미 선택된 좌석이에요',
+        text: `방금 다른 분이 ${seatNos} ${picked.length > 1 ? '중 일부를' : '좌석을'} 먼저 잡았어요. 다른 좌석을 골라 주세요.`,
+        actions: [
+          { label: '나란히 빈 좌석 골라 주기', run: () => autoPickRef.current() },
+          { label: '직접 고르기', primary: true },
+        ],
+      });
       loadMap(true);
     } else {
       setNotice({ kind: 'error', text: MESSAGES[code] || e.message || '좌석을 잡지 못했어요.' });
@@ -143,8 +176,23 @@ export default function Seats() {
       setPicked(picked.filter((p) => p.seatId !== s.seatId));
     } else if (picked.length < total) {
       setPicked([...picked, { seatId: s.seatId, seatNo: s.seatNo, carNo: c.carNo, grade: c.grade }]);
+    } else if (total === 1) {
+      // 1명인데 다른 좌석을 누름: 바꿀지 묻는다
+      const now = picked[0];
+      setPopup({
+        title: '좌석을 바꿀까요?',
+        text: `1명이라 1석만 고를 수 있어요. ${now.carNo}-${now.seatNo} 대신 ${c.carNo}-${s.seatNo}로 바꿀까요?`,
+        actions: [
+          { label: '그대로 두기' },
+          { label: `${c.carNo}-${s.seatNo}로 바꾸기`, primary: true, run: () => setPicked([{ seatId: s.seatId, seatNo: s.seatNo, carNo: c.carNo, grade: c.grade }]) },
+        ],
+      });
     } else {
-      setNotice({ kind: 'error', text: `${total}명이라 ${total}석까지 고를 수 있어요. 바꾸려면 고른 좌석을 다시 눌러 빼 주세요.` });
+      setPopup({
+        title: `${total}석까지 고를 수 있어요`,
+        text: `${total}명이라 ${total}석을 이미 골랐어요. 바꾸려면 고른 좌석을 다시 눌러 뺀 뒤 새 좌석을 눌러 주세요.`,
+        actions: [{ label: '확인', primary: true }],
+      });
     }
   };
 
@@ -159,11 +207,14 @@ export default function Seats() {
     setPicked(seats.map((s) => ({ seatId: s.seatId, seatNo: s.seatNo, carNo: car.carNo, grade: car.grade })));
   };
 
+  const autoPickRef = useRef(autoPick);
+  autoPickRef.current = autoPick;
+
   const hold = async () => {
     if (picked.length !== total || busy) return;
     setBusy(true);
     setNotice(null);
-    idemKey.current = idemKey.current || crypto.randomUUID();
+    idemKey.current = idemKey.current || uuid();
     const types = TYPES.flatMap(([t]) => Array(people[t]).fill(t));
     const body = {
       runId: Number(runId),
@@ -180,6 +231,7 @@ export default function Seats() {
           continue;
         }
         clearPass(runId); // 좌석을 잡으면 입장 토큰은 다 쓴 것
+        toPay.current = true;
         navigate(`/pay/${r.reservationId}`, { state: { hold: r, picked, run, from, to } });
         return;
       }
@@ -276,6 +328,9 @@ export default function Seats() {
               </div>
             )}
             {pass && !expired && (
+              <p className="mut" style={{ order: 1, margin: 0, fontSize: 13 }}>다른 화면으로 나가면 입장이 끝나요. 다시 예매하면 맨 뒤에 새로 줄을 서고, 차례가 되면 시간을 새로 받아요.</p>
+            )}
+            {pass && !expired && (
               <button type="button" className={'btn sm' + (pass.extended ? ' off' : ' soft')} style={{ order: 1 }}
                 disabled={pass.extended || extending} onClick={extend}>
                 {extending ? <><span className="spinner" />늘리는 중…</> : pass.extended ? '시간을 이미 늘렸어요 (1회)' : '5분 더 쓰기 (1회만 가능)'}
@@ -325,7 +380,33 @@ export default function Seats() {
           </aside>
         </div>
       </main>
+      {popup && <Popup {...popup} onClose={() => setPopup(null)} />}
     </>
+  );
+}
+
+/** 화면 가운데 작은 창. 바깥을 누르거나 Esc면 닫힌다 (아무것도 안 함) */
+function Popup({ title, text, actions = [{ label: '확인', primary: true }], onClose }) {
+  const first = useRef(null);
+  useEffect(() => {
+    first.current?.focus();
+    const onKey = (e) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="dlg-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dlg pop" role="alertdialog" aria-modal="true" aria-labelledby="seat-pop-t" aria-describedby="seat-pop-d">
+        <h2 id="seat-pop-t">{title}</h2>
+        <p id="seat-pop-d">{text}</p>
+        <footer>
+          {actions.map((a, i) => (
+            <button key={a.label} ref={a.primary ? first : null} type="button" className={'pill' + (a.primary ? ' on' : '')}
+              onClick={() => { onClose(); a.run?.(); }}>{a.label}</button>
+          ))}
+        </footer>
+      </div>
+    </div>
   );
 }
 
@@ -445,6 +526,8 @@ function pickTogether(car, n) {
 const firstFreeCar = (m, grade) => (m.cars.find((c) => c.grade === (grade || 'GENERAL') && c.available > 0) || m.cars.find((c) => c.available > 0) || m.cars[0])?.carNo ?? null;
 
 // ------------------------------------------------------------ 시간
+
+const pendingLeave = {}; // runId → 미뤄 둔 이탈 타이머 (StrictMode 재마운트 때 취소)
 
 function useCountdown(expiresAt) {
   const calc = () => (expiresAt ? Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)) : 0);

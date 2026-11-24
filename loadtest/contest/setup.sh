@@ -53,6 +53,27 @@ echo "관리자 로그인 (${BASE_URL})"
 TOKEN=$(call POST /api/v1/admin/auth/login "{\"loginId\":\"${ADMIN_ID}\",\"password\":\"${ADMIN_PW}\"}" | val accessToken)
 [[ -n "$TOKEN" ]] || { echo "토큰을 받지 못했습니다"; exit 1; }
 
+# CONTEST_RUN_ID: 이미 있는 운행을 그대로 쓴다 (운행일을 미리 공지해 고정할 때. 2026-11-24 2차 대회는 2027-02-03 운행 1000002).
+# 행사·운행을 새로 만들지 않고, 판매 중인지만 확인한다. 참가자 데이터는 이메일 태그로 나뉘어 같은 운행을 써도 섞이지 않는다
+if [[ -n "${CONTEST_RUN_ID:-}" ]]; then
+  RUN=$(call GET "/api/v1/admin/runs/${CONTEST_RUN_ID}" "")
+  STATUS=$(printf '%s' "$RUN" | val status); RUN_DATE=$(printf '%s' "$RUN" | val runDate); EVENT_ID=$(printf '%s' "$RUN" | val saleEventId)
+  echo "이미 있는 운행을 씁니다: ${CONTEST_RUN_ID} (${RUN_DATE}, ${STATUS})"
+  if [[ "$STATUS" != "ON_SALE" ]]; then echo "판매 중이 아닙니다 (${STATUS})"; exit 1; fi
+  echo
+  echo "준비 끝. 대회 운행 ID = ${CONTEST_RUN_ID}  (행사 ${EVENT_ID}, ${RUN_DATE})"
+  exit 0
+fi
+
+# 같은 열차·같은 날 운행이 이미 있으면(리허설·테스트를 같은 날 여러 번) 하루씩 뒤로 미룬다.
+# 행사를 먼저 만들고 운행에서 실패하면 빈 행사가 남으니, 운행 목록으로 먼저 확인한다 (2026-11-24: 리허설 c1124c 뒤 테스트가 2027-02-02에서 막힘)
+for _ in $(seq 1 30); do
+  EXIST=$(call GET "/api/v1/admin/runs?from=${RUN_DATE}&to=${RUN_DATE}&trainId=${TRAIN_ID}" "")
+  [[ "$EXIST" =~ ^\[[[:space:]]*\]$ ]] && break
+  echo "  ${RUN_DATE}에는 열차 ${TRAIN_ID} 운행이 이미 있습니다 → 하루 뒤로"
+  DAYS=$((DAYS + 1)); RUN_DATE=$(kst "+${DAYS} days" +%F "${DAYS}")
+done
+
 echo "명절 행사 만들기: ${NAME} (${RUN_DATE})"
 EVENT=$(call POST /api/v1/admin/sale-events \
   "{\"name\":\"${NAME}\",\"holidayFrom\":\"${RUN_DATE}\",\"holidayTo\":\"${RUN_DATE}\",\"saleOpenAt\":\"${NOW}\",\"status\":\"OPEN\"}")

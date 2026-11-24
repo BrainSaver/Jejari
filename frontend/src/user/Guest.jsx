@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { formatPhone } from '../lib/format.js';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { get, guestEnter, post } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
@@ -76,7 +77,7 @@ export default function Guest() {
         <div className="field"><label htmlFor="gnm">이름</label><input id="gnm" autoComplete="name" value={who.name} onChange={(e) => setWho({ ...who, name: e.target.value })} required /></div>
         <div className="field">
           <label htmlFor="gph">휴대폰 번호</label>
-          <input id="gph" inputMode="tel" autoComplete="tel" placeholder="010-1234-5678" value={who.phone} onChange={(e) => setWho({ ...who, phone: e.target.value })} required />
+          <input id="gph" inputMode="tel" autoComplete="tel" maxLength={13} placeholder="010-1234-5678" value={who.phone} onChange={(e) => setWho({ ...who, phone: formatPhone(e.target.value) })} required />
           <span className="hint">끝이 0000이면 인증이 실패하도록 만든 시험 번호예요.</span>
         </div>
         <div className="field">

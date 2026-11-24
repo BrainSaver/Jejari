@@ -58,6 +58,9 @@ tasks.named('test') {
 // 테스트 중에는 알림 소비자·기한 임박 스캐너를 끕니다. 켜 두면 다른 테스트의 회원에게 알림 행이 생겨
 // 그 테스트가 끝날 때 회원을 지우다 FK 오류가 납니다. 알림 테스트는 처리 메서드를 직접 부릅니다.
 tasks.withType(Test).configureEach {
+	// 앱은 JejariApplication.main에서 Asia/Seoul로 고정하지만 테스트는 main을 거치지 않는다. PC 시간대가 UTC면(리눅스·CI·클라우드)
+	// TimeZoneVerifier가 "JVM=Z"로 컨텍스트를 못 띄워 통합 테스트가 전부 실패한다 (2026-11-24)
+	systemProperty 'user.timezone', 'Asia/Seoul'
 	systemProperty 'jejari.notification.consumer-enabled', 'false'
 	systemProperty 'jejari.notification.reminder-enabled', 'false'
 	// 데이터 놓침·밀림 지표(PipelineMetrics)도 끈다: 테스트 중 15초마다 Kafka AdminClient·outbox 집계가 돌면 로그만 시끄럽다

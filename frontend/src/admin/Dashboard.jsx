@@ -87,12 +87,14 @@ const CANCEL_HINT = {
   ADMIN_FORBIDDEN: 'SUPERVISOR만 강제 취소할 수 있어요.',
   RESERVATION_NOT_FOUND: '없는 예약 번호예요.',
   RESERVATION_NOT_CONFIRMED: '확정된 예약이 아니거나 이미 취소됐어요. 결제 전 예약은 기한이 지나면 스스로 풀려요.',
+  CANCEL_NOT_ALLOWED: '지금은 수수료를 계산할 수 없는 때예요(출발 뒤 한도·도착 뒤). 위약금 면제로 다시 취소해 주세요.',
 };
 
 function ForceCancel({ claims, onDone }) {
   const can = hasRole(claims, 'SUPERVISOR');
   const [rv, setRv] = useState('');
   const [memo, setMemo] = useState('');
+  const [waive, setWaive] = useState(true); // 기본 면제 (오탐·운영 사유). 매크로로 판정했을 때만 끔
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   // 시안의 "R-501233"처럼 붙여 넣어도 되게 숫자만 남긴다 (API 경로는 숫자 ID)
@@ -103,8 +105,9 @@ function ForceCancel({ claims, onDone }) {
     setError(null);
     setResult(null);
     try {
-      setResult(await post(`/api/v1/admin/reservations/${id}/cancel`, { memo: memo.trim() }));
+      setResult(await post(`/api/v1/admin/reservations/${id}/cancel`, { memo: memo.trim(), waiveFee: waive }));
       setMemo('');
+      setWaive(true);
       onDone?.();
     } catch (e) {
       const hint = CANCEL_HINT[e.code];
@@ -115,7 +118,7 @@ function ForceCancel({ claims, onDone }) {
   return (
     <>
       <h2 style={{ fontSize: 14.5 }}>예약 강제 취소</h2>
-      <p className="sub">확정된 예약을 수수료 0원·전액 환불로 취소해요. 사유는 admin_action에 남아요.</p>
+      <p className="sub">확정된 예약을 취소해요. 기본은 수수료 면제·전액 환불이고, 매크로로 판정했으면 면제를 끄고 사용자 취소와 같은 수수료(단체는 단체 위약금)를 받아요. 사유는 admin_action에 남아요.</p>
       {!can && <div className="alert amber">지금 권한({claims?.adm})으로는 강제 취소할 수 없어요. SUPERVISOR만 가능해요.</div>}
       <ErrorBox error={error} onClose={() => setError(null)} />
       {result && (
@@ -135,6 +138,10 @@ function ForceCancel({ claims, onDone }) {
           <span className="lbl">사유</span>
           <textarea rows={2} value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="예: 되팔이 확정 케이스 C-204 조치" />
           <span className="hint">5자 이상 ({memo.trim().length}자)</span>
+        </label>
+        <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={waive} onChange={(e) => setWaive(e.target.checked)} />
+          <span>수수료·위약금 면제 (오탐·운영 사유)</span>
         </label>
         <ConfirmButton className="btn wide" confirm={`한 번 더 누르면 예약 ${id || ''} 강제 취소`} onConfirm={go} disabled={!ready}>
           강제 취소

@@ -138,6 +138,23 @@ public class QueueService {
 		}
 	}
 
+	/**
+	 * 운행을 모를 때 (탈퇴 등): queue:member 값({runId}|…)에서 운행을 읽어 {@link #leave}와 같게 지운다.
+	 * 탈퇴한 계정의 대기 자리가 남으면 같은 명의(CI)로 다시 가입한 사람이 REJECTED_DUPLICATE로 몇 분 막혔다 (2026-11-24 2차 대회).
+	 */
+	public void leaveAny(long memberId) {
+		String v = redis.opsForValue().get(QueueKeys.member(memberId));
+		if (v == null) {
+			return;
+		}
+		int bar = v.indexOf('|');
+		try {
+			leave(memberId, Long.parseLong(bar > 0 ? v.substring(0, bar) : v));
+		} catch (NumberFormatException e) {
+			// 모르는 모양이면 건드리지 않는다 (토큰 TTL로 사라진다)
+		}
+	}
+
 	private QueueStatus waiting(long runId, long ticket, long rank, long throughputPerSec) {
 		// 입장 속도 기록이 아직 없으면(첫 입장 처리 전) 정책값을 쓴다
 		long throughput = Math.max(1, throughputPerSec > 0 ? throughputPerSec : policy.getLong(PolicyProvider.ADMIT_PER_SEC));

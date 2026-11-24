@@ -1,0 +1,14 @@
+member_id	원래	바꾼 값	이유
+4387	ltc1124d.human.g1.5@loadtest.example.com	ltc1124dx.human.g1.5@loadtest.example.com	예약 없는 중복 가입 (자리 비움)
+4386	ltc1124d.human.g1.6@loadtest.example.com	ltc1124dx.human.g1.6@loadtest.example.com	예약 없는 중복 가입 (자리 비움)
+4370	ltc1124.human.g1.2@loadtest.example.com	ltc1124d.human.g1.2@loadtest.example.com	태그 오타 (d 빠짐)
+4374	ltc1124.human.g1.3@loadtest.example.com	ltc1124d.human.g1.3@loadtest.example.com	태그 오타 (d 빠짐)
+4377	ltc1124.human.g1.4@loadtest.example.com	ltc1124d.human.g1.4@loadtest.example.com	태그 오타 (d 빠짐)
+4379	ltc1124.human.g1.5@loadtest.example.com	ltc1124d.human.g1.5@loadtest.example.com	태그 오타 (d 빠짐)
+4382	ltc1124.human.g1.6@loadtest.example.com	ltc1124d.human.g1.6@loadtest.example.com	태그 오타 (d 빠짐)
+4366	ltc1124w.human.g5.1@loadtest.example.com	ltc1124d.human.g5.1@loadtest.example.com	테스트 명단(c1124w) 사용
+4368	ltc1124w.human.g5.2@loadtest.example.com	ltc1124d.human.g5.2@loadtest.example.com	테스트 명단(c1124w) 사용
+4369	ltc1124w.human.g5.3@loadtest.example.com	ltc1124d.human.g5.3@loadtest.example.com	테스트 명단(c1124w) 사용 · 비밀번호 재설정(14:39, g3.1 해시 복사)
+4371	ltc1124w.human.g5.4@loadtest.example.com	ltc1124d.human.g5.4@loadtest.example.com	테스트 명단(c1124w) 사용
+4372	ltc1124w.human.g5.5@loadtest.example.com	ltc1124d.human.g5.5@loadtest.example.com	테스트 명단(c1124w) 사용
+4375	ltc1124w.human.g5.6@loadtest.example.com	ltc1124d.human.g5.6@loadtest.example.com	테스트 명단(c1124w) 사용

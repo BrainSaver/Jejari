@@ -306,7 +306,7 @@ async function stepCheck() {
   }
   if (!python()) log('check', '참고: Python 3.9+가 없어 모델 비교(compare_dl.py)는 건너뜁니다');
   if (problems.length) throw new Error(problems.join(' / '));
-  log('check', `봇 ${run.chosen.length}개: ${run.chosen.map((b) => b.name).join(', ')} · 태그 ${o.tag} · 사람 ${o.humanMin}분`);
+  log('check', `봇 ${run.chosen.length}개: ${run.chosen.map((b) => b.name).join(', ')} · 태그 ${o.tag} · 사람 시간 제한 없음 (진행자가 끝냄)`);
 }
 
 // 1단계 "깨끗하게 시작"을 화면이 대신 한다 (2026-11-24): 최신 코드 → 켜져 있던 앱 끄기 → 도커 → DB 패치 → Redis 비우기
@@ -339,6 +339,8 @@ async function stepPrep() {
   if ((o.flush || run.codeChanged) && appChild) {
     log('prep', '이 화면이 전에 켠 앱을 끕니다 (새로 켬)');
     killTree(appChild);
+    // 끄는 데 몇 초 걸린다. 기다리지 않으면 아래에서 "아직 켜져 있는데 PID가 없음"으로 멈췄다 (2026-11-24 같은 화면에서 두 번째 시작)
+    for (let s = 0; s < 60 && (await healthy()); s += 2) await sleep(2000);
   }
   if ((o.flush || run.codeChanged || o.restartApp) && (await healthy())) {
     const pids = appPids();
@@ -393,7 +395,9 @@ async function stepApp() {
   } else {
     log('app', '앱 빌드·실행: gradlew buildFrontend bootRun (처음이면 3~5분, 로그는 results/app.log)');
     const logFile = fs.openSync(path.join(RESULTS, 'app.log'), 'a');
-    const [cmd, args] = WIN ? ['cmd', ['/c', 'gradlew.bat', 'buildFrontend', 'bootRun']] : ['./gradlew', ['buildFrontend', 'bootRun']];
+    // 전체 경로로 부른다. cmd는 NoDefaultCurrentDirectoryInExePath가 켜진 환경(예: Claude Code에서 띄운 경우)에서는
+    // 지금 폴더의 gradlew.bat을 이름만으로 찾지 않는다 → 앱이 바로 꺼짐 (2026-11-24 리허설에서 겪음)
+    const [cmd, args] = WIN ? ['cmd', ['/c', path.join(ROOT, 'gradlew.bat'), 'buildFrontend', 'bootRun']] : [path.join(ROOT, 'gradlew'), ['buildFrontend', 'bootRun']];
     appChild = spawn(cmd, args, { cwd: ROOT, stdio: ['ignore', logFile, logFile], detached: !WIN, windowsHide: true });
     appChild.on('close', (code) => { log('app', `앱이 꺼졌습니다 (종료 코드 ${code})`); appChild = null; pushState(); });
     for (let s = 0; s < 600 && !(await healthy()); s += 5) {
@@ -524,10 +528,18 @@ function lanUrls() {
 
 async function stepPlay() {
   const o = run.opts;
-  const until = Date.now() + o.humanMin * 60000;
-  run.human = { urls: lanUrls(), until, runDate: run.runDate, email: `lt${run.tag}.human.g{번호}.{번호}@loadtest.example.com` };
+  // 사람 시간에 제한을 두지 않는다. 진행자가 [사람 참가 끝내기]를 누를 때까지 받는다 (2026-11-24: 사람마다 걸리는 시간이 달라서)
+  run.human = { urls: lanUrls(), open: true, startedAt: Date.now(), runDate: run.runDate, email: `lt${run.tag}.human.g{번호}.{번호}@loadtest.example.com` };
   pushState();
-  log('play', `사람 참가 ${o.humanMin}분 시작. 접속 주소: ${run.human.urls.join(' · ') || '(못 찾음 — ipconfig로 확인)'}`);
+  // 팀원에게 줄 명단: 틀의 {태그}·{운행일}·{주소}를 채운 사본 (2026-11-24: 사람이 태그를 직접 넣다가 틀려 다시 가입하는 일이 잦아서)
+  try {
+    const tpl = fs.readFileSync(path.join(__dirname, '..', '사람-참가-명단.md'), 'utf8');
+    const out = path.join(RESULTS, run.tag, '사람-참가-명단.md');
+    fs.writeFileSync(out, tpl.replaceAll('{태그}', run.tag).replaceAll('{운행일}', run.runDate)
+      .replaceAll('{주소}', run.human.urls[0] || BASE_URL));
+    log('play', `팀원용 명단: ${path.relative(ROOT, out)} (태그·운행일·주소를 채움)`);
+  } catch (e) { log('play', `명단 사본을 못 만들었습니다: ${e.message}`); }
+  log('play', `사람 참가 시작 (다 끝나면 [사람 참가 끝내기]). 접속 주소: ${run.human.urls.join(' · ') || '(못 찾음 — ipconfig로 확인)'}`);
   log('play', `사람 이메일: ${run.human.email} · 서울 → 부산 · ${run.runDate}`);
 
   const botsDone = Promise.all(run.chosen.map(async (b) => {
@@ -542,11 +554,12 @@ async function stepPlay() {
   }));
   let finished = false;
   botsDone.then(() => { finished = true; log('play', '봇이 모두 끝났습니다'); });
-  while (!run.stop && !run.skipWait && Date.now() < until) await sleep(1000);
-  if (!finished && !run.stop) log('play', '사람 시간이 끝났습니다. 아직 도는 봇을 기다립니다');
+  while (!run.stop && !run.skipWait) await sleep(1000);
+  run.human.open = false;
+  pushState();
+  if (!finished && !run.stop) log('play', '사람 참가를 끝냈습니다. 아직 도는 봇을 기다립니다');
   while (!finished && !run.stop) await sleep(1000);
   checkStop();
-  run.human.until = null;
   pushState();
 }
 
@@ -672,11 +685,10 @@ http.createServer(async (req, res) => {
     const all = discoverBots().filter((x) => x.ok);
     const chosen = all.filter((x) => (b.bots || []).includes(x.name));
     if (!chosen.length) return json(res, 400, { error: '봇을 하나 이상 고르세요' });
-    const humanMin = Math.min(120, Math.max(0, Number(b.humanMin ?? 10)));
     const botDelayMin = Math.min(60, Math.max(0, Number(b.botDelayMin ?? 0)));
     fs.mkdirSync(path.join(RESULTS, tag), { recursive: true });
     recent.length = 0;
-    run = fresh({ tag, adminId: String(b.adminId), adminPw: String(b.adminPw), humanMin, botDelayMin, bots: chosen.map((x) => x.name),
+    run = fresh({ tag, adminId: String(b.adminId), adminPw: String(b.adminPw), botDelayMin, bots: chosen.map((x) => x.name),
       pull: b.pull !== false, flush: b.flush !== false, restartApp: !!b.restartApp });
     run.chosen = chosen;
     pushState();
@@ -684,7 +696,7 @@ http.createServer(async (req, res) => {
     return json(res, 200, { ok: true });
   }
   if (req.method === 'POST' && url.pathname === '/api/skip-wait') {
-    if (run && !run.done) { run.skipWait = true; log('play', '사람 시간을 지금 끝냅니다 (진행자)'); }
+    if (run && !run.done) { run.skipWait = true; log('play', '사람 참가를 끝냅니다 (진행자)'); }
     return json(res, 200, { ok: true });
   }
   if (req.method === 'POST' && url.pathname === '/api/stop') {
