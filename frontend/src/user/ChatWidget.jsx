@@ -79,7 +79,7 @@ export default function ChatWidget() {
         .chat-win{right:16px;bottom:calc(92px + var(--sb) / var(--z,1));width:min(360px,calc(100vw / var(--z,1) - 32px));height:min(480px,calc((var(--vh) - var(--sb) - var(--st)) / var(--z,1) - 108px))}
         @media (max-width:959px){
           .chat-fab{bottom:calc(76px + env(safe-area-inset-bottom) / var(--z,1))}
-          .chat-fab img{width:46px;height:41px}
+          .chat-fab img{width:58px;height:52px}
           .chat-fab{right:10px}
           .user .body{padding-bottom:84px}
           .chat-win{bottom:calc(148px + var(--sb) / var(--z,1));height:min(480px,calc((var(--vh) - var(--sb) - var(--st)) / var(--z,1) - 160px))}
