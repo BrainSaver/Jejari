@@ -83,7 +83,7 @@ docker compose exec -T mongo mongoimport --quiet --uri "mongodb://$MU:$MP@localh
 rm -f "$JSONL"
 docker compose exec -T mongo mongosh --quiet "mongodb://$MU:$MP@localhost:27017/jejari?authSource=jejari" --eval "
   db.model_score.createIndex({member_id: 1, model_version: 1}, {name: 'ux_member_version', unique: true});
-  print('  model_score ($VERSION): ' + db.model_score.countDocuments({model_version: '$VERSION'}) + '건');"
+  print('  model_score ($VERSION): ' + db.model_score.countDocuments({model_version: '$VERSION'}) + '건');" < /dev/null
 
 if [ "$ACTIVATE" = 1 ]; then
   printf "UPDATE model_run SET is_active = CASE WHEN model_version = '%s' THEN 'Y' ELSE 'N' END, updated_at = SYSTIMESTAMP WHERE algorithm = 'ENSEMBLE';\nCOMMIT;\n" "$VERSION" | sql >/dev/null
