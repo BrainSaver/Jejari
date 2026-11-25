@@ -337,6 +337,34 @@ class PaymentInfraTest {
 		assertThat(count("SELECT COUNT(*) FROM payment WHERE reservation_id = ?", r)).isZero();
 	}
 
+	/**
+	 * T46 (§0.2·§4): 마감은 지났지만 유예(reservation.hold_release_grace_sec) 안이라 Redis 좌석 키가 아직 내 예약(R)이다.
+	 * 유예는 "다른 사람이 못 잡게 하는 시간"이지 결제 시간을 늘리는 것이 아니다 → DB의 마감 조건으로 거절하고,
+	 * 마감·좌석 키·결제 행 어느 것도 바뀌지 않는다.
+	 */
+	@Test
+	void T46_마감_뒤_유예_안이라_좌석_키가_남아_있어도_결제_시작은_거절한다() {
+		long m = newMember();
+		long seat = nextSeat();
+		long r = holdSeat(m, seat);
+		String seatKey = SeatKeys.hold(RUN, seat, 0);
+		jdbc.update("UPDATE reservation SET pay_deadline_at = SYSTIMESTAMP - INTERVAL '1' MINUTE WHERE reservation_id = ?", r);
+		jdbc.update("UPDATE seat_inventory SET hold_expires_at = SYSTIMESTAMP - INTERVAL '1' MINUTE WHERE reservation_id = ?", r);
+		LocalDateTime before = deadline(r);
+		assertThat(redis.opsForValue().get(seatKey)).isEqualTo(Long.toString(r)); // 유예 안: 키는 아직 R
+		long ttlBefore = redis.getExpire(seatKey);
+
+		assertThat(code(() -> payments.start(m, r, key(), OK))).isEqualTo("RESERVATION_EXPIRED");
+
+		assertThat(str("SELECT status FROM reservation WHERE reservation_id = ?", r)).isEqualTo("HOLD");
+		assertThat(deadline(r)).isEqualTo(before); // 마감을 늘리지 않았다
+		assertThat(count("SELECT COUNT(*) FROM seat_inventory WHERE reservation_id = ? AND hold_expires_at < SYSTIMESTAMP", r))
+				.isEqualTo(1);
+		assertThat(count("SELECT COUNT(*) FROM payment WHERE reservation_id = ?", r)).isZero();
+		assertThat(redis.opsForValue().get(seatKey)).isEqualTo(Long.toString(r));
+		assertThat(redis.getExpire(seatKey)).isLessThanOrEqualTo(ttlBefore); // 좌석 키 TTL도 늘리지 않았다
+	}
+
 	@Test
 	void 남의_예약은_없는_예약과_같게_404() {
 		long owner = newMember();
