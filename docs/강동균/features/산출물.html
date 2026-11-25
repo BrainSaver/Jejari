@@ -666,7 +666,7 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
     <tr><td>대기열 순서</td><td>되살릴 원본이 없어 다시 줄 서기 (오픈 순간 진입을 DB에 쓰지 않으려고 고른 트레이드오프)</td><td>—</td></tr>
   </table></div>
   <p class="muted">장애 조치(복제본 + Sentinel)는 "덜 멈추게" 하는 다음 단계입니다. 승격 때 마지막 쓰기를 잃어도 위와 같은 경로로 되살립니다.
-     T14·T26은 PC에서 첫 실행 대기. 자세히: <code>docs/강동균/features/Redis-단일-장애점.md</code></p>
+     T14·T26은 실제 Oracle·Redis로 통과 (11-25). 자세히: <code>docs/강동균/features/Redis-단일-장애점.md</code></p>
 </section>
 
 <!-- ───────────────────────────── ERD -->
