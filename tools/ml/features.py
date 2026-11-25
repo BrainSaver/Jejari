@@ -68,6 +68,18 @@ STAGE = [
 STAGE_ON = os.environ.get("ML_STAGE") == "1"
 if STAGE_ON:
     FEATURES = FEATURES + STAGE
+# 운행마다 따로 본 속도 (2026-11-25, 실제 데이터 둘레 2차 분석). ML_RUNS=1일 때만, 끝에 붙인다.
+# 단체 여행 총무(h_organizer)는 여러 운행을 한도까지 사서 "운행 수·결제 수"만 보면 여러 편 쓸어 담는 봇과 같다.
+# 갈리는 곳은 운행마다: 봇은 매번 오픈하자마자 둘러보지 않고 잡고, 총무는 오픈과 상관없이 둘러보고 잡는다.
+# 지금 특징은 첫 운행 하나만 봐서(first_hold_after_open) 이 차이가 묻혔다
+RUNS = [
+    "open_to_hold_med_log",      # 운행마다 (그 운행 판매 오픈 → 그 운행 첫 선점) 초의 중앙값, log1p
+    "fast_open_run_ratio",       # 오픈 60초 안에 첫 선점한 운행의 비율
+    "browse_per_run",            # 운행 조회(VIEW_TRAIN) 수 / 손댄 운행 수
+]
+RUNS_ON = os.environ.get("ML_RUNS") == "1"
+if RUNS_ON:
+    FEATURES = FEATURES + RUNS
 HANDOFF_SEC = 60
 
 
@@ -134,6 +146,23 @@ def stage_speed(evs, holds, pays, ints, run_open) -> dict:
         "hold_without_view": no_view,
         "hold_to_pay_med_log": L(max(0.0, statistics.median(h2p))) if h2p else math.nan,
         "crit_vs_pace": (v2h_min - L(statistics.median(ints))) if v2h and ints else math.nan,
+    }
+
+
+def run_speed(evs, run_open) -> dict:
+    """RUNS 특징. 운행마다 첫 선점 시각을 그 운행의 판매 오픈과 비교한다"""
+    first = {}
+    for e in evs:
+        r = e.get("run_id")
+        if e["event_type"] == "SEAT_HOLD" and r in run_open and r not in first:
+            first[r] = max(0.0, (ts(e["ts"]) - run_open[r]).total_seconds())
+    runs = {e.get("run_id") for e in evs if e.get("run_id") is not None}
+    browse = sum(1 for e in evs if e["event_type"] == "VIEW_TRAIN")
+    d = list(first.values())
+    return {
+        "open_to_hold_med_log": math.log1p(statistics.median(d)) if d else math.nan,
+        "fast_open_run_ratio": sum(1 for x in d if x < 60) / len(d) if d else math.nan,
+        "browse_per_run": browse / max(1, len(runs)),
     }
 
 
@@ -253,6 +282,7 @@ def build(folder: str) -> list[dict]:
         smean = statistics.fmean(short) if short else math.nan
 
         rows.append({**(stage_speed(evs, holds, pays, ints, run_open) if STAGE_ON else {}),
+            **(run_speed(evs, run_open) if RUNS_ON else {}),
             "member_id": m, "label": info.get("label"), "strategy": info.get("strategy"),
             "group": info.get("group"), "source": info.get("source"), "family": info.get("family"),
             "n_events": len(evs), "n_view": typ.count("VIEW_TRAIN") + typ.count("VIEW_SEAT"),
