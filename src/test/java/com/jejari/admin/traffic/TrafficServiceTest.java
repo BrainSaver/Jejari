@@ -294,10 +294,10 @@ class TrafficServiceTest {
 
 	@Test
 	void 받는데_저장이_멈추면_적재_멈춤() {
-		assertThat(TrafficService.stalled(20.0, 0.0)).isTrue();      // MongoDB 정지 실측: 받음 20/초, 저장 0/초
-		assertThat(TrafficService.stalled(20.0, 19.0)).isFalse();
-		assertThat(TrafficService.stalled(0.5, 0.0)).isFalse();      // 거의 안 들어올 때는 판단하지 않음
-		assertThat(TrafficService.stalled(20.0, null)).isFalse();    // 지표 없음
+		assertThat(TrafficHealth.stalled(20.0, 0.0)).isTrue();      // MongoDB 정지 실측: 받음 20/초, 저장 0/초
+		assertThat(TrafficHealth.stalled(20.0, 19.0)).isFalse();
+		assertThat(TrafficHealth.stalled(0.5, 0.0)).isFalse();      // 거의 안 들어올 때는 판단하지 않음
+		assertThat(TrafficHealth.stalled(20.0, null)).isFalse();    // 지표 없음
 	}
 
 	@Test
