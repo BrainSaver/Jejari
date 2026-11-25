@@ -38,7 +38,7 @@ FEATURE_KO = {
     "device_missing": "기기 정보 없음", "first_hold_after_open_log": "오픈 뒤 첫 선점(로그)",
     "account_age_days_log": "가입 기간(로그)", "n_runs": "손댄 운행 수", "distinct_devices": "쓴 기기 수",
     "distinct_ips": "쓴 IP 수", "hold_unpaid_ratio": "결제 안 한 선점 비율", "handoff_in": "넘겨받은 좌석",
-    "handoff_out": "넘겨준 좌석",
+    "handoff_out": "넘겨준 좌석", "max_seats_per_hold": "한 번에 잡은 좌석", "seats_per_resv": "예약당 결제 좌석",
 }
 
 
@@ -66,7 +66,42 @@ def parts(model, X, seq_scores=None):
 
 
 def score_matrix(model, X, seq_scores=None):
-    return np.maximum.reduce(list(parts(model, X, seq_scores).values()))
+    return apply_exon(model, X, np.maximum.reduce(list(parts(model, X, seq_scores).values())))
+
+
+def exon_mask(model, X):
+    """해명 모델(train.py ML_EXON)이 사람이라고 강하게 본 계정. 강한 증거(기기·카드 공유)가 있으면 풀지 않는다"""
+    ex = model.get("exon")
+    cleared = np.zeros(len(X), dtype=bool)
+    if not ex or len(X) == 0:
+        return cleared
+    feats = model["features"]
+
+    def mask(conds):
+        m = np.ones(len(X), dtype=bool)
+        for f, op, v in conds:
+            if f not in feats:
+                return np.zeros(len(X), dtype=bool)
+            col = np.nan_to_num(X[:, feats.index(f)], nan=-np.inf if op == ">=" else np.inf)
+            m &= (col >= v) if op == ">=" else (col <= v)
+        return m
+
+    for seg in ex["segments"]:
+        # 강한 증거 중 이 그룹이 예외로 둔 것(6차 shared_device: 기기 공유)만 빼고 본다. 옛 모델은 예외 없음
+        hard = np.zeros(len(X), dtype=bool)
+        for c in ex["hard"]:
+            if c[0] not in seg.get("allow_hard", ()):
+                hard |= mask([c])
+        m = mask(seg["conds"]) & ~hard & ~cleared
+        if m.any():
+            cleared[np.flatnonzero(m)] = seg["clf"].predict_proba(X[m])[:, 1] >= seg["q"]
+    return cleared
+
+
+def apply_exon(model, X, s):
+    if not model.get("exon"):
+        return s
+    return np.where(exon_mask(model, X), np.minimum(s, model["exon"]["cap"]), s)
 
 
 def gru_scores(model, model_path, rows, folder):
@@ -135,7 +170,7 @@ def main():
     X = np.array([[float(r[c]) if r[c] not in ("", "nan") else np.nan for c in model["features"]] for r in rows])
     seq, why = gru_scores(model, sys.argv[1], rows, os.path.dirname(sys.argv[2]))
     P = parts(model, X, seq)
-    s = np.maximum.reduce(list(P.values()))
+    s = apply_exon(model, X, np.maximum.reduce(list(P.values())))
     by = [max(P, key=lambda k: P[k][j]) for j in range(len(rows))]   # 어느 모델이 가장 높게 봤나
     thr = model["threshold"] if seq is not None else model.get("threshold_base", model["threshold"])
     types, type_p = bot_types(sys.argv[1], rows)

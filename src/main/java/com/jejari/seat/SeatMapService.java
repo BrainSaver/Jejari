@@ -63,13 +63,40 @@ public class SeatMapService {
 		return rebuild(runId, seats);
 	}
 
-	/** 등급별 남은 좌석 수 (TRN-02) */
+	/**
+	 * 등급별 남은 좌석 수 (TRN-02 검색·운행 상세).
+	 *
+	 * <p>Redis가 안 되면(연결 끊김·시간 초과) DB {@code seat_inventory}만으로 센다. 검색은 숫자를 보여 줄 뿐이고 좌석은
+	 * 선점 때 다시 판정하므로, Redis 장애 동안 예매는 503이어도 열차 조회는 계속 되게 한다 (2026-11-25 장애 시연에서
+	 * 운행 상세가 503이던 것). DB의 HOLD 행은 이긴 선점만 있어 Redis와 거의 같다 (유예 중인 키·대기자 보류는 빠짐).
+	 */
 	public Map<String, Integer> remainingByGrade(long runId, long trainId) {
-		Map<Long, State> st = states(runId, trainId);
+		Map<Long, State> st;
+		try {
+			st = states(runId, trainId);
+		} catch (org.springframework.dao.DataAccessException e) {
+			if (!com.jejari.common.error.RedisExceptionHandler.isUnavailable(e)) {
+				throw e;
+			}
+			st = fromDb(runId, trainId);
+		}
 		Map<String, Integer> out = new HashMap<>();
 		for (SeatInfo s : layouts.layout(trainId).seats()) {
 			out.merge(s.grade(), st.get(s.seatId()) == State.EMPTY ? 1 : 0, Integer::sum);
 		}
+		return out;
+	}
+
+	/** Redis 없이 DB만으로: 행이 있는 좌석은 SOLD 또는 선택 불가(HOLD·BLOCKED) */
+	private Map<Long, State> fromDb(long runId, long trainId) {
+		Map<Long, State> out = new HashMap<>();
+		for (SeatInfo s : layouts.layout(trainId).seats()) {
+			out.put(s.seatId(), State.EMPTY);
+		}
+		jdbc.query("SELECT seat_id, status FROM seat_inventory WHERE run_id = ?",
+				rs -> {
+					out.put(rs.getLong(1), "SOLD".equals(rs.getString(2)) ? State.SOLD : State.HELD);
+				}, runId);
 		return out;
 	}
 

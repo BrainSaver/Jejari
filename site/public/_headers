@@ -1,0 +1,12 @@
+# Cloudflare Pages 정적 파일 응답 헤더 (API 응답은 functions에서 따로 붙임)
+# - frame-ancestors 'none' / X-Frame-Options: 다른 사이트가 이 사이트를 iframe에 넣지 못하게 (클릭재킹으로 PIN 입력 유도 막기)
+# - script-src는 일부러 걸지 않음: ERD 편집기·화면 시안·HTML 문서는 srcdoc iframe이라 이 CSP를 물려받는데,
+#   그 안의 인라인 스크립트가 막히기 때문. 대신 그 iframe들은 sandbox(다른 출처)로 사이트 쿠키·API와 떨어뜨려 둠.
+/*
+  Content-Security-Policy: frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cross-Origin-Opener-Policy: same-origin

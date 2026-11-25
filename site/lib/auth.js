@@ -1,8 +1,10 @@
 // 이름 + 4자리 PIN 로그인. PIN은 PBKDF2 해시로만 KV(AUTH)에 저장한다.
 //   pin:{이름}   {salt, hash, iter, setAt}
-//   fail:{이름}  {count, until}
+//   pin:{이름}   temp:true면 팀장이 정한 임시 PIN (들어올 때 새 PIN으로 바꿔야 함)
 //   sess:{토큰}  이름 (7일 TTL)
-import { MEMBERS, PIN_RE, PIN_MAX_FAIL, PIN_LOCK_SEC, SESSION_SEC, PBKDF2_ITER, adminOf } from './config.js';
+//   PIN 실패 잠금은 lib/guard.js (D1, 없으면 KV fail:{이름})
+import { MEMBERS, PIN_RE, SESSION_SEC, PBKDF2_ITER, adminOf } from './config.js';
+import { pinLock } from './guard.js';
 
 const enc = new TextEncoder();
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -21,11 +23,19 @@ function sameStr(a, b) {
   return d === 0;
 }
 
+// 이름별 PIN 상태: false(설정 전), true(설정됨), 'temp'(임시 PIN, 들어올 때 바꿈)
 export async function pinStatus(env) {
   const out = {};
-  await Promise.all(Object.keys(MEMBERS).map(async (n) => { out[n] = !!(await env.AUTH.get(`pin:${n}`)); }));
+  await Promise.all(Object.keys(MEMBERS).map(async (n) => {
+    const raw = await env.AUTH.get(`pin:${n}`);
+    out[n] = raw ? (JSON.parse(raw).temp ? 'temp' : true) : false;
+  }));
   return out;
 }
+const pinRec = async (env, pin) => {
+  const salt = randHex(16);
+  return { salt, hash: await pbkdf2(pin, salt, PBKDF2_ITER, env.PIN_PEPPER), iter: PBKDF2_ITER, setAt: new Date().toISOString() };
+};
 
 export function cookieOf(req, name) {
   const m = (req.headers.get('Cookie') || '').match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
@@ -43,41 +53,39 @@ const secure = (req) => new URL(req.url).protocol === 'https:' ? '; Secure' : ''
 export const sessionCookie = (req, sid) => `sid=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_SEC}${secure(req)}`;
 export const clearCookie = (req) => `sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure(req)}`;
 
-// 결과: {ok, firstSet, sid} 또는 {error, ...}
-export async function login(env, name, pin) {
+// 결과: {ok, firstSet, changed, sid} 또는 {error, ...}
+// newPin: 임시 PIN으로 들어올 때 바꿀 새 PIN
+export async function login(env, name, pin, newPin) {
   if (!MEMBERS[name]) return { error: 'BAD_NAME', message: '이름 브랜치에 있는 이름만 쓸 수 있어요.' };
   if (!PIN_RE.test(pin || '')) return { error: 'BAD_PIN', message: 'PIN은 숫자 4자리예요.' };
 
-  const now = Date.now();
-  const fail = JSON.parse((await env.AUTH.get(`fail:${name}`)) || '{"count":0,"until":0}');
-  if (fail.until > now) {
-    return { error: 'LOCKED', message: `PIN을 ${PIN_MAX_FAIL}번 틀려서 잠겼어요. ${Math.ceil((fail.until - now) / 60000)}분 뒤에 다시 해 주세요.` };
-  }
-
   const recRaw = await env.AUTH.get(`pin:${name}`);
-  let firstSet = false;
+  let firstSet = false, changed = false;
   if (!recRaw) {
-    const salt = randHex(16);
-    const hash = await pbkdf2(pin, salt, PBKDF2_ITER, env.PIN_PEPPER);
-    await env.AUTH.put(`pin:${name}`, JSON.stringify({ salt, hash, iter: PBKDF2_ITER, setAt: new Date().toISOString() }));
+    // 아직 아무도 PIN을 정하지 않은 이름 (처음 한 번). 팀장 초기화는 임시 PIN을 남기므로 여기로 오지 않는다
+    await env.AUTH.put(`pin:${name}`, JSON.stringify(await pinRec(env, pin)));
     firstSet = true;
   } else {
+    const lock = pinLock(env);
+    const st = await lock.begin(name);
+    if (st.locked) return { error: 'LOCKED', message: st.message };
     const rec = JSON.parse(recRaw);
     const hash = await pbkdf2(pin, rec.salt, rec.iter, env.PIN_PEPPER);
     if (!sameStr(hash, rec.hash)) {
-      const count = fail.count + 1;
-      const next = count >= PIN_MAX_FAIL ? { count: 0, until: now + PIN_LOCK_SEC * 1000 } : { count, until: 0 };
-      await env.AUTH.put(`fail:${name}`, JSON.stringify(next), { expirationTtl: 86400 });
-      const left = PIN_MAX_FAIL - count;
-      return next.until
-        ? { error: 'LOCKED', message: `PIN을 ${PIN_MAX_FAIL}번 틀려서 ${PIN_LOCK_SEC / 60}분 동안 잠겼어요.` }
-        : { error: 'WRONG_PIN', message: `PIN이 달라요. ${left}번 더 틀리면 ${PIN_LOCK_SEC / 60}분 잠겨요.` };
+      const w = await lock.wrong(name, st);
+      return w.locked ? { error: 'LOCKED', message: w.message } : { error: 'WRONG_PIN', message: w.message };
+    }
+    await lock.clear(name);
+    if (rec.temp) {
+      if (!PIN_RE.test(newPin || '')) return { error: 'NEED_NEW_PIN', message: '임시 PIN이 맞아요. 새 PIN(숫자 4자리)을 정해 주세요.' };
+      if (newPin === pin) return { error: 'NEED_NEW_PIN', message: '새 PIN은 임시 PIN과 달라야 해요.' };
+      await env.AUTH.put(`pin:${name}`, JSON.stringify(await pinRec(env, newPin)));
+      changed = true;
     }
   }
-  if (fail.count) await env.AUTH.delete(`fail:${name}`);
   const sid = randHex(32);
   await env.AUTH.put(`sess:${sid}`, name, { expirationTtl: SESSION_SEC });
-  return { ok: true, name, firstSet, sid };
+  return { ok: true, name, firstSet, changed, sid };
 }
 
 export async function logout(env, req) {
@@ -85,10 +93,12 @@ export async function logout(env, req) {
   if (sid) await env.AUTH.delete(`sess:${sid}`);
 }
 
-export async function resetPin(env, me, target) {
+// 팀장이 임시 PIN을 정해 준다. 예전처럼 지우기만 하면 그 사이 아무나 먼저 들어와 PIN을 차지할 수 있다.
+export async function resetPin(env, me, target, tempPin) {
   if (me !== adminOf(env)) return { error: 'FORBIDDEN', message: 'PIN 초기화는 팀장만 할 수 있어요.' };
   if (!MEMBERS[target]) return { error: 'BAD_NAME', message: '없는 이름이에요.' };
-  await env.AUTH.delete(`pin:${target}`);
-  await env.AUTH.delete(`fail:${target}`);
+  if (!PIN_RE.test(tempPin || '')) return { error: 'BAD_PIN', message: '임시 PIN(숫자 4자리)을 정해 주세요.' };
+  await env.AUTH.put(`pin:${target}`, JSON.stringify({ ...(await pinRec(env, tempPin)), temp: true }));
+  await pinLock(env).clear(target);
   return { ok: true };
 }

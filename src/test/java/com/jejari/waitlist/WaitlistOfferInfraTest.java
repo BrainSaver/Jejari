@@ -299,7 +299,125 @@ class WaitlistOfferInfraTest {
 		assertThat(release.releaseUnofferedReoffer(freed, RUN, List.of(s1, s2))).isZero(); // 다시 와도 같다
 	}
 
+	/**
+	 * T17 (§9): 앱 두 대가 같은 "좌석 풀림" 이벤트를 동시에 처리한다. 대기 행을 FOR UPDATE SKIP LOCKED로 잡으므로
+	 * 한 대만 제안하고, 다른 대는 잠긴 대기자를 건너뛰어(또는 이미 OFFERED라) 아무것도 하지 않는다 → 제안 예약 1건.
+	 */
+	@Test
+	void T17_두_대가_같은_빈_좌석_이벤트를_동시에_처리해도_대기자에게_한_번만_제안한다() throws Exception {
+		long seat = seatIds.get(400);
+		long waiter = newMember();
+		long w = insertWaiting(waiter, SEOUL, BUSAN, "GENERAL", 1, 0);
+		long freed = freeSeat(seat);
+
+		java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+		java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+		List<java.util.concurrent.Future<Integer>> results = new java.util.ArrayList<>();
+		for (int i = 0; i < 2; i++) {
+			results.add(pool.submit(() -> {
+				start.await();
+				return tx.execute(st -> offerTx.offer(RUN, SEOUL, BUSAN, List.of(seat), freed)).size();
+			}));
+		}
+		start.countDown();
+		int total = 0;
+		for (var f : results) {
+			total += f.get(30, java.util.concurrent.TimeUnit.SECONDS);
+		}
+		pool.shutdown();
+
+		assertThat(total).isEqualTo(1);
+		assertThat(count("SELECT COUNT(*) FROM reservation WHERE idempotency_key = ?", "wl:" + w)).isEqualTo(1);
+		assertThat(count("SELECT COUNT(*) FROM reservation WHERE member_id = ?", waiter)).isEqualTo(1);
+		assertThat(count("SELECT COUNT(*) FROM notification WHERE member_id = ? AND type = 'WAITLIST_OFFER'", waiter))
+				.isEqualTo(1);
+		long r2 = jdbc.queryForObject("SELECT offered_reservation_id FROM waitlist WHERE waitlist_id = ?", Long.class, w);
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, seat, 0))).isEqualTo(Long.toString(r2));
+	}
+
+	/**
+	 * T35 (§1·§9): 같은 이벤트가 다시 와도(재전달) 대기자는 이미 OFFERED라 다시 제안하지 않는다. 상태가 어떻게든 WAITING으로
+	 * 돌아가 다시 제안하려 해도, 제안 예약의 멱등 키 {@code wl:{대기ID}}가 UNIQUE(member_id, idempotency_key)라 DB가 막는다.
+	 */
+	@Test
+	void T35_같은_대기자에게_이벤트가_다시_와도_제안_예약은_한_건이다() {
+		long s1 = seatIds.get(410);
+		long s2 = seatIds.get(411);
+		long waiter = newMember();
+		long w = insertWaiting(waiter, SEOUL, BUSAN, "GENERAL", 1, 0);
+		long freed = freeSeat(s1);
+
+		List<WaitlistOfferTx.Offered> first = tx.execute(st -> offerTx.offer(RUN, SEOUL, BUSAN, List.of(s1), freed));
+		List<WaitlistOfferTx.Offered> again = tx.execute(st -> offerTx.offer(RUN, SEOUL, BUSAN, List.of(s1), freed)); // 재전달
+		assertThat(first).hasSize(1);
+		assertThat(again).isEmpty();
+		assertThat(count("SELECT COUNT(*) FROM reservation WHERE idempotency_key = ?", "wl:" + w)).isEqualTo(1);
+
+		// 마지막 방어선: 대기 행이 WAITING으로 되돌아간 채 다른 좌석 이벤트가 와도 같은 wl: 키라 두 번째 예약은 안 생긴다
+		jdbc.update("UPDATE waitlist SET status = 'WAITING' WHERE waitlist_id = ?", w);
+		long freed2 = freeSeat(s2);
+		assertThatThrownBy(() -> tx.execute(st -> offerTx.offer(RUN, SEOUL, BUSAN, List.of(s2), freed2)))
+				.isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+		assertThat(count("SELECT COUNT(*) FROM reservation WHERE idempotency_key = ?", "wl:" + w)).isEqualTo(1);
+		assertThat(count("SELECT COUNT(*) FROM reservation WHERE member_id = ?", waiter)).isEqualTo(1);
+	}
+
+	/**
+	 * T38 (§9.3): 위험 점수 80인 A가 10:00에 신청(패널티 4시간 → priority_at 14:00), 정상 B가 10:30에 신청.
+	 * 좌석 1개가 비면 priority_at이 이른 B에게 먼저 제안하고 A는 WAITING으로 남는다. (시각은 지금 기준 상대값)
+	 */
+	@Test
+	void T38_패널티로_뒤로_밀린_A보다_나중에_신청한_정상_B가_먼저_제안받는다() {
+		long seat = seatIds.get(420);
+		long a = newMember();
+		long b = newMember();
+		long wa = insertWaitingAt(a, 300, 4 * 60);  // 5시간 전 신청 + 4시간 → priority = 1시간 전
+		long wb = insertWaitingAt(b, 270, 0);       // 4시간 30분 전 신청, 패널티 없음
+		long freed = freeSeat(seat);
+
+		List<WaitlistOfferTx.Offered> offered = tx.execute(st -> offerTx.offer(RUN, SEOUL, BUSAN, List.of(seat), freed));
+
+		assertThat(offered).hasSize(1);
+		assertThat(offered.get(0).waitlistId()).isEqualTo(wb);
+		assertThat(statusOf(wb)).isEqualTo("OFFERED");
+		assertThat(statusOf(wa)).isEqualTo("WAITING");
+	}
+
+	/** T39 (§9.3): 같은 조건에서 B가 A의 priority_at(14:00)이 지난 14:30에 신청 → A에게 먼저 제안 */
+	@Test
+	void T39_A의_priority_at이_지난_뒤_신청한_B보다_A가_먼저_제안받는다() {
+		long seat = seatIds.get(430);
+		long a = newMember();
+		long b = newMember();
+		long wa = insertWaitingAt(a, 300, 4 * 60);  // priority = 1시간 전
+		long wb = insertWaitingAt(b, 30, 0);        // 30분 전 신청 (A의 priority_at 뒤)
+		long freed = freeSeat(seat);
+
+		List<WaitlistOfferTx.Offered> offered = tx.execute(st -> offerTx.offer(RUN, SEOUL, BUSAN, List.of(seat), freed));
+
+		assertThat(offered).hasSize(1);
+		assertThat(offered.get(0).waitlistId()).isEqualTo(wa);
+		assertThat(statusOf(wa)).isEqualTo("OFFERED");
+		assertThat(statusOf(wb)).isEqualTo("WAITING");
+	}
+
 	// ─────────────────────────────── 도우미 ───────────────────────────────
+
+	/** 신청 시각을 minutesAgo분 전으로, priority_at = 신청 + penaltyMin분 (§9.3) */
+	private long insertWaitingAt(long memberId, int minutesAgo, int penaltyMin) {
+		long id = jdbc.queryForObject("SELECT waitlist_seq.NEXTVAL FROM dual", Long.class);
+		jdbc.update("""
+				INSERT INTO waitlist (waitlist_id, member_id, run_id, from_station_id, to_station_id, seat_grade,
+				       seat_count, requested_at, priority_at, penalty_ms, status)
+				VALUES (?, ?, ?, ?, ?, 'GENERAL', 1, SYSTIMESTAMP - NUMTODSINTERVAL(?, 'MINUTE'),
+				        SYSTIMESTAMP - NUMTODSINTERVAL(?, 'MINUTE'), ?, 'WAITING')""",
+				id, memberId, RUN, SEOUL, BUSAN, minutesAgo, minutesAgo - penaltyMin, penaltyMin * 60_000L);
+		return id;
+	}
+
+	private String statusOf(long waitlistId) {
+		return jdbc.queryForObject("SELECT status FROM waitlist WHERE waitlist_id = ?", String.class, waitlistId);
+	}
 
 	private List<SeatRequest> seatsOf(int from, int n) {
 		return seatIds.subList(from, from + n).stream().map(s -> new SeatRequest(s, "ADULT")).toList();

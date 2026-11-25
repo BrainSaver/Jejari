@@ -8,9 +8,10 @@ import { commitMessage, validMessage, askDoc } from '../../lib/groq.js';
 import { buildContext } from '../../lib/context.js';
 import { aiLogStore, AI_LOG_MAX } from '../../lib/ailog.js';
 import { roadmap, DEFAULT_FLOW, roadmapText } from '../../lib/roadmap.js';
+import { hit, ipOf } from '../../lib/guard.js';
 
 const json = (data, status = 200, headers = {}) =>
-  new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers } });
+  new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers } });
 const fail = (status, error, message, extra = {}) => json({ error, message, ...extra }, status);
 
 const okPath = (p, list) => typeof p === 'string' && !p.includes('..') && list.some((re) => re.test(p));
@@ -20,17 +21,15 @@ const PUBLIC = [/^README\.md$/, /^docs\/concurrency\.md$/, /^docs\/기능설계�
 const LOGIN_FIRST = () => fail(401, 'LOGIN', '로그인하면 볼 수 있어요.');
 const authorOf = (name) => ({ name, email: `${name}@users.noreply.jejari.pages.dev` });
 
-// AI 질문은 로그인 없이 쓸 수 있으므로 IP당 분당 횟수를 제한한다 (인스턴스 메모리, 대략적인 방어)
-const ASK_PER_MIN = 15;
-const askHits = new Map();
-function askAllowed(req) {
-  const ip = req.headers.get('CF-Connecting-IP') || req.headers.get('X-Forwarded-For') || 'local';
-  const now = Date.now();
-  const list = (askHits.get(ip) || []).filter((t) => now - t < 60000);
-  if (list.length >= ASK_PER_MIN) { askHits.set(ip, list); return false; }
-  list.push(now); askHits.set(ip, list);
-  if (askHits.size > 5000) askHits.clear();
-  return true;
+// 횟수 제한 (lib/guard.js). 넘으면 429와 기다릴 초를 돌려준다
+const LIMIT_MSG = {
+  login: '로그인 시도가 너무 많아요.', ask: 'AI 질문이 너무 많아요.', askAll: '지금 AI 질문이 몰려 있어요.',
+  context: 'LLM용 복사 요청이 너무 많아요.', read: '요청이 너무 많아요.',
+};
+async function limited(env, kind, who) {
+  const r = await hit(env, kind, who);
+  if (r.ok) return null;
+  return json({ error: 'RATE_LIMIT', message: `${LIMIT_MSG[kind]} ${r.wait}초 뒤에 다시 해 주세요.`, wait: r.wait }, 429, { 'Retry-After': String(r.wait) });
 }
 // ---------- AI 질문 기록 (로그인한 사람. 저장소는 lib/ailog.js: D1, 없으면 KV) ----------
 const sOk = (v, max) => typeof v === 'string' && v.length <= max;
@@ -60,15 +59,21 @@ function countOf(hay, needle) {
   return n;
 }
 
-// 짧은 캐시 (같은 데이터 연속 요청 줄이기). ?fresh=1이면 건너뜀.
-async function cached(request, seconds, make) {
+// 짧은 캐시 (같은 데이터 연속 요청 줄이기). ?fresh=1이면 건너뜀 (로그인한 사람만).
+// gate: 캐시에 없어 GitHub를 부르기 직전에 부르는 검사 (로그인 안 한 사람의 횟수 제한). Response를 돌려주면 그걸 낸다.
+async function cached(request, seconds, make, gate) {
   const url = new URL(request.url);
-  if (url.searchParams.has('fresh') || typeof caches === 'undefined') return make();
+  const run = async () => (gate && (await gate())) || make();
+  if (typeof caches === 'undefined') return run();
+  if (url.searchParams.has('fresh')) {
+    if (!gate) return make();
+    url.searchParams.delete('fresh');
+  }
   const key = new Request(url.toString(), { method: 'GET' });
   const cache = caches.default;
-  const hit = await cache.match(key).catch(() => null);
-  if (hit) return hit;
-  const res = await make();
+  const got = await cache.match(key).catch(() => null);
+  if (got) return got;
+  const res = await run();
   if (res.status === 200) {
     const copy = new Response(res.clone().body, res);
     copy.headers.set('Cache-Control', `public, max-age=${seconds}`);
@@ -314,6 +319,9 @@ export async function onRequest(ctx) {
   try {
     if (!env.AUTH) return fail(500, 'NO_KV', 'KV 바인딩 AUTH가 없어요. README의 설정을 확인해 주세요.');
     const me = await currentUser(env, req);
+    const ip = ipOf(req);
+    // 로그인 안 한 사람이 GitHub를 부르는 읽기는 IP당 횟수를 센다 (캐시에 없을 때만)
+    const gate = me ? undefined : () => limited(env, 'read', ip);
 
     if (req.method === 'POST') {
       const ct = req.headers.get('Content-Type') || '';
@@ -326,16 +334,18 @@ export async function onRequest(ctx) {
       case 'GET /me':
         return json({ name: me, ko: me ? MEMBERS[me] : null, admin: me === adminOf(env), members: MEMBERS, pins: await pinStatus(env), ai: !!env.GROQ_API_KEY, aiLog: env.AI_DB ? 'd1' : 'kv' });
       case 'POST /login': {
-        const r = await login(env, body.name, body.pin);
-        if (r.error) return json(r, r.error === 'LOCKED' ? 423 : 401);
-        return json({ ok: true, name: r.name, firstSet: r.firstSet }, 200, { 'Set-Cookie': sessionCookie(req, r.sid) });
+        const over = await limited(env, 'login', ip);
+        if (over) return over;
+        const r = await login(env, body.name, body.pin, body.newPin);
+        if (r.error) return json(r, r.error === 'LOCKED' ? 423 : r.error === 'NEED_NEW_PIN' ? 409 : 401);
+        return json({ ok: true, name: r.name, firstSet: r.firstSet, changed: r.changed }, 200, { 'Set-Cookie': sessionCookie(req, r.sid) });
       }
       case 'POST /logout':
         await logout(env, req);
         return json({ ok: true }, 200, { 'Set-Cookie': clearCookie(req) });
       case 'POST /admin/reset-pin': {
         if (!me) return fail(401, 'LOGIN', '로그인이 필요해요.');
-        const r = await resetPin(env, me, body.name);
+        const r = await resetPin(env, me, body.name, body.pin);
         return json(r, r.error ? 403 : 200);
       }
 
@@ -347,24 +357,24 @@ export async function onRequest(ctx) {
         return cached(req, 10, async () => {
           const f = await getFile(env, path, ref);
           return f ? json(f, 200) : fail(404, 'NOT_FOUND', '파일이 없어요.');
-        });
+        }, gate);
       }
       case 'GET /list': {
         const dir = q.get('dir'); const ref = q.get('ref') || MAIN;
         const personDir = PERSON_DIR.test(dir || '');
         if (!(['docs/ui', 'docs/erd/exports'].includes(dir) || personDir) || !okRef(ref)) return fail(400, 'BAD_PATH', '볼 수 없는 폴더예요.');
         if (!me && (ref !== MAIN || !(dir === 'docs/ui' || personDir))) return LOGIN_FIRST();
-        return cached(req, 10, async () => json(await listDir(env, dir, ref)));
+        return cached(req, 10, async () => json(await listDir(env, dir, ref)), gate);
       }
       case 'GET /branches':
         if (!me) return LOGIN_FIRST();
         return cached(req, 15, async () => json(await branchesInfo(env)));
       case 'GET /actions':
-        return cached(req, 5, async () => json(await actionsInfo(env)));
+        return cached(req, 5, async () => json(await actionsInfo(env)), gate);
       case 'GET /actions/run': {
         const id = String(q.get('id') || '');
         if (!/^\d{1,20}$/.test(id)) return fail(400, 'BAD_ID', '실행 번호가 잘못됐어요.');
-        return cached(req, 3, async () => json(await actionRun(env, id)));
+        return cached(req, 3, async () => json(await actionRun(env, id)), gate);
       }
       case 'GET /compare': {
         if (!me) return LOGIN_FIRST();
@@ -424,7 +434,8 @@ export async function onRequest(ctx) {
         if (typeof selection !== 'string' || selection.length > 6000 || !str(question, 500)) return fail(400, 'BAD_ASK', '질문(500자 이하)이 필요하고, 고른 글은 6000자 이하여야 해요.');
         if (body.history != null && (!Array.isArray(body.history) || body.history.length > 20
           || !body.history.every((h) => h && ['user', 'assistant'].includes(h.role) && str(h.content, 6000)))) return fail(400, 'BAD_ASK', '대화 기록 형식이 맞지 않아요.');
-        if (!askAllowed(req)) return fail(429, 'ASK_LIMIT', `AI 질문은 1분에 ${ASK_PER_MIN}번까지예요. 잠시 뒤에 다시 물어봐 주세요.`);
+        const over = (await limited(env, 'ask', me || ip)) || (!me && (await limited(env, 'askAll', 'anon')));
+        if (over) return over;
         const input = {
           doc: String(body.doc || ''), path: String(body.path || ''), heading: String(body.heading || ''),
           selection, section: String(body.section || ''), question, history: body.history,
@@ -461,6 +472,7 @@ export async function onRequest(ctx) {
       case 'POST /context': {
         // LLM용 복사: 프로젝트 지도와 전체 문서에서 찾은 관련 부분 (외부 LLM은 길게 받으므로 넉넉히)
         if (!str(body.selection, 6000)) return fail(400, 'BAD_ASK', '선택한 글(6000자 이하)이 필요해요.');
+        if (!me) { const over = await limited(env, 'context', ip); if (over) return over; }
         const ctx = await buildContext(env, {
           path: String(body.path || ''), heading: String(body.heading || ''), selection: body.selection,
           section: String(body.section || ''), question: String(body.question || ''),
@@ -527,8 +539,11 @@ export async function onRequest(ctx) {
       const msg = e.status === 401 || e.status === 403
         ? 'GitHub 토큰 권한을 확인해 주세요.'
         : 'GitHub 요청이 실패했어요.';
-      return fail(502, 'GITHUB', msg, { status: e.status, detail: e.message });
+      // 자세한 내용은 서버 로그에만 남긴다 (응답에 내부 경로·메시지를 내보내지 않음)
+      console.error('GitHub', e.status, e.message);
+      return fail(502, 'GITHUB', msg, { status: e.status });
     }
-    return fail(500, 'SERVER', '서버 오류가 났어요.', { detail: String(e && e.message || e) });
+    console.error('SERVER', e && e.stack || e);
+    return fail(500, 'SERVER', '서버 오류가 났어요.');
   }
 }

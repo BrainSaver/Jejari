@@ -35,7 +35,7 @@ public class RedisExceptionHandler {
 	}
 
 	/** 연결 실패·끊긴 상태에서 거절된 명령·응답 시간 초과인가 */
-	static boolean isUnavailable(Throwable e) {
+	public static boolean isUnavailable(Throwable e) {
 		if (e instanceof RedisConnectionFailureException || e instanceof QueryTimeoutException) {
 			return true;
 		}
@@ -43,8 +43,10 @@ public class RedisExceptionHandler {
 			if (t instanceof RedisConnectionException || t instanceof RedisCommandTimeoutException) {
 				return true;
 			}
-			if (t instanceof RedisException && t.getMessage() != null
-					&& t.getMessage().contains("Currently not connected")) {
+			// "Currently not connected": 끊긴 뒤 보낸 명령 · "Connection disconnected"/"closed": 끊기는 순간 이미 보내 둔 명령
+			// (2026-11-25 장애 시연: Redis를 죽인 순간 처리 중이던 10건이 이 메시지로 500이 났다)
+			if (t instanceof RedisException && t.getMessage() != null && (t.getMessage().contains("Currently not connected")
+					|| t.getMessage().contains("Connection disconnected") || t.getMessage().contains("Connection closed"))) {
 				return true;
 			}
 		}

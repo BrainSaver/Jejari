@@ -37,6 +37,13 @@ const bad = client();
 for (let i = 0; i < 4; i++) await bad('/login', { name: 'DongGyun', pin: '9999' });
 r = await bad('/login', { name: 'DongGyun', pin: '9999' }); ok(r.status === 423, '5번 틀리면 잠김');
 r = await bad('/login', { name: 'DongGyun', pin: '0000' }); ok(r.status === 423, '잠긴 동안 맞는 PIN도 거부');
+// 동시에 여러 번 보내도 5번 넘게 확인하지 않는다 (잠금 판정이 D1이면 정확, KV면 대략)
+{
+  await client()('/login', { name: 'SeongWon', pin: '2222' });
+  const many = await Promise.all(Array.from({ length: 8 }, () => client()('/login', { name: 'SeongWon', pin: '1111' })));
+  ok(many.every((x) => x.status !== 200), '동시 시도 8번 모두 실패');
+  ok((await client()('/login', { name: 'SeongWon', pin: '2222' })).status === 423, '동시 시도로도 5번을 넘기면 잠김 (맞는 PIN도 거부)');
+}
 r = await anon('/save', { path: F, mode: 'section', oldText: 'x', newText: 'y', message: 'docs: x' }); ok(r.status === 401, '로그인 없이 저장 거부');
 r = await fetch(BASE + '/api/save', { method: 'POST', body: 'a=1', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }); ok(r.status === 415, 'JSON 아닌 POST 거부');
 
@@ -141,7 +148,7 @@ const me = r.data.branches.find((b) => b.name === 'DongHyeon');
 ok(me.ahead > 0, `브랜치 현황 ahead=${me.ahead}`);
 r = await dh('/merge', {});
 ok(r.status === 200 && r.data.ok && r.data.commits > 0, `PR 없이 바로 합침 (${r.data.mode})`);
-r = await anon(`/file?path=${encodeURIComponent(F)}&ref=main&fresh=5`);
+r = await dh(`/file?path=${encodeURIComponent(F)}&ref=main&fresh=5`);
 ok(r.data.content.includes('(사이트 테스트)'), 'main에 반영됨');
 r = await dh('/merge', {});
 ok(r.status === 400, '더 합칠 게 없으면 알려줌');
@@ -196,13 +203,24 @@ r = await dh('/sync', {}); ok(r.status === 200 && r.data.sync === 'uptodate', '�
 
 console.log('PIN 초기화');
 r = await dg('/admin/reset-pin', { name: 'DongHyeon' }); ok(r.status === 403, '팀장 아니면 거부');
-r = await dh('/admin/reset-pin', { name: 'DongGyun' }); ok(r.status === 200, '팀장이 초기화');
-r = await anon('/me'); ok(r.data.pins.DongGyun === false, '초기화 후 설정 전 상태');
-r = await client()('/login', { name: 'DongGyun', pin: '4321' }); ok(r.data.firstSet, '다시 처음처럼 설정 (잠금도 풀림)');
+r = await dh('/admin/reset-pin', { name: 'DongGyun' }); ok(r.status === 403 && r.data.error === 'BAD_PIN', '임시 PIN 없이 초기화 거부');
+r = await dh('/admin/reset-pin', { name: 'DongGyun', pin: '5555' }); ok(r.status === 200, '팀장이 임시 PIN으로 초기화');
+r = await anon('/me'); ok(r.data.pins.DongGyun === 'temp', '초기화 후 임시 PIN 상태');
+r = await client()('/login', { name: 'DongGyun', pin: '4321' }); ok(r.status === 401 && !r.data.firstSet, '초기화 직후 남이 PIN을 차지하지 못함');
+r = await client()('/login', { name: 'DongGyun', pin: '5555' }); ok(r.status === 409 && r.data.error === 'NEED_NEW_PIN', '임시 PIN만으로는 못 들어옴 (새 PIN 필요)');
+r = await client()('/login', { name: 'DongGyun', pin: '5555', newPin: '5555' }); ok(r.status === 409, '새 PIN이 임시 PIN과 같으면 거부');
+const dg2 = client();
+r = await dg2('/login', { name: 'DongGyun', pin: '5555', newPin: '4321' }); ok(r.status === 200 && r.data.changed, '임시 PIN으로 들어오며 새 PIN 설정 (잠금도 풀림)');
+r = await anon('/me'); ok(r.data.pins.DongGyun === true, '새 PIN 설정됨');
+r = await client()('/login', { name: 'DongGyun', pin: '4321' }); ok(r.status === 200, '새 PIN으로 로그인');
+r = await client()('/login', { name: 'DongGyun', pin: '5555' }); ok(r.status === 401, '임시 PIN은 더 못 씀');
 
 console.log('그래프');
 r = await dh('/graph?fresh=6');
 ok(r.data.commits.length > 3 && r.data.heads.main, `커밋 ${r.data.commits.length}개, 머리 ${Object.keys(r.data.heads).length}개`);
+
+console.log('오류 응답');
+r = await anon('/no-such'); ok(r.status === 404 && r.data.detail === undefined, '없는 API, 내부 내용 없음');
 
 console.log(`\n${pass} 통과, ${failN} 실패`);
 process.exit(failN ? 1 : 0);

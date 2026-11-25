@@ -35,6 +35,15 @@ class RedisExceptionHandlerTest {
 	}
 
 	@Test
+	void 끊기는_순간_처리_중이던_명령도_503() {
+		// 장애 시연(2026-11-25)에서 Redis를 죽인 순간 이미 보낸 명령이 받은 예외
+		var e = new RedisSystemException("Redis exception", new RedisException("Connection disconnected"));
+		assertThat(handler.handle(e).getStatusCode().value()).isEqualTo(503);
+		var closed = new RedisSystemException("Redis exception", new RedisException("Connection closed"));
+		assertThat(handler.handle(closed).getStatusCode().value()).isEqualTo(503);
+	}
+
+	@Test
 	void 연결과_상관없는_Redis_오류는_500으로_남긴다() {
 		var e = new RedisSystemException("Redis exception", new RedisException("ERR Error running script"));
 		var res = handler.handle(e);

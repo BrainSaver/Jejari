@@ -162,7 +162,7 @@ class ReplayInfraTest {
 		assertThat(saved.get(1).getList("path", List.class)).hasSize(16); // FULL(50)의 1/3
 	}
 
-	// concurrency.md §16 T22 일부 (legal_hold 뒤 도착한 이벤트는 따로 안 봄)
+	// concurrency.md §16 T22: 보류를 건 뒤 도착한 녹화도 expire_at 없이 저장된다 (아래 "보류 뒤 들어온 이벤트")
 	@Test
 	void 관리자는_케이스와_겹치는_세션만_재생하고_케이스가_열리면_삭제가_보류된다() throws Exception {
 		long m = member();

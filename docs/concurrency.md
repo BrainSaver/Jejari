@@ -350,6 +350,21 @@ SELECT payment_id, reservation_id, requested_at FROM payment
 2. 좌석을 계속 지킵니다: `rehold.lua`로 R의 `seat:hold` 키를 값이 R이거나 없을 때만 R로 다시 걸고, 만료를 새 `next_check_at` + `policy(payment.pg_recheck_sec)`로 겁니다. DB 마감이 지나 Redis 키가 사라지면 다른 사용자가 Redis 경쟁에서 이긴 뒤 §3에서 계속 롤백되므로, 그 헛도는 경쟁을 막습니다.
 3. `requested_at`에서 `policy(payment.pg_unknown_max_min)`이 지나도 모르면 관리자 확인 대상으로 알림(로그·대시보드)을 보냅니다. 이후에도 조회는 계속합니다.
 
+### 6.3 Redis 장애 뒤 결제 기한 되돌려 주기 (11-25)
+
+Redis가 죽어 있는 동안 결제 시작(§4)은 멱등 키(§1)에서 503이 나므로, 이미 좌석을 잡은 사람도 결제를 못 합니다. 그런데 기한은 DB 시계로 계속 흐릅니다. 장애가 결제 기한보다 길면 그 사람의 선점이 만료돼, 잘못 팔린 것은 아니어도 사용자가 손해를 봅니다. 그래서 장애 시간만큼 기한을 돌려줍니다.
+
+1. **감지:** 앱이 1초마다 Redis에 PING합니다. 실패하기 시작한 시각을 장애 시작 `:s`로 기억합니다.
+2. **장애 동안:** §6.1 HOLD 만료를 돌리지 않습니다. 결제를 못 하는 사람의 선점을 만료시키지 않기 위해서입니다. §3 재선점도 Redis가 없으면 선점 자체가 503이라 일어나지 않습니다.
+3. **복구 직후(PING 성공, 시각 `:e`):** 늘릴 시간 `:dt = least(:e - :s, reservation.pay_deadline_min)`. 결제 기한 한 번보다 더 주지는 않습니다.
+   - 대상: `status = 'HOLD' AND pay_deadline_at > :s` (장애가 시작될 때 아직 살아 있던 선점. 장애 중 기한이 지난 것도 포함, 2 때문에 아직 HOLD)
+   - 건마다 한 트랜잭션, §0.4-1 순서: `UPDATE reservation SET pay_deadline_at = pay_deadline_at + :dt, updated_at = SYSTIMESTAMP, version = version + 1 WHERE reservation_id = :r AND status = 'HOLD'` (0행이면 건너뜀) → 새 마감 `:d`를 `seat_inventory.hold_expires_at`(HOLD 행)·`saga_instance.timeout_at`(RUNNING)·`waitlist.offer_deadline_at`(그 예약을 가리키는 OFFERED)에 복사 (§0.2)
+   - 커밋 뒤: 좌석 키를 `rehold.lua`로 값이 R이거나 없을 때만 R로, 만료 `:d + reservation.hold_release_grace_sec` (§0.2 예외)
+   - 다 끝난 뒤 장애 표시를 지워 §6.1이 다시 돕니다. 한 건이라도 실패하면 표시를 두고 다음 PING에서 **남은 건만** 다시 합니다 (이번 장애에서 늘린 예약 ID를 기억해 두 번 늘리지 않음)
+4. 결제 중(`PAYMENT_PENDING`)은 대상이 아닙니다. 결제 중 좌석은 §6.2가 PG에 물어 정리합니다.
+
+**한계:** 장애 시작을 앱 메모리에 둡니다. 장애 중 앱이 재시작하면 그 장애는 늘려 주지 않습니다. 앱이 여러 대면 대마다 늘려 중복되므로 §11.2 리스처럼 한 대만 하게 해야 합니다 (지금은 릴레이와 같이 1대 기준).
+
 ---
 
 ## §7 해제 (만료·결제 실패·결제 전 취소)
@@ -875,6 +890,7 @@ Oracle·Redis·MongoDB 장애처럼 **기다리면 낫는 실패**는 보관함�
 | T44 | `reservation.hold_release_grace_sec = 0` | 마감에 키가 사라지고 일반 사용자가 §3 재선점으로 이어받음 (예전 동작) | §0.2, §3 |
 | T45 | 스캐너가 유예 안에 못 돎 (정지) | 유예가 지나 키가 사라지고 §3 재선점이 동작, DB는 정합 | §0.2, §3 |
 | T46 | 마감 뒤 유예 안에 결제 시작 (키는 아직 R) | DB의 `pay_deadline_at > SYSTIMESTAMP` 조건으로 거절 (유예는 결제 시간을 늘리지 않음). 기존 `PaymentInfraTest.기한이_지난_HOLD는_결제할_수_없고…`가 키를 지우지 않으므로 이 경우다 | §4 |
+| T47 | 선점한 사람이 결제하기 전에 Redis가 죽었다 살아남 (장애가 결제 기한보다 김) | 장애 동안 만료되지 않고, 복구 뒤 마감이 장애 시간만큼(최대 결제 기한 한 번) 늘어남. 복사본·좌석 키도 같은 값 | §6.3 |
 
 ---
 

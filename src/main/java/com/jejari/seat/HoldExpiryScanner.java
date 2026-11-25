@@ -46,8 +46,18 @@ public class HoldExpiryScanner {
 		this.policy = policy;
 	}
 
+	private RedisOutageGuard outage;   // 없으면(단위 시험·끈 경우) 늘 돈다
+
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	void setOutageGuard(RedisOutageGuard outage) {
+		this.outage = outage;
+	}
+
 	@Scheduled(fixedDelay = 1000, initialDelay = 5000)
 	void tick() {
+		if (outage != null && outage.redisDown()) {
+			return; // §6.3: Redis가 죽어 결제를 못 하는 동안에는 만료시키지 않는다 (복구 뒤 장애 시간만큼 기한을 늘림)
+		}
 		long intervalNanos = policy.getLong(AppPolicy.SCANNER_HOLD_INTERVAL_SEC) * 1_000_000_000L;
 		if (System.nanoTime() - lastRunNanos < intervalNanos) {
 			return;
