@@ -70,18 +70,19 @@ export default function ChatWidget() {
     <>
       {/* 글자 크기는 .user{zoom}이라 px 여백·버튼·탭바가 같이 커진다. 그래서 여백은 그대로 두고, 화면 단위(vw·vh)만 배율로 나눈다.
           960px 미만은 아래 탭바(내 정보 등) 위로 올리고, 가로로 눕힌 폰은 높이가 모자라 창을 버튼 왼쪽에 둔다.
+          높이는 vh가 아니라 dvh로 계산한다: 폰 브라우저의 vh는 주소창이 접힌 화면 높이라, 주소창이 보이는 동안 창 윗부분이 화면 밖으로 잘린다(vh를 먼저 쓰는 줄은 dvh를 모르는 브라우저용 대체값).
           폰에서는 버튼을 52px로 줄이고 본문 아래에 여백을 둬서, 맨 아래 버튼(열차 찾기 등)을 마스코트 위로 올려 누를 수 있게 한다 */}
       <style>{`
         .chat-fab{right:16px;bottom:calc(20px + env(safe-area-inset-bottom) / var(--z,1))}
-        .chat-win{right:16px;bottom:calc(92px + env(safe-area-inset-bottom) / var(--z,1));width:min(360px,calc(100vw / var(--z,1) - 32px));height:min(480px,calc(100vh / var(--z,1) - 108px))}
+        .chat-win{right:16px;bottom:calc(92px + env(safe-area-inset-bottom) / var(--z,1));width:min(360px,calc(100vw / var(--z,1) - 32px));height:min(480px,calc(100vh / var(--z,1) - 108px));height:min(480px,calc(100dvh / var(--z,1) - 108px))}
         @media (max-width:959px){
           .chat-fab{bottom:calc(76px + env(safe-area-inset-bottom) / var(--z,1))}
           .chat-fab img{width:52px;height:47px}
           .user .body{padding-bottom:84px}
-          .chat-win{bottom:calc(148px + env(safe-area-inset-bottom) / var(--z,1));height:min(480px,calc(100vh / var(--z,1) - 160px))}
+          .chat-win{bottom:calc(148px + env(safe-area-inset-bottom) / var(--z,1));height:min(480px,calc(100vh / var(--z,1) - 160px));height:min(480px,calc(100dvh / var(--z,1) - 160px))}
         }
         @media (max-width:959px) and (max-height:500px){
-          .chat-win{right:96px;bottom:calc(76px + env(safe-area-inset-bottom) / var(--z,1));width:min(360px,calc(100vw / var(--z,1) - 112px));height:calc(100vh / var(--z,1) - 88px)}
+          .chat-win{right:96px;bottom:calc(76px + env(safe-area-inset-bottom) / var(--z,1));width:min(360px,calc(100vw / var(--z,1) - 112px));height:calc(100vh / var(--z,1) - 88px);height:calc(100dvh / var(--z,1) - 88px)}
         }
       `}</style>
       {open && (
