@@ -38,7 +38,7 @@ FEATURE_KO = {
     "device_missing": "기기 정보 없음", "first_hold_after_open_log": "오픈 뒤 첫 선점(로그)",
     "account_age_days_log": "가입 기간(로그)", "n_runs": "손댄 운행 수", "distinct_devices": "쓴 기기 수",
     "distinct_ips": "쓴 IP 수", "hold_unpaid_ratio": "결제 안 한 선점 비율", "handoff_in": "넘겨받은 좌석",
-    "handoff_out": "넘겨준 좌석",
+    "handoff_out": "넘겨준 좌석", "max_seats_per_hold": "한 번에 잡은 좌석", "seats_per_resv": "예약당 결제 좌석",
 }
 
 
@@ -86,10 +86,12 @@ def exon_mask(model, X):
             m &= (col >= v) if op == ">=" else (col <= v)
         return m
 
-    hard = np.zeros(len(X), dtype=bool)
-    for c in ex["hard"]:
-        hard |= mask([c])
     for seg in ex["segments"]:
+        # 강한 증거 중 이 그룹이 예외로 둔 것(6차 shared_device: 기기 공유)만 빼고 본다. 옛 모델은 예외 없음
+        hard = np.zeros(len(X), dtype=bool)
+        for c in ex["hard"]:
+            if c[0] not in seg.get("allow_hard", ()):
+                hard |= mask([c])
         m = mask(seg["conds"]) & ~hard & ~cleared
         if m.any():
             cleared[np.flatnonzero(m)] = seg["clf"].predict_proba(X[m])[:, 1] >= seg["q"]

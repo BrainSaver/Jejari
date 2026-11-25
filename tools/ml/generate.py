@@ -345,6 +345,20 @@ def b_multi_device(w: World, g):  # 한 기기에서 여러 계정이 몇 초 �
         t += timedelta(seconds=w.r.uniform(0.5, 20))
 
 
+def b_shift_device(w: World, g):  # 한 기기로 계정을 몇십 분~몇 시간 차로 돌려 씀, 카드는 계정마다 따로 (ML_SHIFT_BOT=1)
+    # 6차(2026-11-25): "기기 공유 + 시간 안 겹침 + 카드 단독"이면 가족으로 풀어 주는 해명 그룹을 넣으면서,
+    # 그 조건을 그대로 노리는 봇. 이 봇이 없으면 그 그룹에 봇이 0명이라 풀어 주는 문턱을 정할 수 없다.
+    # 절반은 매크로 속도, 절반은 사람 흉내 속도
+    shared = f"sh{g}"
+    t = w.arrival(rush=0.5)
+    mimic = w.r.random() < 0.5
+    for _ in range(w.r.randint(3, 5)):
+        a = w.account("RESELLER", "b_shift_device", g, device=shared, ip=shared, age=w.r.randint(3, 300))
+        gap = w.human_gap(lo=1, med=3) if mimic else w.uniform_gap(0.4, 2.0)
+        w.buy(a, t, w.r.choice([2, 3, LIMIT_PER_RUN]), gap, browse=w.browse(0, 2) if mimic else w.r.randint(0, 1))
+        t += timedelta(minutes=w.r.uniform(40, 240))
+
+
 def b_multi_card(w: World, g):  # 기기는 다르게, 카드 하나로 결제
     t = w.T + timedelta(seconds=w.r.uniform(0, 30))
     for _ in range(w.r.randint(2, 6)):
@@ -614,7 +628,7 @@ FAMILY = {
     "b_ip_rotator": "speed", "b_burst_quiet": "speed",
     "b_sniper": "retry",
     "b_multi_device": "multi_account", "b_multi_card": "multi_account", "b_noheader": "multi_account",
-    "b_sleeper_farm": "multi_account", "b_device_farm": "multi_account",
+    "b_sleeper_farm": "multi_account", "b_device_farm": "multi_account", "b_shift_device": "multi_account",
     "b_distributed": "evasive", "b_human_mimic": "evasive", "b_slow_drip": "evasive",
     "b_cancel_rebuy": "cancel", "b_hold_blocker": "cancel", "b_seat_handoff": "cancel",
     "b_limit_prober": "hoard", "b_multi_run_hoarder": "hoard",
@@ -648,6 +662,8 @@ if os.environ.get("ML_TRAP_BOOST"):
     STRATEGIES = [(f, side, wt * _x if f.__name__ in TRAP_HUMANS else wt) for f, side, wt in STRATEGIES]
 # 전략마다 따로 배수 (ML_STRAT_BOOST="h_open_rusher=6,h_quick_regret=5"). ML_TRAP_BOOST 뒤에 곱한다.
 # 4차(2026-11-25): 명절 예매는 오픈 직후 사는 사람이 가장 많은데 3차 r4가 그 사람을 31% 오탐해서 더 보여 준다
+if os.environ.get("ML_SHIFT_BOT") == "1":   # 6차: 기기 돌려 쓰는 봇 (b_shift_device 설명). 끄면 옛 데이터와 똑같이 생성
+    STRATEGIES += [(b_shift_device, "bot", 1)]
 if os.environ.get("ML_STRAT_BOOST"):
     _b = {k.strip(): float(v) for k, v in (x.split("=") for x in os.environ["ML_STRAT_BOOST"].split(",") if x.strip())}
     STRATEGIES = [(f, side, wt * _b.get(f.__name__, 1)) for f, side, wt in STRATEGIES]

@@ -80,6 +80,16 @@ RUNS = [
 RUNS_ON = os.environ.get("ML_RUNS") == "1"
 if RUNS_ON:
     FEATURES = FEATURES + RUNS
+# 한 번에 같이 잡은 좌석 (2026-11-25, 6차). ML_HOLD=1일 때만, 끝에 붙인다.
+# 5차 진단: 가족은 "한 번에 2~4석을 같이" 사는데, 결제 비율(seats_paid_ratio)만 보면 1~2석만 산 가족과
+# 조금씩 나눠 사는 봇(b_slow_drip)이 같아 보인다. 선점 한 번에 몇 석을 같이 잡았나를 따로 본다
+HOLD = [
+    "max_seats_per_hold",        # 성공한 선점 한 번의 좌석 수 최댓값
+    "seats_per_resv",            # 결제한 좌석 / 결제한 예약 수 (결제가 없으면 0)
+]
+HOLD_ON = os.environ.get("ML_HOLD") == "1"
+if HOLD_ON:
+    FEATURES = FEATURES + HOLD
 HANDOFF_SEC = 60
 
 
@@ -283,6 +293,8 @@ def build(folder: str) -> list[dict]:
 
         rows.append({**(stage_speed(evs, holds, pays, ints, run_open) if STAGE_ON else {}),
             **(run_speed(evs, run_open) if RUNS_ON else {}),
+            **({"max_seats_per_hold": max(seats_of.values(), default=0),
+                "seats_per_resv": seats_paid / len(pays) if pays else 0.0} if HOLD_ON else {}),
             "member_id": m, "label": info.get("label"), "strategy": info.get("strategy"),
             "group": info.get("group"), "source": info.get("source"), "family": info.get("family"),
             "n_events": len(evs), "n_view": typ.count("VIEW_TRAIN") + typ.count("VIEW_SEAT"),

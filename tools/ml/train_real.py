@@ -54,16 +54,17 @@ def run(args, env_extra=None, quiet=True):
 
 # 특징 계산에 늘 켜 두는 것. 운행별 속도(ML_RUNS)는 열을 끝에 더할 뿐이고 모델은 쓰는 열만 이름으로 꺼내므로
 # 옛 모델(지금 모델·next) 점수에는 영향이 없다
-FEAT_ENV = {"ML_STAGE": "1", "ML_RUNS": "1"}
+FEAT_ENV = {"ML_STAGE": "1", "ML_RUNS": "1", "ML_HOLD": "1"}
 
 
-def make_data(folder, seed, members, calib, boost=None, strat_boost=None):
+def make_data(folder, seed, members, calib, boost=None, strat_boost=None, shift_bot=False):
     if not os.path.exists(os.path.join(folder, "events.jsonl")):
         run(["-I", "tools/ml/generate.py", "--members", str(members), "--seed", str(seed), "--out", folder],
             {"ML_PICK_FLOOR": "1", "ML_REAL_CALIB": calib, **({"ML_TRAP_BOOST": str(boost)} if boost else {}),
-             **({"ML_STRAT_BOOST": strat_boost} if strat_boost else {})})
+             **({"ML_STRAT_BOOST": strat_boost} if strat_boost else {}),
+             **({"ML_SHIFT_BOT": "1"} if shift_bot else {})})
     feats = os.path.join(folder, "features.csv")
-    if not os.path.exists(feats) or "open_to_hold_med_log" not in open(feats, encoding="utf-8").readline():
+    if not os.path.exists(feats) or "seats_per_resv" not in open(feats, encoding="utf-8").readline():
         run(["-I", "tools/ml/features.py", folder], FEAT_ENV)
     with open(feats, encoding="utf-8") as f:
         print(f"  {sum(1 for _ in f) - 1}계정 · {os.path.relpath(folder, ROOT)}", flush=True)
@@ -147,6 +148,13 @@ def main():
     ap.add_argument("--exon", action="store_true",
                     help="해명 모델(5차): 약한 행동 그룹(취소함·한 운행 대량)마다 사람 vs 봇 모델을 두고 사람이면 풀어 줌")
     ap.add_argument("--exon-leak", type=float, default=None, help="해명 모델이 잘못 풀어 줄 그룹 봇 비율 (기본 0.02)")
+    ap.add_argument("--exon-shared", action="store_true",
+                    help="6차: 해명 그룹 shared_device (기기 공유·카드 단독·30분 넘게 떨어짐, 기기 공유 강한 증거만 예외)")
+    ap.add_argument("--shift-bot", action="store_true",
+                    help="6차: 생성에 b_shift_device 봇 추가 (학습·시험 모두. 옛 --data 폴더와 섞지 말 것)")
+    ap.add_argument("--hold", action="store_true", help="6차: 한 번에 잡은 좌석 특징(ML_HOLD) 사용")
+    ap.add_argument("--also-eval", nargs="*", default=[],
+                    help="같은 시험 데이터로 함께 매길 모델 폴더 (예: data/ml/model-real-r8)")
     ap.add_argument("--strat-boost", default=None,
                     help='전략마다 따로 배수, 예: "h_open_rusher=6,h_quick_regret=5" (학습 시드만, --trap-boost 뒤에 곱함)')
     ap.add_argument("--trap-boost", type=float, default=None,
@@ -166,14 +174,16 @@ def main():
 
     step(f"2. 생성 (시드 {', '.join(map(str, TRAIN_SEEDS))} × {a.members} + 시험 {TEST_SEED})")
     for s in TRAIN_SEEDS:
-        make_data(os.path.join(data, f"g{s}"), s, a.members, calib, a.trap_boost, a.strat_boost)
-    make_data(os.path.join(data, f"g{TEST_SEED}"), TEST_SEED, a.members // 2, calib)
+        make_data(os.path.join(data, f"g{s}"), s, a.members, calib, a.trap_boost, a.strat_boost, a.shift_bot)
+    make_data(os.path.join(data, f"g{TEST_SEED}"), TEST_SEED, a.members // 2, calib, shift_bot=a.shift_bot)
 
     step("3. 학습" + (" (GRU 없이)" if a.quick else " (GRU 포함 — 한동안 멈춘 것처럼 보여도 정상)"))
     os.makedirs(out, exist_ok=True)
     env = {"ML_STAGE": "1", **({"ML_RUNS": "1"} if a.runs else {}), **({"ML_IF_NO_VOLUME": "1"} if a.if_no_volume else {}),
            **({"ML_IF_VOLUME": "ratio"} if a.if_ratio else {}),
            **({"ML_EXON": "1"} if a.exon else {}),
+           **({"ML_EXON_SHARED": "1"} if a.exon_shared else {}),
+           **({"ML_HOLD": "1"} if a.hold else {}),
            **({"ML_EXON_LEAK": str(a.exon_leak)} if a.exon_leak is not None else {}),
            **({"ML_GRU": "0"} if a.quick else {})}
     run(["-u", "tools/ml/train.py", out, *[os.path.join(data, f"g{s}", "features.csv") for s in TRAIN_SEEDS]], env, quiet=False)
@@ -182,6 +192,7 @@ def main():
     step("4. 시험")
     models = [("지금 모델", os.path.join(ROOT, "data", "ml", "model", "model.pkl")),
               ("next     ", os.path.join(ROOT, "data", "ml", "model-next", "model.pkl")),
+              *((f"{os.path.basename(os.path.normpath(x))}", os.path.join(ROOT, x, "model.pkl")) for x in a.also_eval),
               ("새 모델  ", os.path.join(out, "model.pkl"))]
     tests = [(f"생성 시드 {TEST_SEED} (실제 둘레 포함)", os.path.join(data, f"g{TEST_SEED}"))]
     ref = os.path.join(data, f"g{TEST_SEED}", "features.csv")

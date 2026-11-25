@@ -119,6 +119,14 @@ EXON_SEGMENTS = {
     # 한 운행에서 한도 가까이 삼 (가족 몫 대량 구매 vs 쓸어 담기 봇). seats_paid_ratio = 결제 좌석 / 운행당 한도 4
     "bulk": [("seats_paid_ratio", ">=", 0.75)],
 }
+# 6차 (ML_EXON_SHARED=1, 2026-11-25): 기기를 같이 쓰는 가족 (5차 진단: 가족 기기 공유 오탐 28/114, 강한 증거에 막히거나 그룹 밖).
+# 기기는 같이 쓰지만 카드는 각자이고, 같은 기기 계정끼리 첫 선점이 30분 넘게 떨어져 있을 때만 (몇 초 차로 도는 봇 농장은 제외).
+# 이 그룹만 "기기 공유" 강한 증거를 예외로 둔다 (카드 공유는 그대로 막음). 이 조건을 노리는 봇은 generate.py b_shift_device
+EXON_SHARED_GAP_LOG = 7.5   # log1p(초) ≈ 30분
+if os.environ.get("ML_EXON_SHARED") == "1":
+    EXON_SEGMENTS["shared_device"] = [("accounts_on_device", ">=", 2), ("accounts_on_card", "<=", 1),
+                                      ("min_sync_gap_s_log", ">=", EXON_SHARED_GAP_LOG)]
+EXON_ALLOW_HARD = {"shared_device": ["accounts_on_device"]}   # 그룹 → 이 그룹에서만 풀어 주는 강한 증거
 EXON_HARD = [("accounts_on_device", ">=", 2), ("accounts_on_card", ">=", 2)]
 EXON_CAP = 50.0
 
@@ -152,7 +160,7 @@ def train_exon(X, y, tr):
         clf.fit(Xs, ys)
         cleared = float((p_cv[ys == 1] >= q).mean())
         print(f"해명 모델 {name}: 사람 {n_h} · 봇 {n_b} · 문턱 P(사람) ≥ {q:.3f} → 그룹 사람 {cleared:.0%} 풀림, 그룹 봇 ≤ {leak:.0%}")
-        out.append({"name": name, "conds": conds, "clf": clf, "q": q})
+        out.append({"name": name, "conds": conds, "clf": clf, "q": q, "allow_hard": EXON_ALLOW_HARD.get(name, [])})
     return {"segments": out, "hard": EXON_HARD, "cap": EXON_CAP}
 
 

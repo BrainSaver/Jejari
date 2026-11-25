@@ -69,9 +69,17 @@ def main():
         seg_p[seg["name"]] = p
     # score.exon_mask와 같은 순서: 앞 그룹에서 풀리면 뒤 그룹은 안 봄
     cleared = np.zeros(len(X), dtype=bool)
+    blocked = np.zeros(len(X), dtype=bool)   # 든 그룹 어디서든 강한 증거로 막힘
     for seg in ex["segments"]:
-        m = seg_in[seg["name"]] & ~hard & ~cleared
+        h = np.zeros(len(X), dtype=bool)
+        for c in ex["hard"]:
+            if c[0] not in seg.get("allow_hard", ()):
+                h |= cond_mask(feats, X, [c])
+        blocked |= seg_in[seg["name"]] & h
+        m = seg_in[seg["name"]] & ~h & ~cleared
         cleared[m] = seg_p[seg["name"]][m] >= seg["q"]
+    allow = {s["name"]: s.get("allow_hard", ()) for s in ex["segments"]}
+    blocked_in = lambda s, j: any(hard_by[c[0]][j] for c in ex["hard"] if c[0] not in allow[s])
     final = np.where(cleared, np.minimum(base, cap), base) if cap is not None else base
 
     print(f"모델 {pkl} · 문턱 {thr:.1f}점 · 해명 상한 {cap} · 쓴 모델 {' + '.join(P)}"
@@ -110,7 +118,7 @@ def main():
                 why_k = "?"
             elif not any(seg_in[s][j] for s in seg_in):
                 why_k = "그룹 밖 (조건 미달)"
-            elif hard[j]:
+            elif blocked[j] and not any(seg_in[s][j] and not blocked_in(s, j) for s in seg_in):
                 why_k = "강한 증거(기기·카드 공유)"
             elif not cleared[j]:
                 why_k = "해명 확률 < 문턱"
@@ -124,7 +132,7 @@ def main():
         rc = defaultdict(int)
         for j in flagged_rows:
             for x in row_reasons(model, X[j], by[j]):
-                rc[x.split(" ")[0]] += 1
+                rc["GRU 행동 순서" if "(GRU)" in x else x.split(" (")[0].rsplit(" ", 1)[0]] += 1   # "같은 기기 계정 3 (사람 1~2)" → "같은 기기 계정"
         if rc:
             print("   근거로 자주 나온 특징: " + " · ".join(f"{a} {b}" for a, b in sorted(rc.items(), key=lambda t: -t[1])[:6]))
         for j in flagged_rows[:5]:
