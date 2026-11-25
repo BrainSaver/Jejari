@@ -1,0 +1,5 @@
+학습 2026-11-25T05:57:33 · 계정 18000 (봇 4875 · 사람 13125) · 파일 3개
+문턱 96.3점 (사람 검증 세트 오탐 5%)
+학습 데이터 안: 봇 탐지 99.9% · 사람(검증) 오탐 4.8%  ← 낙관적인 값
+뺀 특징: account_age_days_log, accounts_on_ip, distinct_ips, min_sync_gap_ip_s_log
+GRU: 큰 GRU 5개 평균 (gru.pt) · 부스팅+IF만일 때 문턱 96.0점
