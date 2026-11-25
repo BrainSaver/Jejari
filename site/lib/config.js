@@ -12,8 +12,7 @@ export const MAIN = 'main';
 export const REFS = [MAIN, ...NAMES];
 
 export const PIN_RE = /^\d{4}$/;
-export const PIN_MAX_FAIL = 5;
-export const PIN_LOCK_SEC = 600;
+// PIN 실패 잠금 횟수·시간은 lib/guard.js
 export const SESSION_SEC = 7 * 24 * 3600;
 export const PBKDF2_ITER = 100000; // Workers의 PBKDF2 최대 반복 수
 

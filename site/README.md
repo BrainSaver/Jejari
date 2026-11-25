@@ -4,10 +4,15 @@
 
 - 보기는 누구나 합니다.
 - 고치려면 이름(브랜치 이름 5개 중 하나)과 숫자 4자리 PIN으로 들어옵니다. PIN은 처음 들어오는 사람이 정합니다.
+  - PIN을 5번 틀리면 잠기고, 잠길 때마다 길어집니다(10분 → 1시간 → 6시간 → 24시간). 맞히면 풀립니다. 실패 횟수는 D1 `pin_fail`에 세서 동시에 여러 번 보내도 5번 넘게 확인하지 않습니다 (`lib/guard.js`).
+  - 팀장이 PIN을 초기화할 때는 임시 PIN을 정해 그 팀원에게 직접 알려 줍니다. 팀원은 임시 PIN으로 들어오면서 새 PIN으로 바꿉니다. (예전처럼 지우기만 하면 그 사이 아무나 먼저 들어와 PIN을 차지할 수 있었음)
+- **남용 막기** (`lib/guard.js`, D1 `rate_hit`): 로그인 시도 IP당 10분 20번, AI 질문 IP당 1분 15번(로그인 안 한 사람 전체 합쳐 1분 120번), LLM용 복사 IP당 1분 10번, 로그인 안 한 사람의 GitHub 읽기 IP당 1분 120번(캐시에 없을 때만 셈, `fresh`는 로그인한 사람만). 넘으면 429와 기다릴 초를 줍니다. 값은 `RATE_LOGIN=20/600`처럼 변수로 바꿀 수 있습니다.
+- **보안 헤더**: `public/_headers`가 다른 사이트의 iframe에 넣는 것(클릭재킹)을 막습니다. ERD 편집기·화면 시안·HTML 문서는 모두 sandbox iframe(사이트와 다른 출처)이라 그 안의 스크립트가 로그인 쿠키로 API를 부르지 못합니다. ERD 편집기의 브라우저 저장과 "내 수정 저장"은 postMessage 다리로 사이트가 대신 처리합니다 (`app.js` `erdDoc`).
+- API 오류 응답에는 내부 메시지를 넣지 않고 서버 로그(`console.error`)에만 남깁니다.
 - 고친 내용은 그 사람 이름 브랜치에 커밋됩니다. 저장 직전에 main을 그 브랜치에 먼저 합칩니다.
 - 커밋 메시지는 Groq AI가 바뀐 줄을 보고 `타입(범위): 제목` 형식으로 써 주고, 저장 전에 고칠 수 있습니다.
 - "main에 합치기"를 누르면 PR 없이 바로 main에 합칩니다 (squash 아님, 이름별 커밋 보존).
-- 문서에서 글을 드래그하면 **AI에게 물어보기**(Groq)와 **LLM용 복사** 버튼이 뜹니다. 로그인 없이 쓸 수 있고, AI 질문은 IP당 1분에 15번까지입니다.
+- 문서에서 글을 드래그하면 **AI에게 물어보기**(Groq)와 **LLM용 복사** 버튼이 뜹니다. 로그인 없이 쓸 수 있고, AI 질문은 IP당 1분에 15번까지입니다(위 "남용 막기").
   - AI는 고른 부분만 보지 않습니다. 매번 **프로젝트 지도**(개요·역할·문서별 목차·테이블 목록·원천 규칙, `lib/context.js`의 `buildBrief`)와, main의 기획서·기능설계·동시성·DB설계·화면설계를 섹션 조각으로 나눠 질문과 겹치는 낱말이 많은 조각(BM25)을 함께 보냅니다. 문서 전체(20만 토큰 이상)는 Groq 무료 한도를 넘어 매번 보낼 수 없기 때문입니다. 답 아래 "참고한 문서"에 고른 조각이 보입니다.
   - 관련 조각 분량은 `ASK_CONTEXT_CHARS`(기본 6000자). Groq가 "너무 크다"고 거절하면 3분의 1로 줄여 한 번 더 보냅니다. 모델은 `GROQ_ASK_MODEL`(없으면 `GROQ_MODEL`)로 바꿀 수 있습니다.
   - 답은 3~6줄로 짧게 하고, 끝에 "이어서 물어보기" 질문 3개를 붙입니다(`[[이어서]]` 형식을 서버가 떼어 냄). 답 속 문장을 드래그하면 그 부분만 더 물어볼 수 있습니다. "참고한 부분"(최대 5곳)을 누르면 그 문서의 해당 섹션으로 이동합니다.
@@ -83,10 +88,10 @@ cd site && npx -y wrangler@4.40.0 pages deploy public --project-name jejari --br
 cd site
 node test/mock-github.mjs .. 9100 &        # 가짜 GitHub (레포 문서로 시작)
 npx wrangler@4.40.0 pages dev public --kv AUTH \
-  --binding GITHUB_TOKEN=test-token --binding GITHUB_API=http://127.0.0.1:9100 --port 8790
+  --binding GITHUB_TOKEN=test-token --binding GITHUB_API=http://127.0.0.1:9100 --binding RATE_LOGIN=200/600 --port 8790
 node test/api-test.mjs http://127.0.0.1:8790 http://127.0.0.1:9100   # API 흐름 검사
 ```
 
-D1까지 보려면 `--d1 AI_DB=local-ai-db`를 더합니다. AI 물어보기까지 보려면 `pages dev`에 `--binding GROQ_API_KEY=test-groq --binding GROQ_API=http://127.0.0.1:9100/groq`를 더하고, 검사는 `ASK_AI=1 node test/api-test.mjs …`로 돌립니다 (가짜 Groq가 답함). 실행할 때마다 `--persist-to`로 새 KV 폴더를 주면 지난 PIN이 남지 않습니다.
+검사는 한 IP에서 로그인을 많이 하므로 `RATE_LOGIN`을 넉넉히 줍니다. D1까지 보려면 `--d1 AI_DB=local-ai-db`를 더합니다 (PIN 잠금·횟수 제한도 D1로 정확히 셈). AI 물어보기까지 보려면 `pages dev`에 `--binding GROQ_API_KEY=test-groq --binding GROQ_API=http://127.0.0.1:9100/groq`를 더하고, 검사는 `ASK_AI=1 node test/api-test.mjs …`로 돌립니다 (가짜 Groq가 답함). 실행할 때마다 `--persist-to`로 새 KV 폴더를 주면 지난 PIN이 남지 않습니다.
 
 브라우저로 http://127.0.0.1:8790 을 열면 가짜 GitHub 위에서 로그인·저장·합치기를 해 볼 수 있습니다.

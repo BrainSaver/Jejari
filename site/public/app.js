@@ -266,31 +266,35 @@ function loginModal(after) {
   let pick = null;
   const m = openModal(`<h2>로그인</h2>
     <p class="muted" style="margin:0 0 8px">이름은 브랜치 이름이라 바꿀 수 없어요. 처음이면 지금 정하는 숫자 4자리가 PIN이 돼요.</p>
-    <div class="names">${Object.keys(S.members).map((n) => `<button data-n="${n}"><b>${n}</b><small>${esc(S.members[n])}${S.pins[n] ? '' : ' · PIN 설정 전'}</small></button>`).join('')}</div>
+    <div class="names">${Object.keys(S.members).map((n) => `<button data-n="${n}"><b>${n}</b><small>${esc(S.members[n])}${!S.pins[n] ? ' · PIN 설정 전' : S.pins[n] === 'temp' ? ' · 임시 PIN' : ''}</small></button>`).join('')}</div>
     <form id="pinForm" hidden>
       <div class="field"><label id="pinLabel">PIN</label><input class="pin" id="pin1" type="password" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="off"></div>
+      <div class="field" id="pinNewWrap" hidden><label>새 PIN (숫자 4자리)</label><input class="pin" id="pinNew" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></div>
       <div class="field" id="pin2Wrap" hidden><label>한 번 더</label><input class="pin" id="pin2" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></div>
       <p class="err" id="pinErr"></p>
       <div class="row"><button type="button" class="btn plain" data-x>취소</button><button class="btn" id="pinGo">들어가기</button></div>
     </form>`);
   $$('.names button', m).forEach((b) => b.addEventListener('click', () => {
     pick = b.dataset.n; $$('.names button', m).forEach((x) => x.classList.toggle('on', x === b));
-    const first = !S.pins[pick];
-    $('#pinForm', m).hidden = false; $('#pin2Wrap', m).hidden = !first;
-    $('#pinLabel', m).textContent = first ? `${pick}의 PIN 정하기 (숫자 4자리)` : `${pick}의 PIN`;
-    $('#pinGo', m).textContent = first ? 'PIN 정하고 들어가기' : '들어가기';
-    $('#pinErr', m).textContent = ''; $('#pin1', m).value = ''; $('#pin2', m).value = ''; $('#pin1', m).focus();
+    const first = !S.pins[pick], temp = S.pins[pick] === 'temp';
+    $('#pinForm', m).hidden = false; $('#pin2Wrap', m).hidden = !first && !temp; $('#pinNewWrap', m).hidden = !temp;
+    $('#pinLabel', m).textContent = first ? `${pick}의 PIN 정하기 (숫자 4자리)` : temp ? `${pick}의 임시 PIN (팀장에게 받은 숫자)` : `${pick}의 PIN`;
+    $('#pinGo', m).textContent = first ? 'PIN 정하고 들어가기' : temp ? '새 PIN으로 바꾸고 들어가기' : '들어가기';
+    $('#pinErr', m).textContent = ''; $('#pin1', m).value = ''; $('#pin2', m).value = ''; $('#pinNew', m).value = ''; $('#pin1', m).focus();
   }));
   $('[data-x]', m).addEventListener('click', closeModal);
   $('#pinForm', m).addEventListener('submit', async (e) => {
     e.preventDefault();
-    const p1 = $('#pin1', m).value, p2 = $('#pin2', m).value, err = $('#pinErr', m);
+    const p1 = $('#pin1', m).value, p2 = $('#pin2', m).value, pn = $('#pinNew', m).value, err = $('#pinErr', m);
+    const temp = S.pins[pick] === 'temp';
     if (!/^\d{4}$/.test(p1)) { err.textContent = '숫자 4자리를 넣어 주세요.'; return; }
     if (!S.pins[pick] && p1 !== p2) { err.textContent = '두 번 넣은 PIN이 달라요.'; return; }
+    if (temp && !/^\d{4}$/.test(pn)) { err.textContent = '새 PIN을 숫자 4자리로 넣어 주세요.'; return; }
+    if (temp && pn !== p2) { err.textContent = '두 번 넣은 새 PIN이 달라요.'; return; }
     try {
-      const r = await api('/login', { body: { name: pick, pin: p1 } });
+      const r = await api('/login', { body: { name: pick, pin: p1, ...(temp ? { newPin: pn } : {}) } });
       closeModal(); await loadMe(); loadBranches();
-      toast(r.firstSet ? `${pick}의 PIN을 정했어요. 다음부터 이 PIN으로 들어와요.` : `${pick}로 들어왔어요.`);
+      toast(r.firstSet ? `${pick}의 PIN을 정했어요. 다음부터 이 PIN으로 들어와요.` : r.changed ? '새 PIN으로 바꿨어요. 다음부터 새 PIN으로 들어와요.' : `${pick}로 들어왔어요.`);
       if (after) after();
     } catch (x) { err.textContent = x.message; }
   });
@@ -305,13 +309,16 @@ $('#userMenu').addEventListener('click', async (e) => {
   if (act === 'reset') resetModal();
 });
 function resetModal() {
-  const m = openModal(`<h2>PIN 초기화</h2><p class="muted" style="margin:0 0 10px">초기화한 이름은 다음에 들어올 때 PIN을 새로 정해요.</p>
-    <table class="list-tbl">${Object.keys(S.members).map((n) => `<tr><td>${nameTag(n)}</td><td>${S.pins[n] ? '<span class="badge ok">설정됨</span>' : '<span class="badge">설정 전</span>'}</td>
-    <td style="text-align:right">${S.pins[n] ? `<button class="btn sm danger" data-n="${n}">초기화</button>` : ''}</td></tr>`).join('')}</table>
+  const badge = (v) => (v === 'temp' ? '<span class="badge">임시 PIN</span>' : v ? '<span class="badge ok">설정됨</span>' : '<span class="badge">설정 전</span>');
+  const m = openModal(`<h2>PIN 초기화</h2><p class="muted" style="margin:0 0 10px">임시 PIN(숫자 4자리)을 정해 그 팀원에게 직접 알려 주세요. 팀원은 임시 PIN으로 들어오면서 새 PIN으로 바꿔요.</p>
+    <table class="list-tbl">${Object.keys(S.members).map((n) => `<tr><td>${nameTag(n)}</td><td>${badge(S.pins[n])}</td>
+    <td style="text-align:right;white-space:nowrap"><input class="pin" data-p="${n}" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="임시 PIN" aria-label="${n}의 임시 PIN" style="width:6.5em"> <button class="btn sm danger" data-n="${n}">초기화</button></td></tr>`).join('')}</table>
     <div class="row"><button class="btn plain" data-x>닫기</button></div>`);
   $('[data-x]', m).addEventListener('click', closeModal);
   $$('button[data-n]', m).forEach((b) => twoStep(b, '한 번 더 누르면 초기화', async () => {
-    try { await api('/admin/reset-pin', { body: { name: b.dataset.n } }); await loadMe(); toast(`${b.dataset.n}의 PIN을 지웠어요.`); resetModal(); }
+    const pin = $(`input[data-p="${b.dataset.n}"]`, m).value;
+    if (!/^\d{4}$/.test(pin)) { toast('임시 PIN을 숫자 4자리로 넣어 주세요.'); return; }
+    try { await api('/admin/reset-pin', { body: { name: b.dataset.n, pin } }); await loadMe(); toast(`${b.dataset.n}의 PIN을 임시 PIN으로 바꿨어요. 그 팀원에게 직접 알려 주세요.`); resetModal(); }
     catch (x) { toast(x.message); }
   }));
 }
@@ -573,17 +580,61 @@ async function pageDb(tab) {
   if (tab === 'erd') return erdTab(root);
   return exportsTab(root);
 }
+// ERD 편집기는 sandbox iframe(사이트와 다른 출처)에서 돌린다. 편집기 HTML 속 스크립트가 로그인 쿠키로 API를 부를 수 없게.
+// 다른 출처라 편집기가 localStorage를 못 쓰므로, 맨 앞에 작은 다리 스크립트를 넣어
+//   - localStorage를 흉내 내고(처음 값은 사이트가 넣어 줌, 바뀐 값은 postMessage로 사이트에 저장)
+//   - "내 수정 저장"의 exportJSON()과 Esc를 메시지로 주고받는다.
+const ERD_STORE = 'fairrail-erd-v1'; // 편집기의 STORE 키와 같아야 함 (바꾸지 않음)
+const ERD_STORE_MAX = 4 * 1024 * 1024;
+function erdDoc(html) {
+  let saved = null;
+  try { saved = localStorage.getItem(ERD_STORE); } catch {}
+  const init = JSON.stringify({ k: ERD_STORE, v: saved, o: location.origin }).replace(/</g, '\\u003c');
+  const shim = `<script>(function(){var I=${init},D={},P=parent,O=I.o;D[I.k]=I.v;
+function has(k){return Object.prototype.hasOwnProperty.call(D,k)&&D[k]!=null}
+function put(k,v){D[k]=v;try{P.postMessage({jejariErdSet:{k:k,v:v}},O)}catch(e){}}
+var S={getItem:function(k){k=String(k);return has(k)?D[k]:null},setItem:function(k,v){put(String(k),String(v))},removeItem:function(k){put(String(k),null)},
+clear:function(){Object.keys(D).forEach(function(k){put(k,null)})},key:function(i){return Object.keys(D).filter(has)[i]||null}};
+Object.defineProperty(S,'length',{get:function(){return Object.keys(D).filter(has).length}});
+try{Object.defineProperty(window,'localStorage',{value:S,configurable:true})}catch(e){}
+window.addEventListener('message',function(e){if(e.source!==P||!e.data||!e.data.jejariErdExport)return;var r={jejariErdExported:e.data.jejariErdExport};
+try{r.content=window.exportJSON()}catch(x){r.error=String(x&&x.message||x)}P.postMessage(r,O)});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')P.postMessage({jejariErdEsc:1},O)});})();<\/script>`;
+  const at = /<meta[^>]*charset[^>]*>/i.exec(html) || /<head[^>]*>/i.exec(html);
+  return at ? html.slice(0, at.index + at[0].length) + shim + html.slice(at.index + at[0].length) : shim + html;
+}
+// 편집기 쪽 메시지: 저장(정해진 키만, 크기 제한)과 내보내기 답
+const erdWaits = new Map();
+window.addEventListener('message', (e) => {
+  const fr = $('.erd-frame');
+  if (!fr || e.source !== fr.contentWindow || !e.data) return;
+  const d = e.data;
+  if (d.jejariErdSet && d.jejariErdSet.k === ERD_STORE) {
+    const v = d.jejariErdSet.v;
+    try { if (v == null) localStorage.removeItem(ERD_STORE); else if (typeof v === 'string' && v.length <= ERD_STORE_MAX) localStorage.setItem(ERD_STORE, v); } catch {}
+  }
+  if (d.jejariErdExported && erdWaits.has(d.jejariErdExported)) { erdWaits.get(d.jejariErdExported)(d); erdWaits.delete(d.jejariErdExported); }
+  if (d.jejariErdEsc) { const w = $('.erd-wrap.fs'); if (w) $('.fs-close', w).click(); }
+});
+function erdExport(frame) {
+  return new Promise((ok, no) => {
+    const id = 'x' + Math.random().toString(36).slice(2);
+    const t = setTimeout(() => { erdWaits.delete(id); no(new Error('timeout')); }, 5000);
+    erdWaits.set(id, (d) => { clearTimeout(t); if (typeof d.content === 'string') ok(d.content); else no(new Error(d.error || 'no content')); });
+    frame.contentWindow.postMessage({ jejariErdExport: id }, '*');
+  });
+}
 async function erdTab(root) {
   root.innerHTML = `${branchBanner(S.ref)}${S.me ? `<div class="banner info" style="flex-wrap:wrap">ERD 편집기에서 고친 뒤
     <b>내 수정 저장</b>을 누르면 <code>docs/erd/exports/${esc(S.me)}-날짜.json</code>으로 내 브랜치에 커밋돼요. 스키마(HTML) 반영은 강동균이 패치로 해요.
     <button class="btn sm" id="erdSave">내 수정 저장</button></div>` : '<div class="banner info">테이블을 누르면 컬럼·설명이 나오고, 위쪽 "문서"에서 공통 규칙·흐름을 볼 수 있어요. 여기서 고친 내용은 내 브라우저에만 남아요.</div>'}
     <div class="erd-tools"><span class="muted">칸이 좁으면 전체화면으로 크게 보세요.</span><button class="btn sm plain" id="erdFs">⛶ 전체화면</button></div>
-    <div class="erd-wrap"><iframe class="erd-frame" title="ERD 편집기"></iframe><button class="fs-close" type="button">닫기 (Esc)</button></div>`;
+    <div class="erd-wrap"><iframe class="erd-frame" sandbox="allow-scripts allow-popups" referrerpolicy="no-referrer" title="ERD 편집기"></iframe><button class="fs-close" type="button">닫기 (Esc)</button></div>`;
   bindBanner(root);
   const f = await fetchFile(ERD_PATH, S.ref);
   const frame = $('iframe', root);
   if (!f) { frame.replaceWith(Object.assign(document.createElement('p'), { className: 'empty', textContent: 'ERD 편집기 파일이 없어요.' })); return; }
-  frame.srcdoc = f.content;
+  frame.srcdoc = erdDoc(f.content);
   // 전체화면: 칸을 화면 가득 키우고, 지원하는 브라우저면 진짜 전체화면도 켠다. Esc는 편집기 안에서 눌러도 닫힌다.
   const wrap = $('.erd-wrap', root);
   const fsOff = () => { wrap.classList.remove('fs'); document.body.classList.remove('no-scroll'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); };
@@ -592,11 +643,10 @@ async function erdTab(root) {
   wrap.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) { wrap.classList.remove('fs'); document.body.classList.remove('no-scroll'); } });
   const onEsc = (e) => { if (e.key === 'Escape' && wrap.classList.contains('fs')) fsOff(); };
   document.addEventListener('keydown', function esc(e) { if (!wrap.isConnected) { document.removeEventListener('keydown', esc); return; } onEsc(e); });
-  frame.addEventListener('load', () => { try { frame.contentWindow.document.addEventListener('keydown', onEsc); } catch {} });
   if ($('#erdSave', root)) $('#erdSave', root).addEventListener('click', async () => {
     if (!needLogin()) return;
     let content;
-    try { content = frame.contentWindow.exportJSON(); } catch { toast('ERD 편집기에서 내보내기를 읽지 못했어요.'); return; }
+    try { content = await erdExport(frame); } catch { toast('ERD 편집기에서 내보내기를 읽지 못했어요.'); return; }
     const list = await api('/list' + qs({ dir: 'docs/erd/exports', ref: S.me })).catch(() => []);
     const prev = list.filter((x) => x.name.startsWith(S.me + '-')).map((x) => x.path).sort().pop();
     const before = prev ? ((await fetchFile(prev, S.me)) || {}).content || '' : '';
