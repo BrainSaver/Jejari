@@ -38,7 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np  # noqa: E402
 
 from compare import load  # noqa: E402
-from score import gru_scores, score_matrix  # noqa: E402
+from score import gru_scores, iso_x, score_matrix  # noqa: E402
 
 TRIM = 0.02
 MIN_ACCOUNTS = 200
@@ -84,7 +84,7 @@ def recalibrate(base_dir, real_dir, out_dir, labels=None, fp=0.02, quiet=False):
     new = copy.deepcopy(model)
     Xh = X[human]
     new["ref_gbm"] = np.sort(model["gbm"].predict_proba(Xh)[:, 1])
-    new["ref_iso"] = np.sort(-model["iso"].score_samples(Xh))
+    new["ref_iso"] = np.sort(-model["iso"].score_samples(iso_x(model, Xh)))
     if seq is not None:
         new["gru"]["ref"] = np.sort(np.asarray(seq)[human])
     new["human_q"] = {f: [float(np.nanquantile(Xh[:, i], q)) for q in (0.05, 0.5, 0.95)]

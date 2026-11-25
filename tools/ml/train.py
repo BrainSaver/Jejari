@@ -55,6 +55,12 @@ EXCLUDE = ["account_age_days_log"] + ([] if os.environ.get("ML_USE_IP") == "1"
                                       else ["accounts_on_ip", "distinct_ips", "min_sync_gap_ip_s_log"])
 FEATURES = [f for f in ALL_FEATURES if f not in EXCLUDE]
 COLS = [ALL_FEATURES.index(f) for f in FEATURES]
+# Isolation Forest(사람만 보고 "드문 것"을 잡는 모델)에서 양(量) 특징을 뺀다 (ML_IF_NO_VOLUME=1).
+# 사람 중에도 드물게 많이 사는 사람(단체 총무)이 있어, 양을 넣으면 IF가 그 사람을 통째로 이상하다고 본다
+# (2026-11-25: 총무 오탐 이유가 "손댄 운행 수·결제 수·한도 대비 결제"). 양으로 봇을 가르는 건 부스팅이 맡는다
+IF_VOLUME = ["n_events", "n_view", "n_hold", "n_pay", "n_runs", "seats_paid_ratio"]
+IF_COLS = ([i for i, f in enumerate(FEATURES) if f not in IF_VOLUME]
+           if os.environ.get("ML_IF_NO_VOLUME") == "1" else None)
 
 SEED = 7
 FP_TARGET = 0.05
@@ -118,8 +124,9 @@ def main():
     tr = ~val
 
     gbm = HistGradientBoostingClassifier(max_iter=300, random_state=SEED).fit(X[tr], y[tr].astype(int))
+    Xi = X if IF_COLS is None else X[:, IF_COLS]
     iso = make_pipeline(SimpleImputer(strategy="median"), StandardScaler(),
-                        IsolationForest(n_estimators=300, random_state=SEED)).fit(X[tr & ~y])
+                        IsolationForest(n_estimators=300, random_state=SEED)).fit(Xi[tr & ~y])
 
     # 검증 사람을 둘로: 하나는 백분위 기준(ref), 하나는 문턱. 두 점수의 큰 값을 쓰므로 문턱은 합친 점수로 잡아야
     # 오탐이 5%가 된다 (각각 95백분위로 자르면 둘 중 하나라도 넘는 사람이 늘어 8~9%가 됐다)
@@ -130,13 +137,13 @@ def main():
     rng2.shuffle(vidx)
     ref_i, thr_i = vidx[: len(vidx) // 2], vidx[len(vidx) // 2:]
     ref_gbm = np.sort(gbm.predict_proba(X[ref_i])[:, 1])
-    ref_iso = np.sort(-iso.score_samples(X[ref_i]))
+    ref_iso = np.sort(-iso.score_samples(Xi[ref_i]))
     if gru is not None:
         gru["ref"] = np.sort(gru.pop("scores")[ref_i])
     human = X[~y]
     model = {
         "gbm": gbm, "iso": iso, "ref_gbm": ref_gbm, "ref_iso": ref_iso, "gru": gru,
-        "features": FEATURES, "all_features": ALL_FEATURES, "cols": COLS, "excluded": EXCLUDE,
+        "features": FEATURES, "all_features": ALL_FEATURES, "cols": COLS, "excluded": EXCLUDE, "iso_cols": IF_COLS,
         # 근거 표시용: 사람(생성 데이터)의 특징별 5·50·95 백분위
         "human_q": {f: [float(np.nanquantile(human[:, i], q)) for q in (0.05, 0.5, 0.95)] for i, f in enumerate(FEATURES)},
         "trained": {"at": datetime.now().isoformat(timespec="seconds"), "files": paths,

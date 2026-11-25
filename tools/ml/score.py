@@ -46,10 +46,16 @@ def pct(ref, v):
     return 100 * np.searchsorted(ref, v, side="right") / len(ref)
 
 
+def iso_x(model, X):
+    """IF에 넣는 열 (ML_IF_NO_VOLUME으로 학습한 모델은 양 특징을 뺀 열만). 옛 모델은 전부"""
+    cols = model.get("iso_cols")
+    return X if cols is None else X[:, cols]
+
+
 def parts(model, X, seq_scores=None):
     """모델별 백분위 점수. seq_scores = GRU가 낸 봇 확률 (없으면 GRU 칸은 빠짐)"""
     out = {"부스팅": pct(model["ref_gbm"], model["gbm"].predict_proba(X)[:, 1]),
-           "IF": pct(model["ref_iso"], -model["iso"].score_samples(X))}
+           "IF": pct(model["ref_iso"], -model["iso"].score_samples(iso_x(model, X)))}
     if seq_scores is not None and model.get("gru"):
         out["GRU"] = pct(model["gru"]["ref"], seq_scores)
     return out

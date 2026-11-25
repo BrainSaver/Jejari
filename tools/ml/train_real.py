@@ -52,13 +52,18 @@ def run(args, env_extra=None, quiet=True):
     return r.stdout if quiet else ""
 
 
+# 특징 계산에 늘 켜 두는 것. 운행별 속도(ML_RUNS)는 열을 끝에 더할 뿐이고 모델은 쓰는 열만 이름으로 꺼내므로
+# 옛 모델(지금 모델·next) 점수에는 영향이 없다
+FEAT_ENV = {"ML_STAGE": "1", "ML_RUNS": "1"}
+
+
 def make_data(folder, seed, members, calib, boost=None):
     if not os.path.exists(os.path.join(folder, "events.jsonl")):
         run(["-I", "tools/ml/generate.py", "--members", str(members), "--seed", str(seed), "--out", folder],
             {"ML_PICK_FLOOR": "1", "ML_REAL_CALIB": calib, **({"ML_TRAP_BOOST": str(boost)} if boost else {})})
     feats = os.path.join(folder, "features.csv")
-    if not os.path.exists(feats) or "view_to_hold_min_log" not in open(feats, encoding="utf-8").readline():
-        run(["-I", "tools/ml/features.py", folder], {"ML_STAGE": "1"})
+    if not os.path.exists(feats) or "open_to_hold_med_log" not in open(feats, encoding="utf-8").readline():
+        run(["-I", "tools/ml/features.py", folder], FEAT_ENV)
     with open(feats, encoding="utf-8") as f:
         print(f"  {sum(1 for _ in f) - 1}계정 · {os.path.relpath(folder, ROOT)}", flush=True)
 
@@ -69,7 +74,7 @@ def copy_real(src, dst):
     for x in ("events.jsonl", "members.jsonl", "runs.jsonl"):
         if os.path.exists(os.path.join(src, x)):
             shutil.copyfile(os.path.join(src, x), os.path.join(dst, x))
-    run(["-I", "tools/ml/features.py", dst], {"ML_STAGE": "1"})
+    run(["-I", "tools/ml/features.py", dst], FEAT_ENV)
 
 
 # 대회에서만 생긴 모양 (사람 5명이 계정 27개를 같은 기기로, 흔한 시험 카드 공유, 몇 시간 전에 연 운행 재사용).
@@ -132,6 +137,10 @@ def main():
     ap.add_argument("--data", default="data/ml/real")
     ap.add_argument("--members", type=int, default=6000)
     ap.add_argument("--quick", action="store_true", help="GRU 없이 (흐름 확인용, 비교에는 쓰지 말 것)")
+    ap.add_argument("--runs", action="store_true",
+                    help="운행마다 따로 본 속도 특징(open_to_hold_med_log·fast_open_run_ratio·browse_per_run)을 학습에 넣는다")
+    ap.add_argument("--if-no-volume", action="store_true",
+                    help="Isolation Forest에서 양 특징(운행 수·결제 수 등)을 뺀다 (단체 총무 오탐)")
     ap.add_argument("--trap-boost", type=float, default=None,
                     help="오탐 함정 사람(모임 주선자·오픈 직후·바로 후회·가족 몫·빠른 사람)을 학습 데이터에서 이 배수만큼 (시험 시드는 그대로)")
     ap.add_argument("--calib-from", nargs="+", default=["data/ml/contest-c1124d"])
@@ -154,7 +163,8 @@ def main():
 
     step("3. 학습" + (" (GRU 없이)" if a.quick else " (GRU 포함 — 한동안 멈춘 것처럼 보여도 정상)"))
     os.makedirs(out, exist_ok=True)
-    env = {"ML_STAGE": "1", **({"ML_GRU": "0"} if a.quick else {})}
+    env = {"ML_STAGE": "1", **({"ML_RUNS": "1"} if a.runs else {}), **({"ML_IF_NO_VOLUME": "1"} if a.if_no_volume else {}),
+           **({"ML_GRU": "0"} if a.quick else {})}
     run(["-u", "tools/ml/train.py", out, *[os.path.join(data, f"g{s}", "features.csv") for s in TRAIN_SEEDS]], env, quiet=False)
     shutil.copyfile(calib, os.path.join(out, "real_calibration.json"))
 
