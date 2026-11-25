@@ -7,7 +7,7 @@ import com.jejari.auth.ActorType;
 import org.springframework.web.bind.annotation.CookieValue;
 import jakarta.servlet.http.HttpServletRequest;
 
-import org.springframework.http.HttpHeaders;
+import com.jejari.common.web.UserAgents;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -48,7 +48,8 @@ public class AdminAuthController {
 	@PostMapping("/login")
 	public ResponseEntity<TokenResponse> login(@RequestBody AdminLoginRequest req, HttpServletRequest http) {
 		String ipHash = pseudonymizer.ip(ipResolver.resolve(http));
-		return tokenResponses.ok(login.login(req.loginId(), req.password(), ipHash, http.getHeader(HttpHeaders.USER_AGENT)));
+		// 회원 로그인과 같은 정리(제어 문자 제거·바이트 제한). 전에는 원문을 그대로 넘겨 로그인 기록에 제어 문자가 남았다 (§2.3)
+		return tokenResponses.ok(login.login(req.loginId(), req.password(), ipHash, UserAgents.from(http)));
 	}
 
 	/**
