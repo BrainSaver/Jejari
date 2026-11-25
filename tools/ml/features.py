@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import bisect
 import csv
 import json
 import math
@@ -90,6 +91,15 @@ HOLD = [
 HOLD_ON = os.environ.get("ML_HOLD") == "1"
 if HOLD_ON:
     FEATURES = FEATURES + HOLD
+# 같은 기기 계정끼리 "모든" 선점 시각의 가장 가까운 차이 (2026-11-25, 6차 보강). ML_LINK=1일 때만, 끝에 붙인다.
+# min_sync_gap_s_log는 첫 선점끼리만 비교해서, 첫 선점만 몇 시간 띄우고 다음 운행에서 한꺼번에 몰려 사는 봇을
+# "시간이 안 겹치는 가족"으로 볼 수 있다. 해명 그룹 shared_device는 이 값으로 시간 겹침을 본다
+LINK = [
+    "min_dev_hold_gap_s_log",    # 같은 기기 다른 계정의 선점과 내 선점 사이 최소 초, log1p (연결 계정이 없으면 하루)
+]
+LINK_ON = os.environ.get("ML_LINK") == "1"
+if LINK_ON:
+    FEATURES = FEATURES + LINK
 HANDOFF_SEC = 60
 
 
@@ -223,6 +233,7 @@ def build(folder: str) -> list[dict]:
     # 연결: 기기·카드·IP → 계정들, 계정 → 첫 선점 시각
     by_dev, by_card, by_ip = defaultdict(set), defaultdict(set), defaultdict(set)
     first_hold = {}
+    hold_ts = defaultdict(list)
     for m, evs in events.items():
         for e in evs:
             if e.get("device_hash"):
@@ -234,6 +245,8 @@ def build(folder: str) -> list[dict]:
                 by_card[card].add(m)
             if e["event_type"] == "SEAT_HOLD" and m not in first_hold:
                 first_hold[m] = ts(e["ts"])
+            if e["event_type"] == "SEAT_HOLD":
+                hold_ts[m].append(ts(e["ts"]).timestamp())
     for m, info in members.items():
         for c in info.get("cards") or []:
             by_card[c].add(m)
@@ -287,6 +300,15 @@ def build(folder: str) -> list[dict]:
         gap = lambda others: [abs((first_hold[o] - first_hold[m]).total_seconds())
                               for o in others if o in first_hold and m in first_hold]
         gaps, gaps_ip = gap(linked), gap(linked_ip)
+        dev_hold_gap = 86400.0
+        if LINK_ON and hold_ts.get(m):
+            mine = sorted(hold_ts[m])
+            for o in links(m, by_dev, dev_of) - {m}:
+                for t_o in hold_ts.get(o, ()):
+                    k = bisect.bisect_left(mine, t_o)
+                    for i in (k - 1, k):
+                        if 0 <= i < len(mine):
+                            dev_hold_gap = min(dev_hold_gap, abs(mine[i] - t_o))
         mean = statistics.fmean(ints) if ints else math.nan
         short = [i for i in ints if i < 10]
         smean = statistics.fmean(short) if short else math.nan
@@ -317,6 +339,7 @@ def build(folder: str) -> list[dict]:
             "accounts_on_ip": max((len(by_ip[i]) for i in ip_of(m)), default=0),
             "min_sync_gap_s_log": math.log1p(min(gaps)) if gaps else math.log1p(86400),
             "min_sync_gap_ip_s_log": math.log1p(min(gaps_ip)) if gaps_ip else math.log1p(86400),
+            **({"min_dev_hold_gap_s_log": math.log1p(dev_hold_gap)} if LINK_ON else {}),
             "device_missing": int(not dev_of(m)),
             "first_hold_after_open_log": first_hold_log(evs),
             "account_age_days_log": math.log1p(info.get("created_days_ago") or 0),
