@@ -653,6 +653,20 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
     <tr><td>어긋남을 아는 데 걸리는 시간</td><td>부하 시험 때 손으로</td><td><b>매시간 자동</b></td><td>정합성 점검 10항목 → Pushgateway → Grafana 경보 14개 → Discord</td></tr>
   </table></div>
   <p class="muted">장애 주입으로 확인: <code>docker pause kafka</code> 45초 · SIGTERM 재시작 · 깨진 메시지 · DB 제약 위반. 자세한 것은 <code>docs/강동균/troubleshooting/</code> (11-20).</p>
+
+  <h3>Redis가 통째로 죽으면 — 멈추지만 틀리지 않는다</h3>
+  <p>Redis는 단일 노드라 <b>가용성</b>의 단일 장애점입니다. 하지만 <b>정합성</b>은 Redis에 걸지 않았습니다 —
+     좌석은 DB의 PK, 매수 한도는 DB 카운터, 커밋 뒤 정리는 outbox가 최종입니다.</p>
+  <div class="tw"><table>
+    <tr><th>상황</th><th>무슨 일이</th><th>근거</th></tr>
+    <tr><td>Redis가 죽음</td><td>검색은 정상, 대기열·선점·결제는 <b>DB에 가기 전에</b> 2초 안에 503. 잘못 팔리는 것 없음</td><td><code>RedisExceptionHandler</code>, timeout 2s</td></tr>
+    <tr><td>살아났는데 한도 키를 잃음</td><td>다음 요청이 DB 카운터로 한 번만 복원 (동시 5건 중 3건만 통과)</td><td>T14</td></tr>
+    <tr><td>좌석 키를 잃음</td><td>Redis 1차는 통과해도 DB의 살아 있는 선점이 거절</td><td>T14</td></tr>
+    <tr><td>커밋 직후 앱이 죽어 정리 유실</td><td>outbox 보장 경로가 다시 정리, 두 번 돌려도 한 번</td><td>T26</td></tr>
+    <tr><td>대기열 순서</td><td>되살릴 원본이 없어 다시 줄 서기 (오픈 순간 진입을 DB에 쓰지 않으려고 고른 트레이드오프)</td><td>—</td></tr>
+  </table></div>
+  <p class="muted">장애 조치(복제본 + Sentinel)는 "덜 멈추게" 하는 다음 단계입니다. 승격 때 마지막 쓰기를 잃어도 위와 같은 경로로 되살립니다.
+     T14·T26은 PC에서 첫 실행 대기. 자세히: <code>docs/강동균/features/Redis-단일-장애점.md</code></p>
 </section>
 
 <!-- ───────────────────────────── ERD -->
