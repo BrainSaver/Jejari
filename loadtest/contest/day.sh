@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
 # 봇 대회 날, 집계자 PC에서 돌리는 준비·정리 스크립트.
 #
-#   ADMIN_ID=… ADMIN_PW=… loadtest/contest/day.sh start     # 가입 제한 올림 → 대회 운행 만들기 → 접속 주소 안내
-#   ADMIN_ID=… ADMIN_PW=… loadtest/contest/day.sh restore   # 대회가 끝나면 가입 제한을 원래 값으로
+#   ADMIN_ID=… ADMIN_PW=… loadtest/contest/day.sh start     # 이 PC만 가입·로그인 한도 해제(자동 종료) → 대회 운행 → 접속 주소
+#   ADMIN_ID=… ADMIN_PW=… loadtest/contest/day.sh restore   # 대회가 끝나면 해제를 바로 끝냄 (잊어도 시간이 되면 저절로 끝남)
 #
-# 왜 가입 제한을 올리나: 가입(본인인증 포함)은 IP당 1시간에 10번 시도까지다 (app_policy auth.signup_rate_per_hour).
-# 봇 네 개가 한 PC에서 명의 24개를 만들면 막힌다. 대회 동안만 정책 최댓값 100으로 올리고, 끝나면 되돌린다.
-# 위험 점수 규칙·정책은 건드리지 않는다 (1차 대회 동안 수비 고정).
+# 왜 한도를 푸나: 가입(본인인증 포함)은 IP당 1시간에 10번 시도까지다 (app_policy auth.signup_rate_per_hour).
+# 봇 네 개가 한 PC에서 명의 24개를 만들면 막힌다.
+#
+# 어떻게 푸나 (2026-11-25부터): 인증 시도 제한 임시 해제(ERD v39, 관리자 화면 "운영 설정")로 이 PC의 IP만,
+# RELAX_HOURS(기본 4)시간 동안. 시간이 지나면 앱이 읽을 때 평소 한도로 돌아가므로 restore를 잊어도 된다.
+# 예전에는 전체 한도(auth.signup_rate_per_hour)를 100으로 올렸다가 restore를 4일 동안 잊은 적이 있다 (11-19 ~ 11-23).
+# 다른 기기에서 들어오는 사람 참가자는 평소 한도 (사람 한 명이 계정 하나면 충분). 사람 한 명이 기기 하나로 계정을
+# 여러 개 만드는 시험이면 RAISE_GLOBAL=yes로 예전처럼 전체 한도도 올린다 — 이때는 restore를 꼭.
+# 위험 점수 규칙·정책은 건드리지 않는다 (대회 동안 수비 고정).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 CMD="${1:-}"
 BASE_URL="${BASE_URL:-http://localhost:8080}"
-STATE=".contest-day"   # 원래 정책 값을 적어 두는 파일 (gitignore)
+STATE=".contest-day"   # RAISE_GLOBAL=yes일 때 원래 전체 한도를 적어 두는 파일 (gitignore)
+RELAX_HOURS="${RELAX_HOURS:-4}"
 KEY="auth.signup_rate_per_hour"
 : "${ADMIN_ID:?ADMIN_ID 환경 변수가 필요합니다 (SUPERVISOR 관리자)}"
 : "${ADMIN_PW:?ADMIN_PW 환경 변수가 필요합니다}"
@@ -37,13 +44,29 @@ set_policy() { # $1 값
   call PUT "/api/v1/admin/policies/${KEY}" "{\"value\":\"$1\",\"version\":${ver}}" > /dev/null
 }
 
+# 이 PC만 한도 해제. 사유는 영문으로 (Windows Git Bash의 curl이 한글 본문을 깨뜨려 400)
+relax_start() {
+  local body="{\"hours\":${RELAX_HOURS},\"reason\":\"bot contest day.sh, auto off in ${RELAX_HOURS}h\""
+  call POST /api/v1/admin/auth-relax "${body},\"ip\":\"\"}" > /dev/null   # 비우면 이 요청을 보낸 IP
+  # 앱이 이 PC에 있으면 봇은 127.0.0.1 또는 ::1로 들어온다. 앱은 ::1을 0:0:0:0:0:0:0:1로 본다 → 두 모양 모두
+  if [[ "$BASE_URL" =~ ://(localhost|127\.0\.0\.1|\[::1\]) ]]; then
+    for ip in 127.0.0.1 0:0:0:0:0:0:0:1; do call POST /api/v1/admin/auth-relax "${body},\"ip\":\"${ip}\"}" > /dev/null; done
+  fi
+  call GET /api/v1/admin/auth-relax | sed -n 's/.*"until":"\{0,1\}\([^",}]*\).*/  해제 종료 시각: \1 (그때 저절로 평소 한도)/p'
+  echo
+}
+
 case "$CMD" in
   start)
     login
-    before=$(call GET "/api/v1/admin/policies/${KEY}" | val value)
-    [[ -f "$STATE" ]] || echo "$before" > "$STATE"
-    echo "가입 제한 ${KEY}: ${before} → 100 (대회 동안만. 끝나면 day.sh restore)"
-    set_policy 100
+    relax_start
+    echo "가입·로그인 한도 해제: 이 PC(봇)만, ${RELAX_HOURS}시간. restore를 잊어도 시간이 되면 저절로 끝납니다"
+    if [[ "${RAISE_GLOBAL:-no}" == yes ]]; then
+      before=$(call GET "/api/v1/admin/policies/${KEY}" | val value)
+      [[ -f "$STATE" ]] || echo "$before" > "$STATE"
+      echo "주의: RAISE_GLOBAL=yes — 전체 가입 한도 ${KEY}: ${before} → 100. 이건 저절로 안 돌아갑니다. 끝나면 반드시 day.sh restore"
+      set_policy 100
+    fi
 
     echo
     bash loadtest/contest/setup.sh "$BASE_URL"
@@ -63,11 +86,14 @@ case "$CMD" in
     ;;
   restore)
     login
-    [[ -f "$STATE" ]] || { echo "되돌릴 값이 없습니다 (${STATE} 없음)"; exit 1; }
-    orig=$(cat "$STATE")
-    set_policy "$orig"
-    rm -f "$STATE"
-    echo "가입 제한 ${KEY}를 ${orig}로 되돌렸습니다"
+    call DELETE /api/v1/admin/auth-relax > /dev/null
+    echo "가입·로그인 한도 해제를 끝냈습니다 (평소 한도)"
+    if [[ -f "$STATE" ]]; then   # RAISE_GLOBAL=yes로 올렸던 전체 한도 (또는 예전 방식으로 연 대회)
+      orig=$(cat "$STATE")
+      set_policy "$orig"
+      rm -f "$STATE"
+      echo "전체 가입 한도 ${KEY}를 ${orig}로 되돌렸습니다"
+    fi
     ;;
   *)
     echo "사용법: $0 start | restore"; exit 1 ;;

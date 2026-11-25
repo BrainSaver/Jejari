@@ -30,7 +30,7 @@ node loadtest/contest/web/server.js        # → http://localhost:8098 (이 PC�
 | 점검 | Node 18+, docker compose, bash, 봇마다 `needs` 패키지, 관리자 로그인 |
 | 앱·인프라 | 앱이 꺼져 있으면 `docker compose up -d --wait` → `gradlew buildFrontend bootRun` (로그 `results/app.log`, 이 화면을 끄면 앱도 꺼짐). 이용자 화면이 있는지 확인 |
 | 지난 기록 정리 | Redis의 IP별 가입·로그인 시도 카운터(`rate:signup:*`·`rate:login:*`)만 비움 |
-| 대회 운행 만들기 | `day.sh start` (가입 제한 100으로, 행사·운행 만들고 판매 열기) |
+| 대회 운행 만들기 | `day.sh start` (이 PC만 가입·로그인 한도 해제 — 4시간 뒤 저절로 끝남, 행사·운행 만들고 판매 열기) |
 | 봇 명의 만들기 | 봇마다 `MODE=signup` (동시에). 실패한 봇은 빼고 계속 |
 | 사람 흐름 확인 | 가입 → 로그인 → 대기열 → 좌석 → 결제 → 취소를 API로 한 번. **1차 대회처럼 사람이 결제에서 막히면 여기서 멈춤** (점검 계정은 `lt{태그}p.probe…`라 평가에 안 들어감) |
 | 사람·봇 예매 | 접속 주소·이메일 형식·남은 시간을 크게 보여 줌. 봇 `MODE=buy`가 같이 출발. 사람 시간이 끝나고 봇이 다 끝나면 다음으로 |
@@ -52,9 +52,10 @@ Playwright는 봇 폴더 하나에만 설치하면 모든 봇이 같이 씁니�
 ## 순서 (손으로 할 때)
 
 ```bash
-# 0) 대회 날 집계자 PC: 가입 제한을 대회 동안만 올리고 → 대회 운행을 만들고 → 사람 참가자 접속 주소를 띄운다
+# 0) 대회 날 집계자 PC: 이 PC만 한도를 풀고(자동 종료) → 대회 운행을 만들고 → 사람 참가자 접속 주소를 띄운다
 ADMIN_ID=… ADMIN_PW=… loadtest/contest/day.sh start
-#    끝나면: ADMIN_ID=… ADMIN_PW=… loadtest/contest/day.sh restore   (가입 제한을 원래 값으로)
+#    끝나면: ADMIN_ID=… ADMIN_PW=… loadtest/contest/day.sh restore   (해제를 바로 끝냄. 잊어도 RELAX_HOURS 뒤 저절로)
+#    사람 한 명이 기기 하나로 계정을 여러 개 만드는 시험이면 RAISE_GLOBAL=yes (전체 한도도 올림 — 이때는 restore 필수)
 #    사람 참가자에게: loadtest/contest/사람-참가-안내.md
 
 # 1) (day.sh가 대신 해 줌) 대회 운행만 따로 만들 때

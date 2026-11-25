@@ -29,7 +29,7 @@ const BOT_MAX_MIN = Number(process.env.BOT_MAX_MIN || 30); // 봇 하나가 이�
 const STEPS = [
   ['check', '점검'], ['prep', '준비 (최신 코드·도커·DB 패치·Redis)'], ['app', '앱 켜기'], ['clean', '지난 기록 정리'], ['setup', '대회 운행 만들기'],
   ['signup', '봇 명의 만들기'], ['probe', '사람 흐름 확인'], ['play', '사람·봇 예매'],
-  ['eval', '평가'], ['restore', '정리 (가입 제한 되돌리기)'],
+  ['eval', '평가'], ['restore', '정리 (한도 해제 끝내기)'],
 ];
 let run = null;          // 진행 중인 대회 하나
 const clients = new Set();
@@ -617,7 +617,7 @@ async function stepEval() {
 }
 
 async function stepRestore() {
-  if (!run.setupStarted) { log('restore', '가입 제한을 바꾸기 전이라 되돌릴 것이 없습니다'); return; }
+  if (!run.setupStarted) { log('restore', '한도 해제를 켜기 전이라 끝낼 것이 없습니다'); return; }
   const r = await sh('restore', 'bash', ['loadtest/contest/day.sh', 'restore'], {
     env: { ADMIN_ID: run.opts.adminId, ADMIN_PW: run.opts.adminPw, BASE_URL },
   });
