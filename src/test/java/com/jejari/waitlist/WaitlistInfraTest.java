@@ -88,6 +88,7 @@ class WaitlistInfraTest {
 
 	// ------------------------------------------------------------ 신청
 
+	// concurrency.md §16 T38·T39 일부 (신청 때 priority_at 계산만. 제안 순서가 시각에 따라 바뀌는 것은 안 봄)
 	@Test
 	void 매진된_등급에_신청하면_위험_점수만큼_순서가_뒤로_밀린다_점수는_응답에_없다() throws Exception {
 		String ci = hash();
@@ -115,6 +116,7 @@ class WaitlistInfraTest {
 				.andExpect(jsonPath("$.code").value("WAITLIST_NOT_SOLD_OUT"));
 	}
 
+	// concurrency.md §16 T40
 	@Test
 	void 이용_제한_회원은_403() throws Exception {
 		long m = member(hash(), "RESTRICTED");

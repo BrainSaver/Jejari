@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -46,7 +47,8 @@ class PiiCipherTest {
     // ==================== 기본 동작 ====================
 
     @Nested
-    class 기본 {
+    @DisplayName("기본")
+    class Basics {
 
         @Test
         void 암호화한_값을_같은_컬럼_같은_행으로_복호화하면_원문() {
@@ -110,7 +112,8 @@ class PiiCipherTest {
     // ==================== 공격: 모두 실패해야 한다 ====================
 
     @Nested
-    class 공격 {
+    @DisplayName("공격")
+    class Attacks {
 
         private final Encrypted victim = cipher.encrypt("01012345678", MEMBER_PHONE, "1001");
 
@@ -221,7 +224,8 @@ class PiiCipherTest {
     // ==================== 키 검증: 잘못되면 기동 실패 ====================
 
     @Nested
-    class 키_검증 {
+    @DisplayName("키 검증")
+    class KeyValidation {
 
         @Test
         void 환경변수_형식을_읽는다() {

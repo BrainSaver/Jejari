@@ -11,6 +11,7 @@ const PATHS = {
   out: <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10" />,
   external: <path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />,
   refresh: <path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" />,
+  flag: <path d="M5 21V4M5 4.5h11.5l-2 4 2 4H5" />,
   // 사용자 화면 (시안 docs/ui/U-*.html)
   search: <><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></>,
   ticket: <><path d="M3.5 7.5h17v3a1.8 1.8 0 0 0 0 3.6v3.4h-17v-3.4a1.8 1.8 0 0 0 0-3.6z" /><path d="M14.5 8v1.4M14.5 11.3v1.4M14.5 14.6V16" /></>,

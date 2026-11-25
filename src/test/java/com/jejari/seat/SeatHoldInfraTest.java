@@ -221,6 +221,7 @@ class SeatHoldInfraTest {
 				.extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(SeatErrorCode.LIMIT_PER_RESERVATION);
 	}
 
+	// concurrency.md §16 T13 일부 (Redis 1차 거절 경로. DB가 거절할 때의 Redis 원복은 아님)
 	@Test
 	void 열차당_10매를_넘으면_거절하고_카운터는_그대로다() {
 		long m = newMember();

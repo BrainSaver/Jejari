@@ -324,6 +324,7 @@ class PaymentInfraTest {
 
 	// ------------------------------------------------------------ 거절 (§4.1)
 
+	// concurrency.md §16 T46 일부 (유예 안에서 Redis 키가 아직 R인 경우를 따로 만들지 않음)
 	@Test
 	void 기한이_지난_HOLD는_결제할_수_없고_멱등_키도_남기지_않는다() {
 		long m = newMember();
@@ -360,6 +361,7 @@ class PaymentInfraTest {
 
 	// ------------------------------------------------------------ PAY-04 스캐너
 
+	// concurrency.md §16 T8
 	@Test
 	void 결과를_모르면_스캐너는_만료시키지_않고_다음_조회로_미룬다() {
 		long m = newMember();
@@ -375,6 +377,7 @@ class PaymentInfraTest {
 		assertThat(scanner.scanOnce()).isZero(); // 미룬 동안은 후보에서 빠짐
 	}
 
+	// concurrency.md §16 T7
 	@Test
 	void 늦게_승인된_결제는_스캐너가_PG에_물어_확정한다() {
 		long m = newMember();
@@ -423,6 +426,7 @@ class PaymentInfraTest {
 				.isEqualTo(1);
 	}
 
+	// concurrency.md §16 T9
 	@Test
 	void 승인됐는데_좌석을_잃었으면_예약은_만료하고_전액_환불() {
 		long m = newMember();
@@ -439,6 +443,7 @@ class PaymentInfraTest {
 		assertLateRefundDone(r);
 	}
 
+	// concurrency.md §16 T29 일부 (콜백 재전송 응답 "환불 진행 중"은 안 봄)
 	@Test
 	void 늦은_승인은_전액_환불_수수료_0_환불_완료_이벤트는_한_번() {
 		long m = newMember();
@@ -498,6 +503,7 @@ class PaymentInfraTest {
 				Long.toString(r))).isEqualTo(1);
 	}
 
+	// concurrency.md §16 T24
 	@Test
 	void 실패로_정리한_뒤_승인이_오면_늦은_승인으로_기록하고_예약은_되살리지_않는다() {
 		long m = newMember();

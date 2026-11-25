@@ -22,6 +22,7 @@ input[type=text], input[type=password], input[type=number] { width:100%; padding
 .bot { display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-top:1px solid var(--line); font-size:14px; }
 .bot:first-child { border-top:0; }
 .bot .why { color:var(--stop); font-size:12px; }
+.badge.warn { color:var(--warn); border-color:var(--warn); }
 .badge { white-space:nowrap; font-size:11px; padding:1px 6px; border-radius:9px; border:1px solid var(--line); color:var(--mute); margin-left:4px; }
 button { font:inherit; padding:9px 14px; border-radius:7px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
 button.primary { background:var(--go); border-color:var(--go); color:#fff; font-weight:600; width:100%; margin-top:12px; padding:12px; font-size:16px; }
@@ -186,13 +187,15 @@ function render() {
   // 봇 목록 (진행 중이면 고정)
   if (!$('bots').dataset.drawn || !busy) {
     const prev = new Set([...document.querySelectorAll('#bots input:checked')].map((x) => x.value));
-    const from = { folder: '깃', upload: '올림', path: '폴더' };
+    const from = { folder: '', upload: '올림', path: '폴더' };
+    const gitBadge = { tracked: '<span class="badge">깃</span>', untracked: '<span class="badge warn">깃에 없음</span>',
+      modified: '<span class="badge warn">깃과 다름</span>', unknown: '' };
     $('bots').innerHTML = state.bots.map((b) => {
       const on = busy ? r.opts.bots.includes(b.name) : (seen.has(b.name) ? prev.has(b.name) : b.ok);
       const removable = b.source !== 'folder' && !busy;
       return `<div class="bot">
       <input type="checkbox" value="${b.name}" ${b.ok && !busy ? '' : 'disabled'} ${on && b.ok ? 'checked' : ''}>
-      <div class="grow"><b>${b.name}</b>${b.owner ? ' · ' + esc(b.owner) : ''}${b.blind ? '<span class="badge">블라인드</span>' : ''}<span class="badge">${from[b.source] || ''}</span>
+      <div class="grow"><b>${b.name}</b>${b.owner ? ' · ' + esc(b.owner) : ''}${b.blind ? '<span class="badge">블라인드</span>' : ''}${from[b.source] ? `<span class="badge">${from[b.source]}</span>` : ''}${gitBadge[b.git] || ''}
       ${b.source === 'path' ? `<div class="where">${esc(b.dir)}</div>` : ''}
       ${b.ok ? '' : `<div class="why">${esc(b.problem)}</div>`}</div>
       ${removable ? `<button class="small danger" data-remove="${b.name}">빼기</button>` : ''}</div>`;
@@ -264,6 +267,7 @@ async function post(p, body) {
   if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
   return j;
 }
+let allowUntracked = false;   // "깃에 없는 봇" 경고 뒤 한 번 더 누르면 시작
 $('start').onclick = async () => {
   $('err').textContent = '';
   const bots = [...document.querySelectorAll('#bots input:checked')].map((x) => x.value);
@@ -273,9 +277,14 @@ $('start').onclick = async () => {
     $('evalbox').hidden = true; $('cmpbox').hidden = true;
     await post('/api/start', { adminId: $('adminId').value.trim(), adminPw: $('adminPw').value, tag: $('tag').value.trim(),
       botDelayMin: Number($('botDelayMin').value), bots,
-      pull: $('pull').checked, flush: $('flush').checked });
+      pull: $('pull').checked, flush: $('flush').checked, allowUntracked });
     $('adminPw').value = '';
-  } catch (e) { $('err').textContent = e.message; }
+    allowUntracked = false;
+  } catch (e) {
+    $('err').textContent = e.message;
+    // 깃에 없는 봇 경고: 5초 안에 한 번 더 누르면 그대로 시작
+    if (/한 번 더 누르세요/.test(e.message)) { allowUntracked = true; setTimeout(() => { allowUntracked = false; }, 5000); }
+  }
 };
 $('skip').onclick = () => post('/api/skip-wait').catch((e) => ($('err').textContent = e.message));
 // ── 사용 방법 (md → 화면) ──

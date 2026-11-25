@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -31,7 +32,8 @@ import org.springframework.data.redis.core.ValueOperations;
 class QueueUnitTest {
 
 	@Nested
-	class 점수_해석 {
+	@DisplayName("점수 해석")
+	class ScoreParsing {
 
 		@ParameterizedTest(name = "[{index}] \"{0}\" → {1}점")
 		@CsvSource({"0,0", "1,1", "12.5,12.5", "50,50", "99.999999,99.999999", "100,100", "100.0,100", "007,7", "0.000001,0.000001"})
@@ -82,7 +84,8 @@ class QueueUnitTest {
 	}
 
 	@Nested
-	class 패널티_변환 {
+	@DisplayName("패널티 변환")
+	class PenaltyConversion {
 		private RiskPenaltyService svc(String perPoint) {
 			StringRedisTemplate redis = mock(StringRedisTemplate.class);
 			@SuppressWarnings("unchecked")
@@ -113,7 +116,8 @@ class QueueUnitTest {
 	}
 
 	@Nested
-	class 번호표_토큰 {
+	@DisplayName("번호표 토큰")
+	class TicketToken {
 
 		@ParameterizedTest(name = "[{index}] {0} → {1}")
 		@CsvSource({"000000000001:5,1", "000000000042:123456,42", "000000012345:9,12345", "999999999999:1,999999999999"})
@@ -157,7 +161,8 @@ class QueueUnitTest {
 	}
 
 	@Nested
-	class 정책_기본값과_캐시 {
+	@DisplayName("정책 기본값과 캐시")
+	class PolicyDefaultsAndCache {
 
 		@SuppressWarnings("unchecked")
 		private HashOperations<String, Object, Object> hash(StringRedisTemplate redis) {
@@ -236,7 +241,8 @@ class QueueUnitTest {
 	}
 
 	@Nested
-	class 위험_점수_합산 {
+	@DisplayName("위험 점수 합산")
+	class RiskScoreSum {
 		private final MemberIdentity ACTIVE = new MemberIdentity(1, "ACTIVE", "ci", List.of("p1", "p2"), List.of("d1"));
 
 		private RiskPenaltyService svc(List<String> multiGet, com.jejari.queue.port.RiskScoreFallbackPort fb) {
@@ -289,7 +295,8 @@ class QueueUnitTest {
 	}
 
 	@Nested
-	class 오류_코드 {
+	@DisplayName("오류 코드")
+	class ErrorCodes {
 
 		@ParameterizedTest
 		@EnumSource(QueueErrorCode.class)
@@ -316,7 +323,8 @@ class QueueUnitTest {
 	}
 
 	@Nested
-	class 입력_방어 {
+	@DisplayName("입력 방어")
+	class InputGuard {
 
 		@ParameterizedTest
 		@NullAndEmptySource

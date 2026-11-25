@@ -163,6 +163,7 @@ class SeatPaymentInfraTest {
 		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, s, 0))).isEqualTo("SOLD:" + r);
 	}
 
+	// concurrency.md §16 T9
 	@Test
 	void 좌석을_잃은_뒤_승인이_오면_false이고_롤백하면_좌석도_Redis도_그대로다() {
 		long s1 = seatIds.get(8);

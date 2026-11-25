@@ -148,13 +148,16 @@ rect.b:hover{opacity:.82}
 <body>
 <header><div class="wrap">
   <h1>강동균 · 산출물</h1>
-  <p class="sub">제자리(Jejari) · 팀원 B · 좌석 선점 동시성 · 열차 도메인 · ERD 반영 &nbsp;|&nbsp; 진행 현황 2026-11-18 기준 · 기능별 절은 2026-11-16 기준 · 락 비교는 2026-11-17 재측정</p>
+  <p class="sub">제자리(Jejari) · 팀원 B · 좌석 선점 동시성 · 열차 도메인 · ERD 반영 &nbsp;|&nbsp; 진행 현황 2026-11-25 기준 · DATA-01·RSV-02 절은 2026-11-16 기준 · 락 비교는 2026-11-17 재측정</p>
   <nav>
     <a href="#overview">진행 현황</a>
     <a href="#DATA-01">DATA-01 기준 데이터</a>
     <a href="#RSV-02">RSV-02 좌석 선점</a>
     <a href="#LOCK">§17.1 락 비교</a>
-    <a href="#ERD">ERD v17</a>
+    <a href="#ADM">관리자 화면</a>
+    <a href="#BOT">봇 대회·모델</a>
+    <a href="#OPS">유실·정합성</a>
+    <a href="#ERD">ERD v40</a>
   </nav>
 </div></header>
 
@@ -162,7 +165,7 @@ rect.b:hover{opacity:.82}
 
 <!-- ───────────────────────────── 진행 현황 -->
 <section id="overview">
-  <h2>담당 기능 진행 현황 <span class="tag ok">2026-11-18 기준</span></h2>
+  <h2>담당 기능 진행 현황 <span class="tag ok">2026-11-25 기준</span></h2>
   <div class="grid">
     <div class="kpi"><b>12 / 12</b><span>담당 기능 완료 (P1 9 · P2 2 · 공동 1)</span></div>
     <div class="kpi"><b>0</b><span>중복 예약 (목표 0)</span></div>
@@ -193,7 +196,15 @@ rect.b:hover{opacity:.82}
   </table></div>
   <p class="muted">"남은 것"은 기능이 돌아가는 상태에서 더 다듬을 곳입니다. 전체 목록은 <code>docs/강동균/보완할-일.md</code>.</p>
 
-  <h3>11-17 이후 더해진 것</h3>
+  <h3>11-19 ~ 11-25에 더해진 것</h3>
+  <ul>
+    <li><b>봇 대회</b> — 1차(11-19) 규칙 0/12 → 보강 → 2차(11-24) botb 6/6, 진짜 사람 27계정 오탐 0. 진짜 사람 속도로 규칙 기준값을 다시 정함 (<a href="#BOT">아래</a>)</li>
+    <li><b>관리자 화면</b> — A-09 모델 관리, A-10 트래픽 관제, A-11 봇 대회 결과 (<a href="#ADM">아래</a>)</li>
+    <li><b>유실·정합성</b> — 격리 보관함(DLQ), 행동 로그 디스크 버퍼, 매시간 예매 정합성 점검 + Discord 경보, 로그인 대기실 (<a href="#OPS">아래</a>)</li>
+    <li><b>ERD v25 ~ v40</b> — 모델 점수, 비회원 예매, 단체 예매(할당석), 마커 규칙, 좌석 조회 속도 제한 (<a href="#ERD">아래</a>)</li>
+  </ul>
+
+  <h3>11-17 ~ 11-18에 더해진 것</h3>
   <ul>
     <li><b>ADM-03</b> — 분당 이력 API(지난 30분 그래프), 결제 기한 초과 만료 건수, A-04에 강제 취소 칸(ADM-07, 강다인 API)</li>
     <li><b>ADM-02</b> — 판매 오픈 스케줄러가 <code>DEPARTED</code>(출발)까지 상태를 넘김. 운행·행사 관리 화면 A-03</li>
@@ -205,7 +216,7 @@ rect.b:hover{opacity:.82}
   <div class="tw"><table>
     <tr><th>업무</th><th>상태</th><th>내용</th></tr>
     <tr><td>ERD 반영 담당</td><td><span class="tag ok">유지 중</span></td>
-        <td>스키마 <b>v24</b>까지 반영 (v19 결제·케이스 시퀀스, v21 상시 취소 수수료, v22 취소표 행동 로그, v23 DEPARTED 전이, v24 일정 간격 매크로 마커). 검사 FAIL 0 · WARN 0, 반영 대기 JSON 없음. 이미 데이터가 있는 DB용 패치 SQL(<code>db/patch/</code>)도 같이</td></tr>
+        <td>스키마 <b>v40</b>까지 반영 (테이블 65 · 컬럼 573 · 관계 95). 팀원 요청을 패치로 만들고 이미 데이터가 있는 DB용 패치 SQL(<code>db/patch/</code>)도 같이. 검사 FAIL 0 (<a href="#ERD">아래</a>)</td></tr>
     <tr><td>§17.1 락 방식 비교</td><td><span class="tag ok">재측정 완료</span></td>
         <td>A·B·C 3전략 × 3시나리오. Python(11-16) → k6 HTTP(11-17) → CPU 분리 10회 재측정(11-17)</td></tr>
     <tr><td>프론트엔드 틀과 화면</td><td><span class="tag warn">담당 검토 중</span></td>
@@ -214,8 +225,14 @@ rect.b:hover{opacity:.82}
         <td>담당 표는 D·C지만 코드가 없어 만듦. WL-01·02는 겹쳐서 강다인 님 것을 쓰고 내 것은 버림</td></tr>
     <tr><td>배포 조사</td><td><span class="tag ok">넘김</span></td>
         <td>구글 클라우드 선택지 비교·절차 정리 → 조영준 님이 공용 서버 배포 완료 (11-18)</td></tr>
-    <tr><td>봇 대회 제안</td><td><span class="tag warn">확인 대기</span></td>
-        <td>규칙을 모르는 팀원이 봇을 하나씩 만들어 탐지를 시험하자는 제안 (<code>docs/강동균/봇-대회-제안.md</code>). 길동현·강다인 확인 대기</td></tr>
+    <tr><td>봇 대회 기획·운영</td><td><span class="tag ok">2차 완료</span></td>
+        <td>규칙을 모르는 팀원이 만든 봇 + 진짜 사람으로 탐지를 시험. 1차 11-19, 2차 11-24. 진행 화면으로 버튼 하나에 준비~평가~정리 (<a href="#BOT">아래</a>)</td></tr>
+    <tr><td>위험 점수 모델</td><td><span class="tag warn">보조 의견만</span></td>
+        <td>부스팅 + Isolation Forest + GRU. 처음 보는 봇 계열 87%. 진짜 사람 오탐이 기준(5%)을 넘어 관리자에게 의견만 보여 줌</td></tr>
+    <tr><td>유실 방지·정합성 감시</td><td><span class="tag ok">완료</span></td>
+        <td>처리 못 한 메시지 격리 보관, 행동 로그 유실 70% → 0%, 매시간 정합성 점검 + 경보 14개 (<a href="#OPS">아래</a>)</td></tr>
+    <tr><td>공용 서버 성능 측정</td><td><span class="tag warn">도구 준비</span></td>
+        <td>개선 전(11-19) 값과 같은 조건으로 재는 스크립트·체크리스트 (<code>loadtest/tools/server_perf.sh</code>). 개선 후 값 측정 대기</td></tr>
   </table></div>
 
   <h3>핵심 수치 (기획서 역할 분배)</h3>
@@ -229,11 +246,18 @@ rect.b:hover{opacity:.82}
         <td>같은 좌석 100명. C를 고른 근거</td></tr>
     <tr><td>기한 초과 반환율</td><td class="n">100%</td><td class="n">100%</td>
         <td>기한 지난 선점 20건 → 20건 만료, 좌석 행·카운터·Redis 한도 전부 반환 (<code>SeatReleaseInfraTest</code>)</td></tr>
+    <tr><td>예매 몰림 정합성</td><td class="n">어긋남 0</td><td class="n">0</td>
+        <td>300명 10초, 예약 = 확정 = 승인 결제 = 알림. Kafka 40초 정지에도 이벤트 유실 0</td></tr>
+    <tr><td>로그인 폭주</td><td>다른 API가 멈추지 않음</td><td class="n">200 → 800명</td>
+        <td>해시 4개 서버. 200명에서 5xx 24%로 무너지던 것을 로그인 대기실로 800명까지 5xx 0%</td></tr>
+    <tr><td>봇 대회 (2차)</td><td>봇 탐지 · 사람 오탐 5% 이하</td><td class="n">botb 6/6 · 오탐 0/27</td>
+        <td>규칙 엔진 기준. 1차는 0/12 · 사람 0명. botc는 규칙으로 못 잡아 순번만 미룸</td></tr>
   </table></div>
 
   <div class="note">
-    <b>남은 큰 일</b> — 공용 서버(11-18 배포)에서 같은 조건으로 다시 재기: 전체 예매 흐름(시나리오 11)의 개선 전후,
-    부하를 건 상태에서 중복 예약 0건, 앱 1대 vs 2대. 지금 수치는 모두 한 머신 안에서 잰 것입니다.
+    <b>남은 큰 일</b> — 공용 서버에서 <b>개선 후</b> 값 재기. 개선 전(11-19, 앱 1대·해시 4: 예매 p95 4.9초, 선점 p95 0.55초)과
+    같은 조건(200명/20초)으로 재는 스크립트·체크리스트는 준비됨 (<code>docs/강동균/features/공용서버-성능측정-체크리스트.md</code>).
+    그 밖의 수치는 로컬(4코어)에서 잰 것입니다.
   </div>
 </section>
 
@@ -534,18 +558,134 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
   </details>
 </section>
 
+<!-- ───────────────────────────── 관리자 화면 -->
+<section id="ADM">
+  <h2>관리자 화면 <span class="tag ok">A-02 · A-03 · A-04 · A-09 · A-10 · A-11</span></h2>
+  <p>서버 기능만으로는 운영하는 사람이 볼 수 없어서, 담당 기능마다 관리자 화면(React)을 같이 만들었습니다.
+     보기는 VIEWER, 바꾸기는 SUPERVISOR (서버 <code>@PreAuthorize</code>가 막고, 화면은 버튼만 끔).</p>
+  <div class="tw"><table>
+    <tr><th>화면</th><th>기능</th><th>하는 일</th><th>신경 쓴 지점</th></tr>
+    <tr><td><b>A-02</b> 기준 데이터</td><td><code>ADM-01</code></td>
+        <td>역·노선·열차·객차·좌석 등록</td><td>좌석 ID는 계산식이라 다시 넣어도 같은 ID (동시성 테스트가 좌석 ID를 고정해 씀)</td></tr>
+    <tr><td><b>A-03</b> 운행·행사</td><td><code>ADM-02</code></td>
+        <td>운행 일괄 생성, 명절 행사, 판매 열기</td><td>판매 오픈 스케줄러(10초)가 <code>SCHEDULED → ON_SALE → CLOSED → DEPARTED</code>를 시각대로 넘김. 운행 번호는 시퀀스(v27)</td></tr>
+    <tr><td><b>A-04</b> 실시간 예매 현황</td><td><code>ADM-03</code></td>
+        <td>좌석 판매율, 분당 예약·결제·취소·<b>만료</b>, 대기열, 결과 모름 결제, 강제 취소</td><td>"좌석은 잡고 결제 안 함(만료)"이 명절의 가장 큰 이탈이라 따로 셈</td></tr>
+    <tr><td><b>A-09</b> 모델 관리</td><td><code>RISK-05</code></td>
+        <td>모델 버전별 실데이터 점수, 두 버전 비교, 사용 중 버전 바꾸기, 무작위 점검 표본</td><td>모델은 보조 의견뿐 — 순번·제한·케이스 열기에는 쓰지 않음</td></tr>
+    <tr><td><b>A-10</b> 트래픽 관제</td><td><code>ADM-03</code> 확장</td>
+        <td>실시간 흐름도(점이 요청), 상태 판정, 데이터 놓침·밀림, 자원, 그래프</td><td>Grafana를 서버 밖에 열지 않고 관리자 로그인만으로 같은 지표</td></tr>
+    <tr><td><b>A-11</b> 봇 대회 결과</td><td><code>DATA-03</code></td>
+        <td>봇이 결제한 좌석, 막힌 층, 사람 오탐, 걸린 규칙</td><td><b>읽기 전용</b>. 웹에서 봇·서버 명령을 실행하는 기능은 일부러 두지 않음</td></tr>
+  </table></div>
+  <p class="muted">화면 설계: <code>docs/ui/A-0x.md</code>. 다른 팀원 담당 화면(U-01 로그인 등)도 최소판을 만들어 담당이 다듬었습니다.</p>
+</section>
+
+<!-- ───────────────────────────── 봇 대회·모델 -->
+<section id="BOT">
+  <h2>봇 대회와 위험 점수 모델 <span class="tag ok">2차 완료</span></h2>
+  <p>규칙을 만든 사람이 만든 봇·가짜 사람으로만 시험하면, 탐지율이 아니라 <b>그 사람의 생각</b>을 재게 됩니다.
+     그래서 봇을 만드는 사람과 막는 사람을 나눴습니다 (레드팀). 규칙을 모르는 팀원이 만든 <b>블라인드 봇</b>과
+     <b>진짜 사람</b>이 같은 운행을 사고, 판정 기준은 결과를 보기 전에 정했습니다.</p>
+
+  <div class="grid">
+    <div class="kpi"><b>0/12 → 6/6</b><span>규칙이 잡은 블라인드 봇 (1차 → 2차 botb) · 6/6의 95% 구간 61~100%</span></div>
+    <div class="kpi"><b>0 / 27</b><span>2차 진짜 사람 규칙 오탐 · 95% 구간 0~12.5% (사람 5명 기준이면 0~43%)</span></div>
+    <div class="kpi"><b>87%</b><span>모델: 처음 보는 봇 계열 탐지</span></div>
+    <div class="kpi"><b>2.74초</b><span>진짜 사람의 가장 빠른 단계</span></div>
+  </div>
+
+  <div class="tw"><table>
+    <tr><th></th><th>1차 (c1119, 11-19)</th><th>2차 (c1124d, 11-24)</th></tr>
+    <tr><td>botb (블라인드 브라우저 봇)</td><td>규칙 케이스 0</td><td><b>6/6 케이스</b> (HEADLESS_HOLD · LINEAR_MOUSE), 매수 제한, 순번 75초</td></tr>
+    <tr><td>botc (규칙을 아는 봇)</td><td>규칙 케이스 0</td><td>0/6 — 순번만 15초 → 이후 "조회 없이 대기열" 30점으로 순번 30초</td></tr>
+    <tr><td>사람</td><td>0명 (결제에서 막힘)</td><td><b>27계정 · 30건 모두 결제, 규칙 오탐 0</b> (실제 사람 5명 × 역할 5개)</td></tr>
+    <tr><td>모델 (tools/ml)</td><td>botb 6/6</td><td>봇 12/12, 사람 오탐 14.8% → 기준(5%) 초과, 보조 의견만</td></tr>
+  </table></div>
+
+  <h3>1차에서 2차 사이에 한 것</h3>
+  <ul>
+    <li><b>대회 봇을 보지 않고</b> 연습 봇 45종(4단계)을 만들어 규칙 보강: 1단계 30종 중 보강 전 3종 → 보강 뒤 1·2단계 전부 케이스, 합성 사람 오탐 0</li>
+    <li>1차 때 사람이 결제에서 막힌 원인을 추측해 지우는 대신, 진행 화면이 <b>사람을 부르기 직전에 가입 → 결제를 직접 한 번</b> 해 보게 함</li>
+    <li>대회 진행 8단계(준비·운행·명의·사람 확인·예매·평가·정리)를 버튼 하나로 (<code>loadtest/contest/web</code>). 실패해도 정리는 항상</li>
+  </ul>
+
+  <h3>진짜 사람으로 기준값을 다시 정함 (ERD v40)</h3>
+  <div class="tw"><table>
+    <tr><th>규칙</th><th>전</th><th>진짜 사람 측정</th><th>후</th></tr>
+    <tr><td>사람 손으로 불가능한 단계 속도</td><td class="n">0.5초</td><td>가장 빠른 단계 2.74초 (62번 중 0.5초 미만 0번)</td><td class="n">1.0초</td></tr>
+    <tr><td>한 기기에서 계정 바꾸기</td><td class="n">3초</td><td>가족 역할의 가장 빠른 전환 31.7초</td><td class="n">15초</td></tr>
+  </table></div>
+
+  <h3>이 숫자로 말할 수 있는 것 (Wilson 95% 구간)</h3>
+  <div class="tw"><table>
+    <tr><th>수치</th><th>95% 구간</th><th>말할 수 있는 것</th></tr>
+    <tr><td>규칙 · 사람 오탐 0/27 (계정)</td><td class="n">0 ~ 12.5%</td><td>"오탐 0%"가 아니라 "12.5% 아래일 가능성이 높다". 27계정은 사람 5명이 만들어 독립이 아님 — 사람 기준 0/5면 0~43%</td></tr>
+    <tr><td>모델 · 사람 오탐 4/27</td><td class="n">5.9 ~ 32.5%</td><td>기준(5%)보다 낮다고 볼 근거 없음 → 보조 의견만</td></tr>
+    <tr><td>진짜 사람 단계 0.5초 미만 0/62</td><td class="n">0 ~ 5.8%</td><td>INHUMAN_STEP을 1초로 올린 근거</td></tr>
+  </table></div>
+
+  <div class="note">
+    <b>읽을 때 주의</b> — 기준값을 맞춘 데이터와 평가한 데이터가 겹치는 곳이 있습니다.
+    LINEAR_MOUSE는 1차 botb를 보고 정했고, NO_SEARCH_ENTRY 30점은 2차 botc를 보고, v40 기준값(1초·15초)은 2차 사람을 보고 정했습니다.
+    이 부분은 "개선 효과"가 아니라 "맞춘 결과"라, 기준값을 고정한 채 새 사람으로 재는 3차가 있어야 오탐을 말할 수 있습니다.
+    규칙과 모델은 서로 다른 봇을 잡았습니다 (botc는 규칙이 못 잡고 모델이 잡음). 모델은 사람 4명을 봇으로 봐서 아직 차단에 쓰지 않습니다.
+  </div>
+
+  <div class="note">
+    <b>규칙은 우회된다 — 그래서 층을 겹친다</b> — NO_SEARCH_ENTRY는 botc 하나에 맞춘 규칙이라, 봇이 조회를 한 번 끼워 넣으면 피합니다.
+    그래서 케이스를 열지 않고 순번만 30초 미룹니다 (막는 것이 아니라 비용을 올림). 바닥은 본인인증 기준 매수 제한입니다 —
+    아무리 사람 같은 봇도 명의 6개 × 4석 = 24석이 끝이고, botc도 그만큼만 가져갔습니다.
+  </div>
+</section>
+
+<!-- ───────────────────────────── 유실·정합성 -->
+<section id="OPS">
+  <h2>데이터 유실 방지와 정합성 감시 <span class="tag ok">완료</span></h2>
+  <p>예매는 돈·좌석·이벤트·알림이 서로 맞아야 합니다. "빠르다"보다 <b>"틀리지 않고, 틀리면 바로 안다"</b>를 먼저 만들었습니다.</p>
+  <div class="tw"><table>
+    <tr><th>문제</th><th>전</th><th>후</th><th>방법</th></tr>
+    <tr><td>Kafka가 멈춘 채 배포(재시작)</td><td>행동 로그 70% 유실</td><td class="n"><b>0%</b></td><td>디스크 버퍼 + 회로 차단</td></tr>
+    <tr><td>소비자가 처리 못 한 메시지</td><td>버림 (5곳)</td><td><b>격리 보관 + 다시 넣기</b></td><td>Kafka 격리 토픽 <code>&lt;토픽&gt;.DLT</code></td></tr>
+    <tr><td>밀린 행동 로그 따라잡기</td><td>좌석 선점 p95 약 2.9배</td><td class="n">약 1.3배</td><td>적재 속도 상한 초당 2,000</td></tr>
+    <tr><td>로그인 폭주 (해시 4개 서버)</td><td>200명에서 5xx 24%</td><td class="n">800명 5xx 0%</td><td>로그인 대기실 (해시 작업만 줄 세움)</td></tr>
+    <tr><td>예매 몰림 커넥션 대기</td><td>9 (풀 10)</td><td class="n">0 (풀 20)</td><td>"크게"가 아니라 실제 최대 + 약간</td></tr>
+    <tr><td>어긋남을 아는 데 걸리는 시간</td><td>부하 시험 때 손으로</td><td><b>매시간 자동</b></td><td>정합성 점검 10항목 → Pushgateway → Grafana 경보 14개 → Discord</td></tr>
+  </table></div>
+  <p class="muted">장애 주입으로 확인: <code>docker pause kafka</code> 45초 · SIGTERM 재시작 · 깨진 메시지 · DB 제약 위반. 자세한 것은 <code>docs/강동균/troubleshooting/</code> (11-20).</p>
+</section>
+
 <!-- ───────────────────────────── ERD -->
 <section id="ERD">
-  <h2>ERD v17 <span class="tag ok">반영 완료</span></h2>
+  <h2>ERD v40 <span class="tag ok">반영 완료</span></h2>
   <p>ERD 반영은 담당자 한 명만 합니다. 팀원이 편집기에서 내보낸 JSON을 패치로 바꿔 HTML에 넣고,
      DDL·종합 문서를 다시 만듭니다.</p>
 
   <div class="grid">
-    <div class="kpi"><b>60</b><span>테이블</span></div>
-    <div class="kpi"><b>514</b><span>컬럼</span></div>
-    <div class="kpi"><b>85</b><span>관계</span></div>
-    <div class="kpi"><b>0</b><span>검사 FAIL · WARN</span></div>
+    <div class="kpi"><b>65</b><span>테이블 (Oracle 48)</span></div>
+    <div class="kpi"><b>573</b><span>컬럼</span></div>
+    <div class="kpi"><b>95</b><span>관계</span></div>
+    <div class="kpi"><b>0</b><span>검사 FAIL</span></div>
   </div>
+
+  <h3>v18 ~ v40 — 무엇이 바뀌었나</h3>
+  <div class="tw"><table>
+    <tr><th>버전</th><th>내용</th><th>요청</th></tr>
+    <tr><td>v18 · v23</td><td>판매 오픈 스케줄러, 운행 상태 <code>DEPARTED</code> 전이 주체</td><td>강동균</td></tr>
+    <tr><td>v19 · v20</td><td>결제·취소·케이스·알림 ID 시퀀스, 대상당 열린 케이스 1건 유니크 인덱스</td><td>길동현 · 강다인</td></tr>
+    <tr><td>v21 · v22</td><td>상시 취소 수수료 정책, 취소표 행동 로그</td><td>강다인</td></tr>
+    <tr><td>v24 · v34 · v40</td><td>마커 규칙(일정 간격 매크로, 사람 손으로 불가능한 단계, 녹화 없는 선점), 진짜 사람으로 잰 기준값</td><td>강다인 · 강동균</td></tr>
+    <tr><td>v25 · v29 · v31 · v32</td><td>모델 보조 의견 <code>model_score</code>(MongoDB), 닮은 유형, 모델 버전 비교·재학습 후보</td><td>강다인 설계</td></tr>
+    <tr><td>v26 · v27</td><td>열차 번호 5자리, 운행 번호를 산식 대신 <code>train_run_seq</code> (시간표 적재 대역과 겹치지 않게)</td><td>길동현</td></tr>
+    <tr><td>v28 · v30</td><td>CCTV 녹화를 일반 컬렉션 + 유니크로 (재전달 중복 차단), 예매 완료 알림</td><td>강다인</td></tr>
+    <tr><td>v33</td><td>비회원 예매: <code>member_type</code>을 상태와 분리 (게스트도 이용 제한이 똑같이 걸리게)</td><td>김성원</td></tr>
+    <tr><td>v35</td><td>좌석 조회·선점 속도 제한</td><td>김성원</td></tr>
+    <tr><td>v36 · v38</td><td>단체 예매(여행사): 새 표 3개, 할당석 <code>BLOCKED</code>, 재선점 때 단체 카운터 건너뛰기</td><td>길동현</td></tr>
+    <tr><td>v37 · v39</td><td>카드 한 장의 명의 수 상한(기본 끔), 인증 시도 제한 임시 해제</td><td>강동균</td></tr>
+  </table></div>
+  <p class="muted">검토하면서 거른 것: 비회원 예매의 <code>status = GUEST</code>(관리자 이용 제한이 게스트에 안 걸림), 단체 예매 예시 행의 FK 실패(<code>check-erd</code>가 못 잡는 DDL 실패), 쓰기 몰리는 <code>reservation</code>에 조회용 인덱스 추가.</p>
+
+  <p class="muted" style="margin-top:22px;border-top:1px solid var(--line);padding-top:12px">아래는 v17 때 정리한 기록입니다 (v11 ~ v17).</p>
 
   <h3>v15 — 회원가입·로그인 (강다인 요청)</h3>
   <p>ID 시퀀스 <code>member_seq</code>·<code>identity_verification_seq</code>, Redis 키 <code>rate:signup</code>·<code>login:fail</code>·<code>verify:{tokenHash}</code>,
@@ -632,7 +772,7 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
   var $ = function (s, r) { return (r || document).querySelector(s); };
 
   /* ─────────── 탭 라우팅 ─────────── */
-  var ids = ['overview', 'DATA-01', 'RSV-02', 'LOCK', 'ERD'];
+  var ids = ['overview', 'DATA-01', 'RSV-02', 'LOCK', 'ADM', 'BOT', 'OPS', 'ERD'];
   // 탭은 주소를 바꾸지 않고 페이지 안에서만 전환한다.
   // 문서 사이트는 이 파일을 iframe(srcdoc)에 넣는데, 그 안에서 href="#ERD"를 그대로 따라가면
   // 부모 주소(jejari.pages.dev/#ERD)로 이동해 iframe 안에 사이트가 통째로 다시 뜬다 (로그인도 풀린 채로).

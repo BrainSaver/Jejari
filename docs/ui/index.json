@@ -227,5 +227,15 @@
     ],
     "owner": "강동균",
     "summary": "서비스 전체 트래픽 실시간 흐름도(점이 움직임)·상태 판정·KPI·자원·그래프·많이 불린 API (Prometheus)"
+  },
+  {
+    "id": "A-11",
+    "name": "봇 대회 결과",
+    "kind": "admin",
+    "features": [
+      "DATA-03"
+    ],
+    "owner": "강동균",
+    "summary": "봇 대회 결과 읽기 전용 — 봇이 결제한 좌석·막힌 층·사람 오탐·걸린 규칙 (eval_contest.sh와 같은 규칙)"
   }
 ]

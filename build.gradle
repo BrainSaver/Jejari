@@ -47,6 +47,35 @@ dependencies {
 	testAnnotationProcessor 'org.projectlombok:lombok'
 }
 
+// 클래스 이름은 영문으로 (테스트의 @Nested 포함). 한글 이름은 .class 파일 이름이 되는데, 로케일이 UTF-8이 아닌 PC·서버
+// (LANG 비어 있음 = POSIX)에서는 javac가 그 파일을 못 써서 "bad filename"으로 컴파일이 멈춘다 (2026-11-25).
+// 보이는 이름이 한글이어야 하면 @DisplayName("…")을 붙인다. 메서드 이름은 파일이 되지 않아 한글이어도 괜찮다.
+tasks.register('checkAsciiClassNames') {
+	description = '클래스 이름에 한글 등 ASCII 밖 문자가 있으면 멈춘다 (UTF-8이 아닌 로케일에서 컴파일 실패 방지)'
+	def sources = fileTree('src') { include '**/*.java' }
+	inputs.files(sources)
+	doLast {
+		def decl = ~/^\s*(?:(?:public|private|protected|static|final|abstract|sealed)\s+)*(?:class|interface|record|enum)\s+([^\s{(<]+)/
+		def bad = []
+		sources.each { f ->
+			f.eachLine('UTF-8') { line, n ->
+				def m = line =~ decl
+				if (m.find() && m.group(1).any { (it as char) > 127 }) bad << "${projectDir.toPath().relativize(f.toPath())}:${n}  ${m.group(1)}"
+			}
+		}
+		if (bad) throw new GradleException("클래스 이름은 영문으로 쓰고, 보이는 이름은 @DisplayName(\"…\")으로 붙이세요:\n  " + bad.join('\n  '))
+	}
+}
+tasks.named('compileJava') { dependsOn 'checkAsciiClassNames' }
+tasks.named('compileTestJava') { dependsOn 'checkAsciiClassNames' }
+// 테스트 HTML 보고서는 테스트 메서드마다 파일을 만들고, 메서드 이름은 한글이 많다. UTF-8이 아닌 로케일에서는 그 파일을
+// 못 써서 테스트가 다 통과해도 빌드가 실패한다 → 그때만 HTML 보고서를 끄고 알린다 (XML 결과는 그대로)
+def nameEncoding = System.getProperty('sun.jnu.encoding') ?: ''
+if (!(nameEncoding.toUpperCase() in ['UTF-8', 'UTF8'])) {
+	logger.warn("파일 이름 인코딩이 ${nameEncoding}라 테스트 HTML 보고서를 끕니다. 보고서가 필요하면 LC_ALL=C.UTF-8 로 실행하세요")
+	tasks.withType(Test).configureEach { reports.html.required = false }
+}
+
 // 기본 test는 DB·Redis·Kafka 없이 돕니다 (CI). 인프라가 필요한 통합 테스트는 @Tag("infra")를 붙이고
 // docker compose up -d 뒤에 ./gradlew infraTest 로 따로 돌립니다.
 tasks.named('test') {

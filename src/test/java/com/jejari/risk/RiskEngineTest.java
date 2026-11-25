@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Random;
 import java.util.function.UnaryOperator;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -63,7 +64,8 @@ class RiskEngineTest {
     // ==================== 규칙별 경계값 ====================
 
     @Nested
-    class 규칙 {
+    @DisplayName("규칙")
+    class Rules {
 
         @Test
         void 신호가_없으면_0점_케이스_없음() {
@@ -261,7 +263,8 @@ class RiskEngineTest {
     // ==================== 케이스 (RISK-04) ====================
 
     @Nested
-    class 케이스 {
+    @DisplayName("케이스")
+    class Cases {
 
         @Test
         void marker_규칙이_하나라도_걸리면_RULE() {
@@ -289,7 +292,8 @@ class RiskEngineTest {
     // ==================== 이전 점수 감쇠·CLEAR ====================
 
     @Nested
-    class 감쇠 {
+    @DisplayName("감쇠")
+    class Decay {
 
         private PreviousScore prev(String score, Instant at) {
             return new PreviousScore(new BigDecimal(score), at, ReviewStatus.NONE, null);
@@ -354,7 +358,8 @@ class RiskEngineTest {
     // ==================== 무작위 성질 검사 ====================
 
     @Nested
-    class 성질 {
+    @DisplayName("성질")
+    class Properties {
 
         private final Random rnd = new Random(20261120L); // 고정 시드: 실패하면 같은 입력으로 재현
 
