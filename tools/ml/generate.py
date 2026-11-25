@@ -646,6 +646,11 @@ TRAP_HUMANS = {"h_organizer", "h_open_rusher", "h_quick_regret", "h_family_bulk"
 if os.environ.get("ML_TRAP_BOOST"):
     _x = float(os.environ["ML_TRAP_BOOST"])
     STRATEGIES = [(f, side, wt * _x if f.__name__ in TRAP_HUMANS else wt) for f, side, wt in STRATEGIES]
+# 전략마다 따로 배수 (ML_STRAT_BOOST="h_open_rusher=6,h_quick_regret=5"). ML_TRAP_BOOST 뒤에 곱한다.
+# 4차(2026-11-25): 명절 예매는 오픈 직후 사는 사람이 가장 많은데 3차 r4가 그 사람을 31% 오탐해서 더 보여 준다
+if os.environ.get("ML_STRAT_BOOST"):
+    _b = {k.strip(): float(v) for k, v in (x.split("=") for x in os.environ["ML_STRAT_BOOST"].split(",") if x.strip())}
+    STRATEGIES = [(f, side, wt * _b.get(f.__name__, 1)) for f, side, wt in STRATEGIES]
 if REAL:
     # 실제 데이터 둘레. 사람 쪽은 생성 사람의 약 1/3을 실제 사람 모양으로 (원래 사람 수법은 그대로 둬서 다양함을 잃지 않게)
     STRATEGIES += [(h_focused, "human", 40), (b_real_mimic, "bot", 2), (b_real_macro, "bot", 2)]

@@ -57,10 +57,11 @@ def run(args, env_extra=None, quiet=True):
 FEAT_ENV = {"ML_STAGE": "1", "ML_RUNS": "1"}
 
 
-def make_data(folder, seed, members, calib, boost=None):
+def make_data(folder, seed, members, calib, boost=None, strat_boost=None):
     if not os.path.exists(os.path.join(folder, "events.jsonl")):
         run(["-I", "tools/ml/generate.py", "--members", str(members), "--seed", str(seed), "--out", folder],
-            {"ML_PICK_FLOOR": "1", "ML_REAL_CALIB": calib, **({"ML_TRAP_BOOST": str(boost)} if boost else {})})
+            {"ML_PICK_FLOOR": "1", "ML_REAL_CALIB": calib, **({"ML_TRAP_BOOST": str(boost)} if boost else {}),
+             **({"ML_STRAT_BOOST": strat_boost} if strat_boost else {})})
     feats = os.path.join(folder, "features.csv")
     if not os.path.exists(feats) or "open_to_hold_med_log" not in open(feats, encoding="utf-8").readline():
         run(["-I", "tools/ml/features.py", folder], FEAT_ENV)
@@ -141,6 +142,10 @@ def main():
                     help="운행마다 따로 본 속도 특징(open_to_hold_med_log·fast_open_run_ratio·browse_per_run)을 학습에 넣는다")
     ap.add_argument("--if-no-volume", action="store_true",
                     help="Isolation Forest에서 양 특징(운행 수·결제 수 등)을 뺀다 (단체 총무 오탐)")
+    ap.add_argument("--if-ratio", action="store_true",
+                    help="Isolation Forest에서 양 특징 대신 운행 하나당 양(결제 수/운행 수 등)을 넣는다 (4차)")
+    ap.add_argument("--strat-boost", default=None,
+                    help='전략마다 따로 배수, 예: "h_open_rusher=6,h_quick_regret=5" (학습 시드만, --trap-boost 뒤에 곱함)')
     ap.add_argument("--trap-boost", type=float, default=None,
                     help="오탐 함정 사람(모임 주선자·오픈 직후·바로 후회·가족 몫·빠른 사람)을 학습 데이터에서 이 배수만큼 (시험 시드는 그대로)")
     ap.add_argument("--calib-from", nargs="+", default=["data/ml/contest-c1124d"])
@@ -158,12 +163,13 @@ def main():
 
     step(f"2. 생성 (시드 {', '.join(map(str, TRAIN_SEEDS))} × {a.members} + 시험 {TEST_SEED})")
     for s in TRAIN_SEEDS:
-        make_data(os.path.join(data, f"g{s}"), s, a.members, calib, a.trap_boost)
+        make_data(os.path.join(data, f"g{s}"), s, a.members, calib, a.trap_boost, a.strat_boost)
     make_data(os.path.join(data, f"g{TEST_SEED}"), TEST_SEED, a.members // 2, calib)
 
     step("3. 학습" + (" (GRU 없이)" if a.quick else " (GRU 포함 — 한동안 멈춘 것처럼 보여도 정상)"))
     os.makedirs(out, exist_ok=True)
     env = {"ML_STAGE": "1", **({"ML_RUNS": "1"} if a.runs else {}), **({"ML_IF_NO_VOLUME": "1"} if a.if_no_volume else {}),
+           **({"ML_IF_VOLUME": "ratio"} if a.if_ratio else {}),
            **({"ML_GRU": "0"} if a.quick else {})}
     run(["-u", "tools/ml/train.py", out, *[os.path.join(data, f"g{s}", "features.csv") for s in TRAIN_SEEDS]], env, quiet=False)
     shutil.copyfile(calib, os.path.join(out, "real_calibration.json"))
@@ -187,7 +193,7 @@ def main():
             tests.append((f"실제 {name} ({tag}) · 사람의 대회 흔적 지움", neutral))
     lines = [f"학습 {time.strftime('%Y-%m-%d %H:%M')} · {'GRU 없이' if a.quick else 'GRU 포함'} · {round((time.time() - t0) / 60)}분",
              f"모델: {a.out}/model.pkl · 프로필: {', '.join(os.path.basename(p) for p in a.calib_from)}", ""]
-    work = os.path.join(data, ".eval")
+    work = os.path.join(data, ".eval", os.path.basename(os.path.normpath(out)))   # 같은 --data로 두 모델을 돌려도 안 덮어쓰게
     for name, folder in tests:
         lines.append(f"[{name}]")
         for label, pkl in models:

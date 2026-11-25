@@ -47,9 +47,13 @@ def pct(ref, v):
 
 
 def iso_x(model, X):
-    """IF에 넣는 열 (ML_IF_NO_VOLUME으로 학습한 모델은 양 특징을 뺀 열만). 옛 모델은 전부"""
-    cols = model.get("iso_cols")
-    return X if cols is None else X[:, cols]
+    """IF에 넣는 열 (ML_IF_NO_VOLUME으로 학습한 모델은 양 특징을 뺀 열만, ML_IF_VOLUME=ratio는 거기에 운행당 양을 붙여서).
+    옛 모델은 전부. train.py의 iso_input과 같은 규칙"""
+    cols, ratio = model.get("iso_cols"), model.get("iso_ratio")
+    Xi = X if cols is None else X[:, cols]
+    if ratio:
+        Xi = np.column_stack([Xi] + [X[:, a] / np.maximum(X[:, b], 1) for a, b in ratio])
+    return Xi
 
 
 def parts(model, X, seq_scores=None):

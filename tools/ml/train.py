@@ -59,8 +59,21 @@ COLS = [ALL_FEATURES.index(f) for f in FEATURES]
 # 사람 중에도 드물게 많이 사는 사람(단체 총무)이 있어, 양을 넣으면 IF가 그 사람을 통째로 이상하다고 본다
 # (2026-11-25: 총무 오탐 이유가 "손댄 운행 수·결제 수·한도 대비 결제"). 양으로 봇을 가르는 건 부스팅이 맡는다
 IF_VOLUME = ["n_events", "n_view", "n_hold", "n_pay", "n_runs", "seats_paid_ratio"]
-IF_COLS = ([i for i, f in enumerate(FEATURES) if f not in IF_VOLUME]
-           if os.environ.get("ML_IF_NO_VOLUME") == "1" else None)
+# ML_IF_VOLUME=ratio (4차, 2026-11-25): 양을 통째로 빼면(3차 r4) 총무 오탐은 3%로 줄었지만 IF가 속도만 보게 돼
+#   오픈 직후 빠르게 사는 사람 오탐이 10%→31%로 늘었다. 그래서 양 대신 "운행 하나당" 양을 넣는다.
+#   총무는 운행이 많아도 운행당 결제는 보통 사람과 같고, 한 운행을 긁는 봇은 운행당 값이 크다
+IF_MODE = "drop" if os.environ.get("ML_IF_NO_VOLUME") == "1" else os.environ.get("ML_IF_VOLUME", "")
+IF_COLS = [i for i, f in enumerate(FEATURES) if f not in IF_VOLUME] if IF_MODE in ("drop", "ratio") else None
+IF_RATIO = ([(FEATURES.index(a), FEATURES.index("n_runs")) for a in ("n_events", "n_view", "n_hold", "n_pay", "seats_paid_ratio")]
+            if IF_MODE == "ratio" else None)
+
+
+def iso_input(X, cols=IF_COLS, ratio=IF_RATIO):
+    """IF에 넣는 행렬. score.py의 iso_x와 같은 규칙"""
+    Xi = X if cols is None else X[:, cols]
+    if ratio:
+        Xi = np.column_stack([Xi] + [X[:, a] / np.maximum(X[:, b], 1) for a, b in ratio])
+    return Xi
 
 SEED = 7
 FP_TARGET = 0.05
@@ -124,7 +137,7 @@ def main():
     tr = ~val
 
     gbm = HistGradientBoostingClassifier(max_iter=300, random_state=SEED).fit(X[tr], y[tr].astype(int))
-    Xi = X if IF_COLS is None else X[:, IF_COLS]
+    Xi = iso_input(X)
     iso = make_pipeline(SimpleImputer(strategy="median"), StandardScaler(),
                         IsolationForest(n_estimators=300, random_state=SEED)).fit(Xi[tr & ~y])
 
@@ -143,7 +156,7 @@ def main():
     human = X[~y]
     model = {
         "gbm": gbm, "iso": iso, "ref_gbm": ref_gbm, "ref_iso": ref_iso, "gru": gru,
-        "features": FEATURES, "all_features": ALL_FEATURES, "cols": COLS, "excluded": EXCLUDE, "iso_cols": IF_COLS,
+        "features": FEATURES, "all_features": ALL_FEATURES, "cols": COLS, "excluded": EXCLUDE, "iso_cols": IF_COLS, "iso_ratio": IF_RATIO,
         # 근거 표시용: 사람(생성 데이터)의 특징별 5·50·95 백분위
         "human_q": {f: [float(np.nanquantile(human[:, i], q)) for q in (0.05, 0.5, 0.95)] for i, f in enumerate(FEATURES)},
         "trained": {"at": datetime.now().isoformat(timespec="seconds"), "files": paths,
