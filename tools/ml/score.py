@@ -66,7 +66,40 @@ def parts(model, X, seq_scores=None):
 
 
 def score_matrix(model, X, seq_scores=None):
-    return np.maximum.reduce(list(parts(model, X, seq_scores).values()))
+    return apply_exon(model, X, np.maximum.reduce(list(parts(model, X, seq_scores).values())))
+
+
+def exon_mask(model, X):
+    """해명 모델(train.py ML_EXON)이 사람이라고 강하게 본 계정. 강한 증거(기기·카드 공유)가 있으면 풀지 않는다"""
+    ex = model.get("exon")
+    cleared = np.zeros(len(X), dtype=bool)
+    if not ex or len(X) == 0:
+        return cleared
+    feats = model["features"]
+
+    def mask(conds):
+        m = np.ones(len(X), dtype=bool)
+        for f, op, v in conds:
+            if f not in feats:
+                return np.zeros(len(X), dtype=bool)
+            col = np.nan_to_num(X[:, feats.index(f)], nan=-np.inf if op == ">=" else np.inf)
+            m &= (col >= v) if op == ">=" else (col <= v)
+        return m
+
+    hard = np.zeros(len(X), dtype=bool)
+    for c in ex["hard"]:
+        hard |= mask([c])
+    for seg in ex["segments"]:
+        m = mask(seg["conds"]) & ~hard & ~cleared
+        if m.any():
+            cleared[np.flatnonzero(m)] = seg["clf"].predict_proba(X[m])[:, 1] >= seg["q"]
+    return cleared
+
+
+def apply_exon(model, X, s):
+    if not model.get("exon"):
+        return s
+    return np.where(exon_mask(model, X), np.minimum(s, model["exon"]["cap"]), s)
 
 
 def gru_scores(model, model_path, rows, folder):
@@ -135,7 +168,7 @@ def main():
     X = np.array([[float(r[c]) if r[c] not in ("", "nan") else np.nan for c in model["features"]] for r in rows])
     seq, why = gru_scores(model, sys.argv[1], rows, os.path.dirname(sys.argv[2]))
     P = parts(model, X, seq)
-    s = np.maximum.reduce(list(P.values()))
+    s = apply_exon(model, X, np.maximum.reduce(list(P.values())))
     by = [max(P, key=lambda k: P[k][j]) for j in range(len(rows))]   # 어느 모델이 가장 높게 봤나
     thr = model["threshold"] if seq is not None else model.get("threshold_base", model["threshold"])
     types, type_p = bot_types(sys.argv[1], rows)

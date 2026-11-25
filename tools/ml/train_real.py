@@ -144,6 +144,9 @@ def main():
                     help="Isolation Forest에서 양 특징(운행 수·결제 수 등)을 뺀다 (단체 총무 오탐)")
     ap.add_argument("--if-ratio", action="store_true",
                     help="Isolation Forest에서 양 특징 대신 운행 하나당 양(결제 수/운행 수 등)을 넣는다 (4차)")
+    ap.add_argument("--exon", action="store_true",
+                    help="해명 모델(5차): 약한 행동 그룹(취소함·한 운행 대량)마다 사람 vs 봇 모델을 두고 사람이면 풀어 줌")
+    ap.add_argument("--exon-leak", type=float, default=None, help="해명 모델이 잘못 풀어 줄 그룹 봇 비율 (기본 0.02)")
     ap.add_argument("--strat-boost", default=None,
                     help='전략마다 따로 배수, 예: "h_open_rusher=6,h_quick_regret=5" (학습 시드만, --trap-boost 뒤에 곱함)')
     ap.add_argument("--trap-boost", type=float, default=None,
@@ -170,6 +173,8 @@ def main():
     os.makedirs(out, exist_ok=True)
     env = {"ML_STAGE": "1", **({"ML_RUNS": "1"} if a.runs else {}), **({"ML_IF_NO_VOLUME": "1"} if a.if_no_volume else {}),
            **({"ML_IF_VOLUME": "ratio"} if a.if_ratio else {}),
+           **({"ML_EXON": "1"} if a.exon else {}),
+           **({"ML_EXON_LEAK": str(a.exon_leak)} if a.exon_leak is not None else {}),
            **({"ML_GRU": "0"} if a.quick else {})}
     run(["-u", "tools/ml/train.py", out, *[os.path.join(data, f"g{s}", "features.csv") for s in TRAIN_SEEDS]], env, quiet=False)
     shutil.copyfile(calib, os.path.join(out, "real_calibration.json"))

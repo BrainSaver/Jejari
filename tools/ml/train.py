@@ -106,6 +106,56 @@ def train_gru(rows, folders, X, y, tr, out):
     return {"file": "gru.pt", "scores": gru_scores_train}
 
 
+# ── 해명 모델 (ML_EXON=1) ──────────────────────────────────────────────
+# 모델 하나가 모든 함정을 한 기준으로 가르면 한쪽을 고칠 때 다른 쪽이 나빠진다 (4차 r6: 오픈 직후 31→5%를 얻고
+# 바로 취소 7→24%를 잃음). 그래서 약한 행동 그룹마다 "그 그룹 안의 사람 vs 봇"만 보는 작은 모델을 두고,
+# 주 판정이 봇이어도 그 모델이 사람이라고 강하게 보면 풀어 준다 (점수를 EXON_CAP으로 내림).
+#   - 그룹은 생성기 전략 이름이 아니라 관찰되는 특징으로 정한다 (실제 데이터에는 전략 이름이 없다)
+#   - 풀어 주는 문턱은 그 그룹 봇의 교차 검증 확률로 정해, 그룹 봇 중 EXON_LEAK(기본 2%)만 잘못 풀리게 한다
+#   - 강한 증거(한 기기·한 카드를 여러 계정이 씀)가 있으면 풀지 않는다 — 학습 데이터 밖의 진짜 봇을 놓치지 않게
+EXON_SEGMENTS = {
+    # 산 뒤 취소한 적 있음 (바로 후회하는 사람 vs 취소·재구매·좌석 묶기 봇)
+    "cancel": [("n_cancel", ">=", 1)],
+    # 한 운행에서 한도 가까이 삼 (가족 몫 대량 구매 vs 쓸어 담기 봇). seats_paid_ratio = 결제 좌석 / 운행당 한도 4
+    "bulk": [("seats_paid_ratio", ">=", 0.75)],
+}
+EXON_HARD = [("accounts_on_device", ">=", 2), ("accounts_on_card", ">=", 2)]
+EXON_CAP = 50.0
+
+
+def segment_mask(features, X, conds):
+    m = np.ones(len(X), dtype=bool)
+    for f, op, v in conds:
+        if f not in features:
+            return np.zeros(len(X), dtype=bool)
+        col = X[:, features.index(f)]
+        m &= (col >= v) if op == ">=" else (col <= v)
+    return m & ~np.isnan(X[:, features.index(conds[0][0])])
+
+
+def train_exon(X, y, tr):
+    from sklearn.model_selection import cross_val_predict
+    leak = float(os.environ.get("ML_EXON_LEAK", "0.02"))
+    out = []
+    for name, conds in EXON_SEGMENTS.items():
+        seg = segment_mask(FEATURES, X, conds) & tr
+        n_h, n_b = int((seg & ~y).sum()), int((seg & y).sum())
+        if n_h < 30 or n_b < 30:
+            print(f"해명 모델 {name}: 사람 {n_h} · 봇 {n_b} — 너무 적어 건너뜀")
+            continue
+        Xs, ys = X[seg], (~y[seg]).astype(int)   # 1 = 사람
+        clf = HistGradientBoostingClassifier(max_iter=200, random_state=SEED)
+        p_cv = cross_val_predict(clf, Xs, ys, cv=3, method="predict_proba")[:, 1]
+        bots_p = p_cv[ys == 0]
+        q = float(np.quantile(bots_p, 1 - leak))      # 이 위로 가는 봇이 leak 비율뿐
+        q = max(q, 0.5)
+        clf.fit(Xs, ys)
+        cleared = float((p_cv[ys == 1] >= q).mean())
+        print(f"해명 모델 {name}: 사람 {n_h} · 봇 {n_b} · 문턱 P(사람) ≥ {q:.3f} → 그룹 사람 {cleared:.0%} 풀림, 그룹 봇 ≤ {leak:.0%}")
+        out.append({"name": name, "conds": conds, "clf": clf, "q": q})
+    return {"segments": out, "hard": EXON_HARD, "cap": EXON_CAP}
+
+
 def main():
     if len(sys.argv) < 3:
         sys.exit("사용법: train.py <출력 폴더> <생성 데이터 features.csv> [...]")
@@ -165,6 +215,10 @@ def main():
     os.makedirs(out, exist_ok=True)
     with open(os.path.join(out, "model.pkl"), "wb") as f:
         pickle.dump(model, f)
+
+    # 해명 모델 (ML_EXON=1, 5차 2026-11-25): 주 판정이 봇이라 해도 "이 행동 그룹의 정상 모양"이면 풀어 준다
+    if os.environ.get("ML_EXON") == "1":
+        model["exon"] = train_exon(X, y, tr)
 
     # 학습 데이터 안에서의 확인 (낙관적인 값. 실제 실력은 compare.py의 "계열 하나 빼기"와 대회 데이터로 본다)
     from score import score_matrix
