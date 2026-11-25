@@ -195,6 +195,105 @@ class SeatHoldInfraTest {
 				.isEqualTo(1);
 	}
 
+	/**
+	 * T4 (§3-2): 만료된 2석 예약 R1의 두 좌석을 두 사람이 <b>동시에</b> 재선점. 먼저 잠근 쪽이 R1을 EXPIRED로 바꾸고
+	 * 남은 HOLD 행·카운터를 정리하고, 뒤 쪽은 이미 EXPIRED라 감소 없이 넘어가야 한다 → 둘 다 성공, R1 카운터는 한 번만 감소.
+	 */
+	@Test
+	void T4_만료된_2석을_두_사람이_동시에_재선점해도_둘_다_성공하고_카운터는_한_번만_준다() throws Exception {
+		long a = newMember();
+		long b = newMember();
+		long c = newMember();
+		long s1 = seatIds.get(60);
+		long s2 = seatIds.get(61);
+		long r1 = service.hold(a, cmd(UUID.randomUUID().toString(), s1, s2)).reservationId();
+		assertThat(perRun(a)).isEqualTo(2);
+		expire(r1, s1, s2);
+
+		List<String> outcome = race(List.of(
+				() -> holdOutcome(b, s1),
+				() -> holdOutcome(c, s2)));
+
+		assertThat(outcome).containsOnly("OK");
+		assertThat(statusOf(r1)).isEqualTo("EXPIRED");
+		assertThat(count("SELECT COUNT(*) FROM seat_inventory WHERE reservation_id = ?", r1)).isZero();
+		assertThat(perRun(a)).isZero(); // 2 → 0 한 번 (두 번 깎였으면 CHECK(seat_count >= 0) 위반으로 한쪽이 실패했을 것)
+		assertThat(perRun(b)).isEqualTo(1);
+		assertThat(perRun(c)).isEqualTo(1);
+		assertThat(count("SELECT COUNT(*) FROM seat_inventory WHERE run_id = ? AND seat_id IN (?, ?) AND status = 'HOLD'", RUN, s1, s2))
+				.isEqualTo(2);
+		// R1 만료 이벤트·보상은 한 번만 (§3-5)
+		assertThat(count("SELECT COUNT(*) FROM outbox_event WHERE aggregate_id = ? AND event_type = 'RESERVATION_EXPIRED'",
+				Long.toString(r1))).isEqualTo(1);
+		assertThat(count("SELECT COUNT(*) FROM reservation_history WHERE reservation_id = ? AND to_status = 'EXPIRED'", r1))
+				.isEqualTo(1);
+	}
+
+	/**
+	 * T11 (§10.1): 같은 CI의 <b>첫</b> 예약들이 동시에 들어와 카운터 행이 아직 없다. 여러 요청이 동시에 INSERT하면
+	 * ORA-00001이 나고 UPDATE부터 다시 해야 한다 → 한도(열차당 10)까지만 성공, 카운터 = 성공한 좌석 수, scope마다 행 하나.
+	 */
+	@Test
+	void T11_같은_CI_첫_예약이_동시에_와도_카운터_행은_하나이고_한도를_넘지_않는다() throws Exception {
+		long m = newMember();
+		List<Callable<String>> calls = new ArrayList<>();
+		for (int i = 0; i < 12; i++) {
+			long seat = seatIds.get(70 + i);
+			calls.add(() -> holdOutcome(m, seat));
+		}
+
+		List<String> outcome = race(calls);
+
+		assertThat(outcome).filteredOn("OK"::equals).hasSize(10);
+		assertThat(outcome).filteredOn(o -> !"OK".equals(o)).containsOnly(SeatErrorCode.LIMIT_PER_RUN.code());
+		assertThat(perRun(m)).isEqualTo(10);
+		assertThat(count("SELECT COUNT(*) FROM purchase_counter WHERE ci_hash = ? AND scope = 'PER_RUN'", ci(m))).isEqualTo(1);
+		assertThat(count("SELECT COUNT(*) FROM purchase_counter WHERE ci_hash = ? AND scope = 'PER_DAY'", ci(m))).isEqualTo(1);
+		assertThat(count("SELECT seat_count FROM purchase_counter WHERE ci_hash = ? AND scope = 'PER_DAY'", ci(m))).isEqualTo(10);
+		assertThat(count("SELECT COUNT(*) FROM reservation WHERE member_id = ? AND status = 'HOLD'", m)).isEqualTo(10);
+		// 진 요청 2건은 좌석 키를 되돌렸다 — 잡힌 좌석 키는 성공한 10개뿐
+		long heldKeys = seatIds.subList(70, 82).stream().filter(s -> redis.opsForValue().get(SeatKeys.hold(RUN, s, 0)) != null).count();
+		assertThat(heldKeys).isEqualTo(10);
+	}
+
+	/**
+	 * T12 (§3-1·§10.3): 서로 다른 CI의 재선점 2건이 <b>같은 이전 예약 둘</b>을 서로 반대로 가져간다.
+	 * C는 RA의 좌석·RB의 좌석, D는 RA의 다른 좌석·RB의 다른 좌석. 이전 예약 잠금(ID 오름차순)과 카운터 갱신
+	 * (scope·ref·ci 오름차순) 순서가 고정이 아니면 데드락(ORA-00060)이 난다 → 5라운드 모두 둘 다 성공해야 한다.
+	 */
+	@Test
+	void T12_서로_다른_CI_재선점이_이전_예약을_교차해_가져가도_데드락_없이_둘_다_성공한다() throws Exception {
+		for (int round = 0; round < 5; round++) {
+			int base = 90 + round * 4;
+			long a = newMember();
+			long b = newMember();
+			long c = newMember();
+			long d = newMember();
+			long a1 = seatIds.get(base);
+			long a2 = seatIds.get(base + 1);
+			long b1 = seatIds.get(base + 2);
+			long b2 = seatIds.get(base + 3);
+			long ra = service.hold(a, cmd(UUID.randomUUID().toString(), a1, a2)).reservationId();
+			long rb = service.hold(b, cmd(UUID.randomUUID().toString(), b1, b2)).reservationId();
+			expire(ra, a1, a2);
+			expire(rb, b1, b2);
+
+			// C는 (RB, RA) 순서로, D는 (RA, RB) 순서로 좌석을 고른다 — 고른 순서대로 잠그면 서로를 기다리는 모양
+			List<String> outcome = race(List.of(
+					() -> holdOutcome(c, b1, a1),
+					() -> holdOutcome(d, a2, b2)));
+
+			assertThat(outcome).as("라운드 %d", round).containsOnly("OK");
+			assertThat(statusOf(ra)).isEqualTo("EXPIRED");
+			assertThat(statusOf(rb)).isEqualTo("EXPIRED");
+			assertThat(perRun(a)).isZero();
+			assertThat(perRun(b)).isZero();
+			assertThat(perRun(c)).isEqualTo(2);
+			assertThat(perRun(d)).isEqualTo(2);
+			assertThat(count("SELECT COUNT(*) FROM seat_inventory WHERE reservation_id IN (?, ?)", ra, rb)).isZero();
+		}
+	}
+
 	@Test
 	void T5_결제_중인_좌석은_마감이_지나도_재선점할_수_없다() {
 		long a = newMember();
@@ -302,6 +401,45 @@ class SeatHoldInfraTest {
 		jdbc.update("INSERT INTO member (member_id, email, ci_hash, name, status) VALUES (?, ?, ?, ?, 'ACTIVE')",
 				id, "seat" + id + "@infra-test.jejari.dev", "infra-ci-" + id, "테스트");
 		return id;
+	}
+
+	/** 선점 한 건: 성공이면 "OK", 업무 거절이면 오류 코드, 그 밖의 예외(데드락 ORA-00060 등)는 예외 이름과 메시지 */
+	private String holdOutcome(long memberId, long... seats) {
+		try {
+			service.hold(memberId, cmd(UUID.randomUUID().toString(), seats));
+			return "OK";
+		} catch (BusinessException e) {
+			return e.getErrorCode().code();
+		} catch (RuntimeException e) {
+			return e.getClass().getSimpleName() + ": " + e.getMessage();
+		}
+	}
+
+	/** 모든 호출을 같은 순간에 출발시키고 결과를 모은다 (30초 안에 끝나지 않으면 실패 — 데드락이 풀리지 않는 경우) */
+	private static List<String> race(List<Callable<String>> calls) throws Exception {
+		ExecutorService pool = Executors.newFixedThreadPool(calls.size());
+		CountDownLatch start = new CountDownLatch(1);
+		List<Future<String>> futures = new ArrayList<>();
+		for (Callable<String> call : calls) {
+			futures.add(pool.submit(() -> {
+				start.await();
+				return call.call();
+			}));
+		}
+		start.countDown();
+		List<String> out = new ArrayList<>();
+		try {
+			for (Future<String> f : futures) {
+				out.add(f.get(30, java.util.concurrent.TimeUnit.SECONDS));
+			}
+		} finally {
+			pool.shutdownNow();
+		}
+		return out;
+	}
+
+	private String statusOf(long reservationId) {
+		return jdbc.queryForObject("SELECT status FROM reservation WHERE reservation_id = ?", String.class, reservationId);
 	}
 
 	private static String ci(long memberId) {
