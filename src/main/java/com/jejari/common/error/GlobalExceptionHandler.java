@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.web.firewall.RequestRejectedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -77,7 +78,10 @@ public class GlobalExceptionHandler {
 			HttpMessageNotReadableException.class,
 			MethodArgumentTypeMismatchException.class,
 			MissingServletRequestParameterException.class,
-			ServletRequestBindingException.class // 필수 헤더(Idempotency-Key 등) 누락 포함
+			ServletRequestBindingException.class, // 필수 헤더(Idempotency-Key 등) 누락 포함
+			// 방화벽(StrictHttpFirewall)은 헤더 값을 getHeader() 하는 순간 검사한다. 제어 문자 섞인 User-Agent 같은 클라이언트 입력이
+			// 컨트롤러 안에서 터져 500이 되고 헤더 원문이 에러 로그에 남았다 → 400, 로그엔 예외 이름만 (보안 점검 2026-11-25 §2.3)
+			RequestRejectedException.class
 	})
 	public ResponseEntity<ErrorResponse> handleBadRequest(Exception e) {
 		log.debug("bad request: {}", e.getClass().getSimpleName());

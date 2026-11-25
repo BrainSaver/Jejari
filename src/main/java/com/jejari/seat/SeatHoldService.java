@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -98,7 +99,7 @@ public class SeatHoldService {
 
 		// ---- 검증 (Redis·DB 쓰기 전) ----
 		if (cmd.idempotencyKey() == null || cmd.idempotencyKey().isBlank() || cmd.idempotencyKey().length() > 64
-				|| cmd.seats() == null || cmd.seats().isEmpty()) {
+				|| cmd.seats() == null || cmd.seats().isEmpty() || cmd.seats().stream().anyMatch(Objects::isNull)) {
 			throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
 		}
 		RunInfo run = runs.find(cmd.runId()).filter(r -> r.onSale(now))

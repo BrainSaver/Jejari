@@ -19,6 +19,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.jejari.common.error.BusinessException;
 import com.jejari.common.error.CommonErrorCode;
 import com.jejari.common.hmac.Pseudonymizer;
+import com.jejari.member.MemberStatusGuard;
 import com.jejari.payment.PaymentStartTx.Started;
 import com.jejari.payment.pg.PgClient;
 import com.jejari.payment.pg.PgClient.ApproveResult;
@@ -65,10 +66,11 @@ public class PaymentService {
 	private final Clock clock;
 	private final PaymentRiskGuard riskGuard;
 	private final SeatReleaseService seatRelease;
+	private final MemberStatusGuard statusGuard;
 
 	public PaymentService(PaymentStartTx startTx, PaymentSaga saga, PgClient pg, PaymentPolicy policy,
 			StringRedisTemplate redis, JdbcTemplate jdbc, TransactionTemplate tx, ObjectProvider<Pseudonymizer> hmac,
-			Clock clock, PaymentRiskGuard riskGuard, SeatReleaseService seatRelease) {
+			Clock clock, PaymentRiskGuard riskGuard, SeatReleaseService seatRelease, MemberStatusGuard statusGuard) {
 		this.startTx = startTx;
 		this.saga = saga;
 		this.pg = pg;
@@ -80,6 +82,7 @@ public class PaymentService {
 		this.clock = clock;
 		this.riskGuard = riskGuard;
 		this.seatRelease = seatRelease;
+		this.statusGuard = statusGuard;
 	}
 
 	public static String idemKey(long reservationId, String key) {
@@ -92,6 +95,15 @@ public class PaymentService {
 		}
 		if (cardNumber == null || !cardNumber.matches("\\d{12,19}")) {
 			throw new BusinessException(CommonErrorCode.INVALID_REQUEST, "카드번호는 숫자 12~19자리입니다.");
+		}
+
+		// 0. 정지 회원: 정지 직전에 받은 액세스 토큰(최대 15분)으로 결제를 끝내지 못하게 PG 전에 막고 선점 좌석을 바로 돌려준다
+		//    (보안 점검 2026-11-25 §2.2). 대기열·좌석 선점은 원래 DB 상태를 봐서 막혔다
+		try {
+			statusGuard.forbidBanned(memberId);
+		} catch (BusinessException e) {
+			seatRelease.releaseForRiskBlock(memberId, reservationId);
+			throw e;
 		}
 
 		// 1. 멱등 1차 (Redis). 값은 예약 ID = 결제 ID
