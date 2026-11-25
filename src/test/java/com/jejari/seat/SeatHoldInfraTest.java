@@ -294,6 +294,45 @@ class SeatHoldInfraTest {
 		}
 	}
 
+	/**
+	 * T14 (§10.4): Redis가 재시작돼 키를 전부 잃었다 (단일 노드 SPOF). 한도 키는 다음 요청이 purchase_counter 값으로
+	 * SET NX 복원한 뒤 더하므로, 동시에 여러 요청이 복원해도 한 값만 들어간다. 좌석 키를 잃어도 DB 점유가 최종이다.
+	 */
+	@Test
+	void T14_Redis를_잃어도_한도는_DB_카운터로_복원되고_좌석은_DB가_지킨다() throws Exception {
+		long m = newMember();
+		long other = newMember();
+		long[] seven = seatIds.subList(120, 127).stream().mapToLong(Long::longValue).toArray();
+		service.hold(m, cmd(UUID.randomUUID().toString(), seven));
+		assertThat(perRun(m)).isEqualTo(7);
+
+		// Redis 재시작 흉내: 데이터를 전부 잃음 (AOF everysec이면 실제로는 최대 1초. 여기서는 최악으로 전부)
+		redis.execute((RedisCallback<Object>) c -> {
+			c.serverCommands().flushDb();
+			return null;
+		});
+		assertThat(redis.keys("limit:*")).isEmpty();
+
+		// 1) 같은 CI가 1석씩 5건 동시 → 각 요청이 DB 7을 복원값으로 들고 오지만 SET NX라 한 번만 채움 → 3건만 통과
+		List<Callable<String>> calls = new ArrayList<>();
+		for (int i = 0; i < 5; i++) {
+			long seat = seatIds.get(130 + i);
+			calls.add(() -> holdOutcome(m, seat));
+		}
+		List<String> outcome = race(calls);
+		assertThat(outcome).filteredOn("OK"::equals).hasSize(3);
+		assertThat(outcome).filteredOn(o -> !"OK".equals(o)).containsOnly(SeatErrorCode.LIMIT_PER_RUN.code());
+		assertThat(perRun(m)).isEqualTo(10);
+		assertThat(redis.opsForValue().get(SeatKeys.limitRun(RUN, ci(m)))).isEqualTo("10");
+
+		// 2) 좌석 키를 잃어 Redis 1차(hold.lua)는 통과하지만, DB에 살아 있는 HOLD 행이 있어 거절 (§2.2-1, DB가 최종)
+		assertThat(holdOutcome(other, seatIds.get(120))).isEqualTo(SeatErrorCode.SEAT_ALREADY_TAKEN.code());
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, seatIds.get(120), 0))).isNull(); // 진 요청이 키를 되돌림
+		assertThat(perRun(other)).isZero();
+		assertThat(count("SELECT COUNT(*) FROM seat_inventory WHERE run_id = ? AND seat_id = ? AND status = 'HOLD'", RUN,
+				seatIds.get(120))).isEqualTo(1);
+	}
+
 	@Test
 	void T5_결제_중인_좌석은_마감이_지나도_재선점할_수_없다() {
 		long a = newMember();

@@ -1,6 +1,7 @@
 package com.jejari.waitlist;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.UUID;
@@ -18,6 +19,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.jejari.common.error.BusinessException;
 import com.jejari.seat.SeatHoldService;
 import com.jejari.seat.SeatHoldService.HoldCommand;
 import com.jejari.seat.SeatHoldService.SeatRequest;
@@ -203,6 +205,54 @@ class WaitlistOfferInfraTest {
 				.isEqualTo("OFFERED");
 		assertThat(count("SELECT COUNT(*) FROM notification WHERE member_id = ? AND type = 'WAITLIST_SKIPPED'", full))
 				.isEqualTo(1);
+	}
+
+	// ─────────────────────────── §14.3 보장 경로 (T26) ───────────────────────────
+
+	/**
+	 * T26 (§14.3): 취소가 커밋된 직후 앱이 죽어 빠른 경로(커밋 직후 Redis 보상)가 유실됐다.
+	 * 그대로면 좌석 키가 이전 예약 값으로 남아 출발까지 그 좌석을 못 팔고, 한도도 남아 그 사람이 막힌다.
+	 * seat-release 소비자가 같은 트랜잭션의 outbox 이벤트를 받아 하는 1단계({@code compensateAfterRelease})가
+	 * 같은 일을 다시 해 준다 — 좌석 키는 REOFFER:R(대기자 몫), 한도는 예약당 한 번만 감소.
+	 */
+	@Test
+	void T26_취소_커밋_직후_빠른_경로가_유실돼도_보장_경로가_좌석_키와_한도를_되돌린다() {
+		long seat = seatIds.get(340);
+		long m = newMember();
+		long other = newMember();
+		long r = hold.hold(m, new HoldCommand(RUN, SEOUL, BUSAN, List.of(new SeatRequest(seat, "ADULT")), "WEB",
+				UUID.randomUUID().toString())).reservationId();
+		String seatKey = SeatKeys.hold(RUN, seat, 0);
+		String limitKey = SeatKeys.limitRun(RUN, ciHash(m));
+		assertThat(redis.opsForValue().get(limitKey)).isEqualTo("1");
+
+		release.cancelBeforePay(m, r);   // DB 커밋 + 빠른 경로
+		assertThat(jdbc.queryForObject("SELECT status FROM reservation WHERE reservation_id = ?", String.class, r))
+				.isEqualTo("CANCELED");
+		// 같은 트랜잭션에 보장 경로의 재료(빈 좌석 이벤트)가 남았다 (§0.5)
+		assertThat(count("SELECT COUNT(*) FROM outbox_event WHERE aggregate_id = ? AND event_type = 'RESERVATION_CANCELED'",
+				Long.toString(r))).isEqualTo(1);
+
+		// 앱이 커밋 직후 죽어 빠른 경로가 실행되지 않은 상태로 되돌린다 (보상 유실 흉내)
+		redis.opsForValue().set(seatKey, Long.toString(r), java.time.Duration.ofMinutes(10));
+		redis.opsForValue().set(limitKey, "1");
+		redis.delete(SeatKeys.limitDec(r));
+
+		// 피해: 취소된 좌석인데 다른 사람이 못 잡는다 (hold.lua가 이전 예약 값을 보고 거절)
+		assertThatThrownBy(() -> hold.hold(other, new HoldCommand(RUN, SEOUL, BUSAN,
+				List.of(new SeatRequest(seat, "ADULT")), "WEB", UUID.randomUUID().toString())))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).getErrorCode().code()).isEqualTo("SEAT_ALREADY_TAKEN");
+
+		// 보장 경로: seat-release 소비자의 1단계 (값은 이벤트가 아니라 Oracle에서 다시 읽는다)
+		release.compensateAfterRelease(r);
+		assertThat(redis.opsForValue().get(seatKey)).isEqualTo(SeatKeys.reoffer(r)); // 대기자 몫으로 (§9가 넘기거나 푼다)
+		assertThat(redis.opsForValue().get(limitKey)).isEqualTo("0");
+
+		// 평소에는 빠른 경로와 보장 경로가 둘 다 돈다 → 두 번 돌려도 한 번만 감소 (limit:dec 표시)
+		release.compensateAfterRelease(r);
+		assertThat(redis.opsForValue().get(limitKey)).isEqualTo("0");
+		assertThat(redis.opsForValue().get(seatKey)).isEqualTo(SeatKeys.reoffer(r));
 	}
 
 	// ─────────────────────────────── 도우미 ───────────────────────────────
