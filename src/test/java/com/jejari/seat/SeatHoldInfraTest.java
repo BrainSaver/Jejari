@@ -323,7 +323,12 @@ class SeatHoldInfraTest {
 		assertThat(outcome).filteredOn("OK"::equals).hasSize(3);
 		assertThat(outcome).filteredOn(o -> !"OK".equals(o)).containsOnly(SeatErrorCode.LIMIT_PER_RUN.code());
 		assertThat(perRun(m)).isEqualTo(10);
-		assertThat(redis.opsForValue().get(SeatKeys.limitRun(RUN, ci(m)))).isEqualTo("10");
+		// Redis 값은 정확히 10이 아닐 수 있다: 3건이 커밋하기 전에 진 요청이 §10.7 자가 복구로 DB 값(7)을 SET해
+		// 진행 중인 증가분을 덮어쓴다 (concurrency.md §10.7에 적힌 허용 동작). Redis는 DB보다 크게만 안 남으면 된다(§0.1)
+		assertThat(Integer.parseInt(redis.opsForValue().get(SeatKeys.limitRun(RUN, ci(m))))).isBetween(7, 10);
+		// Redis가 낮아져 1차를 통과해도 DB 카운터가 최종이라 한도를 넘지 않는다
+		assertThat(holdOutcome(m, seatIds.get(135))).isEqualTo(SeatErrorCode.LIMIT_PER_RUN.code());
+		assertThat(perRun(m)).isEqualTo(10);
 
 		// 2) 좌석 키를 잃어 Redis 1차(hold.lua)는 통과하지만, DB에 살아 있는 HOLD 행이 있어 거절 (§2.2-1, DB가 최종)
 		assertThat(holdOutcome(other, seatIds.get(120))).isEqualTo(SeatErrorCode.SEAT_ALREADY_TAKEN.code());
