@@ -57,7 +57,9 @@ grep -q ' Y ' <<<"$VERSIONS" && active=1 || active=0
 
 total=0
 skipped=0
-while read -r ver dir on _; do
+# 버전 목록은 fd 3으로 읽는다. 반복문 안의 docker compose exec -T(load_scores.sh의 mongosh 등)가 표준 입력을 읽어
+# 남은 목록을 먹어 버리면 맨 앞 버전만 처리되고 FIRST_VERSION 자동 켜기까지 못 간다 (11-25 조영준 발견)
+while read -r -u 3 ver dir on _; do
   [[ -f "$dir/model.pkl" ]] || { echo "건너뜀: $ver ($dir/model.pkl 없음)"; continue; }
   # 3) 점수 — 버전마다 따로 폴더 (score.py가 features.csv 옆에 scores.csv를 쓰고, GRU는 옆의 events.jsonl을 읽는다)
   w="$OUT/$ver"; mkdir -p "$w"; cp "$OUT"/features.csv "$OUT"/events.jsonl "$OUT"/members.jsonl "$w"/; cp "$OUT"/runs.jsonl "$w"/ 2>/dev/null || true
@@ -74,6 +76,6 @@ while read -r ver dir on _; do
     > "/tmp/jejari-model-load-$ver.log" 2>&1 || { tail -5 "/tmp/jejari-model-load-$ver.log"; fail "적재 실패 ($ver): /tmp/jejari-model-load-$ver.log"; }
   n=$(($(wc -l < "$w/scores.csv") - 1)); total=$((total + n))
   echo "모델 점수 갱신: ${n}개 계정 · ${ver}${act:+ (처음이라 사용 중으로)}"
-done <<<"$VERSIONS"
+done 3<<<"$VERSIONS"
 (( skipped > 0 )) && echo "꺼진 후보 ${skipped}개 건너뜀 — 위 경고 확인"
 push 1 "$total"
