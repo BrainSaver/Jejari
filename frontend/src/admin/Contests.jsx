@@ -3,6 +3,7 @@ import { useOutletContext, useSearchParams } from 'react-router';
 import { get } from '../api/client.js';
 import { Who } from './AdminLayout.jsx';
 import { ErrorBox } from './ui.jsx';
+import { ciText } from './stats.js';
 
 /**
  * 봇 대회 결과 (읽기 전용). GET /api/v1/admin/contests · /api/v1/admin/contests/{tag}?runId=
@@ -14,6 +15,8 @@ import { ErrorBox } from './ui.jsx';
  *  - 참가자 종류는 이메일(lt{태그}.{종류}.g…)에서 읽는다. 서버는 이 라벨을 탐지에 쓰지 않는다
  */
 const SUBJECT = { CI: 'CI', PAYMENT: '결제수단', DEVICE: '기기' };
+
+const ci = ciText;
 
 export default function Contests() {
   const claims = useOutletContext();
@@ -105,7 +108,7 @@ export default function Contests() {
           <div className="kpi">
             <div className="l">봇 탐지 (계정)</div>
             <div className="n">{t.botDetected}<span className="mut" style={{ fontSize: 18 }}> / {t.botMembers}</span></div>
-            <div className="d">의심 케이스가 연결된 봇 계정</div>
+            <div className="d">의심 케이스가 연결된 봇 계정 · {ci(t.botDetected, t.botMembers)}</div>
           </div>
           <div className="kpi">
             <div className="l">봇이 결제한 좌석</div>
@@ -115,7 +118,7 @@ export default function Contests() {
           <div className={'kpi' + (t.humanFalsePositive > 0 ? ' alarm' : '')}>
             <div className="l">사람 오탐</div>
             <div className="n">{t.humanFalsePositive}<span style={{ fontSize: 18, opacity: 0.7 }}> / {t.humanMembers}</span></div>
-            <div className="d">{t.humanMembers ? `${Math.round((t.humanFalsePositive / t.humanMembers) * 1000) / 10}% · 목표 5% 이하` : '사람 참가자 없음 — 오탐은 판정 보류'}</div>
+            <div className="d">{t.humanMembers ? `${Math.round((t.humanFalsePositive / t.humanMembers) * 1000) / 10}% · ${ci(t.humanFalsePositive, t.humanMembers)} · 목표 5% 이하` : '사람 참가자 없음 — 오탐은 판정 보류'}</div>
           </div>
           <div className="kpi">
             <div className="l">사람이 결제한 좌석</div>
@@ -128,7 +131,11 @@ export default function Contests() {
       {r && (
         <section className="panel">
           <h2>종류별 결과</h2>
-          <p className="sub">봇은 막힌 층, 사람은 오탐을 봅니다. 순번 몇 초는 사람도 새 계정이면 받는 정도라, 사람 줄과 비교해 읽어요.</p>
+          <p className="sub">
+            봇은 막힌 층, 사람은 오탐을 봅니다. 순번 몇 초는 사람도 새 계정이면 받는 정도라, 사람 줄과 비교해 읽어요.
+            구간은 계정을 서로 독립으로 본 값이에요 — 한 사람·한 봇이 계정을 여러 개 만들었으면 실제 불확실성은 더 커요.
+            기준값을 이 대회 데이터로 정했다면, 이 대회로는 그 기준을 평가할 수 없어요 (새 데이터로 다시 재야 해요).
+          </p>
           <table>
             <thead>
               <tr>
