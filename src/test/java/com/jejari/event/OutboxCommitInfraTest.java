@@ -267,6 +267,7 @@ class OutboxCommitInfraTest {
 
 	// ---- 동시성 ----
 
+	// concurrency.md §16 T18
 	@Test
 	void 릴레이_둘이_동시에_돌아도_한_번씩_순서대로_보낸다() throws Exception {
 		long r = newKey();
@@ -340,6 +341,7 @@ class OutboxCommitInfraTest {
 
 	// ---- 끝까지 이어서: 재발송 → Inbox ----
 
+	// concurrency.md §16 T21
 	@Test
 	void 보낸_뒤_표시_전에_끊기면_같은_event_id로_다시_가고_Inbox가_한_번만_처리한다() {
 		long r = newKey();

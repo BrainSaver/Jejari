@@ -201,6 +201,7 @@ class OutboxInboxInfraTest {
 		assertThat(noTime).isZero();
 	}
 
+	// concurrency.md §16 T25
 	@Test
 	void 발행이_실패하면_그_샤드의_뒤_이벤트는_보내지_않는다() {
 		outbox.recordReservation(resv, EventType.SEAT_HELD, Map.of());
@@ -221,6 +222,7 @@ class OutboxInboxInfraTest {
 				.containsExactly("SEAT_HELD", "PAYMENT_STARTED");
 	}
 
+	// concurrency.md §16 T19
 	@Test
 	void 재시도를_다_쓰면_FAILED가_되고_그_샤드는_멈춘다() {
 		outbox.recordReservation(resv, EventType.SEAT_HELD, Map.of());
@@ -250,6 +252,7 @@ class OutboxInboxInfraTest {
 
 	// ---- EVT-03 Inbox ----
 
+	// concurrency.md §16 T21
 	@Test
 	void 같은_이벤트가_두_번_와도_한_번만_처리한다() {
 		EventEnvelope e = envelope();
