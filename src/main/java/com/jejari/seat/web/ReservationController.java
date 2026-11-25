@@ -3,6 +3,7 @@ package com.jejari.seat.web;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -61,7 +62,9 @@ public class ReservationController {
 			@RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
 			@RequestBody HoldRequest body) {
 		long memberId = me.memberId();
-		if (body == null || body.runId() == null) {
+		// seats:[null] 같은 원소 null은 아래 행동 로그 스트림에서 NPE(500)가 났다 → 400 (보안 점검 2026-11-25 §2.4)
+		if (body == null || body.runId() == null
+				|| (body.seats() != null && body.seats().stream().anyMatch(Objects::isNull))) {
 			throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
 		}
 		// 행동 로그: 실패(409 등)도 남게 예외 전에 먼저 표시

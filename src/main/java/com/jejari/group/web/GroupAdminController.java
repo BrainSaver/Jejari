@@ -35,6 +35,7 @@ import com.jejari.group.GroupQueryService.Summary;
  */
 @RestController
 @RequestMapping("/api/v1/admin/groups")
+@PreAuthorize("hasAuthority('ADMIN_VIEWER')") // 다른 관리자 컨트롤러와 같게 클래스에도 최소 권한 (보안 점검 2026-11-25 §3-6)
 public class GroupAdminController {
 
 	public record RejectRequest(String reason) {

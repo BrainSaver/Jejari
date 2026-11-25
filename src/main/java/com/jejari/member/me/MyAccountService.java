@@ -24,6 +24,7 @@ import com.jejari.common.pii.PiiMasker;
 import com.jejari.member.AuthLimiter;
 import com.jejari.member.AuthPolicy;
 import com.jejari.member.GuestGuard;
+import com.jejari.member.MemberStatusGuard;
 import com.jejari.member.MemberAuthEnabled;
 import com.jejari.member.password.PasswordHasher;
 import com.jejari.member.password.PasswordPolicy;
@@ -65,10 +66,11 @@ public class MyAccountService {
 	private final GuestGuard guestGuard;
 	/** 탈퇴 때 대기열 자리 비우기. 대기열 빈이 없는 구성(테스트 슬라이스)에서도 뜨게 ObjectProvider */
 	private final ObjectProvider<QueueService> queues;
+	private final MemberStatusGuard statusGuard;
 
 	public MyAccountService(JdbcTemplate jdbc, TransactionTemplate tx, PiiCipher cipher, PasswordHasher hasher,
 			Pseudonymizer pseudonymizer, AuthLimiter limiter, AuthPolicy policy, Clock clock, GuestGuard guestGuard,
-			ObjectProvider<QueueService> queues) {
+			ObjectProvider<QueueService> queues, MemberStatusGuard statusGuard) {
 		this.jdbc = jdbc;
 		this.tx = tx;
 		this.cipher = cipher;
@@ -79,6 +81,7 @@ public class MyAccountService {
 		this.clock = clock;
 		this.guestGuard = guestGuard;
 		this.queues = queues;
+		this.statusGuard = statusGuard;
 	}
 
 	// ------------------------------------------------------------ 내 정보
@@ -119,6 +122,8 @@ public class MyAccountService {
 
 	public void withdraw(long memberId, String password) {
 		guestGuard.forbidGuest(memberId); // 게스트는 기한이 지나면 자동으로 지워진다
+		// 정지 회원은 탈퇴로 이메일을 풀어 같은 이메일로 다시 가입하는 길을 막는다 (보안 점검 2026-11-25 §2.2)
+		statusGuard.forbidBanned(memberId);
 		verifyPassword(memberId, password);
 
 		Instant now = clock.instant();
@@ -172,6 +177,7 @@ public class MyAccountService {
 
 	public Revealed reveal(long memberId, String password) {
 		guestGuard.forbidGuest(memberId);
+		statusGuard.forbidBanned(memberId);
 		verifyPassword(memberId, password);
 		List<Revealed> rows = jdbc.query("""
 				SELECT m.name, m.phone_enc, m.enc_key_id FROM member m
@@ -210,6 +216,7 @@ public class MyAccountService {
 
 	public UpdateResult update(long memberId, UpdateRequest req) {
 		guestGuard.forbidGuest(memberId);
+		statusGuard.forbidBanned(memberId); // 정지 중에 연락처·비밀번호를 바꾸지 못하게 (§2.2)
 		boolean wantName = req.name() != null && !req.name().isBlank();
 		boolean wantPhone = req.phone() != null && !req.phone().isBlank();
 		boolean wantPassword = req.newPassword() != null && !req.newPassword().isEmpty();

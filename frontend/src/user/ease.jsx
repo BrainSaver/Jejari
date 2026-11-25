@@ -60,6 +60,7 @@ export function EaseRoot({ children }) {
 /** 위쪽 도우미 줄 (.sbar) */
 export function EaseBar() {
   const [ease, setEase] = useContext(EaseContext);
+  const [callNote, setCallNote] = useState(false);
   const toggleVoice = () => {
     if (ease.voice && window.speechSynthesis) speechSynthesis.cancel();
     setEase({ ...ease, voice: !ease.voice });
@@ -77,7 +78,15 @@ export function EaseBar() {
       <button type="button" className="sb-btn" aria-pressed={ease.voice} onClick={toggleVoice}>
         {ease.voice ? '음성 안내 켜짐' : '음성 안내 듣기'}
       </button>
-      <a className="sb-call" href="tel:1588-0000"><Icon name="phone" />전화 도움 1588-0000</a>
+      {/* 시연용 사이트라 상담 전화가 없다. 예전엔 tel:1588-0000이라 누르면 모르는 번호로 실제 전화가 걸렸다 */}
+      <button type="button" className="sb-call" aria-expanded={callNote} aria-controls="sb-call-note" onClick={() => setCallNote((v) => !v)}>
+        <Icon name="phone" />전화 도움
+      </button>
+      {callNote && (
+        <span id="sb-call-note" className="sb-note" role="status">
+          시연용 사이트라 상담 전화는 없어요. 오른쪽 아래 예매 도우미에게 물어보세요.
+        </span>
+      )}
     </div>
   );
 }

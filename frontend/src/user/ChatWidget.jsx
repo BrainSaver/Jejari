@@ -69,12 +69,15 @@ export default function ChatWidget() {
   return (
     <>
       {/* 글자 크기는 .user{zoom}이라 px 여백·버튼·탭바가 같이 커진다. 그래서 여백은 그대로 두고, 화면 단위(vw·vh)만 배율로 나눈다.
-          960px 미만은 아래 탭바(내 정보 등) 위로 올리고, 가로로 눕힌 폰은 높이가 모자라 창을 버튼 왼쪽에 둔다 */}
+          960px 미만은 아래 탭바(내 정보 등) 위로 올리고, 가로로 눕힌 폰은 높이가 모자라 창을 버튼 왼쪽에 둔다.
+          폰에서는 버튼을 52px로 줄이고 본문 아래에 여백을 둬서, 맨 아래 버튼(열차 찾기 등)을 마스코트 위로 올려 누를 수 있게 한다 */}
       <style>{`
         .chat-fab{right:16px;bottom:calc(20px + env(safe-area-inset-bottom) / var(--z,1))}
         .chat-win{right:16px;bottom:calc(92px + env(safe-area-inset-bottom) / var(--z,1));width:min(360px,calc(100vw / var(--z,1) - 32px));height:min(480px,calc(100vh / var(--z,1) - 108px))}
         @media (max-width:959px){
           .chat-fab{bottom:calc(76px + env(safe-area-inset-bottom) / var(--z,1))}
+          .chat-fab img{width:52px;height:47px}
+          .user .body{padding-bottom:84px}
           .chat-win{bottom:calc(148px + env(safe-area-inset-bottom) / var(--z,1));height:min(480px,calc(100vh / var(--z,1) - 160px))}
         }
         @media (max-width:959px) and (max-height:500px){

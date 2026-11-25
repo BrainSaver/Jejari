@@ -195,7 +195,7 @@ export default function Search() {
             <Icon name="info" />
             <span>
               {state.error.message}
-              {state.error.traceId && <span className="faint" style={{ display: 'block', fontSize: 12.5 }}>계속 안 되면 1588-0000에 이 번호를 알려 주세요: {state.error.traceId.slice(0, 12)}</span>}
+              {state.error.traceId && <span className="faint" style={{ display: 'block', fontSize: 12.5 }}>계속 안 되면 문의할 때 이 번호를 알려 주세요: {state.error.traceId.slice(0, 12)}</span>}
             </span>
           </div>
         )}

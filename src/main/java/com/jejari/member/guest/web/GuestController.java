@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.jejari.auth.web.TokenResponses.TokenResponse;
 import com.jejari.auth.web.TokenResponses;
 import com.jejari.common.hmac.Pseudonymizer;
+import com.jejari.common.web.UserAgents;
 import com.jejari.member.MemberAuthEnabled;
 import com.jejari.member.guest.GuestService;
 import com.jejari.member.guest.GuestService.GuestReservation;
@@ -34,8 +35,6 @@ import jakarta.servlet.http.HttpServletRequest;
 @RequestMapping("/api/v1/auth/guest")
 @MemberAuthEnabled
 public class GuestController {
-
-	private static final int USER_AGENT_MAX = 300;
 
 	private final GuestService guests;
 	private final TokenResponses tokenResponses;
@@ -84,12 +83,8 @@ public class GuestController {
 		return pseudonymizer.ip(ipResolver.resolve(http));
 	}
 
+	/** 제어 문자 제거 + UTF-8 300바이트 (UserAgents, 보안 점검 2026-11-25 §2.3) */
 	private static String userAgent(HttpServletRequest http) {
-		String ua = http.getHeader(HttpHeaders.USER_AGENT);
-		if (ua == null) {
-			return null;
-		}
-		String clean = ua.replaceAll("\\p{Cntrl}", "");
-		return clean.length() > USER_AGENT_MAX ? clean.substring(0, USER_AGENT_MAX) : clean;
+		return UserAgents.from(http);
 	}
 }
