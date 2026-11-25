@@ -1,0 +1,43 @@
+### c1124c 해명 진단 (모든 사람 종류)
+모델 data/ml/model-real-r8/model.pkl · 문턱 97.3점 · 해명 상한 50.0 · 쓴 모델 부스팅 + IF + GRU
+해명 그룹: cancel [('n_cancel', '>=', 1)] 문턱 P(사람)≥0.500 · bulk [('seats_paid_ratio', '>=', 0.75)] 문턱 P(사람)≥0.924
+강한 증거: [('accounts_on_device', '>=', 2), ('accounts_on_card', '>=', 2)]
+
+## human (NORMAL) — 계정 6 · 해명 전 표시 2 (33.3%) → 해명 뒤 2 (33.3%)
+   그룹 cancel: 든 계정 0/6
+   그룹 bulk: 든 계정 0/6
+   강한 증거: accounts_on_device 6 · accounts_on_card 0
+   seats_paid_ratio: 값 분포 {0.25: 6}
+   n_cancel: 값 분포 {0.0: 6}
+   accounts_on_device: 값 분포 {6.0: 6}
+   accounts_on_card: 값 분포 {1.0: 6}
+   해명 뒤에도 표시된 이유: 그룹 밖 (조건 미달) 2
+   표시된 계정에서 가장 높게 본 모델: 부스팅 2
+   근거로 자주 나온 특징: 같은 2 · 연결 2 · view_to_hold_min_log 2
+     예) 3974 점수 97.8→97.8 [부스팅] 그룹 - 강한증거: 같은 기기 계정 6 (사람 1~2) · 연결 계정과 시간차(로그) 4.7455 (사람 9.7311~11.3668) · view_to_hold_min_log 2.9076 (사람 0.6931~2.30557)
+     예) 3978 점수 98.4→98.4 [부스팅] 그룹 - 강한증거: 같은 기기 계정 6 (사람 1~2) · 연결 계정과 시간차(로그) 4.8157 (사람 9.7311~11.3668) · view_to_hold_min_log 3.0789 (사람 0.6931~2.30557)
+
+
+### c1124c score.py
+모델 2026-11-25T03:47:15 (계정 18003) · 문턱 97.3점 · 뺀 특징 ['account_age_days_log', 'accounts_on_ip', 'distinct_ips', 'min_sync_gap_ip_s_log'] → /tmp/c1124c/scores.csv
+쓴 모델: 부스팅 + IF + GRU
+
+종류          라벨                계정    표시      점수 중앙값
+botb        RESELLER           6     6       100.0
+botc        RESELLER           6     6       100.0
+human       NORMAL             6     2        92.3
+
+근거 예시 (표시된 계정 앞 5개)
+  3967 (botb) 100점 [부스팅]: 같은 카드 계정 6 (사람 1~1) · 매수 제한 거절 4 (사람 0~0) · 연결 계정과 시간차(로그) 0 (사람 9.7311~11.3668)
+  3968 (botb) 100점 [부스팅]: 같은 카드 계정 6 (사람 1~1) · 매수 제한 거절 4 (사람 0~0) · 연결 계정과 시간차(로그) 0 (사람 9.7311~11.3668)
+  3969 (botb) 100점 [부스팅]: 같은 카드 계정 6 (사람 1~1) · 매수 제한 거절 4 (사람 0~0) · 연결 계정과 시간차(로그) 0.0695 (사람 9.7311~11.3668)
+  3970 (botb) 100점 [부스팅]: 같은 카드 계정 6 (사람 1~1) · 매수 제한 거절 4 (사람 0~0) · 연결 계정과 시간차(로그) 0.0667 (사람 9.7311~11.3668)
+  3971 (botb) 100점 [부스팅]: 같은 카드 계정 6 (사람 1~1) · 매수 제한 거절 4 (사람 0~0) · 연결 계정과 시간차(로그) 0.1371 (사람 9.7311~11.3668)
+
+### 사람 6명 점수·특징
+3974 97.8 1 부스팅 {'n_events': '4', 'n_view': '1', 'n_hold': '1', 'n_pay': '1', 'seats_paid_ratio': '0.25', 'hold_fail_ratio': '0.0', 'accounts_on_device': '6', 'accounts_on_card': '1'} 97.8 91.8 41.1
+3975 92.0 0 부스팅 {'n_events': '5', 'n_view': '2', 'n_hold': '1', 'n_pay': '1', 'seats_paid_ratio': '0.25', 'hold_fail_ratio': '0.0', 'accounts_on_device': '6', 'accounts_on_card': '1'} 92.0 82.4 28.7
+3976 92.7 0 부스팅 {'n_events': '5', 'n_view': '2', 'n_hold': '1', 'n_pay': '1', 'seats_paid_ratio': '0.25', 'hold_fail_ratio': '0.0', 'accounts_on_device': '6', 'accounts_on_card': '1'} 92.7 82.4 30.7
+3977 90.2 0 부스팅 {'n_events': '5', 'n_view': '2', 'n_hold': '1', 'n_pay': '1', 'seats_paid_ratio': '0.25', 'hold_fail_ratio': '0.0', 'accounts_on_device': '6', 'accounts_on_card': '1'} 90.2 89.2 33.5
+3978 98.4 1 부스팅 {'n_events': '5', 'n_view': '2', 'n_hold': '1', 'n_pay': '1', 'seats_paid_ratio': '0.25', 'hold_fail_ratio': '0.0', 'accounts_on_device': '6', 'accounts_on_card': '1'} 98.4 95.9 48.8
+3979 89.9 0 부스팅 {'n_events': '5', 'n_view': '2', 'n_hold': '1', 'n_pay': '1', 'seats_paid_ratio': '0.25', 'hold_fail_ratio': '0.0', 'accounts_on_device': '6', 'accounts_on_card': '1'} 89.9 89.6 46.0
