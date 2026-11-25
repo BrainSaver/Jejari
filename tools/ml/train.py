@@ -122,10 +122,14 @@ EXON_SEGMENTS = {
 # 6차 (ML_EXON_SHARED=1, 2026-11-25): 기기를 같이 쓰는 가족 (5차 진단: 가족 기기 공유 오탐 28/114, 강한 증거에 막히거나 그룹 밖).
 # 기기는 같이 쓰지만 카드는 각자이고, 같은 기기 계정끼리 첫 선점이 30분 넘게 떨어져 있을 때만 (몇 초 차로 도는 봇 농장은 제외).
 # 이 그룹만 "기기 공유" 강한 증거를 예외로 둔다 (카드 공유는 그대로 막음). 이 조건을 노리는 봇은 generate.py b_shift_device
+# 시간 겹침은 첫 선점만이 아니라 모든 선점으로 본다 (min_dev_hold_gap_s_log, features.py ML_LINK=1). 첫 선점만 보면
+# "첫 운행만 띄우고 다음 운행에 한꺼번에" 사는 봇이 풀린다 (generate.py b_shift_device의 rejoin)
 EXON_SHARED_GAP_LOG = 7.5   # log1p(초) ≈ 30분
 if os.environ.get("ML_EXON_SHARED") == "1":
+    if "min_dev_hold_gap_s_log" not in ALL_FEATURES:
+        sys.exit("ML_EXON_SHARED=1에는 ML_LINK=1이 필요합니다 (min_dev_hold_gap_s_log 특징)")
     EXON_SEGMENTS["shared_device"] = [("accounts_on_device", ">=", 2), ("accounts_on_card", "<=", 1),
-                                      ("min_sync_gap_s_log", ">=", EXON_SHARED_GAP_LOG)]
+                                      ("min_dev_hold_gap_s_log", ">=", EXON_SHARED_GAP_LOG)]
 EXON_ALLOW_HARD = {"shared_device": ["accounts_on_device"]}   # 그룹 → 이 그룹에서만 풀어 주는 강한 증거
 EXON_HARD = [("accounts_on_device", ">=", 2), ("accounts_on_card", ">=", 2)]
 EXON_CAP = 50.0

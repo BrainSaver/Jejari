@@ -2,9 +2,15 @@ package com.jejari.common.error;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.web.firewall.RequestRejectedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -72,16 +78,49 @@ public class GlobalExceptionHandler {
 			HttpMessageNotReadableException.class,
 			MethodArgumentTypeMismatchException.class,
 			MissingServletRequestParameterException.class,
-			ServletRequestBindingException.class // 필수 헤더(Idempotency-Key 등) 누락 포함
+			ServletRequestBindingException.class, // 필수 헤더(Idempotency-Key 등) 누락 포함
+			// 방화벽(StrictHttpFirewall)은 헤더 값을 getHeader() 하는 순간 검사한다. 제어 문자 섞인 User-Agent 같은 클라이언트 입력이
+			// 컨트롤러 안에서 터져 500이 되고 헤더 원문이 에러 로그에 남았다 → 400, 로그엔 예외 이름만 (보안 점검 2026-11-25 §2.3)
+			RequestRejectedException.class
 	})
 	public ResponseEntity<ErrorResponse> handleBadRequest(Exception e) {
 		log.debug("bad request: {}", e.getClass().getSimpleName());
 		return respond(CommonErrorCode.INVALID_REQUEST, CommonErrorCode.INVALID_REQUEST.message());
 	}
 
+	/** 빌드된 화면. 테스트처럼 프론트엔드 빌드가 없으면 JSON 404로 답한다 */
+	private static final ClassPathResource SPA_INDEX = new ClassPathResource("static/index.html");
+
+	/**
+	 * 없는 경로. 브라우저가 화면을 열려던 것(GET·HEAD, Accept에 text/html, 파일 확장자 없음, API 아님)이면
+	 * 상태는 404 그대로 두고 화면(index.html)을 돌려줘 "없는 페이지예요" 안내를 보여 준다. 그 밖(API, 없는 정적 파일)은 JSON 404.
+	 */
 	@ExceptionHandler(NoResourceFoundException.class)
-	public ResponseEntity<ErrorResponse> handleNotFound(NoResourceFoundException e) {
+	public ResponseEntity<?> handleNotFound(NoResourceFoundException e, HttpServletRequest request) {
+		if (isBrowserPage(request) && SPA_INDEX.exists()) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND)
+					.contentType(MediaType.TEXT_HTML)
+					.cacheControl(CacheControl.noStore())
+					.body(SPA_INDEX);
+		}
 		return respond(CommonErrorCode.NOT_FOUND, CommonErrorCode.NOT_FOUND.message());
+	}
+
+	static boolean isBrowserPage(HttpServletRequest request) {
+		String method = request.getMethod();
+		if (!"GET".equals(method) && !"HEAD".equals(method)) {
+			return false;
+		}
+		String path = request.getRequestURI().substring(request.getContextPath().length());
+		if (path.startsWith("/api/") || path.startsWith("/actuator/")) {
+			return false;
+		}
+		String last = path.substring(path.lastIndexOf('/') + 1);
+		if (last.contains(".")) {
+			return false;
+		}
+		String accept = request.getHeader(HttpHeaders.ACCEPT);
+		return accept != null && accept.contains(MediaType.TEXT_HTML_VALUE);
 	}
 
 	@ExceptionHandler(HttpRequestMethodNotSupportedException.class)

@@ -26,6 +26,7 @@ import Groups from './user/Groups.jsx';
 import GroupDetail, { GroupList } from './admin/Groups.jsx';
 import Seats from './user/Seats.jsx';
 import Signup from './user/Signup.jsx';
+import NotFound from './user/NotFound.jsx';
 import UserLayout, { AuthLayout } from './user/UserLayout.jsx';
 
 // 경로를 추가하면 서버의 SpaForwardController에도 같은 경로를 넣는다 (새로고침 때 index.html을 돌려주게)
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="/groups" element={<Groups />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/me" element={<Me />} />
+        <Route path="*" element={<NotFound />} />
       </Route>
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/admin" element={<AdminLayout />}>
@@ -66,8 +68,8 @@ export default function App() {
         <Route path="models" element={<Models />} />
         <Route path="traffic" element={<Traffic />} />
         <Route path="contests" element={<Contests />} />
+        <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

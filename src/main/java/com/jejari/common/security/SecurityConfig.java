@@ -8,6 +8,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import com.jejari.auth.AuthErrorCode;
 import com.jejari.auth.jwt.JejariBearerTokenResolver;
 import com.jejari.auth.jwt.JwtAuthenticationEntryPoint;
@@ -32,10 +34,20 @@ import com.jejari.common.error.ErrorResponseWriter;
 @EnableMethodSecurity
 public class SecurityConfig {
 
-	/** 프론트엔드 화면 경로와 빌드 결과물. API(/api/**)는 여기에 없다 */
-	static final String[] SPA_PAGES = { "/", "/index.html", "/assets/**", "/favicon.svg", "/admin", "/admin/**",
-			"/queue/**", "/reservations", "/reservations/**", "/waitlist", "/notifications", "/me", "/login", "/signup",
-			"/runs/**", "/pay/**", "/groups" };
+	/**
+	 * 화면 쪽 GET·HEAD인가: API({@code /api})와 운영 엔드포인트({@code /actuator})가 아니면 모두 화면·정적 파일이다.
+	 * 데이터는 전부 {@code /api} 아래라 여기를 열어도 새는 것이 없다. 목록으로 열면 화면을 추가할 때 빠뜨려
+	 * 새로고침·없는 주소에서 "로그인이 필요합니다" JSON이 보였다 (2026-11-25, {@code /guest}·{@code /favicon.ico}).
+	 * 실제로 없는 경로는 MVC가 404로 답한다 ({@link com.jejari.common.error.GlobalExceptionHandler}).
+	 */
+	static boolean isPageRequest(HttpServletRequest req) {
+		String method = req.getMethod();
+		if (!"GET".equals(method) && !"HEAD".equals(method)) {
+			return false;
+		}
+		String path = req.getRequestURI().substring(req.getContextPath().length());
+		return !(path.equals("/api") || path.startsWith("/api/") || path.equals("/actuator") || path.startsWith("/actuator/"));
+	}
 
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http, ErrorResponseWriter errorWriter,
@@ -54,8 +66,7 @@ public class SecurityConfig {
 						.requestMatchers("/error").permitAll()
 						// 프론트엔드 화면·정적 파일 (SpaForwardController). 화면 안의 데이터는 API가 따로 막는다
 						// HEAD도 GET과 같게 연다: 외부 상태 점검·링크 미리보기가 HEAD로 확인하는데 401이 오면 사이트가 죽은 것으로 보인다
-						.requestMatchers(HttpMethod.GET, SPA_PAGES).permitAll()
-						.requestMatchers(HttpMethod.HEAD, SPA_PAGES).permitAll()
+						.requestMatchers(SecurityConfig::isPageRequest).permitAll()
 						// 열차 조회(TRN-01~03)는 비회원도 (기능설계서 2장). 좌석 배치도 /runs/{runId}/seats는 여전히 로그인 + 입장 토큰
 						.requestMatchers(HttpMethod.GET, "/api/v1/stations", "/api/v1/runs", "/api/v1/runs/{runId}").permitAll()
 						// 예매 안내 챗봇: 비회원도. Groq 호출량은 ChatController가 IP별로 제한

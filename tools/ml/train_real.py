@@ -54,7 +54,7 @@ def run(args, env_extra=None, quiet=True):
 
 # 특징 계산에 늘 켜 두는 것. 운행별 속도(ML_RUNS)는 열을 끝에 더할 뿐이고 모델은 쓰는 열만 이름으로 꺼내므로
 # 옛 모델(지금 모델·next) 점수에는 영향이 없다
-FEAT_ENV = {"ML_STAGE": "1", "ML_RUNS": "1", "ML_HOLD": "1"}
+FEAT_ENV = {"ML_STAGE": "1", "ML_RUNS": "1", "ML_HOLD": "1", "ML_LINK": "1"}
 
 
 def make_data(folder, seed, members, calib, boost=None, strat_boost=None, shift_bot=False):
@@ -64,7 +64,7 @@ def make_data(folder, seed, members, calib, boost=None, strat_boost=None, shift_
              **({"ML_STRAT_BOOST": strat_boost} if strat_boost else {}),
              **({"ML_SHIFT_BOT": "1"} if shift_bot else {})})
     feats = os.path.join(folder, "features.csv")
-    if not os.path.exists(feats) or "seats_per_resv" not in open(feats, encoding="utf-8").readline():
+    if not os.path.exists(feats) or "min_dev_hold_gap_s_log" not in open(feats, encoding="utf-8").readline():
         run(["-I", "tools/ml/features.py", folder], FEAT_ENV)
     with open(feats, encoding="utf-8") as f:
         print(f"  {sum(1 for _ in f) - 1}계정 · {os.path.relpath(folder, ROOT)}", flush=True)
@@ -182,7 +182,7 @@ def main():
     env = {"ML_STAGE": "1", **({"ML_RUNS": "1"} if a.runs else {}), **({"ML_IF_NO_VOLUME": "1"} if a.if_no_volume else {}),
            **({"ML_IF_VOLUME": "ratio"} if a.if_ratio else {}),
            **({"ML_EXON": "1"} if a.exon else {}),
-           **({"ML_EXON_SHARED": "1"} if a.exon_shared else {}),
+           **({"ML_EXON_SHARED": "1", "ML_LINK": "1"} if a.exon_shared else {}),
            **({"ML_HOLD": "1"} if a.hold else {}),
            **({"ML_EXON_LEAK": str(a.exon_leak)} if a.exon_leak is not None else {}),
            **({"ML_GRU": "0"} if a.quick else {})}

@@ -100,7 +100,9 @@
 .user .sb-seg button.on{background:var(--ink);color:#fff;border-radius:9px}
 .user .sb-btn{border:2px solid var(--line);background:var(--card);border-radius:12px;padding:6px 12px;font:inherit;font-weight:800;cursor:pointer;color:var(--ink)}
 .user .sb-btn[aria-pressed=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
-.user .sb-call{display:inline-flex;align-items:center;gap:6px;background:var(--stop);color:#fff;text-decoration:none;border-radius:12px;padding:7px 14px;font-weight:900}
+.user .sb-call{display:inline-flex;align-items:center;gap:6px;background:var(--stop);color:#fff;text-decoration:none;border:0;font:inherit;cursor:pointer;border-radius:12px;padding:7px 14px;font-weight:900}
+.user .sbar:has(.sb-note){flex-wrap:wrap}
+.user .sb-note{flex-basis:100%;white-space:normal;font-size:13.5px;font-weight:700;color:var(--ink)}
 .user .sb-call .ic{width:18px;height:18px}
 .user .guide{display:flex;align-items:flex-start;gap:10px;margin:0;padding:14px 16px;background:var(--sign-t);border:2px solid var(--sign);border-radius:14px;font-size:17px;font-weight:700;line-height:1.55;color:var(--ink)}
 .user .guide .ic{color:var(--sign-d);margin-top:3px}
@@ -117,6 +119,8 @@
 .user .top .back.wl .ic{width:18px;height:18px}
 @media (max-width:959px){.user .sbar{flex-wrap:nowrap;overflow-x:auto;padding:8px 12px;gap:6px;font-size:14px;scrollbar-width:none}
 .user .sbar>*{flex:none}
+.user .sbar:has(.sb-note){flex-wrap:wrap}
+.user .sbar>.sb-note{flex:1 1 100%}
 .user .sb-t span{display:none}}
 @media (min-width:960px){.user .flow{font-size:15px}
 .user .sbar{padding:10px max(32px,calc((100% - 1120px) / 2))}}

@@ -349,14 +349,26 @@ def b_shift_device(w: World, g):  # 한 기기로 계정을 몇십 분~몇 시�
     # 6차(2026-11-25): "기기 공유 + 시간 안 겹침 + 카드 단독"이면 가족으로 풀어 주는 해명 그룹을 넣으면서,
     # 그 조건을 그대로 노리는 봇. 이 봇이 없으면 그 그룹에 봇이 0명이라 풀어 주는 문턱을 정할 수 없다.
     # 절반은 매크로 속도, 절반은 사람 흉내 속도
+    # 6차 보강: 40%는 첫 운행만 시간을 띄우고, 다른 운행 오픈 때 모든 계정이 몇 초 안에 한꺼번에 산다
+    # (첫 선점끼리만 비교하면 "시간이 안 겹치는 가족"처럼 보이는 수법. features.py min_dev_hold_gap_s_log가 잡아야 함)
     shared = f"sh{g}"
     t = w.arrival(rush=0.5)
     mimic = w.r.random() < 0.5
+    rejoin = w.r.random() < 0.4
+    accs = []
     for _ in range(w.r.randint(3, 5)):
         a = w.account("RESELLER", "b_shift_device", g, device=shared, ip=shared, age=w.r.randint(3, 300))
+        accs.append(a)
         gap = w.human_gap(lo=1, med=3) if mimic else w.uniform_gap(0.4, 2.0)
         w.buy(a, t, w.r.choice([2, 3, LIMIT_PER_RUN]), gap, browse=w.browse(0, 2) if mimic else w.r.randint(0, 1))
         t += timedelta(minutes=w.r.uniform(40, 240))
+    others = [r for r, _ in w.runs if r != w.cur_run]
+    if rejoin and others:
+        run = w.r.choice(others)
+        t2 = w.open_of(run) + timedelta(seconds=w.r.uniform(0, 20))
+        for a in accs:
+            w.buy(a, t2 + timedelta(seconds=w.r.uniform(0, 40)), LIMIT_PER_RUN, w.uniform_gap(0.3, 1.5), run=run,
+                  queue=(0.5, 20))
 
 
 def b_multi_card(w: World, g):  # 기기는 다르게, 카드 하나로 결제
