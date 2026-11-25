@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { api, get } from '../api/client.js';
-import Icon from '../admin/Icon.jsx';
+import Icon, { Seal } from '../admin/Icon.jsx';
 import { seoulHm, seoulNowLocal, seoulToday } from '../lib/time.js';
 import { MiniTrain } from './RouteLine.jsx';
 
@@ -119,7 +119,7 @@ export default function Search() {
     <>
       <section className="hero">
         <header className="top m-only" style={{ background: 'transparent', position: 'relative', zIndex: 1, paddingBottom: 0 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}><b style={{ fontSize: 17 }}>제자리</b></span>
+          <span style={{ flex: 1 }}><Link className="m-logo" to="/"><Seal size={26} />제자리</Link></span>
         </header>
         <div className="hero-in">
           <p className="guide">

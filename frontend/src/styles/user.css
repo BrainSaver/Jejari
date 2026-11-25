@@ -347,6 +347,11 @@
   .user .flow li{min-width:0}
   /* 검색 칸: 값이 길면 옆 칸으로 넘치지 않고 줄바꿈 ("오늘" 배지가 다음 줄로) */
   .user .search .fld .v{flex-wrap:wrap;white-space:normal;gap:2px 8px;min-width:0}
+  /* 검색판: 조건 칸과 [열차 찾기] 사이가 0이라 버튼이 인원·좌석 종류 칸에 붙어 겹쳐 보였다 */
+  .user .search{display:flex;flex-direction:column;gap:14px}
+  .user .search>.btn{min-height:56px;font-size:17px}
+  /* 첫 화면 위쪽: 로고 없이 "제자리" 글자만 있던 것 → PC 메뉴와 같은 인장 로고 */
+  .user .m-logo{display:inline-flex;align-items:center;gap:8px;font-size:18px;font-weight:900;color:var(--ink);text-decoration:none}
 }
 @media (max-width:380px){
   .user .search .fld{padding:10px}
