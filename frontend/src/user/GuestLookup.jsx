@@ -22,6 +22,10 @@ export default function GuestLookup() {
   const [res, setRes] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const [nonDigit, setNonDigit] = useState(false);
+  // 휴대폰은 01X로 시작하는 10~11자리. 모자라면 서버에 보내기 전에 알려 준다 (서버는 틀린 이유를 말하지 않으니까)
+  const phoneOk = /^01[016789]\d{7,8}$/.test(form.phone.replace(/\D/g, ''));
 
   const submit = async (e) => {
     e.preventDefault();
@@ -46,13 +50,22 @@ export default function GuestLookup() {
       <form className="stack" style={{ gap: 0 }} onSubmit={submit}>
         <div className="field">
           <label htmlFor="gr">예약 번호</label>
-          <input id="gr" inputMode="numeric" pattern="[0-9]*" value={form.reservationId} onChange={(e) => setForm({ ...form, reservationId: e.target.value.replace(/\D/g, '') })} required />
+          <input id="gr" inputMode="numeric" pattern="[0-9]*" aria-describedby="gr-help" value={form.reservationId}
+            onChange={(e) => { setNonDigit((was) => /\D/.test(e.target.value) || (was && e.target.value !== '')); setForm({ ...form, reservationId: e.target.value.replace(/\D/g, '') }); }} required />
+          <span id="gr-help" className="hint" style={nonDigit ? { color: 'var(--stop)', fontWeight: 700 } : undefined}>
+            {nonDigit ? '예약 번호는 숫자만 넣을 수 있어요.' : '예매 완료 화면과 알림에 있는 숫자예요.'}
+          </span>
         </div>
         <div className="field">
           <label htmlFor="gp">휴대폰 번호</label>
-          <input id="gp" inputMode="tel" autoComplete="tel" maxLength={13} placeholder="010-1234-5678" value={form.phone} onChange={(e) => setForm({ ...form, phone: formatPhone(e.target.value) })} required />
+          <input id="gp" inputMode="tel" autoComplete="tel" maxLength={13} placeholder="010-1234-5678" value={form.phone}
+            aria-invalid={touched && !phoneOk} aria-describedby={touched && !phoneOk ? 'gp-help' : undefined}
+            onBlur={() => setTouched(true)} onChange={(e) => setForm({ ...form, phone: formatPhone(e.target.value) })} required />
+          {touched && form.phone && !phoneOk && (
+            <span id="gp-help" className="hint" style={{ color: 'var(--stop)', fontWeight: 700 }}>휴대폰 번호 10~11자리를 모두 넣어 주세요. 예: 010-1234-5678</span>
+          )}
         </div>
-        <button className="btn ink" type="submit" disabled={busy || !form.reservationId || !form.phone}>{busy ? '찾는 중…' : '조회'}</button>
+        <button className="btn ink" type="submit" disabled={busy || !form.reservationId || !phoneOk}>{busy ? '찾는 중…' : '조회'}</button>
       </form>
 
       {res && (
