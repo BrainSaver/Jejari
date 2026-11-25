@@ -18,6 +18,7 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -89,7 +90,8 @@ class PaymentRiskGuardTest {
 	}
 
 	@Nested
-	class 판정 {
+	@DisplayName("판정")
+	class Decision {
 
 		@Test
 		void 기준_바로_아래는_통과한다() {
@@ -147,7 +149,8 @@ class PaymentRiskGuardTest {
 	}
 
 	@Nested
-	class 기준_캐시 {
+	@DisplayName("기준 캐시")
+	class ThresholdCache {
 
 		@Test
 		void 기준은_30초_동안_다시_읽지_않는다() {
@@ -165,7 +168,8 @@ class PaymentRiskGuardTest {
 
 	/** RiskPenaltyService.knownScore: 대기열 score()와 같은 규칙, 다만 못 읽으면 빈 값 */
 	@Nested
-	class 점수_읽기 {
+	@DisplayName("점수 읽기")
+	class ScoreRead {
 
 		@SuppressWarnings("unchecked")
 		ValueOperations<String, String> ops = mock(ValueOperations.class);

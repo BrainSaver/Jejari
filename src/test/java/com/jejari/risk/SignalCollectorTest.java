@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.within;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Random;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -118,7 +119,8 @@ class SignalCollectorTest {
     // ==================== 회피 시도 ====================
 
     @Nested
-    class 회피 {
+    @DisplayName("회피")
+    class Evasion {
 
         @Test
         void 빠른_클릭_뒤에_느린_요청을_잔뜩_섞어도_FAST_CLICK은_그대로() {
@@ -206,7 +208,8 @@ class SignalCollectorTest {
     // ==================== 오탐 시험 보강 (2026-11-24) ====================
 
     @Nested
-    class 가족_한_컴퓨터 {
+    @DisplayName("가족 한 컴퓨터")
+    class FamilyOnePc {
 
         private SignalCollector device() {
             return new SignalCollector(policy, SubjectType.DEVICE, H, FROM);
@@ -264,7 +267,8 @@ class SignalCollectorTest {
     }
 
     @Nested
-    class 선점_버튼_두_번 {
+    @DisplayName("선점 버튼 두 번")
+    class DoubleHoldClick {
 
         @Test
         void 첫_선점이_밀려_좌석표가_다시_그려진_직후_두_번째_요청은_세지_않는다() {

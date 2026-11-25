@@ -22,6 +22,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -79,7 +80,8 @@ class QueueScenarioTest extends QueueRedisSupport {
 
 	// =====================================================================
 	@Nested
-	class 입장_인원과_순서 {
+	@DisplayName("입장 인원과 순서")
+	class AdmitCountAndOrder {
 
 		@ParameterizedTest(name = "대기 {1}명, 초당 {0}명 → {2}명 입장")
 		@CsvSource({"1,10,1", "5,10,5", "10,10,10", "50,10,10", "200,10,10", "3,1,1", "7,0,0", "1,500,1", "100,250,100", "200,200,200"})
@@ -170,7 +172,8 @@ class QueueScenarioTest extends QueueRedisSupport {
 
 	// =====================================================================
 	@Nested
-	class 예상_대기_시간 {
+	@DisplayName("예상 대기 시간")
+	class ExpectedWait {
 
 		@Test
 		void 처리량이_1이면_순번만큼_초가_걸리고_조회_간격은_1에서_5초다() {
@@ -223,7 +226,8 @@ class QueueScenarioTest extends QueueRedisSupport {
 
 	// =====================================================================
 	@Nested
-	class 위험_점수와_순번 {
+	@DisplayName("위험 점수와 순번")
+	class RiskScoreAndRank {
 
 		@ParameterizedTest(name = "점수 \"{0}\" → 패널티 {1}ms")
 		@CsvSource({"0,0", "1,1000", "12.5,12500", "50,50000", "99,99000", "100,100000"})
@@ -379,7 +383,8 @@ class QueueScenarioTest extends QueueRedisSupport {
 
 	// =====================================================================
 	@Nested
-	class 중복_진입_방어 {
+	@DisplayName("중복 진입 방어")
+	class DuplicateEntryGuard {
 
 		@Test
 		void 같은_운행_재진입은_번호표를_새로_받지_않는다() {
@@ -500,7 +505,8 @@ class QueueScenarioTest extends QueueRedisSupport {
 
 	// =====================================================================
 	@Nested
-	class 입장_토큰 {
+	@DisplayName("입장 토큰")
+	class PassToken {
 
 		@Test
 		void 토큰은_입장한_회원만_운행별로_받는다() {
@@ -646,7 +652,8 @@ class QueueScenarioTest extends QueueRedisSupport {
 
 	// =====================================================================
 	@Nested
-	class 이탈 {
+	@DisplayName("이탈")
+	class Leave {
 
 		@Test
 		void 줄_가운데_사람이_나가면_뒷사람이_한_칸씩_당겨진다() {
@@ -735,7 +742,8 @@ class QueueScenarioTest extends QueueRedisSupport {
 
 	// =====================================================================
 	@Nested
-	class 진입_거절 {
+	@DisplayName("진입 거절")
+	class EntryRejected {
 
 		@Test
 		void BANNED는_줄에_서지_못하고_아무_흔적도_없다() {
@@ -772,7 +780,8 @@ class QueueScenarioTest extends QueueRedisSupport {
 
 	// =====================================================================
 	@Nested
-	class 저장_형식 {
+	@DisplayName("저장 형식")
+	class StorageFormat {
 
 		@Test
 		void 줄_멤버는_12자리_seq와_회원_ID다() {
@@ -815,7 +824,8 @@ class QueueScenarioTest extends QueueRedisSupport {
 
 	// =====================================================================
 	@Nested
-	class 흐름_전체 {
+	@DisplayName("흐름 전체")
+	class FullFlow {
 
 		@Test
 		void 진입에서_입장_검증_이탈까지_한_사람의_전체_흐름() {
@@ -899,7 +909,8 @@ class QueueScenarioTest extends QueueRedisSupport {
 
 	// =====================================================================
 	@Nested
-	class 동시성 {
+	@DisplayName("동시성")
+	class Concurrency {
 
 		private <T> List<T> runParallel(int threads, int tasks, java.util.function.IntFunction<java.util.concurrent.Callable<T>> make)
 				throws Exception {
@@ -1068,7 +1079,8 @@ class QueueScenarioTest extends QueueRedisSupport {
 
 	// =====================================================================
 	@Nested
-	class 대기_기록_만료 {
+	@DisplayName("대기 기록 만료")
+	class WaitRecordExpiry {
 
 		@Test
 		void 대기_기록이_만료되면_줄에서도_빠져야_하고_유령이_입장하면_안_된다() throws Exception {
