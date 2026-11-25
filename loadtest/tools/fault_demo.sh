@@ -125,4 +125,32 @@ fi
 set -e
 
 python -X utf8 loadtest/tools/fault_report.py "$OUT" "$TARGET" "$MODE" "$integrity"
+
+# ---- 정리: 이 시연이 만든 예약·좌석을 지운다 (KEEP=1이면 남김)
+# 남겨 두면 운행의 좌석이 계속 팔린 채라 다음 시연·통합 테스트(같은 운행 9001의 좌석을 씀)와 부딪힌다 (2026-11-25 실제로 19건 실패)
+tag="$(grep -o '태그 [a-z0-9]*' "$OUT/k6.log" | head -1 | awk '{print $2}')"
+if [[ "${KEEP:-0}" != 1 && -n "$tag" ]]; then
+  docker compose exec -T oracle bash -c 'sqlplus -S -L "$APP_USER/$APP_USER_PASSWORD@localhost:1521/FREEPDB1"' > "$OUT/cleanup.txt" 2>&1 <<SQL
+WHENEVER SQLERROR EXIT ROLLBACK
+CREATE GLOBAL TEMPORARY TABLE tmp_fault_r (rid NUMBER) ON COMMIT PRESERVE ROWS;
+INSERT INTO tmp_fault_r SELECT r.reservation_id FROM reservation r JOIN member m ON m.member_id = r.member_id
+ WHERE m.email LIKE 'lt${tag}x%@loadtest.example.com';
+DELETE FROM outbox_event WHERE aggregate_type = 'RESERVATION' AND aggregate_id IN (SELECT TO_CHAR(rid) FROM tmp_fault_r);
+DELETE FROM notification WHERE ref_type = 'RESERVATION' AND ref_id IN (SELECT rid FROM tmp_fault_r);
+DELETE FROM cancellation WHERE reservation_id IN (SELECT rid FROM tmp_fault_r);
+DELETE FROM payment WHERE reservation_id IN (SELECT rid FROM tmp_fault_r);
+DELETE FROM reservation_history WHERE reservation_id IN (SELECT rid FROM tmp_fault_r);
+DELETE FROM saga_instance WHERE reservation_id IN (SELECT rid FROM tmp_fault_r);
+DELETE FROM reservation_seat WHERE reservation_id IN (SELECT rid FROM tmp_fault_r);
+DELETE FROM seat_inventory WHERE reservation_id IN (SELECT rid FROM tmp_fault_r);
+DELETE FROM reservation WHERE reservation_id IN (SELECT rid FROM tmp_fault_r);
+DELETE FROM purchase_counter WHERE ci_hash IN (SELECT ci_hash FROM member WHERE email LIKE 'lt${tag}x%@loadtest.example.com');
+COMMIT;
+TRUNCATE TABLE tmp_fault_r;
+DROP TABLE tmp_fault_r;
+SQL
+  # 앱 Redis(0번)의 그 운행 좌석 키·배치도 캐시도 (좌석 키 값이 지운 예약을 가리켜 계속 "판매됨"으로 보이지 않게)
+  docker compose exec -T redis sh -c "for p in 'seat:hold:${RUN}:*' 'seatmap:${RUN}'; do redis-cli -n 0 --scan --pattern \"\$p\" | xargs -r redis-cli -n 0 DEL >/dev/null; done" || true
+  echo "[$(date +%H:%M:%S)] 시연이 만든 예약·좌석을 지웠습니다 (회원 lt${tag}x… 은 남김, 남기려면 KEEP=1)"
+fi
 exit "$integrity"

@@ -304,6 +304,38 @@ class OutboxCommitInfraTest {
 		assertThat(statuses(r)).containsOnly("PUBLISHED");
 	}
 
+	/**
+	 * T20 (§11.2): 릴레이 담당이 바뀌는 중에도 순서가 유지된다. 지금은 인스턴스 1대가 16개 샤드를 혼자 돌아 Redis 리스가
+	 * 없다(OutboxRelay 머리말) — 그래서 "리스를 잃은 쪽은 그 샤드를 즉시 멈추고, 새 담당은 남은 맨 앞부터 이어 보낸다"를
+	 * 그대로 흉내 낸다: A가 15건을 보내고 16번째에서 멈춤(리스 갱신 실패) → B가 이어 받음. 합치면 40건이 한 번씩, seq 순서.
+	 */
+	@Test
+	void T20_릴레이_담당이_중간에_바뀌어도_한_번씩_순서대로_보낸다() {
+		long r = newKey();
+		int n = 40;
+		tx.executeWithoutResult(s -> {
+			for (int i = 0; i < n; i++) {
+				outbox.recordReservation(r, EventType.SEAT_HELD, Map.of("i", i));
+			}
+		});
+		java.util.concurrent.atomic.AtomicInteger sentByA = new java.util.concurrent.atomic.AtomicInteger();
+		publisher.failBeforeSend = t -> sentByA.incrementAndGet() > 15; // A: 16번째부터 못 보냄 = 담당을 잃음
+		try {
+			outboxRelay.relayShard(shardOf(r));
+		} finally {
+			publisher.failBeforeSend = t -> false;
+		}
+		assertThat(publisher.forKey(key(r))).hasSize(15);
+
+		secondRelay.relayShard(shardOf(r)); // 새 담당 B
+
+		List<Sent> mine = publisher.forKey(key(r));
+		assertThat(mine).hasSize(n);
+		assertThat(mine).extracting(Sent::eventId).doesNotHaveDuplicates();
+		assertThat(mine).isSortedAccordingTo(Comparator.comparingLong(Sent::seq));
+		assertThat(statuses(r)).containsOnly("PUBLISHED");
+	}
+
 	@Test
 	void 다른_쪽이_잠그고_있으면_기다리다_이번_회차를_포기한다() throws Exception {
 		long r = newKey();

@@ -67,6 +67,8 @@ class SeatReleaseInfraTest {
 	StringRedisTemplate redis;
 	@Autowired
 	TransactionTemplate tx;
+	@Autowired
+	SeatScripts scripts;
 
 	HoldExpiryScanner scanner;
 	List<Long> seatIds;
@@ -429,6 +431,106 @@ class SeatReleaseInfraTest {
 				SELECT COUNT(*) FROM seat_inventory s JOIN reservation x ON x.reservation_id = s.reservation_id
 				 WHERE s.run_id = ? AND s.status = 'HOLD' AND x.member_id BETWEEN ? AND ? AND s.hold_expires_at < SYSTIMESTAMP""",
 				RUN, MEMBER_BASE + 1, MEMBER_BASE + 9999)).isZero();
+	}
+
+	/**
+	 * T27 (§6): PG 결과를 모르는 결제(PAYMENT_PENDING, 마감 지남)가 한 번에 읽는 건수(scanner.batch_size)보다 많이 쌓였다.
+	 * HOLD 만료 스캐너는 쿼리를 나눠 HOLD만 보므로(§6.1 · 인덱스 ix_resv_hold_due) 결과 모르는 결제에 밀리지 않고 계속 만료시킨다.
+	 */
+	@Test
+	void T27_결과_모르는_결제가_한_번에_읽는_건수보다_많아도_HOLD_만료는_계속된다() {
+		redis.opsForHash().put("policy:cache", AppPolicy.SCANNER_BATCH_SIZE, "5");
+		sleep(1100); // AppPolicy는 값을 1초 들고 있다
+		try {
+			List<Long> pending = new ArrayList<>();
+			for (int i = 0; i < 12; i++) {
+				long seat = seatIds.get(100 + i);
+				long r = hold.hold(newMember(), cmd(seat)).reservationId();
+				pastDeadline(r, false, seat);
+				jdbc.update("UPDATE reservation SET status = 'PAYMENT_PENDING', updated_at = SYSTIMESTAMP, version = version + 1 WHERE reservation_id = ?", r);
+				pending.add(r);
+			}
+			long m = newMember();
+			long s = seatIds.get(120);
+			long r = hold.hold(m, cmd(s)).reservationId();
+			pastDeadline(r, false, s);
+
+			assertThat(scanner.scanOnce()).isEqualTo(1); // 결과 모르는 12건(> 5)이 있어도 HOLD 1건을 바로 처리
+
+			assertThat(status(r)).isEqualTo("EXPIRED");
+			assertThat(perRun(m)).isZero();
+			for (long p : pending) {
+				assertThat(status(p)).isEqualTo("PAYMENT_PENDING"); // 결과 확인(§6.2)이 맡을 것 — HOLD 스캐너는 건드리지 않는다
+			}
+		} finally {
+			redis.opsForHash().delete("policy:cache", AppPolicy.SCANNER_BATCH_SIZE);
+			sleep(1100);
+		}
+	}
+
+	/**
+	 * T47 (§6.3): 좌석을 잡은 사람이 결제하기 전에 Redis가 15분 죽었다 (결제 기한 10분보다 김). 장애 동안 HOLD 만료를 멈추고,
+	 * 복구 뒤 장애 시간만큼(최대 결제 기한 한 번 = 10분) 기한을 늘린다. 복사본(좌석 재고·Saga)과 좌석 키도 같은 값.
+	 * 장애 전에 이미 기한이 지난 예약과 결제 중 예약은 늘리지 않고, 같은 장애로 두 번 늘리지 않는다.
+	 */
+	@Test
+	void T47_Redis_장애_동안_만료를_멈추고_복구_뒤_장애_시간만큼_결제_기한을_늘린다() {
+		java.time.ZoneId zone = java.time.ZoneId.of("Asia/Seoul");
+		java.time.LocalDateTime now = java.time.LocalDateTime.now(zone);
+		RedisOutageGuard guard = new RedisOutageGuard(redis, jdbc, tx, scripts, policy, java.time.Clock.system(zone));
+		scanner.setOutageGuard(guard);
+
+		long a = newMember();
+		long s1 = seatIds.get(130);
+		long r1 = hold.hold(a, cmd(s1)).reservationId();       // 장애 중에 기한이 지남
+		long r2 = hold.hold(newMember(), cmd(seatIds.get(131))).reservationId(); // 장애 전에 이미 기한이 지남
+		long r3 = hold.hold(newMember(), cmd(seatIds.get(132))).reservationId(); // 결제 중
+		setDeadline(r1, -5);
+		redis.delete(SeatKeys.hold(RUN, s1, 0)); // 장애 동안 TTL로 사라짐
+		setDeadline(r2, -30);
+		setDeadline(r3, -5);
+		jdbc.update("UPDATE reservation SET status = 'PAYMENT_PENDING', updated_at = SYSTIMESTAMP, version = version + 1 WHERE reservation_id = ?", r3);
+		java.time.LocalDateTime r2Before = deadlineOf(r2);
+		java.time.LocalDateTime r3Before = deadlineOf(r3);
+
+		// 장애 동안: 스캐너가 돌아도 만료시키지 않는다
+		guard.markDown(now.minusMinutes(15));
+		scanner.tick();
+		assertThat(status(r1)).isEqualTo("HOLD");
+
+		// 복구: 15분 장애 → 최대 10분까지만 늘림 → r1 기한 = 5분 전 + 10분 = 지금부터 약 5분
+		assertThat(guard.extendAfterOutage(now.minusMinutes(15), now)).isEqualTo(1);
+		java.time.LocalDateTime d = deadlineOf(r1);
+		assertThat(java.time.Duration.between(now, d).toSeconds()).isBetween(4 * 60L + 50, 5 * 60L + 10);
+		assertThat(count("SELECT COUNT(*) FROM seat_inventory s JOIN reservation x ON x.reservation_id = s.reservation_id"
+				+ " WHERE x.reservation_id = ? AND s.hold_expires_at = x.pay_deadline_at", r1)).isEqualTo(1);
+		assertThat(count("SELECT COUNT(*) FROM saga_instance g JOIN reservation x ON x.reservation_id = g.reservation_id"
+				+ " WHERE x.reservation_id = ? AND g.timeout_at = x.pay_deadline_at", r1)).isEqualTo(1);
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, s1, 0))).isEqualTo(Long.toString(r1)); // 사라진 키를 다시 걸었다
+		long grace = policy.getLong(AppPolicy.HOLD_RELEASE_GRACE_SEC);
+		assertThat(redis.getExpire(SeatKeys.hold(RUN, s1, 0))).isBetween(4 * 60L + 40 + grace, 5 * 60L + 10 + grace);
+		assertThat(deadlineOf(r2)).isEqualTo(r2Before);   // 장애 전에 이미 지난 것은 그대로
+		assertThat(deadlineOf(r3)).isEqualTo(r3Before);   // 결제 중은 §6.2가 맡음
+
+		assertThat(guard.extendAfterOutage(now.minusMinutes(15), now)).isZero(); // 같은 장애로 두 번 늘리지 않는다
+		assertThat(deadlineOf(r1)).isEqualTo(d);
+		// 이제 결제할 수 있는 기한 안이라 스캐너가 돌아도 만료되지 않는다
+		assertThat(scanner.scanOnce()).isEqualTo(1);       // r2만 (장애 전에 지난 것)
+		assertThat(status(r1)).isEqualTo("HOLD");
+		assertThat(status(r2)).isEqualTo("EXPIRED");
+	}
+
+	private void setDeadline(long r, int minutesFromNow) {
+		jdbc.update("UPDATE reservation SET pay_deadline_at = SYSTIMESTAMP + NUMTODSINTERVAL(?, 'MINUTE') WHERE reservation_id = ?",
+				minutesFromNow, r);
+		jdbc.update("UPDATE seat_inventory SET hold_expires_at = (SELECT pay_deadline_at FROM reservation WHERE reservation_id = ?) WHERE reservation_id = ?",
+				r, r);
+		jdbc.update("UPDATE saga_instance SET timeout_at = (SELECT pay_deadline_at FROM reservation WHERE reservation_id = ?) WHERE reservation_id = ?",
+				r, r);
+	}
+
+	private java.time.LocalDateTime deadlineOf(long r) {
+		return jdbc.queryForObject("SELECT pay_deadline_at FROM reservation WHERE reservation_id = ?", java.time.LocalDateTime.class, r);
 	}
 
 	private long dayCounterRef(long memberId) {

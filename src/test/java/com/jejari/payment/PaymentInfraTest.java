@@ -471,7 +471,7 @@ class PaymentInfraTest {
 		assertLateRefundDone(r);
 	}
 
-	// concurrency.md §16 T29 일부 (콜백 재전송 응답 "환불 진행 중"은 안 봄)
+	// concurrency.md §16 T29: 만료된 예약의 승인 콜백이 다시 와도 "성공"이 아니라 REFUNDED (환불 한 번)
 	@Test
 	void 늦은_승인은_전액_환불_수수료_0_환불_완료_이벤트는_한_번() {
 		long m = newMember();
@@ -489,6 +489,7 @@ class PaymentInfraTest {
 				Long.toString(r))).endsWith("RESERVATION_EXPIRED", "REFUND_COMPLETED");
 	}
 
+	// concurrency.md §16 T29: 환불이 아직 안 끝났을 때 승인 콜백이 다시 오면 "환불 진행 중"(REFUND_IN_PROGRESS)
 	@Test
 	void 늦은_승인_환불이_실패하면_FAILED로_남고_다시_하면_완료된다() {
 		long m = newMember();
