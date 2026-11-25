@@ -44,8 +44,10 @@ echo "$out" | head -1
 # systemd 유닛의 CPUQuota·Nice는 닿지 않는다 → docker run에서 제한. 바꾸려면 ML_CPUS
 ml() { docker run --rm --cpus "${ML_CPUS:-1}" --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/w" jejari-ml bash -c "$1"; }
 
-# 2) 특징 (한 번, 단계 특징까지 — 점수는 모델마다 자기가 쓰는 칸만 이름으로 꺼낸다)
-ml "ML_STAGE=1 python -I tools/ml/features.py $OUT" > /tmp/jejari-model.log 2>&1 \
+# 2) 특징 (한 번, 모든 선택 특징까지 — 점수는 모델마다 자기가 쓰는 칸만 이름으로 꺼낸다)
+#    ML_RUNS·ML_HOLD·ML_LINK: 실제 데이터 둘레 4~6차 모델(model-real-r6~r12)이 쓰는 칸. 빠지면 그 버전의 score.py가
+#    "특징이 없음"으로 멈추고, 아래 fail 때문에 사용 중인 버전까지 그 시간 점수가 안 들어간다 (11-25 추가)
+ml "ML_STAGE=1 ML_RUNS=1 ML_HOLD=1 ML_LINK=1 python -I tools/ml/features.py $OUT" > /tmp/jejari-model.log 2>&1 \
   || { tail -5 /tmp/jejari-model.log; fail "특징 만들기 실패: /tmp/jejari-model.log"; }
 
 # 사용 중인 ENSEMBLE이 없으면(처음) FIRST_VERSION을 켠다. 그 뒤로는 관리자가 A-09에서 고른다
@@ -54,12 +56,17 @@ VERSIONS=$(model_versions 3)
 grep -q ' Y ' <<<"$VERSIONS" && active=1 || active=0
 
 total=0
-while read -r ver dir _ _; do
+skipped=0
+while read -r ver dir on _; do
   [[ -f "$dir/model.pkl" ]] || { echo "건너뜀: $ver ($dir/model.pkl 없음)"; continue; }
   # 3) 점수 — 버전마다 따로 폴더 (score.py가 features.csv 옆에 scores.csv를 쓰고, GRU는 옆의 events.jsonl을 읽는다)
   w="$OUT/$ver"; mkdir -p "$w"; cp "$OUT"/features.csv "$OUT"/events.jsonl "$OUT"/members.jsonl "$w"/; cp "$OUT"/runs.jsonl "$w"/ 2>/dev/null || true
-  ml "python tools/ml/score.py $dir/model.pkl $w/features.csv" > "/tmp/jejari-model-$ver.log" 2>&1 \
-    || { tail -5 "/tmp/jejari-model-$ver.log"; fail "점수 매기기 실패 ($ver): /tmp/jejari-model-$ver.log"; }
+  # 꺼진 후보가 실패하면 그 버전만 건너뛴다 (후보 하나 때문에 사용 중인 버전 점수가 멈추지 않게). 사용 중인 버전 실패는 그대로 실패
+  if ! ml "python tools/ml/score.py $dir/model.pkl $w/features.csv" > "/tmp/jejari-model-$ver.log" 2>&1; then
+    tail -5 "/tmp/jejari-model-$ver.log"
+    [[ "$on" == "Y" || ( "$active" == "0" && "$ver" == "$FIRST_VERSION" ) ]] && fail "점수 매기기 실패 ($ver, 사용 중): /tmp/jejari-model-$ver.log"
+    echo "경고: 꺼진 후보 $ver 점수 매기기 실패 — 이번 시간은 건너뜀 (/tmp/jejari-model-$ver.log)"; skipped=$((skipped + 1)); continue
+  fi
   grep -q "GRU" "/tmp/jejari-model-$ver.log" || echo "주의: $ver GRU 없이 매김 (torch·events.jsonl 확인)"
   act=(); [[ "$active" == "0" && "$ver" == "$FIRST_VERSION" ]] && act=(--activate)
   # 4) 적재
@@ -68,4 +75,5 @@ while read -r ver dir _ _; do
   n=$(($(wc -l < "$w/scores.csv") - 1)); total=$((total + n))
   echo "모델 점수 갱신: ${n}개 계정 · ${ver}${act:+ (처음이라 사용 중으로)}"
 done <<<"$VERSIONS"
+(( skipped > 0 )) && echo "꺼진 후보 ${skipped}개 건너뜀 — 위 경고 확인"
 push 1 "$total"
