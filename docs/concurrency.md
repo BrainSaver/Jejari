@@ -488,8 +488,8 @@ SELECT payment_id, reservation_id, requested_at FROM payment
       WHERE waitlist_id = :w AND status = 'WAITING'
      ```
 7. 빈 좌석이 남았으면 5부터 다음 대기자로 계속합니다.
-8. 더 이상 맞는 대기자가 없으면 남은 `REOFFER:R` 키를 `release.lua`로 지워 일반 판매로 돌립니다.
-9. COMMIT. 실패하면 R'에 대해 §2.3 보상을 하고(좌석 키는 지워져 일반 판매로 열림), 이벤트 재전달을 기다립니다.
+8. COMMIT. 실패하면 R'에 대해 §2.3 보상을 하고(좌석 키는 지워져 일반 판매로 열림), 이벤트 재전달을 기다립니다.
+9. 커밋 뒤, 더 이상 맞는 대기자가 없는 좌석은 남은 `REOFFER:R` 키를 `release.lua`로 지워 일반 판매로 돌립니다 (compare-and-delete라 대기자에게 넘어간 좌석의 R' 키는 건드리지 않음. 커밋 뒤라 롤백된 제안과 엇갈리지 않음). 같은 이벤트가 다시 와도 결과가 같습니다.
 
 ### 9.2 수락과 만료
 

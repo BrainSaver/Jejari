@@ -266,6 +266,26 @@ public class SeatReleaseService {
 		}
 	}
 
+	/**
+	 * §9.1-9: 대기자 제안이 끝난 뒤, 아직 {@code REOFFER:R}인 좌석 키를 지워 일반 판매로 돌린다 (T43·T30 뒷부분).
+	 * compare-and-delete라 대기자에게 넘어간 좌석(값이 새 예약 R')이나 그 사이 다른 값이 된 키는 건드리지 않는다.
+	 * 같은 이벤트가 다시 와도 결과가 같다. 이걸 안 하면 대기자가 없는 좌석도 {@code waitlist.reoffer_hold_sec}(기본 60초)
+	 * 동안 아무도 못 산다.
+	 *
+	 * @return 일반 판매로 돌린 좌석 수
+	 */
+	public long releaseUnofferedReoffer(long reservationId, long runId, List<Long> seatIds) {
+		if (seatIds.isEmpty()) {
+			return 0;
+		}
+		List<String> keys = seatIds.stream().sorted().map(id -> SeatKeys.hold(runId, id, HoldPlan.SEGMENT_NO)).toList();
+		Long n = redis.execute(scripts.release, keys, SeatKeys.reoffer(reservationId));
+		if (n != null && n > 0) {
+			seatMap.evict(runId);
+		}
+		return n == null ? 0 : n;
+	}
+
 	static void requireTx(String method) {
 		if (!TransactionSynchronizationManager.isActualTransactionActive()) {
 			throw new IllegalStateException(method + "는 트랜잭션 안에서 불러야 합니다");

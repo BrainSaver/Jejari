@@ -135,6 +135,10 @@ public class SeatReleaseConsumer {
 		if (offered != null && !offered.isEmpty()) {
 			log.info("취소표 제안 {}건 (예약 {}가 비운 좌석)", offered.size(), freed.reservationId());
 		}
+
+		// 9. 맞는 대기자가 더 없으면 남은 REOFFER:R 키를 지워 일반 판매로 (§9.1-9). 커밋 뒤에 하므로 제안된 좌석(값 R')은
+		//    compare-and-delete에 걸리지 않는다. 이미 처리한 이벤트가 다시 와도 결과가 같다
+		release.releaseUnofferedReoffer(freed.reservationId(), freed.runId(), freed.seatIds());
 	}
 
 	/** 빈 좌석 이벤트면 내용을, 아니면 null (형식이 깨진 것도 null) */

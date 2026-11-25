@@ -255,6 +255,50 @@ class WaitlistOfferInfraTest {
 		assertThat(redis.opsForValue().get(seatKey)).isEqualTo(SeatKeys.reoffer(r));
 	}
 
+	// ─────────────────────── §9.1-9 남은 REOFFER 풀기 (T43) ───────────────────────
+
+	/** T43: 대기자가 없으면 REOFFER:R을 바로 지워 일반 판매로. 예전에는 reoffer_hold_sec(60초) 동안 아무도 못 샀다 */
+	@Test
+	void T43_대기자가_없으면_REOFFER를_바로_풀어_다른_사람이_살_수_있다() {
+		long seat = seatIds.get(350);
+		long freed = freeSeat(seat);   // 좌석 키 REOFFER:freed
+		List<WaitlistOfferTx.Offered> offered = tx.execute(st -> offerTx.offer(RUN, SEOUL, BUSAN, List.of(seat), freed));
+		assertThat(offered).isEmpty();
+
+		assertThat(release.releaseUnofferedReoffer(freed, RUN, List.of(seat))).isEqualTo(1);
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, seat, 0))).isNull();
+
+		long other = newMember();
+		long r = hold.hold(other, new HoldCommand(RUN, SEOUL, BUSAN, List.of(new SeatRequest(seat, "ADULT")), "WEB",
+				UUID.randomUUID().toString())).reservationId();
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, seat, 0))).isEqualTo(Long.toString(r));
+	}
+
+	/** T43·T30 뒷부분: 두 좌석이 풀리고 대기자는 한 석만 원함 → 넘긴 좌석은 그대로(R'), 남은 좌석만 일반 판매. 두 번 해도 같다 */
+	@Test
+	void T43_대기자에게_넘긴_좌석은_두고_남은_좌석만_일반_판매로_돌린다() {
+		long s1 = seatIds.get(361);
+		long s2 = seatIds.get(362);
+		long waiter = newMember();
+		insertWaiting(waiter, SEOUL, BUSAN, "GENERAL", 1, 0);
+		long m = newMember();
+		long freed = hold.hold(m, new HoldCommand(RUN, SEOUL, BUSAN,
+				List.of(new SeatRequest(s1, "ADULT"), new SeatRequest(s2, "ADULT")), "WEB", UUID.randomUUID().toString()))
+				.reservationId();
+		release.cancelBeforePay(m, freed);
+
+		List<WaitlistOfferTx.Offered> offered = tx.execute(st -> offerTx.offer(RUN, SEOUL, BUSAN, List.of(s1, s2), freed));
+		assertThat(offered).hasSize(1);
+		long given = offered.get(0).seatIds().get(0);
+		long left = given == s1 ? s2 : s1;
+
+		assertThat(release.releaseUnofferedReoffer(freed, RUN, List.of(s1, s2))).isEqualTo(1);
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, given, 0)))
+				.isEqualTo(Long.toString(offered.get(0).reservationId())); // 대기자 몫은 그대로
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, left, 0))).isNull();
+		assertThat(release.releaseUnofferedReoffer(freed, RUN, List.of(s1, s2))).isZero(); // 다시 와도 같다
+	}
+
 	// ─────────────────────────────── 도우미 ───────────────────────────────
 
 	private List<SeatRequest> seatsOf(int from, int n) {
