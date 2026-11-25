@@ -29,6 +29,7 @@ import com.jejari.seat.SeatHoldService.HoldCommand;
 import com.jejari.seat.SeatHoldService.SeatRequest;
 import com.jejari.seat.SeatReleaseService.ReturnedSeats;
 import com.jejari.support.NoRunningApp;
+import com.jejari.waitlist.offer.WaitlistOfferTx;
 
 /**
  * 결제·취소 쪽이 부르는 좌석 단계를 실제 Oracle·Redis로 확인한다.
@@ -64,6 +65,8 @@ class SeatPaymentInfraTest {
 	StringRedisTemplate redis;
 	@Autowired
 	TransactionTemplate tx;
+	@Autowired
+	WaitlistOfferTx offerTx;
 
 	List<Long> seatIds;
 
@@ -206,6 +209,36 @@ class SeatPaymentInfraTest {
 		// T30 앞부분: 대기자 제안 전에는 일반 사용자가 잡지 못한다
 		assertThatThrownBy(() -> hold.hold(newMember(), cmd(s1)))
 				.extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(SeatErrorCode.SEAT_ALREADY_TAKEN);
+	}
+
+	/**
+	 * T30 뒷부분 (§9): 확정 예약을 취소했는데 그 구간·등급을 기다리는 사람이 없다. 좌석 키는 잠깐 REOFFER(대기자 몫)로
+	 * 묶였다가, 제안이 아무에게도 가지 않으면 바로 풀려 일반 사용자가 살 수 있어야 한다 (T43 수정 전에는 60초 동안 안 팔렸다).
+	 * 앞부분(제안 전에는 거절)은 바로 위 테스트.
+	 */
+	@Test
+	void T30_확정_취소_뒤_대기자가_없으면_좌석이_풀려_일반_사용자가_산다() {
+		long m = newMember();
+		long s1 = seatIds.get(20);
+		long s2 = seatIds.get(21);
+		long r = confirmed(m, s1, s2);
+		cancelConfirmed(r);
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, s1, 0))).isEqualTo("REOFFER:" + r);
+
+		// seat-release 소비자가 하는 일: 제안 → 받을 사람이 없으면 남은 REOFFER를 푼다
+		List<WaitlistOfferTx.Offered> offered = tx.execute(st -> offerTx.offer(RUN, FROM, TO, List.of(s1, s2), r));
+		assertThat(offered).isEmpty();
+		assertThat(release.releaseUnofferedReoffer(r, RUN, List.of(s1, s2))).isEqualTo(2);
+		assertThat(release.releaseUnofferedReoffer(r, RUN, List.of(s1, s2))).isZero(); // 두 번 와도 같다
+
+		long other = newMember();
+		long r2 = hold.hold(other, cmd(s1, s2)).reservationId();
+		assertThat(status(r2)).isEqualTo("HOLD");
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, s1, 0))).isEqualTo(Long.toString(r2));
+		assertThat(count("SELECT COUNT(*) FROM seat_inventory WHERE run_id = ? AND seat_id IN (?, ?) AND reservation_id = ?",
+				RUN, s1, s2, r2)).isEqualTo(2);
+		assertThat(perRun(m)).isZero();     // 취소한 사람 카운터는 그대로 0 (다시 깎이지 않음)
+		assertThat(perRun(other)).isEqualTo(2);
 	}
 
 	@Test

@@ -430,7 +430,155 @@ class SeatHoldInfraTest {
 				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESERVATION_NOT_FOUND"));
 	}
 
+	/**
+	 * T13 (§2.3): Redis 1차는 통과했는데 <b>DB 카운터가</b> 한도로 거절한다 (Redis가 DB보다 낮게 남은 경우 — T14처럼
+	 * 자가 복구가 진행 중인 증가분을 덮어쓰거나, 재시작으로 키를 잃은 뒤). DB 트랜잭션이 롤백되면 이번 요청이 Redis에 남긴
+	 * 좌석 키·한도 증가·멱등 키를 전부 되돌려야 한다.
+	 */
+	@Test
+	void T13_DB가_한도로_거절하면_Redis_좌석_키_한도_멱등_키를_되돌린다() {
+		long m = newMember();
+		long[] nine = seatIds.subList(140, 149).stream().mapToLong(Long::longValue).toArray();
+		service.hold(m, cmd(UUID.randomUUID().toString(), nine));
+		long purchaseDay = jdbc.queryForObject(
+				"SELECT scope_ref_id FROM purchase_counter WHERE scope = 'PER_DAY' AND ci_hash = ?", Long.class, ci(m));
+		// Redis 열차당 값이 DB(9)보다 낮게 남은 상태 → 2매가 Redis 1차(0+2 ≤ 10)를 통과한다
+		redis.opsForValue().set(SeatKeys.limitRun(RUN, ci(m)), "0");
+		long s1 = seatIds.get(149);
+		long s2 = seatIds.get(150);
+		String key = UUID.randomUUID().toString();
+
+		assertThatThrownBy(() -> service.hold(m, cmd(key, s1, s2)))
+				.extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(SeatErrorCode.LIMIT_PER_RUN);
+
+		// DB: 9 그대로, 새 예약 없음
+		assertThat(perRun(m)).isEqualTo(9);
+		assertThat(count("SELECT COUNT(*) FROM reservation WHERE member_id = ?", m)).isEqualTo(1);
+		assertThat(count("SELECT COUNT(*) FROM seat_inventory WHERE run_id = ? AND seat_id IN (?, ?)", RUN, s1, s2)).isZero();
+		// Redis: 이긴 좌석 키 2개 지움 · 한도 증가분 되돌림(열차당 0, 1일 9) · 이 요청의 멱등 키 지움
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, s1, 0))).isNull();
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, s2, 0))).isNull();
+		assertThat(redis.opsForValue().get(SeatKeys.limitRun(RUN, ci(m)))).isEqualTo("0");
+		assertThat(redis.opsForValue().get(SeatKeys.limitDay(purchaseDay, ci(m)))).isEqualTo("9");
+		assertThat(redis.hasKey(SeatKeys.idem(m, key))).isFalse();
+		// 좌석은 바로 다른 사람이 살 수 있다
+		assertThat(holdOutcome(newMember(), s1, s2)).isEqualTo("OK");
+	}
+
+	/**
+	 * T31 (§1-2): 멱등 키(idem:*)의 TTL이 지난 뒤 같은 Idempotency-Key로 다시 선점 요청. Redis는 처음 보는 키라 통과시키지만
+	 * DB의 UNIQUE(member_id, idempotency_key)가 막는다 → 기존 예약을 돌려주고, 새 요청이 Redis에 남긴 좌석 키·한도는 되돌린다.
+	 * (같은 좌석으로 다시 오면 좌석 키가 아직 기존 예약 것이라 Redis에서 SEAT_ALREADY_TAKEN으로 먼저 끝난다. 여기서는 DB까지
+	 * 가는 경우 — 좌석을 바꿔 보낸 재시도 — 를 본다)
+	 */
+	@Test
+	void T31_멱등_키가_만료된_뒤_같은_키로_오면_기존_예약을_돌려주고_새_요청의_Redis를_되돌린다() {
+		long m = newMember();
+		String key = UUID.randomUUID().toString();
+		long first = service.hold(m, cmd(key, seatIds.get(160))).reservationId();
+		redis.delete(SeatKeys.idem(m, key)); // TTL 만료 흉내
+		long other = seatIds.get(161);
+
+		HoldResult again = service.hold(m, cmd(key, other));
+
+		assertThat(again.reservationId()).isEqualTo(first);
+		assertThat(again.replay()).isTrue();
+		assertThat(count("SELECT COUNT(*) FROM reservation WHERE member_id = ?", m)).isEqualTo(1);
+		assertThat(perRun(m)).isEqualTo(1);
+		assertThat(redis.opsForValue().get(SeatKeys.hold(RUN, other, 0))).isNull();      // 새 요청이 잡았던 좌석 키를 되돌림
+		assertThat(redis.opsForValue().get(SeatKeys.limitRun(RUN, ci(m)))).isEqualTo("1"); // 새 요청의 +1을 되돌림
+		assertThat(redis.opsForValue().get(SeatKeys.idem(m, key))).isEqualTo(Long.toString(first)); // 다음 재시도는 Redis에서 바로
+		assertThat(holdOutcome(newMember(), other)).isEqualTo("OK");
+	}
+
+	/**
+	 * T36 (§10.1·§10.6): 같은 CI가 하루에 여러 운행을 산다. 1일 한도(상시 20매)는 운행이 달라도 합산 → 9001 10매 + 9002 10매
+	 * = 20매까지 성공하고, 세 번째 운행의 1매는 열차당 한도(0 + 1)는 괜찮아도 LIMIT_PER_DAY로 거절. Redis를 잃어도
+	 * DB 카운터로 복원해 같은 판정. 시드의 상시 판매 운행은 둘뿐이라(열차당 10 × 2 = 20) 9001을 복사해 세 번째 운행을 잠깐 만든다.
+	 */
+	@Test
+	void T36_운행이_달라도_1일_한도는_합산되고_넘으면_거절한다() {
+		long third = createTempRun();
+		try {
+			long m = newMember();
+			List<Long> train2 = jdbc.queryForList("SELECT seat_id FROM seat WHERE train_id = 2 ORDER BY seat_id", Long.class);
+			service.hold(m, cmdOn(RUN, seatIds.subList(200, 209)));
+			service.hold(m, cmdOn(RUN, seatIds.subList(209, 210)));
+			service.hold(m, cmdOn9002(train2.subList(200, 209))); // 9002는 부산 → 서울
+			service.hold(m, cmdOn9002(train2.subList(209, 210)));
+			assertThat(perRun(m)).isEqualTo(10);
+			assertThat(count("SELECT seat_count FROM purchase_counter WHERE scope = 'PER_DAY' AND ci_hash = ?", ci(m))).isEqualTo(20);
+
+			assertThat(holdOutcomeOn(third, m, seatIds.get(210))).isEqualTo(SeatErrorCode.LIMIT_PER_DAY.code());
+			assertThat(count("SELECT COUNT(*) FROM reservation WHERE member_id = ? AND run_id = ?", m, third)).isZero();
+			assertThat(redis.opsForValue().get(SeatKeys.limitRun(third, ci(m)))).isEqualTo("0"); // 먼저 올린 열차당 +1도 되돌림
+			assertThat(redis.opsForValue().get(SeatKeys.hold(third, seatIds.get(210), 0))).isNull(); // 좌석 경쟁 전에 걸림
+
+			// Redis를 잃어도 DB 카운터(20)로 복원해 같은 판정 (§10.4)
+			redis.execute((RedisCallback<Object>) c -> {
+				c.serverCommands().flushDb();
+				return null;
+			});
+			assertThat(holdOutcomeOn(third, m, seatIds.get(210))).isEqualTo(SeatErrorCode.LIMIT_PER_DAY.code());
+			assertThat(count("SELECT seat_count FROM purchase_counter WHERE scope = 'PER_DAY' AND ci_hash = ?", ci(m))).isEqualTo(20);
+			// 다른 사람은 그 운행을 산다 (거절이 운행이 아니라 이 CI의 하루 합 때문)
+			assertThat(holdOutcomeOn(third, newMember(), seatIds.get(210))).isEqualTo("OK");
+		} finally {
+			cleanDb();
+			dropTempRun(third);
+		}
+	}
+
 	// ------------------------------------------------------------ 도우미
+
+	static final long TEMP_RUN = 9901;
+
+	/** 9001과 같은 열차·정차역으로 상시 판매 운행 하나를 만든다. 날짜는 그 열차가 비어 있는 날 (UQ(train_id, run_date)) */
+	private long createTempRun() {
+		dropTempRun(TEMP_RUN);
+		for (int d = 1; d <= 120; d++) {
+			long taken = count("""
+					SELECT COUNT(*) FROM train_run t, train_run b
+					 WHERE b.run_id = ? AND t.train_id = b.train_id AND t.run_date = b.run_date + ?""", RUN, d);
+			if (taken > 0) {
+				continue;
+			}
+			jdbc.update("""
+					INSERT INTO train_run (run_id, train_id, sale_event_id, run_date, sale_open_at, sale_close_at, status)
+					SELECT ?, train_id, NULL, run_date + ?, sale_open_at, sale_close_at + NUMTODSINTERVAL(?, 'DAY'), 'ON_SALE'
+					  FROM train_run WHERE run_id = ?""", TEMP_RUN, d, d, RUN);
+			jdbc.update("""
+					INSERT INTO train_stop (run_id, station_id, stop_order, arrival_time, departure_time)
+					SELECT ?, station_id, stop_order, arrival_time + NUMTODSINTERVAL(?, 'DAY'), departure_time + NUMTODSINTERVAL(?, 'DAY')
+					  FROM train_stop WHERE run_id = ?""", TEMP_RUN, d, d, RUN);
+			return TEMP_RUN;
+		}
+		throw new IllegalStateException("9001 열차에 빈 날짜가 없습니다");
+	}
+
+	private void dropTempRun(long runId) {
+		jdbc.update("DELETE FROM train_stop WHERE run_id = ?", runId);
+		jdbc.update("DELETE FROM train_run WHERE run_id = ?", runId);
+	}
+
+	private static HoldCommand cmdOn(long runId, List<Long> seats) {
+		return new HoldCommand(runId, FROM, TO, seats.stream().map(s -> new SeatRequest(s, "ADULT")).toList(), "WEB",
+				UUID.randomUUID().toString());
+	}
+
+	private static HoldCommand cmdOn9002(List<Long> seats) {
+		return new HoldCommand(9002, TO, FROM, seats.stream().map(s -> new SeatRequest(s, "ADULT")).toList(), "WEB",
+				UUID.randomUUID().toString());
+	}
+
+	private String holdOutcomeOn(long runId, long memberId, long seat) {
+		try {
+			service.hold(memberId, cmdOn(runId, List.of(seat)));
+			return "OK";
+		} catch (BusinessException e) {
+			return e.getErrorCode().code();
+		}
+	}
 
 	private static HoldCommand cmd(String key, long... seats) {
 		List<SeatRequest> list = new ArrayList<>();
