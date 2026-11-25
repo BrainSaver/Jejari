@@ -93,6 +93,35 @@ function check(bot, m) {
   return '';
 }
 
+// 봇 폴더의 깃 상태: tracked(깃과 같음) · modified(깃에 있지만 고친 파일이 있음) · untracked(깃에 없음).
+// 2차 대회는 1차와 "같은 봇"이어야 비교가 되므로, 깃 커밋이 그 봇이 무엇이었는지의 증거다.
+// discoverBots가 상태를 보낼 때마다 불리므로 3초 동안 결과를 재사용한다
+let gitCache = { at: 0, tracked: null, dirty: null };
+function gitFiles() {
+  if (Date.now() - gitCache.at < 3000) return gitCache;
+  const rel = path.relative(ROOT, CONTEST).split(path.sep).join('/');
+  const ls = spawnSync('git', ['ls-files', '--', rel], { cwd: ROOT, encoding: 'utf8', windowsHide: true });
+  const st = spawnSync('git', ['status', '--porcelain', '--untracked-files=all', '--', rel], { cwd: ROOT, encoding: 'utf8', windowsHide: true });
+  const ok = ls.status === 0 && st.status === 0;
+  gitCache = {
+    at: Date.now(),
+    tracked: ok ? new Set(ls.stdout.split('\n').filter(Boolean)) : null,
+    dirty: ok ? new Set(st.stdout.split('\n').filter(Boolean).map((l) => l.slice(3).replace(/^"|"$/g, '').split(' -> ').pop())) : null,
+  };
+  return gitCache;
+}
+function gitStateOf(dir) {
+  const g = gitFiles();
+  if (!g.tracked) return 'unknown';
+  const rel = path.relative(ROOT, dir).split(path.sep).join('/');
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return 'untracked'; // 저장소 밖 폴더 ("폴더 지정")
+  const inDir = (f) => f === rel || f.startsWith(rel + '/');
+  const ignored = (f) => /(^|\/)node_modules\//.test(f);
+  if (![...g.tracked].some(inDir)) return 'untracked';
+  return [...g.dirty].some((f) => inDir(f) && !ignored(f)) ? 'modified' : 'tracked';
+}
+const GIT_WORDS = { untracked: '깃에 없음', modified: '깃과 다름(고친 파일 있음)' };
+
 function discoverBots() {
   const out = [];
   for (const d of fs.readdirSync(CONTEST, { withFileTypes: true })) {
@@ -117,6 +146,7 @@ function discoverBots() {
     bot.ok = !bot.problem;
     out.push(bot);
   }
+  for (const b of out) b.git = gitStateOf(b.dir);
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -624,6 +654,7 @@ async function pipeline() {
       fs.writeFileSync(path.join(RESULTS, run.tag, 'summary.json'), JSON.stringify({
         tag: run.tag, runId: run.runId, runDate: run.runDate, startedAt: new Date(run.startedAt).toISOString(),
         endedAt: new Date().toISOString(), failed: run.failed, steps: run.steps, bots: run.bots,
+        commit: run.commit, botGit: run.botGit,
       }, null, 2));
     } catch {}
     pushState();
@@ -685,12 +716,21 @@ http.createServer(async (req, res) => {
     const all = discoverBots().filter((x) => x.ok);
     const chosen = all.filter((x) => (b.bots || []).includes(x.name));
     if (!chosen.length) return json(res, 400, { error: '봇을 하나 이상 고르세요' });
+    const loose = chosen.filter((x) => GIT_WORDS[x.git]);
+    if (loose.length && !b.allowUntracked) {
+      return json(res, 409, { needConfirm: 'untracked', error: `${loose.map((x) => `${x.name}(${GIT_WORDS[x.git]})`).join(', ')} — `
+        + '다음 대회에서 같은 봇을 다시 돌리려면 먼저 커밋하세요. 이대로 시작하려면 [대회 시작]을 한 번 더 누르세요' });
+    }
     const botDelayMin = Math.min(60, Math.max(0, Number(b.botDelayMin ?? 0)));
     fs.mkdirSync(path.join(RESULTS, tag), { recursive: true });
     recent.length = 0;
     run = fresh({ tag, adminId: String(b.adminId), adminPw: String(b.adminPw), botDelayMin, bots: chosen.map((x) => x.name),
       pull: b.pull !== false, flush: b.flush !== false, restartApp: !!b.restartApp });
     run.chosen = chosen;
+    // 어떤 코드·어떤 봇으로 돌렸는지 결과에 남긴다 (summary.json)
+    run.commit = git(['rev-parse', '--short', 'HEAD']).out || null;
+    run.botGit = Object.fromEntries(chosen.map((x) => [x.name, x.git]));
+    if (loose.length) log('check', `주의: 깃에 없는 봇으로 시작 — ${loose.map((x) => x.name).join(', ')} (결과에 기록)`);
     pushState();
     pipeline();
     return json(res, 200, { ok: true });
