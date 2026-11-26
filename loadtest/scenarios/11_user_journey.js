@@ -38,7 +38,10 @@ const SPREAD_SEC = Math.max(0, Number(__ENV.SPREAD_SEC || 20));     // 사용자
 const FROM = __ENV.FROM || '3900023';                                // 서울 (시드)
 const TO = __ENV.TO || '3900114';                                    // 부산 (시드)
 const PAY = (__ENV.PAY || 'yes') !== 'no';
-const CARD = __ENV.CARD || '4111111111111111';                       // 끝자리 1 = 모의 PG 승인
+const CARD = __ENV.CARD || '';                                       // 주면 모든 사람이 이 카드 하나 (끝자리 1 = 모의 PG 승인)
+// 기본은 사람마다 다른 테스트 카드 (끝자리 1 = 승인). 같은 카드 하나를 수백 명이 쓰면 "카드 한 장에 붙는 명의 수 상한"
+// (payment.max_ci_per_card, ERD v37)이 켜진 서버에서 결제가 거절돼 성능이 아니라 그 규칙을 재게 된다 (11-26 공용 서버 연습)
+const cardOf = (i) => CARD || `4111${String(i).padStart(11, '0')}1`;
 const HOLD_RETRY = Math.max(1, Number(__ENV.HOLD_RETRY || 3));
 const MAX_WAIT_SEC = Number(__ENV.MAX_WAIT_SEC || 120);
 const P95_MS = Number(__ENV.P95_MS || 1000);                         // 로그인 외 단계의 p95 기준
@@ -228,7 +231,7 @@ export default function (data) {
 
     // 6) 결제 (모의 PG). 새로 처리하면 201, 같은 멱등 키로 다시 보내면 200
     if (PAY) {
-      const p = pay(token, reservationId, { cardNumber: CARD, idempotencyKey: uuid() });
+      const p = pay(token, reservationId, { cardNumber: cardOf(i), idempotencyKey: uuid() });
       const body = safeJson(p) || {};
       if (!check(p, { '결제 승인': (r) => (r.status === 201 || r.status === 200) && body.paymentStatus === 'APPROVED' })) {
         return stop(`pay_${codeOf(p) || body.paymentStatus || p.status}`);
