@@ -148,13 +148,14 @@ rect.b:hover{opacity:.82}
 <body>
 <header><div class="wrap">
   <h1>강동균 · 산출물</h1>
-  <p class="sub">제자리(Jejari) · 팀원 B · 좌석 선점 동시성 · 열차 도메인 · ERD 반영 &nbsp;|&nbsp; 진행 현황 2026-11-25 기준 · DATA-01·RSV-02 절은 2026-11-16 기준 · 락 비교는 2026-11-17 재측정</p>
+  <p class="sub">제자리(Jejari) · 팀원 B · 좌석 선점 동시성 · 열차 도메인 · ERD 반영 &nbsp;|&nbsp; 진행 현황 2026-11-26 기준 · DATA-01·RSV-02 절은 2026-11-16 기준 · 락 비교는 2026-11-17 재측정</p>
   <nav>
     <a href="#overview">진행 현황</a>
     <a href="#DATA-01">DATA-01 기준 데이터</a>
     <a href="#RSV-02">RSV-02 좌석 선점</a>
     <a href="#LOCK">§17.1 락 비교</a>
     <a href="#ADM">관리자 화면</a>
+    <a href="#PERF">공용 서버 측정</a>
     <a href="#BOT">봇 대회·모델</a>
     <a href="#OPS">유실·정합성</a>
     <a href="#ERD">ERD v40</a>
@@ -196,6 +197,12 @@ rect.b:hover{opacity:.82}
   </table></div>
   <p class="muted">"남은 것"은 기능이 돌아가는 상태에서 더 다듬을 곳입니다. 전체 목록은 <code>docs/강동균/보완할-일.md</code>.</p>
 
+  <h3>11-26에 더해진 것</h3>
+  <ul>
+    <li><b>공용 서버 측정</b> — 개선 전후 같은 조건: 선점 p95 0.55 → 0.32~0.39초. 동시 600명 · 초당 554건 · 5xx 0, 행동 로그 65,109건 유실 0 (<a href="#PERF">아래</a>)</li>
+    <li><b>위험 점수 모델 r10</b> — 검사 3 + 변호인 3 구조, 같은 시험 5세트(2만 명)로 골라 서버에서 사용 중: 사람 오탐 6.3 → 3.8%, 봇 92.6 → 98.4% (<a href="#BOT">아래</a>)</li>
+  </ul>
+
   <h3>11-19 ~ 11-25에 더해진 것</h3>
   <ul>
     <li><b>봇 대회</b> — 1차(11-19) 규칙 0/12 → 보강 → 2차(11-24) botb 6/6, 진짜 사람 27계정 오탐 0. 진짜 사람 속도로 규칙 기준값을 다시 정함 (<a href="#BOT">아래</a>)</li>
@@ -227,12 +234,12 @@ rect.b:hover{opacity:.82}
         <td>구글 클라우드 선택지 비교·절차 정리 → 조영준 님이 공용 서버 배포 완료 (11-18)</td></tr>
     <tr><td>봇 대회 기획·운영</td><td><span class="tag ok">2차 완료</span></td>
         <td>규칙을 모르는 팀원이 만든 봇 + 진짜 사람으로 탐지를 시험. 1차 11-19, 2차 11-24. 진행 화면으로 버튼 하나에 준비~평가~정리 (<a href="#BOT">아래</a>)</td></tr>
-    <tr><td>위험 점수 모델</td><td><span class="tag warn">보조 의견만</span></td>
-        <td>부스팅 + Isolation Forest + GRU. 처음 보는 봇 계열 87%. 진짜 사람 오탐이 기준(5%)을 넘어 관리자에게 의견만 보여 줌</td></tr>
+    <tr><td>위험 점수 모델</td><td><span class="tag ok">r10 사용 중</span></td>
+        <td>부스팅 + Isolation Forest + GRU(검사) + 그룹별 해명 모델 3개(변호인). 같은 시험 5세트에서 사람 오탐 3.8% · 봇 98.4%, 11-26 서버에서 켬. 점수는 관리자 보조 의견만 (<a href="#BOT">아래</a>)</td></tr>
     <tr><td>유실 방지·정합성 감시</td><td><span class="tag ok">완료</span></td>
         <td>처리 못 한 메시지 격리 보관, 행동 로그 유실 70% → 0%, 매시간 정합성 점검 + 경보 14개 (<a href="#OPS">아래</a>)</td></tr>
-    <tr><td>공용 서버 성능 측정</td><td><span class="tag warn">도구 준비</span></td>
-        <td>개선 전(11-19) 값과 같은 조건으로 재는 스크립트·체크리스트 (<code>loadtest/tools/server_perf.sh</code>). 개선 후 값 측정 대기</td></tr>
+    <tr><td>공용 서버 성능 측정</td><td><span class="tag ok">11-26 완료</span></td>
+        <td>개선 전후 · 용량 · 서버 안 k6 · 행동 로그 유실 (<code>loadtest/tools/server_load_day.sh</code>, 조영준 님과) (<a href="#PERF">아래</a>)</td></tr>
   </table></div>
 
   <h3>핵심 수치 (기획서 역할 분배)</h3>
@@ -250,14 +257,21 @@ rect.b:hover{opacity:.82}
         <td>300명 10초, 예약 = 확정 = 승인 결제 = 알림. Kafka 40초 정지에도 이벤트 유실 0</td></tr>
     <tr><td>로그인 폭주</td><td>다른 API가 멈추지 않음</td><td class="n">200 → 800명</td>
         <td>해시 4개 서버. 200명에서 5xx 24%로 무너지던 것을 로그인 대기실로 800명까지 5xx 0%</td></tr>
+    <tr><td>공용 서버 개선 전후</td><td>같은 조건에서 빨라짐</td><td class="n">선점 0.55 → 0.32~0.39초</td>
+        <td>200명/20초 × 2회, 200/200 · 결제 0.47 → 0.27~0.32초 · 정합성 10항목 OK</td></tr>
+    <tr><td>공용 서버 동시 사용자</td><td>localhost가 아닌 서버 숫자</td><td class="n">600명 · 초당 554건</td>
+        <td>p95 0.61초 · 5xx 0% (서버 안 k6, 보수적). 800명도 5xx 0</td></tr>
+    <tr><td>몰릴 때 행동 로그</td><td>유실 0</td><td class="n">65,109 = 65,109</td>
+        <td>보낸 수 = 쌓인 수, 버림 0, 밀림 5초 안에 0 (공용 서버)</td></tr>
+    <tr><td>위험 점수 모델 (r10)</td><td>사람 오탐 5% 이하 · 봇 96% 이상</td><td class="n">3.8% · 98.4%</td>
+        <td>같은 시험 5세트(2만 명). 첫 버전 6.3% · 92.6%</td></tr>
     <tr><td>봇 대회 (2차)</td><td>봇 탐지 · 사람 오탐 5% 이하</td><td class="n">botb 6/6 · 오탐 0/27</td>
         <td>규칙 엔진 기준. 1차는 0/12 · 사람 0명. botc는 규칙으로 못 잡아 순번만 미룸</td></tr>
   </table></div>
 
   <div class="note">
-    <b>남은 큰 일</b> — 공용 서버에서 <b>개선 후</b> 값 재기. 개선 전(11-19, 앱 1대·해시 4: 예매 p95 4.9초, 선점 p95 0.55초)과
-    같은 조건(200명/20초)으로 재는 스크립트·체크리스트는 준비됨 (<code>docs/강동균/features/공용서버-성능측정-체크리스트.md</code>).
-    그 밖의 수치는 로컬(4코어)에서 잰 것입니다.
+    <b>어디서 잰 숫자인가</b> — 공용 서버 4줄(개선 전후 · 동시 사용자 · 행동 로그)은 <b>11-26 공용 서버</b>, 모델은 생성 시험 데이터 5세트,
+    나머지는 로컬(4코어)에서 잰 것입니다. 공용 서버 숫자의 한계(PC 네트워크, 서버 안 k6가 CPU를 나눠 씀)는 <a href="#PERF">아래</a>에 적었습니다.
   </div>
 </section>
 
@@ -581,6 +595,61 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
   <p class="muted">화면 설계: <code>docs/ui/A-0x.md</code>. 다른 팀원 담당 화면(U-01 로그인 등)도 최소판을 만들어 담당이 다듬었습니다.</p>
 </section>
 
+<!-- ───────────────────────────── 공용 서버 측정 -->
+<section id="PERF">
+  <h2>공용 서버에서 잰 숫자 <span class="tag ok">11-26 측정</span></h2>
+  <p>localhost 한 대가 아니라 <b>공용 서버(구글 클라우드 VM, CPU 4개 한 대에 앱·Oracle·Redis·Kafka·MongoDB 함께)</b>에서 쟀습니다.
+     부하는 내 PC의 k6로 보내고, 서버 쪽 CPU·커넥션·5xx·로그는 서버 담당(조영준 님)이 같은 구간을 읽었습니다.</p>
+
+  <div class="grid">
+    <div class="kpi"><b>600명</b><span>동시 사용자 · 초당 554건 · p95 0.61초 · 5xx 0% (서버 안 k6)</span></div>
+    <div class="kpi"><b>0.55 → 0.32초</b><span>좌석 선점 p95, 개선 전후 (200명/20초)</span></div>
+    <div class="kpi"><b>65,109 = 65,109</b><span>행동 로그 보낸 수 = 쌓인 수 · 버림 0</span></div>
+    <div class="kpi"><b>0건</b><span>잘못 팔린 표 · 돈만 빠진 결제 (정합성 10항목)</span></div>
+  </div>
+
+  <h3>개선 전후 — 같은 조건 (200명이 20초 안에, 한 명이 예매 한 번)</h3>
+  <div class="tw"><table>
+    <tr><th>항목</th><th class="n">개선 전 (11-19)</th><th class="n">개선 후 1회</th><th class="n">개선 후 2회</th></tr>
+    <tr><td>예매 성공</td><td class="n">200/200</td><td class="n">200/200</td><td class="n">200/200</td></tr>
+    <tr><td>좌석 선점 p95</td><td class="n">0.55초</td><td class="n">0.39초</td><td class="n"><b>0.32초</b></td></tr>
+    <tr><td>결제 p95</td><td class="n">0.47초</td><td class="n">0.32초</td><td class="n"><b>0.27초</b></td></tr>
+    <tr><td>좌석 배치도 p95</td><td class="n">0.37초</td><td class="n">0.25초</td><td class="n"><b>0.22초</b></td></tr>
+    <tr><td>예매 전체 p95</td><td class="n">4.9초</td><td class="n">5.16초</td><td class="n">3.45초</td></tr>
+    <tr><td>로그인 p95 (실패)</td><td class="n">2.6초</td><td class="n">3.25초 (0)</td><td class="n">1.56초 (0)</td></tr>
+    <tr><td>DB 커넥션 대기 · VM CPU</td><td class="n">0 · 99~100%</td><td class="n">0 · 99%</td><td class="n">0 · 99%</td></tr>
+  </table></div>
+  <p class="muted">개선: 커넥션 풀 10 → 20, 로그인 대기실, outbox 유휴 호출 감소. CPU는 전후 모두 99% — 로그인 해시(Argon2id)가 CPU를 다 쓰는 조건에서 선점·결제가 빨라진 것입니다.
+     예매 전체·로그인은 1회가 느리고 2회가 빨라(첫 측정이라 덜 데워짐) <b>범위로</b> 말합니다. 로그인이 길어 보이는 것은 대기실에서 줄 선 시간이고, 실패는 0입니다.</p>
+
+  <h3>몇 명까지 버티나 — 동시 사용자 (조회 · 대기열 · 배치도 반복, 단계 90초)</h3>
+  <div class="tw"><table>
+    <tr><th>동시 사용자</th><th class="n">초당 요청</th><th class="n">p95</th><th class="n">5xx</th><th>판정</th><th>어디서</th></tr>
+    <tr><td>200</td><td class="n">238</td><td class="n">65ms</td><td class="n">0%</td><td><span class="tag ok">버팀</span></td><td>내 PC</td></tr>
+    <tr><td>300</td><td class="n">327</td><td class="n">221ms</td><td class="n">0%</td><td><span class="tag ok">버팀</span></td><td>내 PC</td></tr>
+    <tr><td>400</td><td class="n">484</td><td class="n">139ms</td><td class="n">0%</td><td><span class="tag ok">버팀</span></td><td>서버 안</td></tr>
+    <tr><td><b>600</b></td><td class="n"><b>554</b></td><td class="n"><b>612ms</b></td><td class="n"><b>0%</b></td><td><span class="tag ok">버팀</span></td><td>서버 안</td></tr>
+    <tr><td>800</td><td class="n">758</td><td class="n">1,026ms</td><td class="n">0%</td><td><span class="tag warn">p95만 1초 넘음</span></td><td>서버 안</td></tr>
+  </table></div>
+  <div class="note">
+    <b>읽을 때 주의</b> — 내 PC에서는 400명부터 <b>PC의 네트워크가 새 연결을 막아</b>(한 기기 동시 연결 약 300~400개) 더 올리지 못했습니다.
+    실패한 요청은 서버에 도착하지도 않았습니다(서버 5xx 0 · Caddy 오류 0). 그래서 400명부터는 <b>서버 안에서 k6</b>를 돌렸고,
+    k6가 같은 CPU 4개를 나눠 써서 <b>실제 한계는 이보다 위</b>입니다(보수적인 값). 이 서버의 한계는 CPU(600~800명에서 94~100%)이고,
+    한계를 넘은 800명에서도 서버 오류 없이 <b>느려질 뿐</b>이었습니다.
+  </div>
+
+  <h3>빅데이터 — 몰리는 동안 행동 로그를 놓치지 않나 (앱 → Kafka → MongoDB)</h3>
+  <div class="tw"><table>
+    <tr><th>항목</th><th>값 (동시 300 → 800명, 8분)</th></tr>
+    <tr><td>보낸 수 / 쌓인 수</td><td class="n"><b>65,109 / 65,109</b> · 버림 0 · 실패 0</td></tr>
+    <tr><td>밀림 (소비 지연)</td><td>최대 213건 → 끝나고 <b>5초 안에 0</b></td></tr>
+    <tr><td>초당 적재 최고</td><td>259건 — 파이프라인 한계(로컬 실측 초당 2만~2.8만 건)의 약 1%</td></tr>
+  </table></div>
+  <p class="muted">파이프라인 자체의 최대 속도는 로컬에서 잰 값입니다(공용 서버에서 재려면 MongoDB를 멈춰야 해서 하지 않음).
+     못 하는 것: 명절 실제 규모(수만 명) · 여러 지역에서 오는 부하 · 앱 2대 수평 확장(같은 CPU를 나눠 씀).
+     자세히: <code>docs/강동균/features/공용서버-부하시험-결과.md</code></p>
+</section>
+
 <!-- ───────────────────────────── 봇 대회·모델 -->
 <section id="BOT">
   <h2>봇 대회와 위험 점수 모델 <span class="tag ok">2차 완료</span></h2>
@@ -591,7 +660,7 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
   <div class="grid">
     <div class="kpi"><b>0/12 → 6/6</b><span>규칙이 잡은 블라인드 봇 (1차 → 2차 botb) · 6/6의 95% 구간 61~100%</span></div>
     <div class="kpi"><b>0 / 27</b><span>2차 진짜 사람 규칙 오탐 · 95% 구간 0~12.5% (사람 5명 기준이면 0~43%)</span></div>
-    <div class="kpi"><b>87%</b><span>모델: 처음 보는 봇 계열 탐지</span></div>
+    <div class="kpi"><b>3.8% · 98.4%</b><span>모델 r10: 사람 오탐 · 봇 탐지 (같은 시험 5세트 2만 명)</span></div>
     <div class="kpi"><b>2.74초</b><span>진짜 사람의 가장 빠른 단계</span></div>
   </div>
 
@@ -632,6 +701,23 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
     규칙과 모델은 서로 다른 봇을 잡았습니다 (botc는 규칙이 못 잡고 모델이 잡음). 모델은 사람 4명을 봇으로 봐서 아직 차단에 쓰지 않습니다.
   </div>
 
+  <h3>위험 점수 모델 r10 — 검사 + 변호인 (11-25~26)</h3>
+  <p>모델 하나로 함정 사람(총무·사자마자 취소·가족)을 다 맞추려 하니 한쪽을 고치면 다른 쪽이 나빠졌습니다.
+     그래서 주 판정(검사 3: 부스팅 · Isolation Forest · GRU) 뒤에, 약한 그룹만 따로 보는 작은 모델(변호인 3: 취소 · 대량 구매 · 기기 공유 가족)이
+     "평범한 사람"이라고 확신하면 풀어 줍니다. 풀어 주는 문턱은 <b>그 그룹 봇이 2%만</b> 풀리게 정하고, 카드 공유는 누구도 못 풉니다.
+     예외를 열 때마다 <b>그 예외를 노리는 봇</b>을 같이 만들어 새는지 쟀습니다.</p>
+  <div class="tw"><table>
+    <tr><th>같은 시험 5세트 (2만 명)</th><th class="n">첫 버전 (11-18)</th><th class="n">r10 (사용 중)</th></tr>
+    <tr><td>사람 오탐 전체</td><td class="n">6.3%</td><td class="n"><b>3.8%</b></td></tr>
+    <tr><td>봇 탐지 전체</td><td class="n">92.6%</td><td class="n"><b>98.4%</b></td></tr>
+    <tr><td>단체 여행 총무 · 사자마자 취소</td><td class="n">42.7% · 17.6%</td><td class="n"><b>0.5% · 0%</b></td></tr>
+    <tr><td>기기 같이 쓰는 가족</td><td class="n">17.8%</td><td class="n"><b>7.9%</b></td></tr>
+    <tr><td>가족 몫 대량 구매</td><td class="n">25.3%</td><td class="n">22.2% (남은 한계)</td></tr>
+    <tr><td>예외를 노린 봇 (기기 돌려 쓰기)</td><td class="n">63.1%</td><td class="n"><b>96.0%</b></td></tr>
+  </table></div>
+  <p class="muted">가족 몫 대량 구매(조회 없이 4석 한 번에)는 기록상 봇과 같아 모델로 못 풉니다 → 자동 차단이 아니라 관리자 검토.
+     학습은 생성 데이터라 더 맞추면 생성기에 과적합 → 실제 판정 기록이 쌓이면 다시. 자세히: <code>docs/강동균/features/위험점수모델-발표용-한장.md</code></p>
+
   <div class="note">
     <b>규칙은 우회된다 — 그래서 층을 겹친다</b> — NO_SEARCH_ENTRY는 botc 하나에 맞춘 규칙이라, 봇이 조회를 한 번 끼워 넣으면 피합니다.
     그래서 케이스를 열지 않고 순번만 30초 미룹니다 (막는 것이 아니라 비용을 올림). 바닥은 본인인증 기준 매수 제한입니다 —
@@ -660,6 +746,8 @@ C 현재     Redis hold.lua         →  지면 끝(DB 안 감)  →  이긴 사
   <div class="tw"><table>
     <tr><th>상황</th><th>무슨 일이</th><th>근거</th></tr>
     <tr><td>Redis가 죽음</td><td>검색은 정상, 대기열·선점·결제는 <b>DB에 가기 전에</b> 2초 안에 503. 잘못 팔리는 것 없음</td><td><code>RedisExceptionHandler</code>, timeout 2s</td></tr>
+    <tr><td>부하 중 Redis 강제 종료 (시연)</td><td>1.7초 뒤 503(p95 10ms), 열차 조회는 계속, 다시 띄우고 약 23초 뒤 실패 0, 정합성 10/10 OK</td><td><code>fault_demo.sh</code> (11-25)</td></tr>
+    <tr><td>장애가 결제 기한보다 김</td><td>살아나면 장애 시간만큼(최대 기한 한 번) 결제 기한을 되돌려 줌</td><td>§6.3 · T47</td></tr>
     <tr><td>살아났는데 한도 키를 잃음</td><td>다음 요청이 DB 카운터로 한 번만 복원 (동시 5건 중 3건만 통과)</td><td>T14</td></tr>
     <tr><td>좌석 키를 잃음</td><td>Redis 1차는 통과해도 DB의 살아 있는 선점이 거절</td><td>T14</td></tr>
     <tr><td>커밋 직후 앱이 죽어 정리 유실</td><td>outbox 보장 경로가 다시 정리, 두 번 돌려도 한 번</td><td>T26</td></tr>
