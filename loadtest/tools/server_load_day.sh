@@ -5,6 +5,7 @@
 #   BASE_URL=https://<서버 주소> loadtest/tools/server_load_day.sh <운행1> <운행2>
 #   BASE_URL=... loadtest/tools/server_load_day.sh find          # 빈 운행 고르기 (server_perf.sh find와 같음)
 #   BASE_URL=... USERS=50 STEPS=25,50 loadtest/tools/server_load_day.sh <운행1> <운행2>   # 전날 연습 (작게)
+#   BASE_URL=... ONLY_B=1 loadtest/tools/server_load_day.sh <운행1> <운행2>   # B(용량)만 다시 (A는 건너뜀, 배치도는 운행1)
 #
 # 단계마다 멈춰서 물어본다 (Enter = 계속, s = 이 단계 건너뜀, q = 여기서 끝). AUTO=1이면 묻지 않고 끝까지.
 # 정합성 점검(check_booking.sh)은 서버에서만 돈다 (Oracle·MongoDB가 서버 docker compose 안) → 할 때가 되면 서버에서 칠 명령을 보여 준다.
@@ -132,7 +133,7 @@ finish() {
 }
 
 # ── 1. A 계정 (이미 있으면 건너뜀) ──────────────────────────────────────
-if ask "A 계정 ${USERS}개 × 2 준비 (RUN_TAG=${RUN_TAG}a · ${RUN_TAG}b, 있으면 건너뜀)"; then
+if [[ "${ONLY_B:-}" != 1 ]] && ask "A 계정 ${USERS}개 × 2 준비 (RUN_TAG=${RUN_TAG}a · ${RUN_TAG}b, 있으면 건너뜀)"; then
   for t in a b; do
     USERS="$USERS" RUN_TAG="${RUN_TAG}$t" BASE_URL="$BASE_URL" bash tools/server_perf.sh accounts 2>&1 | tee "$OUT/accounts_$t.log" | tail -2 | tee -a "$LOG"
   done
@@ -151,15 +152,15 @@ runA() { # $1 = 이름, $2 = 운행, $3 = 계정 태그
   grep -oE "멈춤: [A-Za-z0-9_]+" "$OUT/$name.log" | sort | uniq -c | sort -rn | sed 's/^/  /' | tee -a "$LOG" || true
   [[ -s "$f" ]] && bash tools/server_perf.sh summary "$f" | sed '/^(원본/d' || tail -20 "$OUT/$name.log"
 }
-if ask "A-1 개선 전후 (운행 $RUN1, ${USERS}명/${SPREAD_SEC}초, 약 4분)"; then
+if [[ "${ONLY_B:-}" != 1 ]] && ask "A-1 개선 전후 (운행 $RUN1, ${USERS}명/${SPREAD_SEC}초, 약 4분)"; then
   runA A-1 "$RUN1" "${RUN_TAG}a"; A1_JSON="$OUT/A-1_${RUN1}.json"
 fi
-if ask "A-2 (운행 $RUN2) — ${GAP_SEC}초 쉰 뒤 시작"; then
+if [[ "${ONLY_B:-}" != 1 ]] && ask "A-2 (운행 $RUN2) — ${GAP_SEC}초 쉰 뒤 시작"; then
   sleep "$GAP_SEC"
   runA A-2 "$RUN2" "${RUN_TAG}b"; A2_JSON="$OUT/A-2_${RUN2}.json"
 fi
 
-cat <<EOF | tee -a "$LOG"
+[[ "${ONLY_B:-}" == 1 ]] || cat <<EOF | tee -a "$LOG"
 
 ── 조영준 님 (서버 창): A 운행 정합성 ──────────────────────────
   cd ~/Jejari && bash loadtest/tools/check_booking.sh $RUN1 30 && bash loadtest/tools/check_booking.sh $RUN2 30
