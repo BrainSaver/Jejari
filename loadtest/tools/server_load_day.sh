@@ -5,6 +5,7 @@
 #   BASE_URL=https://<서버 주소> loadtest/tools/server_load_day.sh <운행1> <운행2>
 #   BASE_URL=... loadtest/tools/server_load_day.sh find          # 빈 운행 고르기 (server_perf.sh find와 같음)
 #   BASE_URL=... USERS=50 STEPS=25,50 loadtest/tools/server_load_day.sh <운행1> <운행2>   # 전날 연습 (작게)
+#   BASE_URL=... ONLY_B=1 loadtest/tools/server_load_day.sh <운행1> <운행2>   # B(용량)만 다시 (A는 건너뜀, 배치도는 운행1)
 #
 # 단계마다 멈춰서 물어본다 (Enter = 계속, s = 이 단계 건너뜀, q = 여기서 끝). AUTO=1이면 묻지 않고 끝까지.
 # 정합성 점검(check_booking.sh)은 서버에서만 돈다 (Oracle·MongoDB가 서버 docker compose 안) → 할 때가 되면 서버에서 칠 명령을 보여 준다.
@@ -21,7 +22,10 @@ cd "$(dirname "$0")/.."      # loadtest/
 
 USERS="${USERS:-200}"
 SPREAD_SEC="${SPREAD_SEC:-20}"
-RUN_TAG="${RUN_TAG:-perf1}"          # A 계정 (server_perf.sh와 같은 계정을 다시 씀)
+RUN_TAG="${RUN_TAG:-p$(date +%d%H%M)}"   # A 계정 태그. A-1은 <태그>a, A-2는 <태그>b — 서로 다른 계정 (아래 설명)
+# A-1과 A-2를 같은 계정으로 하면 안 된다 (11-26 공용 서버 연습): 한 IP에서 계정 수백 개가 몰려 예매하면 1분마다 도는
+# 위험 점수가 그 계정을 봇처럼 보고(점수 95), A-2 결제가 결제 단계 차단(PaymentRiskGuard, 기준 80)에 걸린다 — 연습 A-2 10/20.
+# 11-19 개선 전 측정 때는 이 차단이 없었으므로, 개선 전후 비교는 매번 점수가 없는 새 계정으로 한다
 CAP_TAG="${CAP_TAG:-c$(date +%d%H%M)}"   # B 계정 — 13_capacity는 시작할 때마다 새로 가입하므로(같은 태그면 가입 실패) 실행마다 새 태그
 STEPS="${STEPS:-50,100,200,400,800}"
 STEP_SEC="${STEP_SEC:-90}"
@@ -43,7 +47,7 @@ RUN1="${1:-}"; RUN2="${2:-}"
   || { echo "사용법: $0 <운행1> <운행2>   (서로 다른 빈 운행 — 먼저 '$0 find')"; exit 2; }
 
 k6run() {
-  if command -v k6 >/dev/null 2>&1; then
+  if [[ "${K6_DOCKER:-}" != 1 ]] && command -v k6 >/dev/null 2>&1; then   # K6_DOCKER=1이면 설치된 k6 대신 Docker의 $K6_IMAGE (11-19와 같은 버전)
     k6 "$@"
   else
     local here; here="$(pwd -W 2>/dev/null || pwd)"
@@ -94,7 +98,7 @@ finish() {
   {
     echo "# 공용 서버 부하 시험 결과 ($(date '+%F %H:%M'))"
     echo
-    echo "- 서버: $BASE_URL · A 운행 $RUN1 / $RUN2 · A ${USERS}명/${SPREAD_SEC}초 (RUN_TAG=$RUN_TAG) · B $STEPS, 단계 ${STEP_SEC}초, 로그인 흩뜨림 ${LOGIN_SPREAD_SEC}초"
+    echo "- 서버: $BASE_URL · A 운행 $RUN1 / $RUN2 · A ${USERS}명/${SPREAD_SEC}초 (계정 ${RUN_TAG}a · ${RUN_TAG}b) · B $STEPS, 단계 ${STEP_SEC}초, 로그인 흩뜨림 ${LOGIN_SPREAD_SEC}초"
     echo "- 서버 커밋·VM CPU·커넥션 대기·GC·정합성은 서버 쪽 값 — 결과 문서(공용서버-부하시험-결과.md)에 옮겨 적기"
     echo
     for x in "A-1:$A1_JSON" "A-2:$A2_JSON"; do
@@ -129,30 +133,34 @@ finish() {
 }
 
 # ── 1. A 계정 (이미 있으면 건너뜀) ──────────────────────────────────────
-if ask "A 계정 ${USERS}개 준비 (RUN_TAG=$RUN_TAG, 있으면 건너뜀)"; then
-  USERS="$USERS" RUN_TAG="$RUN_TAG" BASE_URL="$BASE_URL" bash tools/server_perf.sh accounts 2>&1 | tee "$OUT/accounts.log" | tail -3 | tee -a "$LOG"
+if [[ "${ONLY_B:-}" != 1 ]] && ask "A 계정 ${USERS}개 × 2 준비 (RUN_TAG=${RUN_TAG}a · ${RUN_TAG}b, 있으면 건너뜀)"; then
+  for t in a b; do
+    USERS="$USERS" RUN_TAG="${RUN_TAG}$t" BASE_URL="$BASE_URL" bash tools/server_perf.sh accounts 2>&1 | tee "$OUT/accounts_$t.log" | tail -2 | tee -a "$LOG"
+  done
 fi
 
 # ── 2. A-1 · A-2 ────────────────────────────────────────────────────
-runA() { # $1 = 이름, $2 = 운행 → 결과 json 경로를 stdout 마지막 줄로
-  local name="$1" run="$2" f="$OUT/$1_${2}.json" rc=0
-  mark "$name 시작 (운행 $run)"
+runA() { # $1 = 이름, $2 = 운행, $3 = 계정 태그
+  local name="$1" run="$2" tag="$3" f="$OUT/$1_${2}.json" rc=0
+  mark "$name 시작 (운행 $run, 계정 $tag)"
   k6run run scenarios/11_user_journey.js --summary-export "${f#./}" \
     -e BASE_URL="$BASE_URL" -e I_OWN_THIS_TARGET=yes -e ACCOUNTS=existing \
-    -e RUN_ID="$run" -e USERS="$USERS" -e SPREAD_SEC="$SPREAD_SEC" -e RUN_TAG="$RUN_TAG" \
+    -e RUN_ID="$run" -e USERS="$USERS" -e SPREAD_SEC="$SPREAD_SEC" -e RUN_TAG="$tag" \
     -e FROM="$FROM" -e TO="$TO" > "$OUT/$name.log" 2>&1 || rc=$?
   mark "$name 끝 (k6 종료 코드 $rc — 99는 기준 미달일 뿐 결과는 유효)"
+  # 멈춘 사람이 있으면 어디서 왜 멈췄는지 (11_user_journey.js의 "멈춤: 단계_코드")
+  grep -oE "멈춤: [A-Za-z0-9_]+" "$OUT/$name.log" | sort | uniq -c | sort -rn | sed 's/^/  /' | tee -a "$LOG" || true
   [[ -s "$f" ]] && bash tools/server_perf.sh summary "$f" | sed '/^(원본/d' || tail -20 "$OUT/$name.log"
 }
-if ask "A-1 개선 전후 (운행 $RUN1, ${USERS}명/${SPREAD_SEC}초, 약 4분)"; then
-  runA A-1 "$RUN1"; A1_JSON="$OUT/A-1_${RUN1}.json"
+if [[ "${ONLY_B:-}" != 1 ]] && ask "A-1 개선 전후 (운행 $RUN1, ${USERS}명/${SPREAD_SEC}초, 약 4분)"; then
+  runA A-1 "$RUN1" "${RUN_TAG}a"; A1_JSON="$OUT/A-1_${RUN1}.json"
 fi
-if ask "A-2 (운행 $RUN2) — ${GAP_SEC}초 쉰 뒤 시작"; then
+if [[ "${ONLY_B:-}" != 1 ]] && ask "A-2 (운행 $RUN2) — ${GAP_SEC}초 쉰 뒤 시작"; then
   sleep "$GAP_SEC"
-  runA A-2 "$RUN2"; A2_JSON="$OUT/A-2_${RUN2}.json"
+  runA A-2 "$RUN2" "${RUN_TAG}b"; A2_JSON="$OUT/A-2_${RUN2}.json"
 fi
 
-cat <<EOF | tee -a "$LOG"
+[[ "${ONLY_B:-}" == 1 ]] || cat <<EOF | tee -a "$LOG"
 
 ── 조영준 님 (서버 창): A 운행 정합성 ──────────────────────────
   cd ~/Jejari && bash loadtest/tools/check_booking.sh $RUN1 30 && bash loadtest/tools/check_booking.sh $RUN2 30
@@ -167,7 +175,7 @@ if ask "B 용량 ($STEPS명, 단계 ${STEP_SEC}초, 계정 만들기 몇 분 포
   k6run run scenarios/13_capacity.js \
     -e BASE_URL="$BASE_URL" -e I_OWN_THIS_TARGET=yes -e STEPS="$STEPS" -e STEP_SEC="$STEP_SEC" \
     -e LOGIN_SPREAD_SEC="$LOGIN_SPREAD_SEC" -e RUN_ID="$RUN1" -e FROM="$FROM" -e TO="$TO" -e RUN_TAG="$CAP_TAG" \
-    2>&1 | tee "$OUT/B.log" | grep --line-buffered -E "용량 시험|계정|/[0-9]+ \(|사전 점검|사용자 \||^ +[0-9]+ \||버틴|넘은|기준|멈|ERRO" || rc=$?
+    2>&1 | tee "$OUT/B.log" | grep --line-buffered -E "멈춤|용량 시험|계정|/[0-9]+ \(|사전 점검|사용자 \||^ +[0-9]+ \||버틴|넘은|기준|멈|ERRO" || rc=$?
   [[ -s capacity-result.json ]] && mv capacity-result.json "$OUT/B_capacity.json" && B_JSON="$OUT/B_capacity.json"
   mark "B 끝"
 fi
