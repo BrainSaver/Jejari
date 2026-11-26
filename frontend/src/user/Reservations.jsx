@@ -167,7 +167,8 @@ function ResCard({ r, i, open, onToggle, onCancel, onChanged }) {
         {r.status === 'EXPIRED' && <p className="mut" style={{ fontSize: 13, margin: 0 }}>결제 기한이 지나 좌석이 풀렸어요.</p>}
         {r.status === 'CANCELED' && (
           <p className="mut" style={{ fontSize: 13, margin: 0 }}>
-            {d?.cancellation?.cancelType === 'ADMIN' ? '운영 사유로 취소됐어요. 수수료 없이 전액 환불해 드려요.' : '취소된 표예요.'}
+            {d?.cancellation?.cancelType === 'ADMIN' ? '운영 사유로 취소됐어요. 수수료 없이 전액 환불해 드려요.'
+              : d && !d.payment ? '결제 전에 놓은 좌석이에요. 나간 돈은 없어요.' : '취소된 표예요.'}
           </p>
         )}
       </div>
