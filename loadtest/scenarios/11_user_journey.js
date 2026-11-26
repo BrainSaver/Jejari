@@ -182,6 +182,8 @@ export default function (data) {
 
   const started = Date.now();
   const stop = (stage) => {
+    // 요약 json에는 태그별 수가 안 남아서, 어디서 왜 멈췄는지(예: pay_PAYMENT_CARD_LINK_LIMIT)를 로그로도 남긴다 (11-26 공용 서버 연습)
+    console.warn(`멈춤: ${stage}`);
     failedAt.add(1, { stage });
     journeyOk.add(false);
   };

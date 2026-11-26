@@ -142,6 +142,8 @@ runA() { # $1 = 이름, $2 = 운행 → 결과 json 경로를 stdout 마지막 �
     -e RUN_ID="$run" -e USERS="$USERS" -e SPREAD_SEC="$SPREAD_SEC" -e RUN_TAG="$RUN_TAG" \
     -e FROM="$FROM" -e TO="$TO" > "$OUT/$name.log" 2>&1 || rc=$?
   mark "$name 끝 (k6 종료 코드 $rc — 99는 기준 미달일 뿐 결과는 유효)"
+  # 멈춘 사람이 있으면 어디서 왜 멈췄는지 (11_user_journey.js의 "멈춤: 단계_코드")
+  grep -oE "멈춤: [A-Za-z0-9_]+" "$OUT/$name.log" | sort | uniq -c | sort -rn | sed 's/^/  /' | tee -a "$LOG" || true
   [[ -s "$f" ]] && bash tools/server_perf.sh summary "$f" | sed '/^(원본/d' || tail -20 "$OUT/$name.log"
 }
 if ask "A-1 개선 전후 (운행 $RUN1, ${USERS}명/${SPREAD_SEC}초, 약 4분)"; then
@@ -167,7 +169,7 @@ if ask "B 용량 ($STEPS명, 단계 ${STEP_SEC}초, 계정 만들기 몇 분 포
   k6run run scenarios/13_capacity.js \
     -e BASE_URL="$BASE_URL" -e I_OWN_THIS_TARGET=yes -e STEPS="$STEPS" -e STEP_SEC="$STEP_SEC" \
     -e LOGIN_SPREAD_SEC="$LOGIN_SPREAD_SEC" -e RUN_ID="$RUN1" -e FROM="$FROM" -e TO="$TO" -e RUN_TAG="$CAP_TAG" \
-    2>&1 | tee "$OUT/B.log" | grep --line-buffered -E "용량 시험|계정|/[0-9]+ \(|사전 점검|사용자 \||^ +[0-9]+ \||버틴|넘은|기준|멈|ERRO" || rc=$?
+    2>&1 | tee "$OUT/B.log" | grep --line-buffered -E "멈춤|용량 시험|계정|/[0-9]+ \(|사전 점검|사용자 \||^ +[0-9]+ \||버틴|넘은|기준|멈|ERRO" || rc=$?
   [[ -s capacity-result.json ]] && mv capacity-result.json "$OUT/B_capacity.json" && B_JSON="$OUT/B_capacity.json"
   mark "B 끝"
 fi
