@@ -39,8 +39,8 @@ const FROM = __ENV.FROM || '3900023';                                // 서울 (
 const TO = __ENV.TO || '3900114';                                    // 부산 (시드)
 const PAY = (__ENV.PAY || 'yes') !== 'no';
 const CARD = __ENV.CARD || '';                                       // 주면 모든 사람이 이 카드 하나 (끝자리 1 = 모의 PG 승인)
-// 기본은 사람마다 다른 테스트 카드 (끝자리 1 = 승인). 같은 카드 하나를 수백 명이 쓰면 "카드 한 장에 붙는 명의 수 상한"
-// (payment.max_ci_per_card, ERD v37)이 켜진 서버에서 결제가 거절돼 성능이 아니라 그 규칙을 재게 된다 (11-26 공용 서버 연습)
+// 기본은 사람마다 다른 테스트 카드 (끝자리 1 = 승인). 같은 카드 하나를 수백 명이 쓰면 그 카드가 위험 점수의 "결제 수단" 신호가 되고,
+// "카드 한 장에 붙는 명의 수 상한"(payment.max_ci_per_card, ERD v37)을 켠 서버에서는 결제가 거절돼 성능이 아니라 그 규칙을 재게 된다
 const cardOf = (i) => CARD || `4111${String(i).padStart(11, '0')}1`;
 const HOLD_RETRY = Math.max(1, Number(__ENV.HOLD_RETRY || 3));
 const MAX_WAIT_SEC = Number(__ENV.MAX_WAIT_SEC || 120);
