@@ -112,13 +112,16 @@ function ResCard({ r, i, open, onToggle, onCancel, onChanged }) {
 
   const ticket = d?.seats?.find((s) => s.ticketNo)?.ticketNo;
   const leftMin = r.from?.time ? Math.round((toMs(r.from.time) - Date.now()) / 60000) : null;
+  // 도착 시각이 지난 확정 표는 "이용 완료" — 지난 표가 계속 "확정"과 누를 수 없는 [취소]로 남아 헷갈렸다
+  const used = r.status === 'CONFIRMED' && r.to?.time && toMs(r.to.time) < Date.now();
+  const noCancel = d?.cancel?.cancelable === false;
 
   return (
     <article id={'res-' + r.reservationId} className="ticket h" style={{ '--i': i, ...(hold ? { boxShadow: '0 0 0 2px var(--amber) inset' } : {}), ...(dim ? { opacity: 0.7 } : {}) }}>
       <div>
         <div className="row">
           <span className="tno grow"><b>{r.trainNo}</b> 열차<span className="dd">{shortDate(r.runDate)}</span></span>
-          <span className={'st ' + cls}>{hold && r.payDeadlineAt ? `결제 기한 ${hm(r.payDeadlineAt)}` : label}</span>
+          <span className={'st ' + (used ? '' : cls)}>{hold && r.payDeadlineAt ? `결제 기한 ${hm(r.payDeadlineAt)}` : used ? '이용 완료' : label}</span>
         </div>
         <RouteLine from={r.from} to={r.to} />
         <button type="button" className="link" onClick={onToggle} aria-expanded={open} style={{ border: 0, background: 'none', padding: '10px 0 0', cursor: 'pointer', font: 'inherit', fontSize: 14 }}>
@@ -155,10 +158,10 @@ function ResCard({ r, i, open, onToggle, onCancel, onChanged }) {
         {r.status === 'CONFIRMED' && (
           <div className="row" style={{ marginTop: 8 }}>
             <span className="grow mut" style={{ fontSize: 12.5 }}>
-              {d?.cancel?.cancelable === false ? '지금은 취소할 수 없어요' : leftMin != null ? `출발 ${leftText(leftMin)}` : ''}
+              {noCancel ? (used || leftMin < 0 ? '출발한 열차라 취소할 수 없어요' : '지금은 취소할 수 없어요') : leftMin != null ? `출발 ${leftText(leftMin)}` : ''}
               {d?.cancel?.cancelable && d.cancel.feeRate != null ? <><br />지금 취소하면 수수료 {Math.round(d.cancel.feeRate * 100)}%</> : null}
             </span>
-            <button className="btn ghost sm" type="button" onClick={onCancel} disabled={d?.cancel?.cancelable === false}>취소</button>
+            {!noCancel && <button className="btn ghost sm" type="button" onClick={onCancel}>취소</button>}
           </div>
         )}
         {r.status === 'EXPIRED' && <p className="mut" style={{ fontSize: 13, margin: 0 }}>결제 기한이 지나 좌석이 풀렸어요.</p>}

@@ -82,6 +82,7 @@ export default function ChatWidget() {
           .chat-fab img{width:58px;height:52px}
           .chat-fab{right:10px}
           .user .body{padding-bottom:84px}
+          .in-line .chat-fab{bottom:calc(168px + env(safe-area-inset-bottom) / var(--z,1))}
           .chat-win{bottom:calc(148px + var(--sb) / var(--z,1));height:min(480px,calc((var(--vh) - var(--sb) - var(--st)) / var(--z,1) - 160px))}
         }
         @media (max-width:959px) and (max-height:500px){
