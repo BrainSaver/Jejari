@@ -79,7 +79,10 @@ ci() {
 # 1) 배포할 커밋 고르기: main의 최신부터 거꾸로, CI가 성공한 가장 최근 커밋 (최대 5개 확인).
 #    최신만 기다리면 커밋이 CI(3~5분)보다 자주 올라오는 날엔 한 번도 배포하지 못한다
 NEW=""; seen=""
+#    배포된 커밋의 자손만 고른다. 브랜치에 main을 합친 커밋이 main으로 빨리 감기되면 첫 부모 줄이
+#    그 브랜치의 옛 커밋으로 이어져, 배포본보다 오래된 커밋(11-23 27f50db)을 골라 되돌릴 수 있었다
 for sha in $(git rev-list --first-parent --max-count=5 "$CUR..$HEAD_MAIN"); do
+  git merge-base --is-ancestor "$CUR" "$sha" || { seen+="${sha:0:7}=자손아님 "; continue; }
   r=$(ci "$sha"); seen+="${sha:0:7}=$r "
   [[ "$r" == error ]] && { echo "GitHub API 실패 → 다음 차례에"; exit 0; }
   [[ "$r" == success ]] && { NEW=$sha; break; }

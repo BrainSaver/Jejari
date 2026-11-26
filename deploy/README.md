@@ -18,7 +18,7 @@ VM 1대(e2-standard-4, 서울)에 로컬과 같은 `compose.yaml`을 올리고, 
 | `make-server-env.sh` | **내 PC에서** 서버용 `.env` 생성 (HMAC 키만 팀 공용, 나머지 새로) |
 | `setup-server.sh` | **서버에서 한 번**: 패키지·docker 그룹·도메인·systemd (앱 1대 + 자동 배포 타이머) + 시간표 타이머 · 서비스 명령 sudo 허용) |
 | `deploy.sh` | 배포: main(또는 `DEPLOY_SHA`) 빌드 → 켜 둔 앱만 재시작 → 배포한 커밋 기록 |
-| `auto-deploy.sh` · `jejari-autodeploy.{service,timer}` | **자동 배포**: 20분마다 (관리자 화면 "배포" 버튼으로 바로도), CI 성공 + DB·인프라 변경 없음일 때만 `deploy.sh` |
+| `auto-deploy.sh` · `jejari-autodeploy.{service,timer}` | **자동 배포**: 10분마다 (관리자 화면 "배포" 버튼으로 바로도), CI 성공 + DB·인프라 변경 없음일 때만 `deploy.sh` |
 | `tago-refresh.sh` · `jejari-tago.{service,timer}` | 실제 KTX 시간표(앞뒤 7일) 매일 갱신 |
 | `model-refresh.sh` · `jejari-model.{service,timer}` · `ml/Dockerfile` | 위험 점수 모델 보조 의견 매시간 갱신 (최근 행동 로그 → `model_score`) |
 | `model-retrain.sh` · `jejari-model-retrain.{service,timer}` · `model-lib.sh` | 위험 점수 모델 주간 재학습 + 자동 시험 (일요일 새벽, 통과하면 꺼진 후보 → A-09) |
@@ -74,7 +74,7 @@ nc -zv -w 3 <외부IP> 8080; nc -zv -w 3 <외부IP> 1521   # 둘 다 실패해�
 
 ## 운영 규칙
 
-- **자동 배포** (11-18~): 서버의 `jejari-autodeploy.timer`가 **20분마다** main을 확인해 `auto-deploy.sh`를 실행 (11-19 10분 → 20분). 기다리기 싫으면 **관리자 화면 → 배포 → "지금 배포"** (아래). 서버에 비밀값을 더 두지 않음 (공개 저장소를 받고, CI 결과는 공개 GitHub API로 봄)
+- **자동 배포** (11-18~): 서버의 `jejari-autodeploy.timer`가 **10분마다** main을 확인해 `auto-deploy.sh`를 실행 (11-19 10분 → 20분, 11-26 다시 10분). 기다리기 싫으면 **관리자 화면 → 배포 → "지금 배포"** (아래). 서버에 비밀값을 더 두지 않음 (공개 저장소를 받고, CI 결과는 공개 GitHub API로 봄)
 
   | main의 새 커밋이 | 자동 배포는 |
   |---|---|
