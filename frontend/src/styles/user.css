@@ -49,7 +49,7 @@
 .user .btn.soft{background:var(--sign-t);color:var(--ink);box-shadow:inset 0 0 0 2px var(--sign),0 3px 0 rgba(0,0,0,.12)}
 .user .btn.soft:hover{background:#F5E3BC}
 .user .btn.warn{background:var(--card);color:var(--stop);box-shadow:inset 0 0 0 2px var(--stop),0 3px 0 rgba(0,0,0,.12)}
-.user .btn.armed{background:var(--stop);color:#fff;box-shadow:none}
+.user .btn.armed,.user .btn.armed:hover{background:var(--stop);color:#fff;box-shadow:none} /* :hover도 같이 — 마우스를 올린 채면 .btn.ghost:hover의 연한 바탕에 흰 글자가 돼 "한 번 더 누르면…"이 안 보였다 (2026-11-26) */
 .user .btn.off{background:var(--line2);color:var(--mut);cursor:default;box-shadow:none}
 .user .btn.sm{min-height:46px;padding:8px 16px;font-size:15.5px;width:auto}
 .user .link{color:var(--ink);font-weight:800;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:3px;text-decoration-color:var(--sign)}
@@ -242,6 +242,7 @@
 .user .qlbl{display:flex;justify-content:space-between;font-size:12.5px;color:#9AA4BC}
 .user .pg-queue .btn.ghost{background:transparent;color:#fff;box-shadow:inset 0 0 0 2px rgba(255,255,255,.5)}
 .user .pg-queue .btn.ghost:hover{background:rgba(255,255,255,.06)}
+.user .pg-queue .alert .btn.ghost{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 2px var(--ink),0 3px 0 rgba(0,0,0,.12)} /* 빨간·노란 안내 안은 밝은 바탕이라 흰 글자 버튼이 안 보였다 (2026-11-26) */
 @media (min-width:960px){.user .q-num{font-size:168px}
 .user .qbody{padding-top:48px!important}
 .user .qbtns{flex-direction:row!important;margin-top:24px!important}

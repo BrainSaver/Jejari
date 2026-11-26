@@ -60,7 +60,7 @@
 .admin .filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
 .admin .filters .field{margin:0;min-width:150px}
 .admin tr.sel td{background:var(--sign-t)}
-.admin .btn.armed{background:var(--stop);color:#fff;box-shadow:none}
+.admin .btn.armed,.admin .btn.armed:hover{background:var(--stop);color:#fff;box-shadow:none}
 .admin .alert{border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.5;font-weight:600;border-left:5px solid currentColor;margin-bottom:16px}
 .admin .alert.amber{background:var(--amber-t);color:var(--amber-d);border-left-color:var(--amber)}
 .admin .alert.stop{background:var(--stop-t);color:var(--stop)}
