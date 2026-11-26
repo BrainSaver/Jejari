@@ -9,7 +9,7 @@
 #
 # 기본값은 11-19 조영준 님 측정과 같은 조건: 200명이 20초 안에 흩어져 도착, 한 명이 예매 한 번.
 #   USERS=200 SPREAD_SEC=20 RUN_TAG=perf1 FROM=3900023(서울) TO=3900114(부산)
-# k6가 PATH에 있으면 그것을, 없으면 Docker의 grafana/k6:1.1.0을 쓴다 (11-19와 같은 버전).
+# k6가 PATH에 있으면 그것을, 없으면 Docker의 grafana/k6:1.1.0을 쓴다 (11-19와 같은 버전). 개선 전후 비교는 K6_DOCKER=1로 버전을 맞춘다.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1   # Git Bash가 /lt 같은 경로를 C:/... 로 바꾸지 않게
 cd "$(dirname "$0")/.."      # loadtest/
@@ -28,7 +28,7 @@ need_url() {
 }
 
 k6run() {
-  if command -v k6 >/dev/null 2>&1; then
+  if [[ "${K6_DOCKER:-}" != 1 ]] && command -v k6 >/dev/null 2>&1; then   # K6_DOCKER=1이면 설치된 k6 대신 Docker의 $K6_IMAGE (11-19와 같은 버전)
     k6 "$@"
   else
     local here; here="$(pwd -W 2>/dev/null || pwd)"   # Windows Git Bash면 C:/... 형식

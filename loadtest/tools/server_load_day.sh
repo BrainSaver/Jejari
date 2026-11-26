@@ -43,7 +43,7 @@ RUN1="${1:-}"; RUN2="${2:-}"
   || { echo "사용법: $0 <운행1> <운행2>   (서로 다른 빈 운행 — 먼저 '$0 find')"; exit 2; }
 
 k6run() {
-  if command -v k6 >/dev/null 2>&1; then
+  if [[ "${K6_DOCKER:-}" != 1 ]] && command -v k6 >/dev/null 2>&1; then   # K6_DOCKER=1이면 설치된 k6 대신 Docker의 $K6_IMAGE (11-19와 같은 버전)
     k6 "$@"
   else
     local here; here="$(pwd -W 2>/dev/null || pwd)"
