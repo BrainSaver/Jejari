@@ -538,7 +538,7 @@ async function stepProbe() {
   const h = must(await call('POST', '/api/v1/reservations',
     { runId: Number(run.runId), fromStationId: from, toStationId: to, seats: [{ seatId, passengerType: 'ADULT' }], channel: 'WEB' },
     { ...pass, 'Idempotency-Key': randomUUID() }), '좌석 선점').j;
-  const p = must(await call('POST', `/api/v1/reservations/${h.reservationId}/payments`, { cardNumber: '4111222233334441' },
+  const p = must(await call('POST', `/api/v1/reservations/${h.reservationId}/payments`, { cardNumber: `4111${String(Date.now() % 1e11).padStart(11, '0')}1` } /* 대회마다 다른 카드 (카드 명의 상한) */,
     { ...auth, 'Idempotency-Key': randomUUID() }), '결제').j;
   if (p.paymentStatus !== 'APPROVED') throw new Error(`사람 흐름의 결제가 승인되지 않음 (${p.paymentStatus})`);
   await call('DELETE', `/api/v1/runs/${run.runId}/queue/me`, null, auth);

@@ -5,6 +5,7 @@
 // JWT(Authorization: Bearer)를 쓴다. 실제 회원(Oracle)으로 흐름 전체를 재는 것이 목적이라서다.
 import http from 'k6/http';
 import { sleep } from 'k6';
+import exec from 'k6/execution';
 import { API, FIELDS, HEADERS, RUN_ID } from '../config.js';
 import { url, safeJson } from './helpers.js';
 
@@ -151,8 +152,15 @@ export function recordScreen(token, runId = RUN_ID) {
   ] }), { headers: bearer(token), tags: { name: 'replay' } });
 }
 
-/** 결제 시작 → 모의 PG 승인까지 (카드 끝자리 0 거절, 8 결과 모름, 그 외 승인) */
-export function pay(token, reservationId, { cardNumber = '4111111111111111', idempotencyKey = uuid() } = {}) {
+/**
+ * 결제 시작 → 모의 PG 승인까지 (카드 끝자리 0 거절, 8 결과 모름, 그 외 승인).
+ * 카드를 안 주면 VU마다 다른 시험 카드 (끝자리 1). 모두 같은 카드를 쓰면 카드 명의 상한(payment.max_ci_per_card)을
+ * 켠 서버에서 네 번째 계정부터 결제가 거절돼 성능 대신 그 규칙을 재게 된다
+ */
+/** VU마다 다른 시험 카드 (4111 + VU 번호 11자리 + 끝자리) */
+export const vuCard = (last = '1') => `4111${String(exec.vu.idInTest).padStart(11, '0')}${last}`;
+
+export function pay(token, reservationId, { cardNumber = vuCard(), idempotencyKey = uuid() } = {}) {
   return http.post(url(API.reservationPay(reservationId)), JSON.stringify({ cardNumber }), {
     headers: bearer(token, { [HEADERS.idempotency]: idempotencyKey }),
     tags: { name: 'pay' },

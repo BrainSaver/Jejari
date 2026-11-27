@@ -29,7 +29,7 @@ const PAY_MAX = Math.max(0, Number(__ENV.PAY_MAX || 3));
 const QUEUE_WAIT_SEC = Math.max(5, Number(__ENV.QUEUE_WAIT_SEC || 30));
 const FROM = __ENV.FROM || '3900023';
 const TO = __ENV.TO || '3900114';
-const CARD = __ENV.CARD || '4111111111111111';
+const CARD = __ENV.CARD || ''; // 비우면 VU마다 다른 시험 카드 (lib/journey.js vuCard, 카드 명의 상한을 켠 서버에서도 결제가 막히지 않게)
 
 const SEQ_SMOKE = 999;
 const seqOf = (i) => (i >= SEQ_SMOKE ? i + 1 : i);
@@ -106,7 +106,7 @@ export default function (data) {
       return done(h.status === 409, `hold_${h.status}_${codeOf(h)}`);
     }
     if (paid < PAY_MAX) {
-      const p = pay(t, rid, { cardNumber: CARD });
+      const p = pay(t, rid, CARD ? { cardNumber: CARD } : {});
       if (!check(p, { '결제 승인': (r) => r.status === 200 || r.status === 201 })) {
         cancel(t, rid); // 결제를 못 했으면 좌석을 돌려 둔다 (안 되면 결제 기한에 스캐너가 돌려줌)
         return done(false, `pay_${p.status}`);

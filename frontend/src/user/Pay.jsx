@@ -20,12 +20,20 @@ import { useMember } from './useMember.js';
  * - Mock PG는 카드 끝자리로 결과를 정한다: 0 거절 · 9 결과 모름 · 8 늦은 승인 · 나머지 승인 (시연용 안내를 둔다)
  * - 멱등 키는 결제하기 한 번에 하나. 응답을 못 받아 다시 누르면 같은 키 → 결제는 한 번만
  */
-const TEST_CARDS = [
-  ['4111111111111111', '바로 승인'],
-  ['4111111111111118', '늦게 승인 (확인 중 → 확정)'],
-  ['4111111111111119', '결과 모름 (확인 중)'],
-  ['4111111111111110', '거절'],
-];
+/**
+ * 시험 카드는 회원마다 번호가 다르다 (4111 + 회원 ID 11자리 + 끝자리). 모두 같은 번호를 쓰면 카드 한 장에 붙는
+ * 명의 수 상한(payment.max_ci_per_card, concurrency.md §4.3)을 켰을 때 네 번째 사람부터 결제가 막힌다.
+ * 같은 회원은 늘 같은 번호라 카드 하나로 센다. 결과는 끝자리만 보므로(Mock PG) 가운데 숫자는 무엇이든 된다
+ */
+const testCards = (memberId) => {
+  const mid = String(Number(memberId) % 1e11 || 1).padStart(11, '0');
+  return [
+    [`4111${mid}1`, '바로 승인'],
+    [`4111${mid}8`, '늦게 승인 (확인 중 → 확정)'],
+    [`4111${mid}9`, '결과 모름 (확인 중)'],
+    [`4111${mid}0`, '거절'],
+  ];
+};
 const MESSAGES = {
   RESERVATION_EXPIRED: '결제 기한이 지나 잡아 둔 좌석이 풀렸어요. 결제는 되지 않았어요.',
   SEAT_LOST: '좌석을 잃었어요. 다시 예매해 주세요.',
@@ -42,7 +50,8 @@ export default function Pay() {
   const location = useLocation();
   const [d, setD] = useState(null);
   const [error, setError] = useState(null);
-  const [card, setCard] = useState(formatCard(TEST_CARDS[0][0])); // 4자리씩 띄워 보여 줌 (보낼 때는 숫자만)
+  const cards = testCards(member?.sub);
+  const [card, setCard] = useState(formatCard(cards[0][0])); // 4자리씩 띄워 보여 줌 (보낼 때는 숫자만)
   const [busy, setBusy] = useState(false);
   const key = useRef(null);
   const left = useLeft(d?.summary.payDeadlineAt);
@@ -56,6 +65,11 @@ export default function Pay() {
   useEffect(() => {
     if (d && d.summary.status !== 'HOLD') navigate(`/pay/${id}/result`, { replace: true });
   }, [d]);
+
+  // 처음 그릴 때 로그인 확인 전이면 회원 ID가 없어 임시 번호다 → 회원이 정해지면 그 회원의 시험 카드로
+  useEffect(() => {
+    if (member) setCard(formatCard(testCards(member.sub)[0][0]));
+  }, [member?.sub]);
 
   if (checking) return null;
   if (!member) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
@@ -131,7 +145,7 @@ export default function Pay() {
               <section className="card" style={{ order: 4 }}>
                 <div className="row" style={{ marginBottom: 10 }}><b className="grow">결제 수단 · 가상 카드</b></div>
                 <div className="pms stack">
-                  {TEST_CARDS.map(([no, label]) => (
+                  {cards.map(([no, label]) => (
                     <label key={no} className={'pm' + (digits === no ? ' on' : '')}>
                       <input type="radio" name="card" checked={digits === no} onChange={() => setCard(formatCard(no))} style={{ width: 18, minHeight: 18 }} />
                       <span className="grow"><b>시험 카드 ···· {no.slice(-4)}</b><br /><span className="mut" style={{ fontSize: 13 }}>{label}</span></span>
@@ -140,7 +154,7 @@ export default function Pay() {
                 </div>
                 <div className="field" style={{ margin: '12px 0 0' }}>
                   <label htmlFor="cn">가상 카드번호 직접 넣기</label>
-                  <input id="cn" inputMode="numeric" autoComplete="off" placeholder="4111 2222 3333 4441" value={card} onChange={(e) => setCard(formatCard(e.target.value))} />
+                  <input id="cn" inputMode="numeric" autoComplete="off" placeholder={formatCard(cards[0][0])} value={card} onChange={(e) => setCard(formatCard(e.target.value))} />
                   <span className="hint">실제 카드번호는 넣지 마세요. 12~19자리 숫자, 끝자리로 시험 결과가 정해져요 (0 거절 · 9 결과 모름 · 8 늦은 승인).</span>
                 </div>
               </section>
