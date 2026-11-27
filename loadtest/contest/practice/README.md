@@ -94,3 +94,32 @@ humanfamily (가족 3명 한 컴퓨터) · humannat (같은 IP 6명) · humancan
 
 `eval_contest.sh` 표에서 봇마다 **탐지 계정**(케이스가 열린 계정)과 **순번 -초**를 봅니다.
 점수만 오른 것은 탐지가 아닙니다. `human`의 최고 점수·탐지 계정이 오탐의 참고값입니다.
+
+## 실제 서비스처럼 섞기 (2026-11-27)
+
+봇만이 아니라 **일반·가족·단체·취소표 대기·서툰 사람**과 **사재기·되팔기·매크로·다계정·카드 대입**을 한 운행에 실제 비율로 섞어,
+매진·취소표·단체 배정까지 한꺼번에 일어나게 한 뒤 "결과가 맞나"를 본다.
+
+```bash
+# 1) 판매 중 운행 하나 (명절 행사, 열차 1 = 1,050석). 관리자 계정은 .env의 JEJARI_ADMIN_BOOTSTRAP_*
+ADMIN_ID=… ADMIN_PW=… NAME=mixed-$(date +%m%d) loadtest/contest/setup.sh
+# 2) 섞어 돌리기: 봇 49종 × 3명의 + 사람 변형 16종 × 8배 + 합성 사람 300 ≈ 850명 → 수요가 좌석보다 많아 매진
+RUN_ID=<운행> TAG=<새 태그> GEN=all ACCOUNTS=3 HUMAN_SCALE=8 HUMANS=300 WAIT_MAX_SEC=900 node loadtest/contest/practice/run.mjs
+# 3) 채점
+loadtest/tools/eval_mixed.sh <태그> <운행>     # 정합성 0건 · 종류별 표 받은 비율 · 사람/봇 좌석 몫 · 취소표 · 단체
+loadtest/tools/eval_contest.sh <태그> <운행>   # 봇 탐지 · 사람 오탐 · 어느 방어층에서 막혔나
+```
+
+| 사람 (GEN=m, 탐지되면 오탐) | 하는 일 |
+|---|---|
+| humansolo | 혼자 1석. 매진이면 절반은 취소표 대기 |
+| humanparty | 가족 대표가 2~4석을 한 번에, 어른·아이·경로 섞음. 매진이면 대기 |
+| humanabandon | 선점하고 결제 안 함 (bothoarder와 같은 행동 → 사람인데 걸리는지) |
+| humanwait | 1분 늦게 와서 못 잡으면 바로 취소표 대기 → 제안 오면 결제 |
+| humangroup | 단체 12~20명 신청 → 자동 승인(할당석 먼저, 대기열이 빈 뒤 일반 좌석) → 결제 |
+
+- `HUMAN_SCALE=n`: 사람 변형(GEN h·m) 명의 수를 n배. 봇보다 사람이 훨씬 많은 실제 비율을 만든다
+- `WAIT_MAX_SEC`(기본 360): 취소표 제안을 기다리는 시간. 취소표는 결제 뒤 취소(humancancel·botresell)와 선점 만료(10분 + 유예)에서 나오니 15분(900)쯤 준다
+- `GROUP_WAIT_SEC`(기본 900): 단체 승인이 미뤄질 때 기다리는 시간. 오픈 직후엔 대기열이 차 있어 일반 좌석을 못 쓴다 (11-27 로컬: 7분 뒤 승인)
+- `setup.sh`는 운행을 만들자마자 판매를 열어 **할당석이 안 생긴다** (할당석은 판매 전 SCHEDULED 운행에만). 그래서 단체는 일반 좌석으로 배정된다
+- 메모리가 빠듯하면 Grafana·Prometheus·redis-exporter를 끄고 앱을 jar로: `java -Xmx1g -Duser.timezone=Asia/Seoul -jar build/libs/jejari-0.0.1-SNAPSHOT.jar --jejari.auth.trusted-proxies=127.0.0.1,0:0:0:0:0:0:0:1`

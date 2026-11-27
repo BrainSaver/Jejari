@@ -93,8 +93,7 @@ SELECT g.status, COUNT(*) n, SUM(g.passenger_count) passengers FROM group_bookin
 EOF
 
 # 6. DB·Redis 좌석 수 대조 (참고): Redis 좌석 키 = 확정·선점·제안·할당석. 키 이름 규칙은 redis_keys 테이블 seat:hold
-keys=$(docker compose exec -T redis redis-cli --scan --pattern "seat:hold:{${RUN}}:*" 2>/dev/null | tr -d '\r' | wc -l)
-[[ "$keys" == "0" ]] && keys=$(docker compose exec -T redis redis-cli --scan --pattern "seat:hold:${RUN}:*" 2>/dev/null | tr -d '\r' | wc -l)
+keys=$(docker compose exec -T redis redis-cli --scan --pattern "seat:hold:${RUN}:*" 2>/dev/null | tr -d '\r' | wc -l)
 echo
 echo "[참고] Redis 좌석 키 ${keys}개 (확정·선점·제안·할당석 합. 위 '운행' 표의 CONFIRMED+HOLD+PAYMENT_PENDING 좌석과 크게 다르면 어긋남)"
 echo
