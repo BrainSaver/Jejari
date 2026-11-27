@@ -41,7 +41,7 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(BusinessException.class)
 	public ResponseEntity<ErrorResponse> handleBusiness(BusinessException e) {
 		ErrorCode code = e.getErrorCode();
-		if (code.status().is5xxServerError()) {
+		if (code.status().is5xxServerError() && !(e instanceof RetryAfterException)) {
 			log.error("business error {}", code.code(), e);
 		} else {
 			log.debug("business error {}: {}", code.code(), e.getMessage());

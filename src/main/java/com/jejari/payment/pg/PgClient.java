@@ -1,7 +1,8 @@
 package com.jejari.payment.pg;
 
 /**
- * PG(결제대행사) 연동 경계. 1차는 {@link MockPgClient}, 여유가 있으면 실제 PG 테스트 모드로 바꿉니다 (기능설계서 11장 #1).
+ * PG(결제대행사) 연동 경계. 기본은 앱 안의 {@link MockPgClient}(0초 응답), 부하 시험·실제 PG는 네트워크로 부르는 {@link HttpPgClient}
+ * ({@code jejari.payment.pg.mode=http}, 응답 한도·동시 상한은 concurrency.md §4.4, 기능설계서 11장 #1).
  *
  * <p>주문 번호(orderId)는 payment_id입니다. PG는 같은 주문 번호의 승인 요청을 한 번만 처리한다고 가정합니다
  * (실제 PG도 주문 번호 중복을 막음). 그래서 승인 요청을 다시 보내도 돈이 두 번 빠지지 않습니다.

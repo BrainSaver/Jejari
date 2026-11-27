@@ -144,6 +144,25 @@ services:
       - grafana-data:/var/lib/grafana
     depends_on: [prometheus]
 
+  # 가짜 PG 서버 (느린 PG·몰림·응답 없음 재현, loadtest/mock-pg/server.js). 결제 부하 시험 때만 켭니다:
+  #   docker compose --profile pg up -d mock-pg
+  #   앱: --jejari.payment.pg.mode=http (주소 기본 http://127.0.0.1:8090)
+  # 지연·처리 칸은 실행 중에 바꿉니다: curl -X PUT 127.0.0.1:8090/_config -d '{"latencyMinMs":500,"latencyMaxMs":1500}'
+  # 주문은 메모리에만 있어 다시 켜면 사라집니다 (앱 스캐너가 "PG가 모르는 주문"으로 정리)
+  mock-pg:
+    image: node:24-alpine
+    profiles: [pg]
+    restart: unless-stopped
+    command: ["node", "/app/server.js"]
+    environment:
+      PG_HOST: 0.0.0.0
+      PG_PORT: "8090"
+      PG_LATENCY: ${PG_LATENCY:-500-1500}
+      PG_CAPACITY: ${PG_CAPACITY:-50}
+    ports: ["127.0.0.1:8090:8090"]
+    volumes:
+      - ./loadtest/mock-pg:/app:ro
+
 volumes:
   oracle-data:
   mongo-data:

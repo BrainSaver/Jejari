@@ -1,0 +1,27 @@
+{
+  "profile": "down",
+  "buyers": 300,
+  "spreadSec": 30,
+  "browsers": 50,
+  "journeySuccess": 0,
+  "pay": {
+    "approved": 0,
+    "unknown": 300,
+    "failed": 0,
+    "busyResponses": 0,
+    "busyGaveUp": 0,
+    "userMsP50": 30570,
+    "userMsP95": 31191,
+    "userMsMax": 41065,
+    "requestMsP95": 31191
+  },
+  "browse": {
+    "ok": 1,
+    "msP50": 14,
+    "msP95": 773,
+    "msP99": 14708,
+    "msMax": 16286,
+    "requestMsP95": 473,
+    "errorRate": 0
+  }
+}

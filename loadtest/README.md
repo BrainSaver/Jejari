@@ -229,6 +229,9 @@ docker run --rm --add-host=host.docker.internal:host-gateway -v "$(pwd):/lt" -w 
 | 10 | `10_auth_oracle.js` | **회원가입·로그인 (Oracle)**: 같은 이메일 동시 가입은 1명만 성공, 가입·로그인 처리량·응답 시간, 비밀번호 5회 오류 잠금 | `auth_race_winners == 1`(라운드마다), `auth_signup_fail == 0`, `auth_login_fail == 0`, `auth_lockout_ok == 1`, `auth_rate_limited == 0`, 가입·로그인 p95 < 2초 |
 | 11 | `11_user_journey.js` | **정상 사용자 전체 흐름 (실제 앱)**: 한 명이 예매를 끝내는 비율·시간, 단계별 응답 시간. 개선 전후 비교의 기준 | `journey_success >= 95%`, 로그인 p95 < 2초, 대기열 진입·좌석 배치도·선점 p95 < 1초(`P95_MS`), 결제 p95 < 2초 |
 | 12 | `12_bot_detection.js` | **봇 탐지율·오탐률 (실제 앱)**: 정상 사용자 + 봇 4종 → `tools/eval_risk.sh`가 `synthetic_label`과 의심 케이스 비교 | `bot_flow_ok >= 90%`, 평가: 탐지율 ≥ 90%, 오탐률 ≤ 5% |
+| 13 | `13_capacity.js` | **용량 시험**: 동시 사용자를 단계별로 늘려 버틴 최대 단계 (`docs/강동균/features/용량-시험-안내.md`) | 단계별 p95 < 1초, 5xx < 1% |
+| 14 | `14_fault_demo.js` | **장애 주입 시연**: 부하 중 Redis·Kafka를 죽였다 살리기 (`loadtest/tools/fault_demo.sh`) | 정합성 10/10, 복구 시간 |
+| 15 | `15_pg_slow.js` | **PG 지연·장애 (`./run.sh pgslow`)**: 가짜 PG 서버(`mock-pg/`, `docker compose --profile pg up -d mock-pg`)를 느리게·멈추게 두고 구매자 + 조회만 하는 사람을 같이. 결제가 스레드를 다 잡아 조회까지 멈추는지 (`docs/강동균/features/PG-지연-시험.md`). 앱은 `--jejari.payment.pg.mode=http` | 조회 p99·최대, 결제 결과별 수, 가짜 PG 최대 동시 |
 
 ## 준비
 

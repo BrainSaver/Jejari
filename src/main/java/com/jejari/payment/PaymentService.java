@@ -18,6 +18,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import com.jejari.common.error.BusinessException;
 import com.jejari.common.error.CommonErrorCode;
+import com.jejari.common.error.RetryAfterException;
 import com.jejari.common.hmac.Pseudonymizer;
 import com.jejari.member.MemberStatusGuard;
 import com.jejari.payment.PaymentStartTx.Started;
@@ -67,10 +68,12 @@ public class PaymentService {
 	private final PaymentRiskGuard riskGuard;
 	private final SeatReleaseService seatRelease;
 	private final MemberStatusGuard statusGuard;
+	private final PgBulkhead bulkhead;
 
 	public PaymentService(PaymentStartTx startTx, PaymentSaga saga, PgClient pg, PaymentPolicy policy,
 			StringRedisTemplate redis, JdbcTemplate jdbc, TransactionTemplate tx, ObjectProvider<Pseudonymizer> hmac,
-			Clock clock, PaymentRiskGuard riskGuard, SeatReleaseService seatRelease, MemberStatusGuard statusGuard) {
+			Clock clock, PaymentRiskGuard riskGuard, SeatReleaseService seatRelease, MemberStatusGuard statusGuard,
+			PgBulkhead bulkhead) {
 		this.startTx = startTx;
 		this.saga = saga;
 		this.pg = pg;
@@ -83,6 +86,7 @@ public class PaymentService {
 		this.riskGuard = riskGuard;
 		this.seatRelease = seatRelease;
 		this.statusGuard = statusGuard;
+		this.bulkhead = bulkhead;
 	}
 
 	public static String idemKey(long reservationId, String key) {
@@ -125,6 +129,21 @@ public class PaymentService {
 			throw new BusinessException(PaymentErrorCode.PAYMENT_RISK_BLOCKED);
 		}
 
+		// 1-2. PG 동시 승인 상한 (PgBulkhead, 기본 끔): 결제 행을 만들기 전에 자리를 잡는다. 못 잡으면 DB에 아무것도 남기지 않고
+		//      멱등 키를 지운 뒤 503 → 예약은 HOLD 그대로, 같은 키로 다시 보내면 처음처럼 처리된다
+		if (!bulkhead.tryAcquire()) {
+			deleteIdem(idem, mine);
+			throw new RetryAfterException(PaymentErrorCode.PAYMENT_BUSY, bulkhead.retryAfterSec());
+		}
+		try {
+			return startWithSlot(memberId, reservationId, idempotencyKey, cardNumber, idem, mine);
+		} finally {
+			bulkhead.release();
+		}
+	}
+
+	private PaymentResult startWithSlot(long memberId, long reservationId, String idempotencyKey, String cardNumber,
+			String idem, String mine) {
 		// 2. DB 트랜잭션 (§4.1). 카드번호는 해시와 끝 4자리만 남긴다
 		Pseudonymizer h = hmac.getIfAvailable();
 		if (h == null) {

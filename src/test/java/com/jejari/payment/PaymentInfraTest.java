@@ -142,6 +142,42 @@ class PaymentInfraTest {
 				.isEqualTo(m);
 	}
 
+	// ------------------------------------------------------------ PG 동시 상한 (PgBulkhead)
+
+	@Test
+	void PG_동시_상한이_차면_결제_행_없이_503이고_예약은_HOLD_그대로_같은_키로_다시_내면_승인() throws Exception {
+		long m = newMember();
+		long r = holdSeat(m, nextSeat());
+		String k = key();
+		int pgBefore = pg.processedCount(); // PG 빈은 테스트끼리 같이 써서 누적값
+		PaymentService target = org.springframework.test.util.AopTestUtils.getTargetObject(payments);
+		Object original = org.springframework.test.util.ReflectionTestUtils.getField(target, "bulkhead");
+		PgBulkhead full = new PgBulkhead(1, 0, 3, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+		assertThat(full.tryAcquire()).isTrue(); // 하나뿐인 자리를 다른 결제가 쓰는 중
+		org.springframework.test.util.ReflectionTestUtils.setField(target, "bulkhead", full);
+		try {
+			assertThatThrownBy(() -> payments.start(m, r, k, OK))
+					.isInstanceOfSatisfying(com.jejari.common.error.RetryAfterException.class, e -> {
+						assertThat(e.getErrorCode()).isEqualTo(PaymentErrorCode.PAYMENT_BUSY);
+						assertThat(e.retryAfterSec()).isEqualTo(3);
+					});
+			// DB에 아무것도 안 남고 예약은 HOLD, 멱등 키도 지워져 같은 키를 다시 받을 수 있다
+			assertThat(count("SELECT COUNT(*) FROM payment WHERE reservation_id = ?", r)).isZero();
+			assertThat(str("SELECT status FROM reservation WHERE reservation_id = ?", r)).isEqualTo("HOLD");
+			assertThat(redis.hasKey(PaymentService.idemKey(r, k))).isFalse();
+			assertThat(pg.processedCount() - pgBefore).as("PG에 가지 않음").isZero();
+
+			full.release(); // 자리가 남
+			PaymentResult res = payments.start(m, r, k, OK);
+			assertThat(res.replay()).isFalse();
+			assertThat(res.paymentStatus()).isEqualTo("APPROVED");
+			assertThat(res.reservationStatus()).isEqualTo("CONFIRMED");
+			assertThat(full.tryAcquire()).as("끝나면 자리를 돌려준다").isTrue();
+		} finally {
+			org.springframework.test.util.ReflectionTestUtils.setField(target, "bulkhead", original);
+		}
+	}
+
 	// ------------------------------------------------------------ 정상 흐름
 
 	@Test
