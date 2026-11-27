@@ -1,17 +1,5 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigationType } from 'react-router';
-import AdminLayout from './admin/AdminLayout.jsx';
-import AdminLogin from './admin/AdminLogin.jsx';
-import Dashboard from './admin/Dashboard.jsx';
-import Master from './admin/Master.jsx';
-import Runs from './admin/Runs.jsx';
-import Risk from './admin/Risk.jsx';
-import Settings from './admin/Settings.jsx';
-import Deploy from './admin/Deploy.jsx';
-import Models from './admin/Models.jsx';
-import Traffic from './admin/Traffic.jsx';
-import Contests from './admin/Contests.jsx';
-import CaseDetail, { CaseList } from './admin/Cases.jsx';
 import Login from './user/Login.jsx';
 import Pay from './user/Pay.jsx';
 import PayResult from './user/PayResult.jsx';
@@ -24,11 +12,13 @@ import Guest from './user/Guest.jsx';
 import GuestLookup from './user/GuestLookup.jsx';
 import Waitlist from './user/Waitlist.jsx';
 import Groups from './user/Groups.jsx';
-import GroupDetail, { GroupList } from './admin/Groups.jsx';
 import Seats from './user/Seats.jsx';
 import Signup from './user/Signup.jsx';
 import NotFound from './user/NotFound.jsx';
 import UserLayout, { AuthLayout } from './user/UserLayout.jsx';
+
+// 관리자 화면은 Ant Design을 써서 무겁다. 회원 화면이 같이 받지 않게 /admin에 들어올 때만 따로 불러온다
+const AdminApp = lazy(() => import('./admin/AdminApp.jsx'));
 
 /**
  * 화면을 옮기면 맨 위부터 보이게 한다. 없으면 검색 결과를 내려 본 채 [예매하기]를 눌렀을 때
@@ -69,24 +59,14 @@ export default function App() {
         <Route path="/me" element={<Me />} />
         <Route path="*" element={<NotFound />} />
       </Route>
-      <Route path="/admin/login" element={<AdminLogin />} />
-      <Route path="/admin" element={<AdminLayout />}>
-        <Route index element={<Navigate to="dashboard" replace />} />
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="risk" element={<Risk />} />
-        <Route path="cases" element={<CaseList />} />
-        <Route path="cases/:caseId" element={<CaseDetail />} />
-        <Route path="groups" element={<GroupList />} />
-        <Route path="groups/:groupId" element={<GroupDetail />} />
-        <Route path="master" element={<Master />} />
-        <Route path="runs" element={<Runs />} />
-        <Route path="settings" element={<Settings />} />
-        <Route path="deploy" element={<Deploy />} />
-        <Route path="models" element={<Models />} />
-        <Route path="traffic" element={<Traffic />} />
-        <Route path="contests" element={<Contests />} />
-        <Route path="*" element={<Navigate to="dashboard" replace />} />
-      </Route>
+      <Route
+        path="/admin/*"
+        element={
+          <Suspense fallback={null}>
+            <AdminApp />
+          </Suspense>
+        }
+      />
     </Routes>
     </>
   );

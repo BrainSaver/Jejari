@@ -315,7 +315,7 @@ function LineChart({ chart, t, step, restarts = [], wide }) {
     ro.observe(box.current);
     return () => ro.disconnect();
   }, []);
-  const H = wide ? 220 : 200, L = 46, R = chart.lines.length <= 4 ? 112 : 14, T = 10, B = 24;
+  const H = wide ? 220 : 200, L = 46, R = chart.lines.length <= 4 ? 150 : 14, T = 10, B = 24;
   const pw = w - L - R, ph = H - T - B;
   let max = 0;
   chart.lines.forEach((l) => l.v.forEach((x) => x != null && (max = Math.max(max, x))));
@@ -350,6 +350,12 @@ function LineChart({ chart, t, step, restarts = [], wide }) {
     .map((o) => ({ ...o, y: y(o.l.v[o.i]) }))
     .sort((a, b) => a.y - b.y);
   tags.forEach((o, j) => j && o.y < tags[j - 1].y + 13 && (o.y = tags[j - 1].y + 13));
+  // 아래로 밀다가 그래프 바닥(시각 축)을 넘으면, 바닥에 맞추고 위쪽 이름표를 다시 올린다
+  const floor = T + ph + 2;
+  for (let j = tags.length - 1; j >= 0; j--) {
+    const lim = j === tags.length - 1 ? floor : tags[j + 1].y - 13;
+    if (tags[j].y > lim) tags[j].y = lim;
+  }
   const t0 = t[0], tn = t[t.length - 1];
   // 가까운 재시작(배포 중 앱 두 대가 차례로 뜨는 경우 등)은 한 줄로 합친다
   const marks = [];
@@ -397,7 +403,8 @@ function LineChart({ chart, t, step, restarts = [], wide }) {
           ))}
           {R > 20 && tags.map((o) => (
             <text key={o.l.name} x={L + pw + 6} y={o.y + 4} className="tr-tag">
-              {fmt(o.l.v[o.i])}{u} {o.l.name.length > 6 ? o.l.name.slice(0, 5) + '…' : o.l.name}
+              {fmt(o.l.v[o.i])}{u} {o.l.name.length > 10 ? o.l.name.slice(0, 9) + '…' : o.l.name}
+              <title>{o.l.name}</title>
             </text>
           ))}
           {hi != null && (

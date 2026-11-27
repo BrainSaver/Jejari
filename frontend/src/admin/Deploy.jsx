@@ -193,12 +193,14 @@ function BlockedPanel({ onChanged }) {
             return (
               <tr key={i.path}>
                 <td>
-                  <code>{i.path}</code>
-                  {b.canAct && (
-                    <button type="button" className="btn ghost sm" style={{ marginLeft: 6, minHeight: 24 }} onClick={() => show(i.path)}>
-                      {open[i.path] !== undefined ? '닫기' : '내용'}
-                    </button>
-                  )}
+                  <span className="nw">
+                    <code>{i.path}</code>
+                    {b.canAct && (
+                      <button type="button" className="btn ghost sm" style={{ marginLeft: 6, minHeight: 24 }} onClick={() => show(i.path)}>
+                        {open[i.path] !== undefined ? '닫기' : '내용'}
+                      </button>
+                    )}
+                  </span>
                   {open[i.path] !== undefined && (
                     <pre style={{ maxHeight: 260, overflow: 'auto', fontSize: 12, marginTop: 6, whiteSpace: 'pre-wrap' }}>{open[i.path]}</pre>
                   )}

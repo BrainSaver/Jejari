@@ -1,0 +1,38 @@
+/* Ant Design으로 다시 만든 관리자 화면의 틀 (AdminApp이 불러온다). 색은 tokens.css 변수만 쓴다 */
+.adm-shell{font-size:14px;line-height:1.5715;background:var(--paper)}
+.adm-sider{border-right:4px solid var(--sign)}
+.adm-sider .ant-layout-sider-children{display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
+.adm-brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:900;font-size:16px;padding:20px 20px 16px}
+.adm-brand small{display:block;font-weight:700;font-size:12px;color:#8FA1BE}
+.adm-sider .ant-menu{padding:0 8px;border-inline-end:0!important}
+.adm-sider .ant-menu .ic{width:16px;height:16px}
+.adm-header{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+.adm-shell .who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut);white-space:nowrap;font-weight:700}
+.adm-shell .who i{line-height:1;width:26px;height:26px;border-radius:7px;background:var(--sign);color:var(--ink);display:grid;place-items:center;font-style:normal;font-weight:900;font-size:12px}
+.adm-shell .ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:square;stroke-linejoin:miter;flex:none}
+
+/* 새 화면 본문 */
+.adm-page{padding:20px 24px 40px;max-width:1440px;margin:0 auto}
+.adm-title{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:16px}
+.adm-title h1{margin:0;font-size:22px;font-weight:900}
+.adm-num{font-variant-numeric:tabular-nums}
+.adm-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+
+/* 같은 높이: 작업 칸(표 카드·옆 카드)은 모든 화면에서 640px. 넘치면 카드 안에서 스크롤 */
+.adm-work{height:640px;display:flex;flex-direction:column}
+.adm-work>.ant-card-body{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column}
+/* 같은 높이: 표 본문은 10행(44px)으로 고정. 행이 적어도 표 길이는 같다 */
+.adm-fixed .ant-table-body{height:440px}
+.adm-fixed .ant-table-tbody>tr>td{height:44px;padding-top:0!important;padding-bottom:0!important;white-space:nowrap}
+.adm-fixed .ant-table-thead>tr>th{white-space:nowrap}
+.adm-fixed .ant-table-tbody>tr.ant-table-placeholder>td{height:440px}
+.adm-fixed .ant-table-tbody>tr{cursor:pointer}
+
+/* 예전 화면(.admin)을 새 틀 안에 넣을 때: 바탕·높이는 틀이 맡고, 머리글의 "누가"는 상단 바와 겹치니 숨긴다 */
+.admin.legacy{min-height:0;background:transparent}
+.admin.legacy .head .who{display:none}
+.admin.embed{min-height:0;background:transparent}
+
+/* 값이 바뀐 지표 카드가 잠깐 노랗게 */
+.adm-flash{animation:adm-flash 1.2s ease-out}
+@keyframes adm-flash{0%{background:var(--sign-t)}100%{background:var(--card)}}

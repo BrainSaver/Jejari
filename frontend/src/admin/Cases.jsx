@@ -1,12 +1,14 @@
 import ModelOpinion from './ModelOpinion.jsx';
 import ReplayPlayer from './ReplayPlayer.jsx';
+import { Button, Card, Col, Descriptions, Empty, Row, Segmented, Space, Spin, Table, Tag, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useOutletContext, useParams } from 'react-router';
+import { Link, useNavigate, useOutletContext, useParams } from 'react-router';
 import { get, post } from '../api/client.js';
 import { Who } from './AdminLayout.jsx';
 import RequestLog from './RequestLog.jsx';
 import { ago } from './Risk.jsx';
 import { ConfirmButton, ErrorBox } from './ui.jsx';
+import { ApiError } from './ui-antd.jsx';
 import { hasRole } from './useAdminAuth.js';
 
 /**
@@ -25,45 +27,176 @@ const VERDICTS = [['RESELLER', '되팔이'], ['MACRO', '매크로'], ['CANCEL_AB
 const ACTIONS = { NORMAL: [['CLEAR', '해제 (점수 0, 제한 풀기)']], OTHER: [['CONFIRM', '확정만'], ['RESTRICT', '예매 제한'], ['BAN', '이용 정지']] };
 const COLORS = ['var(--ink)', 'var(--stop)', 'var(--go)', '#1D4ED8', '#D97757', 'var(--amber-d)'];
 
+// 상태 배지 색 (Ant Design Tag). 글자도 같이 써서 색만으로 구분하지 않는다
+const STATUS_TAG = { OPEN: 'warning', REVIEWING: 'processing', CONFIRMED: 'error', DISMISSED: 'success' };
+const PAGE_SIZE = 10;
+
 export function CaseList() {
-  const claims = useOutletContext();
+  const navigate = useNavigate();
   const [status, setStatus] = useState('');
+  const [page, setPage] = useState(0);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [sel, setSel] = useState(null);
   useEffect(() => {
-    get('/api/v1/admin/cases?size=50' + (status ? `&status=${status}` : '')).then(setData).catch(setError);
-  }, [status]);
+    setData(null);
+    get(`/api/v1/admin/cases?size=${PAGE_SIZE}&page=${page}` + (status ? `&status=${status}` : ''))
+      .then((d) => {
+        setData(d);
+        setSel((cur) => cur ?? d.items[0]?.caseId ?? null);
+      })
+      .catch(setError);
+  }, [status, page]);
+
+  const columns = [
+    { title: '케이스', dataIndex: 'caseId', width: 76, render: (id) => <Link className="link" to={`/admin/cases/${id}`} onClick={(e) => e.stopPropagation()}>C-{id}</Link> },
+    { title: '대상', dataIndex: 'subjectHash', ellipsis: true, render: (h, c) => <span>{c.subjectType} <span className="adm-mono" style={{ color: 'var(--faint)' }}>{h.slice(0, 4)}…</span></span> },
+    { title: '발동', dataIndex: 'triggerType', width: 80, render: (t) => <Tag color="red" bordered>{t}</Tag> },
+    { title: '열 때', dataIndex: 'scoreAtOpen', width: 56, align: 'right', render: (v) => <span className="adm-num">{Math.round(v)}</span> },
+    { title: '지금', dataIndex: 'currentScore', width: 56, align: 'right', render: (v) => <span className="adm-num">{v != null ? Math.round(v) : '—'}</span> },
+    {
+      title: '상태',
+      dataIndex: 'status',
+      width: 128,
+      render: (st, c) => (
+        <Space size={4}>
+          <Tag color={STATUS_TAG[st]}>{st}</Tag>
+          {c.verdict && <Typography.Text type="secondary" style={{ fontSize: 12 }}>{c.verdict}</Typography.Text>}
+        </Space>
+      ),
+    },
+    { title: '열린 시각', dataIndex: 'openedAt', width: 84, render: (t) => <Typography.Text type="secondary">{ago(t)}</Typography.Text> },
+  ];
+  const items = data?.items || [];
+  const from = page * PAGE_SIZE + 1;
+
   return (
     <>
-      <div className="head"><h1>케이스</h1><span style={{ flex: 1 }} /><Who claims={claims} /></div>
-      <ErrorBox error={error} />
-      <section className="panel">
-        <h2>
-          <span className="grow">의심 케이스 {data ? `${data.items.length}건` : ''}</span>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: 160, minHeight: 32 }} aria-label="상태">
-            <option value="">모든 상태</option>
-            {Object.keys(STATUS).map((s) => <option key={s}>{s}</option>)}
-          </select>
-        </h2>
-        <table>
-          <thead><tr><th>케이스</th><th>대상</th><th>발동 규칙</th><th className="n">열 때 점수</th><th className="n">지금 점수</th><th>상태</th><th>열린 시각</th></tr></thead>
-          <tbody>
-            {(data?.items || []).map((c) => (
-              <tr key={c.caseId}>
-                <td><Link className="link" to={`/admin/cases/${c.caseId}`}>C-{c.caseId}</Link></td>
-                <td>{c.subjectType} <span className="faint num">{c.subjectHash.slice(0, 4)}…</span></td>
-                <td><span className="st plain stop">{c.triggerType}</span></td>
-                <td className="n num">{Math.round(c.scoreAtOpen)}</td>
-                <td className="n num">{c.currentScore != null ? Math.round(c.currentScore) : '—'}</td>
-                <td><span className={'st ' + (STATUS[c.status] || '')}>{c.status}</span>{c.verdict && <span className="faint"> {c.verdict}</span>}</td>
-                <td className="mut">{ago(c.openedAt)}</td>
-              </tr>
-            ))}
-            {data && !data.items.length && <tr><td colSpan={7} className="mut">케이스가 없어요.</td></tr>}
-          </tbody>
-        </table>
-      </section>
+      <div className="adm-title">
+        <h1>의심 케이스</h1>
+        <Typography.Text type="secondary">최근 연 순서 · 한 쪽 {PAGE_SIZE}건 · 행을 누르면 오른쪽에 요약이 떠요</Typography.Text>
+      </div>
+      {error && <ApiError error={error} onClose={() => setError(null)} style={{ marginBottom: 16 }} />}
+      <Row gutter={16} wrap={false} style={{ alignItems: 'stretch' }}>
+        <Col flex="auto" style={{ minWidth: 0 }}>
+          <Card className="adm-work">
+            <Segmented
+              style={{ marginBottom: 12, alignSelf: 'flex-start' }}
+              value={status}
+              onChange={(v) => {
+                setStatus(v);
+                setPage(0);
+                setSel(null);
+              }}
+              options={[{ label: '전체', value: '' }, ...Object.keys(STATUS_TAG).map((k) => ({ label: k, value: k }))]}
+            />
+            <Table
+              className="adm-fixed"
+              size="middle"
+              rowKey="caseId"
+              loading={!data && !error}
+              columns={columns}
+              dataSource={items}
+              scroll={{ y: 440 }}
+              pagination={false}
+              rowClassName={(c) => (c.caseId === sel ? 'ant-table-row-selected' : '')}
+              onRow={(c) => ({ onClick: () => setSel(c.caseId), onDoubleClick: () => navigate(`/admin/cases/${c.caseId}`) })}
+              locale={{ emptyText: '이 상태의 케이스가 없어요' }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+              <Typography.Text type="secondary" className="adm-num">
+                {items.length ? `${from}–${from + items.length - 1}번째` : ''} · {page + 1}쪽
+              </Typography.Text>
+              <Button size="small" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>이전</Button>
+              <Button size="small" disabled={!data?.hasNext} onClick={() => setPage((p) => p + 1)}>다음</Button>
+            </div>
+          </Card>
+        </Col>
+        <Col flex="380px">
+          <CasePreview caseId={sel} />
+        </Col>
+      </Row>
     </>
+  );
+}
+
+/** 점수 근거 (risk_score.reasons JSON: [{rule, observed, threshold, points, severity}]). JSON이 아니면 글자 그대로 */
+function Reasons({ raw }) {
+  if (!raw) return null;
+  let list = null;
+  try {
+    list = JSON.parse(raw);
+  } catch {
+    /* 글자 그대로 */
+  }
+  if (!Array.isArray(list)) return <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginTop: 12 }}>{raw}</Typography.Paragraph>;
+  return (
+    <>
+      <Typography.Title level={5} style={{ fontSize: 13.5, marginTop: 12 }}>점수 근거</Typography.Title>
+      <Space direction="vertical" size={4} style={{ width: '100%', marginBottom: 8 }}>
+        {list.map((r, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13 }}>
+            <span className="adm-mono">{r.rule}</span>
+            <span style={{ color: 'var(--mut)' }}>
+              {r.observed != null && <>관측 {r.observed}{r.threshold != null ? ` / 기준 ${r.threshold}` : ''} · </>}
+              <b>+{r.points}점</b>
+            </span>
+          </div>
+        ))}
+      </Space>
+    </>
+  );
+}
+
+/** 목록 옆 요약: GET /api/v1/admin/cases/{id}의 사유·마커·연결 계정. 판정·조치는 상세 화면에서 */
+function CasePreview({ caseId }) {
+  const [d, setD] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    if (!caseId) return;
+    setD(null);
+    setError(null);
+    get(`/api/v1/admin/cases/${caseId}`).then(setD).catch(setError);
+  }, [caseId]);
+  const s = d?.summary;
+  return (
+    <Card
+      className="adm-work"
+      title={caseId ? `C-${caseId}` : '케이스 요약'}
+      extra={caseId && <Link className="link" to={`/admin/cases/${caseId}`}>자세히 열기 →</Link>}
+    >
+      {!caseId ? (
+        <Empty style={{ marginTop: 120 }} description="왼쪽 표에서 케이스를 고르세요" />
+      ) : error ? (
+        <ApiError error={error} />
+      ) : !d ? (
+        <Spin style={{ marginTop: 120 }} />
+      ) : (
+        <>
+          <Descriptions
+            size="small"
+            column={1}
+            items={[
+              { key: 'st', label: '상태', children: <Space size={4}><Tag color={STATUS_TAG[s.status]}>{s.status}</Tag>{s.verdict && <span>{s.verdict}</span>}</Space> },
+              { key: 'sub', label: '대상', children: <span>{s.subjectType} <span className="adm-mono">{s.subjectHash.slice(0, 8)}…</span></span> },
+              { key: 'tr', label: '발동', children: <span>{s.triggerType}{s.triggerDetail ? ` · ${s.triggerDetail}` : ''}</span> },
+              { key: 'sc', label: '점수', children: <span className="adm-num">{Math.round(s.scoreAtOpen)} → {s.currentScore != null ? Math.round(s.currentScore) : '—'}</span> },
+              { key: 'acc', label: '연결 계정', children: `${d.accounts.length}개` },
+              { key: 'op', label: '열림', children: `${s.openedAt?.replace('T', ' ').slice(0, 16)}${s.closedAt ? ` · 닫힘 ${s.closedAt.replace('T', ' ').slice(5, 16)}` : ''}` },
+            ]}
+          />
+          <Reasons raw={d.reasons} />
+          <Typography.Title level={5} style={{ fontSize: 13.5, marginTop: 4 }}>마커 {d.markers.length}개</Typography.Title>
+          <Space size={[4, 6]} wrap>
+            {d.markers.slice(0, 12).map((m) => (
+              <Tag key={m.markerId} color={m.severity === 'HIGH' ? 'red' : m.severity === 'MEDIUM' ? 'orange' : undefined} title={m.ruleCode} style={{ whiteSpace: 'normal', marginInlineEnd: 0 }}>{m.label || m.ruleCode}</Tag>
+            ))}
+            {d.markers.length > 12 && <Typography.Text type="secondary">외 {d.markers.length - 12}개</Typography.Text>}
+            {!d.markers.length && <Typography.Text type="secondary">없음</Typography.Text>}
+          </Space>
+        </>
+      )}
+    </Card>
   );
 }
 
