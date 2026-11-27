@@ -1143,7 +1143,8 @@ const DOCS = {
   ['v37','도용 카드: 카드 한 장에 붙는 서로 다른 명의(CI) 수 상한 app_policy payment.max_ci_per_card (0 = 끔이 기본, 켤 때 권장 3 — 시연·k6·대회가 같은 가상 카드번호를 써서 바로 켜면 막힘). 동시 요청에도 지키려고 카드 해시별 잠금 행 card_lock 추가 (concurrency.md §4.3, 잠금 순서 §0.4-8). 기존 DB는 db/patch/v37.sql'],
   ['v38','단체 신청 번호 시퀀스 group_booking_seq (길동현 요청): group_booking.group_id를 매김'],
   ['v39','인증 시도 제한 임시 해제 (강동균): app_policy auth.rate_relax_until(OFF)·rate_relax_ip_hashes(NONE)·rate_relax_reason·rate_relax_signup_per_hour(2000)·rate_relax_login_per_min(3000). 지정 IP만 종료 시각까지, 읽을 때 비교로 자동 복구. 관리자 로그인·비회원 조회는 해제 안 함'],
-  ['v40','2차 대회 진짜 사람으로 잰 규칙 기준값: app_policy risk.rule.inhuman_step_ms 500 → 1000(사람 최소 2.74초), account_switch_sec 3 → 15초(가족 계정 전환 최소 31.7초, 행 추가), no_search_entry_points 10 → 30(botc 6/6·사람 0/27, 점수만)']]}
+  ['v40','2차 대회 진짜 사람으로 잰 규칙 기준값: app_policy risk.rule.inhuman_step_ms 500 → 1000(사람 최소 2.74초), account_switch_sec 3 → 15초(가족 계정 전환 최소 31.7초, 행 추가), no_search_entry_points 10 → 30(botc 6/6·사람 0/27, 점수만)'],
+  ['v41','결제 거절 반복 신호(카드 대입, 강다인 요청): app_policy risk.rule.declined_cards_min(3)·declined_cards_points(30). 명의가 1시간에 서로 다른 카드로 거절 3장 이상 → 30점, 점수만(케이스 아님). PG_로 시작하는 실패 사유는 PG 장애라 세지 않음. 기존 DB는 db/patch/v41.sql']]}
 };
 // ===== 스키마 v5: 팀 검토 12건 반영 (2026-11-06) =====
 const V5_TABLES = [
@@ -1793,7 +1794,17 @@ const V40_OPS = [
     {policy_key:'risk.rule.no_search_entry_points',policy_value:'30'},
     {policy_key:'risk.rule.account_switch_sec',policy_value:'15',version:1,value_type:'NUMBER',description:'기기(DEVICE) 대상 MULTI_ACCOUNT_SYNC: 그 기기에서 다른 계정으로 이 초 안에 바뀐 계정만 동시 선점으로 셈 (가족이 한 컴퓨터로 차례로 사는 것과 가르기)'}]],
 ];
-const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS}, {v:24,tables:V24_TABLES,ops:V24_OPS}, {v:25,tables:V25_TABLES,ops:V25_OPS}, {v:26,tables:V26_TABLES,ops:V26_OPS}, {v:27,tables:V27_TABLES,ops:V27_OPS}, {v:28,tables:V28_TABLES,ops:V28_OPS}, {v:29,tables:V29_TABLES,ops:V29_OPS}, {v:30,tables:V30_TABLES,ops:V30_OPS}, {v:31,tables:V31_TABLES,ops:V31_OPS}, {v:32,tables:V32_TABLES,ops:V32_OPS}, {v:33,tables:V33_TABLES,ops:V33_OPS}, {v:34,tables:V34_TABLES,ops:V34_OPS}, {v:35,tables:V35_TABLES,ops:V35_OPS}, {v:36,tables:V36_TABLES,ops:V36_OPS}, {v:37,tables:V37_TABLES,ops:V37_OPS}, {v:38,tables:V38_TABLES,ops:V38_OPS}, {v:39,tables:V39_TABLES,ops:V39_OPS}, {v:40,tables:V40_TABLES,ops:V40_OPS} ];
+// ===== 스키마 v41: 결제 거절 반복 신호 DECLINED_CARDS 정책 키 (강다인 요청 2026-11-27, 추천안 강동균) =====
+const V41_TABLES = [];
+const V41_OPS = [
+  // 카드 대입: 명의(CI)가 최근 1시간에 서로 다른 카드로 거절당한 수. 점수만 (케이스·마커 아님 → case_marker CHECK 변경 없음).
+  // 세는 것은 카드 거절뿐이다: payment.fail_reason이 PG_로 시작하는 사유(PG_FAILED·PG_ERROR·PG_TIMEOUT·PG_NOT_RECEIVED…)는 PG 장애라 뺀다.
+  // 같은 카드 반복 거절은 사람(잔액 부족 뒤 재시도)이라 서로 다른 카드만 센다. 키가 없어도 코드 기본값(3장 · 30점)으로 돈다
+  ['samples+','app_policy',[
+    {policy_key:'risk.rule.declined_cards_min',policy_value:'3',version:1,value_type:'NUMBER',description:'DECLINED_CARDS(카드 대입): 명의(CI)가 최근 1시간에 서로 다른 카드로 거절당한 수가 이 이상이면 점수. PG_로 시작하는 실패 사유(PG 장애)는 세지 않음'},
+    {policy_key:'risk.rule.declined_cards_points',policy_value:'30',version:1,value_type:'NUMBER',description:'DECLINED_CARDS 점수. 점수만 (케이스 아님). 30 = 경고 등급, 단독으로는 결제 단계 차단(80)에 닿지 않음'}]]
+];
+const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS}, {v:6,tables:V6_TABLES,ops:V6_OPS}, {v:7,tables:V7_TABLES,ops:V7_OPS}, {v:8,tables:V8_TABLES,ops:V8_OPS}, {v:9,tables:V9_TABLES,ops:V9_OPS}, {v:10,tables:V10_TABLES,ops:V10_OPS}, {v:11,tables:V11_TABLES,ops:V11_OPS}, {v:12,tables:V12_TABLES,ops:V12_OPS}, {v:13,tables:V13_TABLES,ops:V13_OPS}, {v:14,tables:V14_TABLES,ops:V14_OPS}, {v:15,tables:V15_TABLES,ops:V15_OPS}, {v:16,tables:V16_TABLES,ops:V16_OPS}, {v:17,tables:V17_TABLES,ops:V17_OPS}, {v:18,tables:V18_TABLES,ops:V18_OPS}, {v:19,tables:V19_TABLES,ops:V19_OPS}, {v:20,tables:V20_TABLES,ops:V20_OPS}, {v:21,tables:V21_TABLES,ops:V21_OPS}, {v:22,tables:V22_TABLES,ops:V22_OPS}, {v:23,tables:V23_TABLES,ops:V23_OPS}, {v:24,tables:V24_TABLES,ops:V24_OPS}, {v:25,tables:V25_TABLES,ops:V25_OPS}, {v:26,tables:V26_TABLES,ops:V26_OPS}, {v:27,tables:V27_TABLES,ops:V27_OPS}, {v:28,tables:V28_TABLES,ops:V28_OPS}, {v:29,tables:V29_TABLES,ops:V29_OPS}, {v:30,tables:V30_TABLES,ops:V30_OPS}, {v:31,tables:V31_TABLES,ops:V31_OPS}, {v:32,tables:V32_TABLES,ops:V32_OPS}, {v:33,tables:V33_TABLES,ops:V33_OPS}, {v:34,tables:V34_TABLES,ops:V34_OPS}, {v:35,tables:V35_TABLES,ops:V35_OPS}, {v:36,tables:V36_TABLES,ops:V36_OPS}, {v:37,tables:V37_TABLES,ops:V37_OPS}, {v:38,tables:V38_TABLES,ops:V38_OPS}, {v:39,tables:V39_TABLES,ops:V39_OPS}, {v:40,tables:V40_TABLES,ops:V40_OPS}, {v:41,tables:V41_TABLES,ops:V41_OPS} ];
 const SEED_VERSION = Math.max(2,...PATCHES.map(p=>p.v));
 const LAYOUT = [
  ['station','route','route_station','fare','common_code'],
