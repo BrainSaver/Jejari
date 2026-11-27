@@ -69,8 +69,8 @@ public class ContestResultService {
 	public List<ContestSummary> list() {
 		List<ContestSummary> out = new ArrayList<>();
 		jdbc.query("""
-				SELECT tag, SUM(CASE WHEN kind LIKE 'bot%' THEN 1 ELSE 0 END) bots,
-				       SUM(CASE WHEN kind LIKE 'human%' THEN 1 ELSE 0 END) humans, MIN(created_at) first_at
+				SELECT tag, SUM(CASE WHEN kind LIKE 'bot%%' THEN 1 ELSE 0 END) bots,
+				       SUM(CASE WHEN kind LIKE 'human%%' THEN 1 ELSE 0 END) humans, MIN(created_at) first_at
 				  FROM (SELECT REGEXP_SUBSTR(email, '^lt([a-z0-9]+)\\.', 1, 1, NULL, 1) tag, %s kind, created_at
 				          FROM member WHERE email LIKE 'lt%%' AND %s)
 				 GROUP BY tag ORDER BY MIN(created_at) DESC FETCH FIRST 30 ROWS ONLY""".formatted(KIND, IS_PARTICIPANT),
