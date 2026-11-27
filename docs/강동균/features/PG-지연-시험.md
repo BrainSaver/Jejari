@@ -117,8 +117,9 @@ cd loadtest && ./run.sh pgslow -e RUN_ID=<빈 좌석 많은 서울→부산 운�
 **PG 설정은 서버에서 `curl`로 바꾸고 k6에는 `PG_PROFILE`을 주지 않는다**. 30분쯤 걸리고, 그동안 **실제 사람 결제도 가짜 PG 서버를 탄다**
 (down 동안에는 그 결제도 결과 모름 → 스캐너가 확정) → 팀 채널에 먼저 알린다.
 
-**계정**: 공용 서버는 가입이 시간당 계정 50개쯤에서 막혀 시나리오 15가 300명을 못 만든다 → 11-26 성능 측정 때 만든 `RUN_TAG=perf1` 계정 200개를
-`ACCOUNTS=existing`으로 쓴다 (시나리오 11과 같은 `identity`·번호). 사람 = 카드 한 장이라 카드 명의 상한(3)에 안 걸린다.
+**계정**: 공용 서버는 가입이 시간당 계정 50개쯤에서 막혀 시나리오 15가 직접 못 만든다 → 관리자 API `POST /api/v1/admin/auth-relax`(내 IP만, 2시간, 가입 5000)로 풀고
+시나리오 11 `ACCOUNTS=prepare`로 **`RUN_TAG=pg1` 100개**를 미리 만들어 둠 (11-27, `perf1`은 로그인 401이라 안 씀) → 15에서 `ACCOUNTS=existing`.
+사람 = 카드 한 장이라 카드 명의 상한(3)에 안 걸린다. 사유 칸은 영문만 (Git Bash에서 한글이 깨져 400).
 
 ```bash
 # [서버] 0. 자동 배포 멈춤 + 가짜 PG 켜기 + 앱을 http 모드로 (응답 한도는 기본 3초 = 로컬 ④와 같은 조건)
@@ -143,7 +144,8 @@ while true; do date +%T; curl -s localhost:8080/actuator/prometheus | grep -E "^
 
 ```bash
 # [내 PC] 2-①. 측정 (PG_PROFILE 없이)
-cd loadtest && ./run.sh pgslow -e BASE_URL=https://<서버> -e RUN_ID=<운행> -e ACCOUNTS=existing -e RUN_TAG=perf1 -e BUYERS=200 -e BROWSERS=50 -e SPREAD_SEC=30 -e DURATION_SEC=75
+cd loadtest && ./run.sh pgslow -e BASE_URL=https://<서버> -e I_OWN_THIS_TARGET=yes -e RUN_ID=<운행> -e ACCOUNTS=existing -e RUN_TAG=pg1 -e BUYERS=100 -e BROWSERS=50 -e SPREAD_SEC=10 -e DURATION_SEC=75
+# 100명/10초 = 초당 10명 → 로컬 300명/30초와 같은 도착 속도
 ```
 
 ```bash
