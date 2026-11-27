@@ -42,6 +42,17 @@ public class ContestResultService {
 	private static final String KIND = "REGEXP_SUBSTR(email, '^lt[a-z0-9]+\\.([a-z]+)\\.g[0-9]+\\.', 1, 1, NULL, 1)";
 	private static final String IS_PARTICIPANT = "(REGEXP_LIKE(" + KIND + ", '^human[a-z]*$') OR REGEXP_LIKE(" + KIND + ", '^bot[a-z]+$'))";
 	private static final int CHUNK = 500; // Oracle IN 목록 1,000개 제한 아래로
+	/**
+	 * 대회 목록 SQL. 클래스를 읽을 때 한 번 만든다 — 틀이 깨지면 첫 클릭이 아니라 앱 시작에서 바로 드러나게.
+	 * {@code formatted()} 틀 안의 LIKE 와일드카드는 {@code %%}로 쓴다 (2026-11-27: {@code 'bot%'}가 JDK 24에서
+	 * UnknownFormatConversionException → A-11 목록 500)
+	 */
+	static final String LIST_SQL = """
+			SELECT tag, SUM(CASE WHEN kind LIKE 'bot%%' THEN 1 ELSE 0 END) bots,
+			       SUM(CASE WHEN kind LIKE 'human%%' THEN 1 ELSE 0 END) humans, MIN(created_at) first_at
+			  FROM (SELECT REGEXP_SUBSTR(email, '^lt([a-z0-9]+)\\.', 1, 1, NULL, 1) tag, %s kind, created_at
+			          FROM member WHERE email LIKE 'lt%%' AND %s)
+			 GROUP BY tag ORDER BY MIN(created_at) DESC FETCH FIRST 30 ROWS ONLY""".formatted(KIND, IS_PARTICIPANT);
 
 	private final JdbcTemplate jdbc;
 	private final MongoTemplate mongo;
@@ -68,12 +79,7 @@ public class ContestResultService {
 	/** 대회 목록: 참가자 이메일 태그별, 최근 것부터 (최대 30개) */
 	public List<ContestSummary> list() {
 		List<ContestSummary> out = new ArrayList<>();
-		jdbc.query("""
-				SELECT tag, SUM(CASE WHEN kind LIKE 'bot%' THEN 1 ELSE 0 END) bots,
-				       SUM(CASE WHEN kind LIKE 'human%' THEN 1 ELSE 0 END) humans, MIN(created_at) first_at
-				  FROM (SELECT REGEXP_SUBSTR(email, '^lt([a-z0-9]+)\\.', 1, 1, NULL, 1) tag, %s kind, created_at
-				          FROM member WHERE email LIKE 'lt%%' AND %s)
-				 GROUP BY tag ORDER BY MIN(created_at) DESC FETCH FIRST 30 ROWS ONLY""".formatted(KIND, IS_PARTICIPANT),
+		jdbc.query(LIST_SQL,
 				rs -> {
 					String tag = rs.getString("tag");
 					Timestamp at = rs.getTimestamp("first_at");
