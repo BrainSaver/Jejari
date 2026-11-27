@@ -31,7 +31,7 @@ import exec from 'k6/execution';
 import { Counter, Rate, Trend } from 'k6/metrics';
 import { RUN_ID } from '../config.js';
 import { identity, fakeIp, verify, signup, login, authSmokeTest, fail } from '../lib/auth.js';
-import { browse, queueUntilAdmitted, queueLeave, emptySeats, hold, pay, pick, codeOf, uuid } from '../lib/journey.js';
+import { browse, queueUntilAdmitted, queueLeave, emptySeats, hold, pay, pick, codeOf, uuid, loadCard } from '../lib/journey.js';
 import { safeJson } from '../lib/helpers.js';
 
 const BUYERS = Math.min(2000, Math.max(1, Number(__ENV.BUYERS || 300)));
@@ -58,7 +58,7 @@ const DURATION_SEC = Number(__ENV.DURATION_SEC || SPREAD_SEC + 90);
 
 const SEQ_SMOKE = 999;
 const seqOf = (i) => (i >= SEQ_SMOKE ? i + 1 : i);
-const cardOf = (i) => `4111${String(i).padStart(11, '0')}1`; // 사람마다 다른 카드, 끝자리 1 = 승인
+const cardOf = (tag, i) => loadCard(tag, i); // 사람마다·시험마다 다른 카드, 끝자리 1 = 승인 (lib/journey.js)
 
 http.setResponseCallback(http.expectedStatuses({ min: 200, max: 499 }, 503)); // 503 PAYMENT_BUSY는 앱이 판단한 거절
 const journeyOk = new Rate('journey_success');
@@ -177,13 +177,13 @@ export function buyer(data) {
     // 결제: 같은 멱등 키로 재시도 (화면의 "다시 결제"와 같음). 상한(503)일 때만 다시 보낸다
     const key = uuid();
     const t0 = Date.now();
-    let p = pay(token, reservationId, { cardNumber: cardOf(i), idempotencyKey: key });
+    let p = pay(token, reservationId, { cardNumber: cardOf(data.tag, i), idempotencyKey: key });
     for (let k = 0; k < PAY_RETRY && p.status === 503 && codeOf(p) === 'PAYMENT_BUSY'; k++) {
       payBusy.add(1);
       // 서버가 알려 준 Retry-After만큼 (±30% 흩뜨림, 모두 같은 순간에 다시 몰리지 않게). 없으면 1~2초
       const after = Number(p.headers['Retry-After']);
       sleep(after > 0 ? after * (0.7 + Math.random() * 0.6) : 1 + Math.random());
-      p = pay(token, reservationId, { cardNumber: cardOf(i), idempotencyKey: key });
+      p = pay(token, reservationId, { cardNumber: cardOf(data.tag, i), idempotencyKey: key });
     }
     payMs.add(Date.now() - t0);
     const body = safeJson(p) || {};

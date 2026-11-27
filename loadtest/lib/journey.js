@@ -157,8 +157,27 @@ export function recordScreen(token, runId = RUN_ID) {
  * 카드를 안 주면 VU마다 다른 시험 카드 (끝자리 1). 모두 같은 카드를 쓰면 카드 명의 상한(payment.max_ci_per_card)을
  * 켠 서버에서 네 번째 계정부터 결제가 거절돼 성능 대신 그 규칙을 재게 된다
  */
-/** VU마다 다른 시험 카드 (4111 + VU 번호 11자리 + 끝자리) */
-export const vuCard = (last = '1') => `4111${String(exec.vu.idInTest).padStart(11, '0')}${last}`;
+/**
+ * 부하 시험용 카드: 49 + 실행 표식 6자리 + 사람 번호 7자리 + 끝자리 = 16자리 (모의 PG는 끝자리만 봄: 0 거절 · 8 늦은 승인 · 9 결과 모름).
+ *
+ * <p>왜 이렇게: 카드 해시는 번호 전체의 HMAC이라 번호가 같으면 한 장이다. 예전처럼 시연 카드 4111 1111 1111 1111이나
+ * `4111 + 번호`를 시험마다 다시 쓰면 시험이 바뀔 때마다 새 계정이 같은 카드에 붙어 (1) 그 카드의 위험 점수가 쌓이고
+ * (11-26 공용 서버 시험 뒤 시연 카드 45점, 차단 80) (2) 카드 명의 상한(payment.max_ci_per_card)에 걸린다.
+ * - 앞자리 49: 결제 화면 시험 카드(4111 + 회원 ID)·시연 카드와 겹치지 않음
+ * - 실행 표식: RUN_TAG(같은 태그 = 같은 계정)에서 만든다. 태그가 바뀌면(새 계정) 카드도 새것이라 시험끼리 안 섞임
+ */
+export function loadCard(tag, i, last = '1') {
+  let h = 0;
+  for (const c of String(tag)) h = (h * 31 + c.charCodeAt(0)) % 1e6;
+  return `49${String(h).padStart(6, '0')}${String(Number(i) % 1e7).padStart(7, '0')}${last}`;
+}
+
+/** 태그를 모를 때(pay() 기본값): 시나리오 시작 시각을 표식으로, VU 번호를 사람 번호로 */
+export function vuCard(last = '1') {
+  let stamp = 'setup';
+  try { stamp = String(exec.scenario.startTime); } catch (e) { /* setup()에는 시나리오가 없음 */ }
+  return loadCard(stamp, exec.vu.idInTest, last);
+}
 
 export function pay(token, reservationId, { cardNumber = vuCard(), idempotencyKey = uuid() } = {}) {
   return http.post(url(API.reservationPay(reservationId)), JSON.stringify({ cardNumber }), {
