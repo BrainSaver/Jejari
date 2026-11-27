@@ -72,11 +72,11 @@ export default function Models() {
         <h2><span className="grow">버전 {list?.length ?? ''}개</span>{active && <span className="faint" style={{ fontSize: 12.5 }}>사용 중 {active.version}</span>}</h2>
         {list && !list.length && <p className="mut">등록된 합성 모델이 없어요 (model_run, algorithm = ENSEMBLE).</p>}
         <div style={{ overflowX: 'auto' }}>
-          <table>
+          <table className="tight">
             <thead>
               <tr>
                 <th>버전</th><th>상태</th><th>학습</th><th className="n">문턱</th><th className="n">점수 계정</th>
-                <th className="n">봇 쪽으로 봄</th><th>닮은 유형</th><th>관리자 판정과</th><th>마지막 점수</th>
+                <th className="n">봇 쪽으로 봄</th><th>닮은 유형</th><th title="관리자 판정과 비교: 잡은 수/판정 수">관리자 판정</th><th>마지막 점수</th>
               </tr>
             </thead>
             <tbody>
@@ -93,9 +93,9 @@ export default function Models() {
                       </div>
                     )}
                   </td>
-                  <td className="mut" style={{ fontSize: 12.5, minWidth: 230 }}>
+                  <td className="mut" style={{ fontSize: 12.5, minWidth: 160 }}>
                     {when(m.trainedAt)}
-                    {parse(m.params).gate ? <Gate m={m} /> : <div className="faint">{m.trainSource}</div>}
+                    {parse(m.params).gate ? <Gate m={m} /> : <div className="faint clamp2" title={m.trainSource}>{m.trainSource}</div>}
                   </td>
                   <td className="n num">{m.threshold ?? '—'}</td>
                   <td className="n num">{m.scored.toLocaleString()}</td>
@@ -106,18 +106,18 @@ export default function Models() {
                     ))}
                     {!Object.keys(m.types).length && <span className="faint">—</span>}
                   </td>
-                  <td style={{ fontSize: 12.5 }}>
-                    <div>봇 판정 {m.verdicts.bots}명 중 <b className="num">{m.verdicts.botsFlagged}</b> 잡음</div>
-                    <div>사람 판정 {m.verdicts.humans}명 중 <b className="num">{m.verdicts.humansFlagged}</b> 오탐</div>
+                  <td className="nw" style={{ fontSize: 12.5 }} title={`봇 판정 ${m.verdicts.bots}명 중 ${m.verdicts.botsFlagged}명 잡음 · 사람 판정 ${m.verdicts.humans}명 중 ${m.verdicts.humansFlagged}명 오탐`}>
+                    <div>봇 <b className="num">{m.verdicts.botsFlagged}</b>/{m.verdicts.bots} 잡음</div>
+                    <div>사람 <b className="num">{m.verdicts.humansFlagged}</b>/{m.verdicts.humans} 오탐</div>
                   </td>
-                  <td className="mut" style={{ fontSize: 12.5 }}>{when(m.lastScoredAt)}</td>
+                  <td className="mut nw" style={{ fontSize: 12.5 }}>{when(m.lastScoredAt)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         <p className="faint" style={{ fontSize: 12, marginTop: 6 }}>
-          "관리자 판정과"는 케이스에서 봇(RESELLER·MACRO·CANCEL_ABUSE)이나 사람(NORMAL)으로 판정한 계정만 셉니다. 규칙이 연 케이스에만 판정이 있어
+          "관리자 판정"은 케이스에서 봇(RESELLER·MACRO·CANCEL_ABUSE)이나 사람(NORMAL)으로 판정한 계정만 셉니다. 규칙이 연 케이스에만 판정이 있어
           규칙 쪽으로 치우친 숫자예요. 점수가 없는 버전은 켤 수 없어요.
         </p>
       </section>

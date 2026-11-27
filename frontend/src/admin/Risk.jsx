@@ -115,7 +115,7 @@ export default function Risk() {
                   <td>
                     {r.latestCase ? (
                       <Link className="link" to={`/admin/cases/${r.latestCase.caseId}`}>
-                        C-{r.latestCase.caseId} <span className={'st ' + (CASE[r.latestCase.status] || '')}>{r.latestCase.status}</span>
+                        <span className="cid">C-{r.latestCase.caseId}</span> <span className={'st ' + (CASE[r.latestCase.status] || '')}>{r.latestCase.status}</span>
                       </Link>
                     ) : <span className="faint">—</span>}
                   </td>

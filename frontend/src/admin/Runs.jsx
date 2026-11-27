@@ -21,6 +21,8 @@ const WEEK = ['월', '화', '수', '목', '금', '토', '일']; // 서버: 1=월
 const LIMIT_LABEL = { PER_RESERVATION: '1회', PER_RUN: '열차당', PER_DAY: '1일', PER_HOLIDAY: '명절 전체' };
 const DEFAULT_LIMITS = { PER_RESERVATION: 4, PER_RUN: 4, PER_DAY: 20, PER_HOLIDAY: 8 };
 
+const PAGE = 50;
+
 export default function Runs() {
   const claims = useOutletContext();
   const canWrite = hasRole(claims, 'SUPERVISOR');
@@ -56,6 +58,9 @@ export default function Runs() {
   const runs = usePolling(() => get('/api/v1/admin/runs?' + query), POLL_MS, [query.toString()]);
 
   const [bulkOpen, setBulkOpen] = useState(false);
+  // 운행이 수백 건이라 한 번에 다 그리면 화면이 수만 px로 길어진다. 50건씩 더 보기
+  const [shownN, setShownN] = useState(PAGE);
+  useEffect(() => setShownN(PAGE), [query.toString()]);
   const selectedEvent = events.find((e) => String(e.saleEventId) === filter.eventId);
 
   /** 바꾸는 요청 공통: 실패를 화면 위에 띄우고, 성공하면 목록을 다시 읽는다 */
@@ -209,7 +214,7 @@ export default function Runs() {
             </tr>
           </thead>
           <tbody>
-            {(runs.data || []).map((r) => (
+            {(runs.data || []).slice(0, shownN).map((r) => (
               <RunRow key={r.runId} r={r} canWrite={canWrite} act={act} />
             ))}
             {runs.data && !runs.data.length && (
@@ -217,6 +222,11 @@ export default function Runs() {
             )}
           </tbody>
         </table>
+        {runs.data && runs.data.length > shownN && (
+          <button type="button" className="btn ghost wide" style={{ marginTop: 12 }} onClick={() => setShownN((n) => n + PAGE)}>
+            더 보기 ({shownN}건 보는 중 · {runs.data.length - shownN}건 남음)
+          </button>
+        )}
       </section>
 
       <RequestLog filter={(r) => r.path.includes('/admin/runs') || r.path.includes('/admin/sale-events')} />
@@ -243,11 +253,11 @@ function RunRow({ r, canWrite, act }) {
     <tr key={changed} className={changed ? 'flash' : ''}>
       <td className="mono faint">#{r.runId}</td>
       <td className="mono">{r.trainNo}</td>
-      <td>{md(r.runDate)}</td>
-      <td>{r.origin && r.dest ? `${r.origin} → ${r.dest}` : '—'}</td>
+      <td className="nw">{md(r.runDate)}</td>
+      <td className="nw">{r.origin && r.dest ? `${r.origin} → ${r.dest}` : '—'}</td>
       <td className="mono">{r.departureAt ? r.departureAt.slice(11, 16) : '—'}</td>
       <td><RunStatus status={r.status} /></td>
-      <td className="mono">
+      <td className="mono nw">
         {editing ? (
           <span className="row" style={{ gap: 6 }}>
             <input type="datetime-local" value={openAt} onChange={(e) => setOpenAt(e.target.value)} style={{ minHeight: 30, padding: '2px 8px', width: 190 }} />

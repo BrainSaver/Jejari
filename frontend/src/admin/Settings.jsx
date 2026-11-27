@@ -60,33 +60,33 @@ export default function Settings() {
       <ErrorBox error={error} onClose={() => setError(null)} />
       <AuthRelax canWrite={canWrite} st={relax} setSt={setRelax} onChanged={load} />
       <LoadTestPanel canWrite={canWrite} relax={relax} onRelaxChanged={() => { loadRelax(); load(); }} />
-      <div className="tabs" role="tablist">
+      <div className="tabs multi" role="tablist">
         <button type="button" className={group === '' ? 'on' : ''} onClick={() => setGroup('')}>전체 <span className="num" style={{ opacity: 0.7 }}>{list?.length || ''}</span></button>
         {groups.map(([g, n]) => (
           <button key={g} type="button" className={group === g ? 'on' : ''} onClick={() => setGroup(g)}>{g} <span className="num" style={{ opacity: 0.7 }}>{n}</span></button>
         ))}
       </div>
-      <div className="cols">
+      <div className="cols c21">
         <section className="panel">
           <h2>
             <span className="grow">설정 {shown.length}개</span>
             <input placeholder="키·설명 찾기" aria-label="키·설명 찾기" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 200, minHeight: 32 }} />
           </h2>
           <table>
-            <thead><tr><th>키</th><th>값</th><th>형식</th><th className="n">버전</th><th>설명</th></tr></thead>
+            <thead><tr><th>키</th><th>값</th><th className="n">버전</th><th>설명</th></tr></thead>
             <tbody>
               {shown.map((p) => (
                 <tr key={p.key} className={sel === p.key ? 'sel' : ''} onClick={() => setSel(p.key)} style={{ cursor: 'pointer' }}>
-                  <td className="mono" style={{ fontSize: 13 }}>{p.key}</td>
+                  <td className="mono key" style={{ fontSize: 13 }}>{breakable(p.key)}</td>
                   <td>
                     <b className="num">{p.value}</b>
                     {p.cachedValue != null && p.cachedValue !== p.value && (
                       <span className="st plain amber" style={{ marginLeft: 6 }} title="Redis policy:cache 값이 DB와 달라요">캐시 {p.cachedValue}</span>
                     )}
+                    <small className="faint vtype">{p.valueType}</small>
                   </td>
-                  <td className="faint">{p.valueType}</td>
                   <td className="n num">{p.version}</td>
-                  <td className="mut" style={{ fontSize: 12.5 }}>{p.description}</td>
+                  <td className="mut desc" style={{ fontSize: 12.5 }}>{p.description}</td>
                 </tr>
               ))}
             </tbody>
@@ -99,6 +99,11 @@ export default function Settings() {
       <RequestLog filter={(r) => r.path.includes('/admin/policies') || r.path.includes('/admin/auth-relax')} rows={5} />
     </>
   );
+}
+
+/** 긴 키(auth.rate_relax_signup_per_hour)를 글자 중간이 아니라 . 과 _ 뒤에서만 줄바꿈되게 한다 */
+function breakable(key) {
+  return key.split(/(?<=[._])/).flatMap((part, i) => (i ? [<wbr key={i} />, part] : [part]));
 }
 
 function Editor({ p, canWrite, onSaved }) {
@@ -219,10 +224,10 @@ function AuthRelax({ canWrite, st, setSt, onChanged }) {
             <span className="lbl">사유 (5자 이상)</span>
             <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="예: k6 시나리오 11 공용 서버 측정" />
           </label>
-          <ConfirmButton className="btn sm" confirm={`한 번 더 누르면 ${hours}시간 해제`} onConfirm={start} disabled={reason.trim().length < 5}>
+          <ConfirmButton className="btn tall" confirm={`한 번 더 누르면 ${hours}시간 해제`} onConfirm={start} disabled={reason.trim().length < 5}>
             {st.active ? 'IP 추가·연장' : '해제 시작'}
           </ConfirmButton>
-          {st.active && <ConfirmButton className="btn ghost sm" confirm="한 번 더 누르면 지금 끝내기" onConfirm={stop}>지금 끝내기</ConfirmButton>}
+          {st.active && <ConfirmButton className="btn ghost tall" confirm="한 번 더 누르면 지금 끝내기" onConfirm={stop}>지금 끝내기</ConfirmButton>}
         </div>
       )}
     </section>

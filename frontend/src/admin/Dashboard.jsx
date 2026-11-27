@@ -231,7 +231,7 @@ function LiveLine({ data, error, lastReq, onRefresh }) {
       {data && <span className={`st plain ${data.status === 'ON_SALE' ? 'go' : 'amber'}`}>{data.status}</span>}
       {lastReq && (
         <span>
-          응답 <b className="num">{lastReq.ms}ms</b> · traceId <code>{lastReq.traceId || '-'}</code>
+          응답 <b className="num">{lastReq.ms}ms</b> · traceId <code title={lastReq.traceId || ''}>{lastReq.traceId ? lastReq.traceId.slice(0, 12) + '…' : '-'}</code>
         </span>
       )}
       {error && <span style={{ color: 'var(--stop)' }}>{error.code}: {error.message}</span>}

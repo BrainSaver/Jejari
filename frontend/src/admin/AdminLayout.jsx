@@ -8,6 +8,9 @@ const MENU = [
   ['기준·설정', [['master', 'train', '기준 데이터'], ['runs', 'calendar', '운행·행사'], ['settings', 'gear', '운영 설정'], ['deploy', 'refresh', '배포']]],
 ];
 
+// 그래프가 많은 화면은 넓은 모니터에서 폭 제한 없이 꽉 채운다 (나머지 화면은 1440px 가운데 정렬)
+const WIDE = new Set(['/admin/dashboard', '/admin/traffic']);
+
 export default function AdminLayout() {
   const { claims, checking } = useAdminAuth();
   const navigate = useNavigate();
@@ -44,7 +47,7 @@ export default function AdminLayout() {
             로그아웃
           </button>
         </nav>
-        <main className="main">
+        <main className={'main' + (WIDE.has(pathname) ? ' wide' : '')}>
           <div key={pathname} className="page-enter">
             <Outlet context={claims} />
           </div>
