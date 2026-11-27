@@ -300,12 +300,15 @@ function Kpi({ label, n, unit, d, src, alarm }) {
 
 // 만료는 오방색 파랑(토큰 --saek의 청색)을 쓴다. 앞의 세 색과 겹치지 않고 팀 팔레트 안에 있다.
 // 막대는 늘 이 순서로 서고 범례·툴팁이 이름을 달아 주므로, 색만으로 구분하지 않아도 읽힌다.
+// 취소는 빗금도 친다: 결제(초록 --go)와 취소(빨강 --stop)는 적록색약에서 거의 같은 색이다 (ΔE 4.2, 권장 8 이상).
+// 팔레트는 팀 공용이라 색을 바꾸지 않고 무늬로 가른다 (2026-11-27)
 const SERIES = [
   ['reservations', '예약', 'var(--ink)'],
   ['payments', '결제', 'var(--go)'],
-  ['cancels', '취소', 'var(--stop)'],
+  ['cancels', '취소', 'var(--stop)', true],
   ['expires', '만료', '#1D4ED8'],
 ];
+const HATCH = 'repeating-linear-gradient(135deg, var(--stop) 0 2px, #fff 2px 3.5px)';
 
 /**
  * 분 경계로 자른 막대(서버 /minutes). 화면을 열자마자 지난 30분이 보이고, 마지막 칸은 진행 중인 분이라
@@ -330,9 +333,9 @@ function RateChart({ history, rates, windowSec }) {
       <h2>
         <span className="grow">분당 예약·결제·취소·만료</span>
         <span className="row" style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--mut)', gap: 14 }}>
-          {SERIES.map(([k, name, color]) => (
+          {SERIES.map(([k, name, color, hatch]) => (
             <span key={k}>
-              <i className="dot" style={{ background: color }} />
+              <i className="dot" style={{ background: hatch ? HATCH : color }} />
               {name} <b className="num">{rates[k]}</b>
             </span>
           ))}
@@ -346,6 +349,12 @@ function RateChart({ history, rates, windowSec }) {
         <div className="soon-box">분당 이력을 못 읽었어요. 숫자 카드는 그대로 갱신돼요.</div>
       ) : (
         <svg viewBox={`0 -8 ${W} ${H + 30}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label={label}>
+          <defs>
+            <pattern id="hatch-stop" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect width="5" height="5" fill="var(--stop)" />
+              <line x1="0" y1="0" x2="0" y2="5" stroke="#fff" strokeWidth="1.6" />
+            </pattern>
+          </defs>
           {[0, 0.5, 1].map((f) => (
             <g key={f}>
               <line x1="32" x2={W} y1={y(top * f)} y2={y(top * f)} stroke="var(--line2)" />
@@ -358,8 +367,8 @@ function RateChart({ history, rates, windowSec }) {
             return (
               <g key={h.minute} opacity={live ? 0.5 : 1}>
                 <title>{`${h.minute.slice(11, 16)}${live ? ' (진행 중)' : ''} · 예약 ${h.reservations} · 결제 ${h.payments} · 취소 ${h.cancels} · 만료 ${h.expires}`}</title>
-                {SERIES.map(([k, , color], j) => (
-                  <rect key={k} className="chartbar" x={x0 + j * bw} y={y(h[k])} width={bw - 1} height={Math.max(1, H - y(h[k]))} rx="2" fill={color} />
+                {SERIES.map(([k, , color, hatch], j) => (
+                  <rect key={k} className="chartbar" x={x0 + j * bw} y={y(h[k])} width={bw - 1} height={Math.max(1, H - y(h[k]))} rx="2" fill={hatch ? 'url(#hatch-stop)' : color} />
                 ))}
                 {((Number(h.minute.slice(14, 16)) % 5 === 0 && i < rows.length - 2) || live) && (
                   <text x={x0 + (bw * SERIES.length) / 2} y={H + 18} textAnchor="middle" fontSize="12" fill="var(--mut)">{h.minute.slice(11, 16)}</text>

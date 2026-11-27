@@ -58,3 +58,23 @@ jobs:
       # 손으로 옮겨 적다 틀리는 것을 막습니다. 고치려면 --write 로 다시 생성합니다
       - name: check public data
         run: node tools/load-public-data.js
+
+  # 화면이 30개를 넘어 백엔드 빌드만으로는 화면이 깨진 걸 모른다 (보완할-일 "CI에 프론트 빌드", 2026-11-27).
+  # 앱 jar에 넣는 빌드(./gradlew buildFrontend)와 같은 vite build + 화면 단위 테스트(node --test)
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
