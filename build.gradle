@@ -115,8 +115,10 @@ tasks.register('infraTest', Test) {
 	group = 'verification'
 	testClassesDirs = sourceSets.test.output.classesDirs
 	classpath = sourceSets.test.runtimeClasspath
+	// -PnoOracle: Oracle 없이 도는 것만 (@Tag("no-oracle"), Redis·Kafka만). CI가 push마다 이것만 돌리고
+	// 전체는 매일 밤 Oracle까지 띄워 돌린다 (.github/workflows/infra-test.yml). 새 통합 테스트는 태그가 없으면 밤에만 돈다
 	useJUnitPlatform {
-		includeTags 'infra'
+		includeTags(project.hasProperty('noOracle') ? 'infra & no-oracle' : 'infra')
 	}
 	shouldRunAfter tasks.named('test')
 }

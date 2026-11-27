@@ -26,6 +26,7 @@ import com.jejari.support.WebSecurityTestConfig;
  * 입장 스케줄러가 1초마다 자동으로 입장시키는지. 슬라이스 테스트는 이 부분을 거치지 않습니다.
  */
 @Tag("infra")
+@Tag("no-oracle") // Oracle 없이 돈다 → CI에서 push마다 (infraTest -PnoOracle, .github/workflows/infra-test.yml)
 @ExtendWith(NoRunningApp.class)
 @DataRedisTest
 @Import({QueueConfig.class, DevStubsConfig.class, WebSecurityTestConfig.ClockBean.class})
