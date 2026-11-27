@@ -26,6 +26,10 @@ const TAG = process.env.TAG || '';
 const MODE = process.env.MODE || 'all';
 const ACCOUNTS = Math.min(6, Math.max(1, Number(process.env.ACCOUNTS || 3)));
 const HUMANS = Math.max(0, Number(process.env.HUMANS ?? 12));
+// GEN=m: 실제 서비스처럼 섞을 때 더하는 사람 5종. HUMAN_SCALE=n: 사람 변형(GEN h·m) 명의 수를 n배
+const HUMAN_SCALE = Math.max(1, Math.min(50, Number(process.env.HUMAN_SCALE || 1)));
+const WAIT_MAX_MS = Math.max(0, Number(process.env.WAIT_MAX_SEC ?? 360)) * 1000; // 취소표 제안을 기다리는 최대 시간
+const GROUP_WAIT_MS = Math.max(0, Number(process.env.GROUP_WAIT_SEC ?? 900)) * 1000; // 단체 승인(미뤄짐)을 기다리는 최대 시간
 const FROM = process.env.FROM || '3900023';
 const TO = process.env.TO || '3900114';
 const DOMAIN = 'loadtest.example.com';
@@ -55,7 +59,8 @@ const P = (kind, family, desc, o = {}) => ({
   think: T.quick, searches: 1, seatMap: true, mapPolls: 0, party: 2, pick: 'random', retrySame: 0, pay: true,
   cancelAfterPayMs: null, holdNoPay: false, holdCancelLoops: 0, start: 'sync', device: 'own', card: 'own',
   sameCi: false, queueSpam: 0, ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0 Safari/537.36',
-  runHop: 0, limitProbe: false, burst: false, gen: 1, step: null, ipEach: false, staggerMs: [20000, 40000], rec: null, count: null, ip: null, doubleClick: false, declineFirst: 0, ...o,
+  runHop: 0, limitProbe: false, burst: false, gen: 1, step: null, ipEach: false, staggerMs: [20000, 40000], rec: null, count: null, ip: null, doubleClick: false, declineFirst: 0,
+  partyRange: null, fares: null, waitOnSoldOut: 0, group: null, ...o,
 });
 const PROFILES = [
   // 속도
@@ -141,6 +146,15 @@ const GENH = [
   PH('humancancel', '결제 뒤 1~2분 만에 날짜를 잘못 고른 걸 알고 취소', { cancelAfterPayMs: [60000, 120000] }),
   PH('humanslow', '천천히 고르는 사람 (날짜 4번 조회, 생각 3~10초)', { searches: 4, think: () => Math.min(20000, logn(5000, 0.5)) }),
   PH('humantypo', '카드번호를 한 번 틀려 거절된 뒤 제 카드로 다시 (DECLINED_CARDS 오탐 확인: 서로 다른 카드 2장 = 문턱 3 아래)', { declineFirst: 1 }),
+];
+
+// 실제 서비스처럼 섞을 때 더하는 사람 (GEN=m). 탐지되면 오탐
+const GENM = [
+  PH('humansolo', '혼자 1석. 매진이면 절반은 취소표 대기', { gen: 'm', party: 1, waitOnSoldOut: 0.5 }),
+  PH('humanparty', '가족 대표가 2~4석을 한 번에 (어른·아이·경로 섞음). 매진이면 대기', { gen: 'm', partyRange: [2, 4], fares: ['ADULT', 'CHILD', 'SENIOR'], waitOnSoldOut: 1 }),
+  PH('humanabandon', '선점하고 결제 화면에서 나감 (bothoarder와 같은 행동, 오탐 확인)', { gen: 'm', holdNoPay: true }),
+  PH('humanwait', '1분 늦게 와서 못 잡으면 바로 취소표 대기', { gen: 'm', party: 1, waitOnSoldOut: 1, start: 'late' }),
+  PH('humangroup', '단체 12~20명 (신청 → 자동 승인 → 결제)', { gen: 'm', group: [12, 20], count: 1 }),
 ];
 
 // 3단계 추가: 남은 빈틈 (마우스 궤적 보강 제안 5절)
@@ -259,6 +273,8 @@ function makeCtx(p, n) {
     ip: fakeIp(p.ip === 'shared' ? `${p.kind}.shared` : p.kind.startsWith('human') || p.ipEach ? `${p.kind}.${n}` : p.kind),
     // 카드: 계정마다 다르게 (프로필·번호로 만든 15자리 + 끝자리 1 = 모의 PG 승인). botsharedcard만 프로필 안에서 하나를 같이 씀
     card: cardFor(p.card === 'shared' ? `${p.kind}.shared` : `${p.kind}.${n}`),
+    party: p.partyRange ? Math.round(rand(p.partyRange[0] - 0.49, p.partyRange[1] + 0.49)) : p.party,
+    waited: null, // 취소표 대기: null · 'paid' · 'nooffer' · 'error:…'
     declinesLeft: p.declineFirst, // 카드 대입: 이만큼 서로 다른 카드로 거절당한 뒤 제 카드로
     deviceFor() {
       if (p.device === 'none') return null;
@@ -320,14 +336,15 @@ function choose(ctx, empty, k) {
   if (!empty.length) return [];
   if (ctx.p.pick === 'front') return empty.slice(0, k);
   const start = Math.floor(Math.random() * Math.max(1, empty.length - k));
-  return ctx.p.party > 1 && k > 1 ? empty.slice(start, start + k) : [empty[Math.floor(Math.random() * empty.length)]];
+  return ctx.party > 1 && k > 1 ? empty.slice(start, start + k) : [empty[Math.floor(Math.random() * empty.length)]];
 }
 
 async function hold(ctx, pass, seatIds) {
   return call(ctx, 'POST', '/api/v1/reservations',
-    { runId: RUN_ID, fromStationId: FROM, toStationId: TO, seats: seatIds.map((seatId) => ({ seatId, passengerType: 'ADULT' })), channel: 'WEB' },
+    { runId: RUN_ID, fromStationId: FROM, toStationId: TO, seats: seatIds.map((seatId, i) => ({ seatId, passengerType: fareOf(ctx, i) })), channel: 'WEB' },
     { 'X-Queue-Token': pass, 'Idempotency-Key': crypto.randomUUID() });
 }
+const fareOf = (ctx, i) => (!ctx.p.fares || i === 0 ? 'ADULT' : ctx.p.fares[Math.floor(Math.random() * ctx.p.fares.length)]);
 const pay = (ctx, id, card = ctx.card) => call(ctx, 'POST', `/api/v1/reservations/${id}/payments`, { cardNumber: card }, { 'Idempotency-Key': crypto.randomUUID() });
 /** 거절될 카드: 계정·순번마다 다른 번호, 끝자리 0 = 모의 PG 거절 */
 const declineCard = (ctx, i) => cardFor(`${ctx.p.kind}.${ctx.n}.decline.${i}`).slice(0, -1) + '0';
@@ -336,6 +353,7 @@ const cancel = (ctx, id) => call(ctx, 'POST', `/api/v1/reservations/${id}/cancel
 async function buyOne(ctx, runDate) {
   const p = ctx.p;
   await login(ctx);
+  if (p.group) return groupBuy(ctx);
   if (p.rec) await recStart(ctx);
   if (p.burst) await sleep(rand(5000, 15000));
   await searchStep(ctx, runDate);
@@ -360,7 +378,7 @@ async function buyOne(ctx, runDate) {
   }
   await sleep(burstThink());
 
-  let k = p.party;
+  let k = ctx.party;
   let loops = Math.max(1, p.holdCancelLoops + 1);
   for (let attempt = 0; attempt < 30 && loops > 0; attempt++) {
     const seats = choose(ctx, empty, k);
@@ -390,7 +408,7 @@ async function buyOne(ctx, runDate) {
         if (p.cancelAfterPayMs) { await sleep(rand(...p.cancelAfterPayMs)); await cancel(ctx, rid); }
       } else ctx.errors.push(`결제 ${r.status} ${r.data?.code || ''}`);
       loops--;
-      if (ctx.p.party === 1 && attempt < 3) { loops = 1; empty = await seatMap(ctx, pass); } // 흩뿌리기: 1석씩 몇 번 더
+      if (ctx.p.kind === 'botspray' && attempt < 3) { loops = 1; empty = await seatMap(ctx, pass); } // 흩뿌리기: 1석씩 몇 번 더
       continue;
     }
     const code = h.data?.code || '';
@@ -407,6 +425,56 @@ async function buyOne(ctx, runDate) {
     ctx.errors.push(`선점 ${h.status} ${code}`);
     break;
   }
+  if (!ctx.seats && !p.holdNoPay && p.waitOnSoldOut && Math.random() < p.waitOnSoldOut) {
+    await call(ctx, 'DELETE', `/api/v1/runs/${RUN_ID}/queue/me`);
+    await waitForOffer(ctx);
+  }
+}
+
+/** 매진: 취소표 대기 → 제안(대기자 명의 HOLD 예약)이 오면 결제. WAIT_MAX_MS 안에 안 오면 포기 */
+async function waitForOffer(ctx) {
+  const a = await call(ctx, 'POST', '/api/v1/waitlists', { runId: RUN_ID, fromStationId: FROM, toStationId: TO, seatGrade: 'GENERAL', seatCount: ctx.party });
+  if (a.status !== 201) { ctx.waited = `error:${a.data?.code || a.status}`; return; }
+  const until = Date.now() + WAIT_MAX_MS;
+  while (Date.now() < until) {
+    await sleep(rand(4000, 8000));
+    const l = await call(ctx, 'GET', '/api/v1/waitlists');
+    const me = (Array.isArray(l.data) ? l.data : l.data?.items || []).find((x) => x.waitlistId === a.data.waitlistId);
+    if (!me || ['EXPIRED', 'CANCELED', 'SKIPPED'].includes(me.status)) { ctx.waited = `error:${me?.status || 'gone'}`; return; }
+    if (me.status === 'OFFERED' && me.offeredReservationId) {
+      await sleep(ctx.p.think());
+      const r = await pay(ctx, me.offeredReservationId);
+      if (r.status === 200 || r.status === 201) { ctx.seats += ctx.party; ctx.waited = 'paid'; } else ctx.waited = `error:pay${r.status}`;
+      return;
+    }
+  }
+  ctx.waited = 'nooffer';
+  await call(ctx, 'DELETE', `/api/v1/waitlists/${a.data.waitlistId}`);
+}
+
+/** 단체: 대표(나) + 명단 → 신청하면 자동 승인 시도. 미뤄지면 15초마다 보다가 예약이 생기면 결제 */
+async function groupBuy(ctx) {
+  const n = Math.round(rand(ctx.p.group[0], ctx.p.group[1]));
+  const people = Array.from({ length: n - 1 }, (_, i) => {
+    const d = [...crypto.createHash('sha256').update(`${TAG}.${ctx.p.kind}.${ctx.n}.pax.${i}`).digest()].map((b) => b % 10).join('').slice(0, 7);
+    return { name: '단체' + [...d.slice(0, 3)].map((x) => '가나다라마바사아자차'[Number(x)]).join(''), phone: `010${d}1`, noPhone: false, passengerType: i % 7 === 6 ? 'CHILD' : 'ADULT', rep: false };
+  });
+  const passengers = [{ name: ctx.id.name, phone: ctx.id.phone, noPhone: false, passengerType: 'ADULT', rep: true }, ...people];
+  await sleep(ctx.p.think());
+  const g = await call(ctx, 'POST', '/api/v1/groups', { runId: RUN_ID, fromStationId: FROM, toStationId: TO, consent: true, passengers });
+  if (g.status !== 201) { ctx.errors.push(`단체 신청 ${g.status} ${g.data?.code || ''}`); return; }
+  let rid = g.data.reservationId;
+  // 일반 좌석은 대기열이 빈 뒤에만 쓰므로(§18.3a) 오픈 직후엔 미뤄진다. 11-27 로컬: 신청 15:31 → 승인 15:38 (대기열이 빈 뒤 첫 재시도)
+  const until = Date.now() + GROUP_WAIT_MS;
+  while (!rid && Date.now() < until) {
+    await sleep(15000);
+    const d = await call(ctx, 'GET', `/api/v1/groups/${g.data.groupId}`);
+    if (d.data?.status === 'REJECTED') { ctx.errors.push('단체 거절'); return; }
+    rid = d.data?.reservationId;
+  }
+  if (!rid) { ctx.errors.push(`단체 승인 대기 (${g.data.status})`); return; }
+  const r = await pay(ctx, rid);
+  if (r.status === 200 || r.status === 201) ctx.seats += n; else ctx.errors.push(`단체 결제 ${r.status} ${r.data?.code || ''}`);
 }
 
 function shiftDate(iso, days) {
@@ -442,7 +510,7 @@ async function runProfile(p, count, runDate) {
 const want = (process.env.PROFILES || '').split(',').map((s) => s.trim()).filter(Boolean);
 // GEN: 1(기본, 1단계 30종) · 2(2단계) · 3(녹화 꾸미기) · h(사람 변형, 오탐 시험) · all. PROFILES로 이름을 주면 단계와 상관없이 그 봇만
 const GEN = process.env.GEN || '1';
-const pool = PROFILES.concat(GEN2, GEN3, GENH);
+const pool = PROFILES.concat(GEN2, GEN3, GENH, GENM);
 const chosen = want.length ? pool.filter((p) => want.includes(p.kind))
   : pool.filter((p) => GEN === 'all' || String(p.gen) === GEN);
 const probe = { token: null, ua: 'practice', deviceFor: () => null };
@@ -452,13 +520,16 @@ if (!runDate) { console.error(`운행 ${RUN_ID}을 찾지 못했습니다 (${run
 console.log(`연습 ${chosen.length}종 × 명의 ${ACCOUNTS} + 합성 사람 ${HUMANS} · 운행 ${RUN_ID} (${runDate}) · 태그 ${TAG} · ${MODE}`);
 
 const t0 = Date.now();
-const jobs = chosen.map((p) => runProfile(p, p.count || ACCOUNTS, runDate).then((c) => [p, c]));
+const countOf = (p) => (p.kind.startsWith('human') ? (p.count || ACCOUNTS) * HUMAN_SCALE : p.count || ACCOUNTS);
+const jobs = chosen.map((p) => runProfile(p, countOf(p), runDate).then((c) => [p, c]));
 if (HUMANS && (!want.length || want.includes('human'))) jobs.push(runProfile(HUMAN, HUMANS, runDate).then((c) => [HUMAN, c]));
 const done = await Promise.all(jobs);
 
-console.log(`\n끝 (${Math.round((Date.now() - t0) / 1000)}초)\n종류            성질          결제 좌석  오류`);
+console.log(`\n끝 (${Math.round((Date.now() - t0) / 1000)}초)\n종류            성질          명의  표받음  결제 좌석  취소표 결제/못받음/오류  오류`);
 for (const [p, ctxs] of done) {
   const errs = ctxs.flatMap((c) => c.errors);
-  console.log(`${p.kind.padEnd(15)} ${p.family.padEnd(12)} ${String(ctxs.reduce((a, c) => a + c.seats, 0)).padStart(5)}    ${errs.length ? [...new Set(errs)].slice(0, 2).join(' / ') : '-'}`);
+  const w = (k) => ctxs.filter((c) => (k === 'error' ? String(c.waited).startsWith('error') : c.waited === k)).length;
+  const waits = ctxs.some((c) => c.waited) ? `${w('paid')}/${w('nooffer')}/${w('error')}` : '-';
+  console.log(`${p.kind.padEnd(15)} ${p.family.padEnd(12)} ${String(ctxs.length).padStart(4)}  ${String(ctxs.filter((c) => c.seats > 0).length).padStart(6)}  ${String(ctxs.reduce((a, c) => a + c.seats, 0)).padStart(8)}  ${waits.padStart(21)}  ${errs.length ? [...new Set(errs)].slice(0, 2).join(' / ') : '-'}`);
 }
 console.log(`\n평가: loadtest/tools/eval_contest.sh ${TAG} ${RUN_ID}`);
