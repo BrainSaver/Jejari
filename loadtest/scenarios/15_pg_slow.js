@@ -44,6 +44,12 @@ const HOLD_RETRY = 3;
 const FROM = __ENV.FROM || '3900023';
 const TO = __ENV.TO || '3900114';
 const PG_ADMIN = __ENV.PG_ADMIN || 'http://127.0.0.1:8090';
+// 계정: create(기본) 실행마다 BUYERS명 가입 · existing 시나리오 11에서 같은 RUN_TAG로 prepare해 둔 계정을 씀 (identity·seqOf가 같음)
+// 공용 서버는 모든 요청이 내 IP 하나라 가입이 시간당 계정 50개쯤에서 막힌다 → 서버에서는 existing
+//   (예: loadtest/tools/server_perf.sh accounts 로 RUN_TAG=perf1 계정 200개 → -e ACCOUNTS=existing -e RUN_TAG=perf1 -e BUYERS=200)
+const ACCOUNTS = (__ENV.ACCOUNTS || 'create').toLowerCase();
+if (!['create', 'existing'].includes(ACCOUNTS)) throw new Error(`ACCOUNTS는 create · existing 중 하나: ${ACCOUNTS}`);
+if (ACCOUNTS === 'existing' && !__ENV.RUN_TAG) throw new Error('ACCOUNTS=existing에는 RUN_TAG를 고정해야 합니다 (같은 태그 = 같은 계정)');
 const PG_PROFILE = (__ENV.PG_PROFILE || '').toLowerCase();
 const PROFILES = {
   fast: { latencyMinMs: 0, latencyMaxMs: 0, capacity: 200, hangRate: 0 },
@@ -107,9 +113,19 @@ export function setup() {
     if (!c) throw new Error(`가짜 PG(${PG_ADMIN})에 설정을 못 보냄. docker compose --profile pg up -d mock-pg 를 했는지, 앱이 --jejari.payment.pg.mode=http 인지 확인`);
     console.log(`가짜 PG 설정 ${PG_PROFILE}: ${JSON.stringify(c)}`);
   }
-  authSmokeTest(tag);
-  console.log(`PG 지연 시험: 구매자 ${BUYERS}명/${SPREAD_SEC}초 + 조회만 ${BROWSERS}명 × ${DURATION_SEC}초. 계정 ${BUYERS}개 만드는 중 (태그 ${tag})…`);
-  for (let i = 0; i < BUYERS; i++) {
+  console.log(`PG 지연 시험: 구매자 ${BUYERS}명/${SPREAD_SEC}초 + 조회만 ${BROWSERS}명 × ${DURATION_SEC}초. 계정 ${ACCOUNTS === 'existing' ? '있는 것' : BUYERS + '개 만드는 중'} (태그 ${tag})…`);
+  if (ACCOUNTS === 'existing') {
+    // 처음·마지막 계정이 로그인되면 그 사이도 있다고 본다 (prepare는 앞에서부터 차례로 만듦)
+    for (const i of [0, BUYERS - 1]) {
+      const id = identity(tag, seqOf(i));
+      const l = login(id.email, id.password, { ip: fakeIp(50001 + i), tag: 'setup_login' });
+      if (l.status !== 200) {
+        throw new Error(`계정 ${i + 1}/${BUYERS}(${id.email})로 로그인하지 못했습니다(${l.status}). `
+          + `시나리오 11을 같은 RUN_TAG=${tag}, USERS=${BUYERS} 이상으로 ACCOUNTS=prepare 하거나 BUYERS를 줄이세요.`);
+      }
+    }
+  } else authSmokeTest(tag);
+  for (let i = 0; ACCOUNTS === 'create' && i < BUYERS; i++) {
     const id = identity(tag, seqOf(i));
     const ip = fakeIp(100 + i);
     const v = verify(id, { ip, tag: 'setup_verify' });

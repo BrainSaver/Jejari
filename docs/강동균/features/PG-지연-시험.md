@@ -94,7 +94,7 @@ k6 (구매자 300명 + 조회만 하는 50명)
   **PG가 아예 응답하지 않는 장애**로 원리를 보였다
 - 회차마다 한 번씩만 쟀다. 조회 p95처럼 작은 차이(0.32~0.88초)는 PC 상태에 따라 흔들릴 수 있다. **p99·최대·스레드 수처럼 큰 차이만 결론으로 쓴다**
 - 측정(1초 간격)도 스레드가 필요해서, 스레드가 다 찬 동안에는 간격이 벌어진다. 다 찬 시간은 기록보다 길다
-- 공용 서버에서는 아직 안 쟀다. 서버는 앱 2대라 상한·스레드가 앱마다 따로다
+- 공용 서버에서는 아직 안 쟀다. 서버는 11-19부터 앱 1대(`jejari@8080`)라 스레드·상한이 로컬과 같은 단위다
 
 ## 다시 돌리기
 
@@ -111,9 +111,67 @@ cd loadtest && ./run.sh pgslow -e RUN_ID=<빈 좌석 많은 서울→부산 운�
 - 결과 모름은 결제 마감 뒤 스캐너가 정리하니 정합성은 몇 분 뒤에 본다
 - 운행 9002처럼 방향이 반대(부산→서울)면 배치도가 400 → 사전 점검이 알려 준다
 
+## 공용 서버에서 (절차)
+
+서버 일은 GCP 콘솔 브라우저 SSH에서, k6는 내 PC에서. 가짜 PG 관리 주소(8090)는 서버 밖으로 안 열려 있어서
+**PG 설정은 서버에서 `curl`로 바꾸고 k6에는 `PG_PROFILE`을 주지 않는다**. 30분쯤 걸리고, 그동안 **실제 사람 결제도 가짜 PG 서버를 탄다**
+(down 동안에는 그 결제도 결과 모름 → 스캐너가 확정) → 팀 채널에 먼저 알린다.
+
+**계정**: 공용 서버는 가입이 시간당 계정 50개쯤에서 막혀 시나리오 15가 300명을 못 만든다 → 11-26 성능 측정 때 만든 `RUN_TAG=perf1` 계정 200개를
+`ACCOUNTS=existing`으로 쓴다 (시나리오 11과 같은 `identity`·번호). 사람 = 카드 한 장이라 카드 명의 상한(3)에 안 걸린다.
+
+```bash
+# [서버] 0. 자동 배포 멈춤 + 가짜 PG 켜기 + 앱을 http 모드로 (응답 한도는 기본 3초 = 로컬 ④와 같은 조건)
+sudo systemctl disable --now jejari-autodeploy.timer
+cd ~/Jejari && C="docker compose -f compose.yaml -f deploy/compose.server.yaml"
+$C --profile pg up -d mock-pg && sleep 3 && curl -s 127.0.0.1:8090/_stats; echo
+grep -q '^JEJARI_PG_MODE=' .env || echo 'JEJARI_PG_MODE=http' >> .env
+sudo systemctl restart jejari@8080 && until curl -fs localhost:8080/actuator/health >/dev/null; do sleep 3; done; echo UP
+```
+
+```bash
+# [내 PC] 1. 빈 운행 고르기 · perf1 계정 확인
+BASE_URL=https://<서버> loadtest/tools/server_perf.sh find
+```
+
+```bash
+# [서버] 2-①. 기준: PG 0초
+curl -s -X PUT 127.0.0.1:8090/_config -H 'Content-Type: application/json' -d '{"latencyMinMs":0,"latencyMaxMs":0,"capacity":200,"hangRate":0}'; echo
+# [서버] 측정 중 스레드·PG 대기 (5초마다, 따로 창 하나 더)
+while true; do date +%T; curl -s localhost:8080/actuator/prometheus | grep -E "^tomcat_threads_busy|^jejari_pg_inflight|^hikaricp_connections_active"; sleep 5; done | tee ~/pg-$(date +%H%M).txt
+```
+
+```bash
+# [내 PC] 2-①. 측정 (PG_PROFILE 없이)
+cd loadtest && ./run.sh pgslow -e BASE_URL=https://<서버> -e RUN_ID=<운행> -e ACCOUNTS=existing -e RUN_TAG=perf1 -e BUYERS=200 -e BROWSERS=50 -e SPREAD_SEC=30 -e DURATION_SEC=75
+```
+
+```bash
+# [서버] 2-④. 장애: 승인은 하되 응답을 30초 안 줌 → 내 PC에서 같은 명령을 다른 빈 운행으로 한 번 더
+curl -s -X PUT 127.0.0.1:8090/_config -H 'Content-Type: application/json' -d '{"latencyMinMs":0,"latencyMaxMs":0,"capacity":200,"hangRate":1,"hangMs":30000}'; echo
+```
+
+```bash
+# [서버] 3. 결과 모름이 0이 될 때까지 기다린다 — 0이 되기 전에 mock으로 되돌리면 스캐너가 "PG가 모르는 주문"으로 실패 처리해
+#   가짜 PG는 승인했는데 좌석이 풀린다 (정합성 검사가 깨짐). 로컬에서는 약 1분
+curl -s -X PUT 127.0.0.1:8090/_config -H 'Content-Type: application/json' -d '{"latencyMinMs":0,"latencyMaxMs":0,"capacity":200,"hangRate":0}'; echo
+PW=$(grep '^ORACLE_APP_PASSWORD=' .env | cut -d= -f2); U=$(grep '^ORACLE_APP_USER=' .env | cut -d= -f2)
+echo "SELECT status, COUNT(*) FROM payment WHERE created_at > SYSTIMESTAMP - INTERVAL '1' HOUR GROUP BY status;"   | $C exec -T oracle bash -lc "sqlplus -S -L $U/$PW@localhost:1521/FREEPDB1"       # REQUESTED가 0이 될 때까지 반복
+```
+
+```bash
+# [서버] 4. 되돌리기 (꼭)
+sed -i '/^JEJARI_PG_MODE=/d' .env
+sudo systemctl restart jejari@8080 && until curl -fs localhost:8080/actuator/health >/dev/null; do sleep 3; done; echo UP
+$C stop mock-pg
+sudo systemctl enable --now jejari-autodeploy.timer && sudo systemctl start jejari-autodeploy && cat ~/jejari-app/autodeploy.state
+```
+
+볼 것: 조회만 하는 사람의 p99·최대(①과 ④ 차이), 스레드 최고(`tomcat_threads_busy`), 정합성 0건 (로컬 표와 같은 기준).
+
 ## 다음
 
 - [x] (2026-11-27) 결제 화면: `PAYMENT_BUSY`면 `Retry-After`만큼(±20%) 뒤 같은 멱등 키로 자동 재시도 — 최대 10번, 결제 기한이 10초 넘게 남을 때만, 화면을 떠나면 멈춤 (`frontend/src/user/payBusy.js` + 단위 테스트 5개, 가짜 서버 응답으로 브라우저 확인: 503 두 번 → 1초 간격 재시도 3번·키 1개 → 결과 화면)
-- [ ] 기능설계서 9장 오류 코드 표에 `PAYMENT_BUSY`(503) 추가 — 팀장 문서라 확인 뒤
+- [x] 기능설계서 9장 오류 코드 표에 `PAYMENT_BUSY`(503) 추가 — 11-27 팀장 허가
 - [ ] 공용 서버에서 한 번 (조영준 님 일정): `docker compose --profile pg up -d mock-pg`, 앱 `JEJARI_PG_MODE=http`. 끝나면 mock으로 되돌림
 - [ ] 상한 값: 40은 "응답 한도가 길 때 스레드를 지키는" 시험값. 3초 한도에서는 꺼 둬도 버텼으니 기본은 끔 유지
