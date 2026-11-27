@@ -327,7 +327,7 @@
 | A 김성원 | 판매 오픈 자동화 | `JdbcOnSaleRunProvider`가 보는 운행이 시각에 맞춰 늘고 줄어든다. `9003`은 오픈 시각(내일 07:00)에 자동으로 열림 |
 | E 조영준 | 부하 시나리오 | 오픈 순간 트래픽을 실제로 재현할 수 있다 — `sale_open_at`을 몇 초 뒤로 넣으면 그 시각에 열림 |
 | A 김성원 | 대기열 숫자 | 현황 API가 `QueueKeys`의 `queue:{runId}`·`queue:active:{runId}`·`queue:throughput:{runId}`를 읽기만 함. 키 이름이 바뀌면 알려 주세요 |
-| C 길동현 | 결제 코드 변경 (11-24~27) | 카드 명의 상한(`PaymentStartTx.checkCardLink`) · `HttpPgClient` · `PgBulkhead`(`PaymentService` 1-2 단계) · 결제 화면 시험 카드·자동 재시도. **기본값은 전부 예전 그대로**, 1-2 단계 위치와 "결과 모름" 처리 확인 요청 → **11-27 "다 허가"**, 기능설계서 9장 오류 코드 2줄 추가 ([알림](길동현-알림-결제-코드-20261127.md)) |
+| C 길동현 | 결제 코드 변경 (11-24~27) | 카드 명의 상한(`PaymentStartTx.checkCardLink`) · `HttpPgClient` · `PgBulkhead`(`PaymentService` 1-2 단계) · 결제 화면 시험 카드·자동 재시도. **기본값은 전부 예전 그대로**, 1-2 단계 위치와 "결과 모름" 처리 확인 요청 → **11-27 "다 허가"**, 기능설계서 9장 오류 코드 3줄 추가 (`PAYMENT_CARD_LINK_LIMIT`·`PAYMENT_BUSY` + 빠져 있던 조영준 님 `PAYMENT_RISK_BLOCKED`) ([알림](길동현-알림-결제-코드-20261127.md)) |
 | D 강다인 | 결제 거절 반복 신호 (ERD v41) | 내 추천안(명의 · 1시간 · 서로 다른 카드 3장 → 30점, 점수만)을 강다인 님이 채택, 사유는 `PG_` 전부 제외로 고침. 코드는 강다인 님, 정책 키 `risk.rule.declined_cards_min`·`_points`는 내가 v41로 |
 | C 길동현 | 결과 모름 결제 | 현황 API의 `payments.unknown`이 §6.2 건수다. ADM-09 화면의 진입 숫자로 쓰면 됨 |
 | D 강다인 | 취소 건수 | 현황의 `rates.cancels`는 `cancellation` 행 기준이라 **만료가 빠진다** (만료는 돈이 안 오가 행을 만들지 않음). 취소율을 볼 때 주의 |
