@@ -60,7 +60,12 @@ export default function Pay() {
   const key = useRef(null);
   const [wait, setWait] = useState(null); // 자동 재시도 대기 {until: ms, attempt}
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []); // 화면을 떠나면 재시도를 멈춘다
+  // 화면을 떠나면 재시도를 멈춘다. 붙을 때 다시 true로 둬야 한다: 개발 모드(StrictMode)는 붙였다 뗐다 다시 붙여서,
+  // 떼는 쪽만 두면 alive가 false로 남아 503 뒤 재시도도, 결과 화면 이동도 안 된다 (2026-11-27 실제 앱으로 시험하다 발견)
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
   const left = useLeft(d?.summary.payDeadlineAt);
 
   const load = () => get(`/api/v1/reservations/${id}`).then(setD).catch(setError);
