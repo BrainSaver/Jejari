@@ -1,12 +1,15 @@
 import ModelOpinion from './ModelOpinion.jsx';
 import ReplayPlayer from './ReplayPlayer.jsx';
+import { Badge, Button, Card, Col, Descriptions, Empty, Row, Segmented, Space, Spin, Table, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useOutletContext, useParams } from 'react-router';
+import { Link, useNavigate, useOutletContext, useParams } from 'react-router';
 import { get, post } from '../api/client.js';
 import { Who } from './AdminLayout.jsx';
 import RequestLog from './RequestLog.jsx';
 import { ago } from './Risk.jsx';
 import { ConfirmButton, ErrorBox } from './ui.jsx';
+import { ApiError } from './ui-antd.jsx';
+import { CASE_ACTION, CASE_STATUS, MEMBER_STATUS, RULE, SEVERITY, SUBJECT, TRIGGER, VERDICT, ko } from './labels.js';
 import { hasRole } from './useAdminAuth.js';
 
 /**
@@ -14,7 +17,7 @@ import { hasRole } from './useAdminAuth.js';
  *   GET  /api/v1/admin/cases?status=&page=           목록
  *   GET  /api/v1/admin/cases/{id}                    요약·마커·연결 계정·점수 이력
  *   GET  /api/v1/admin/cases/{id}/timeline           행동 로그(MongoDB) 타임라인, 의심 구간(inWindow)
- *   POST /api/v1/admin/cases/{id}/actions            판정·조치 (REVIEWER 이상, 사유 5자 이상)
+ *   POST /api/v1/admin/cases/{id}/actions            판정·조치 (검토자 이상, 사유 5자 이상)
  *   POST /api/v1/admin/cases/{id}/unmask             가림 해제 (SUPERVISOR, 사유 필수, admin_action에 먼저 기록)
  *
  * 백엔드가 보이게: 마커는 규칙 코드 그대로, 의심 구간 밖 이벤트는 흐리게, 이벤트 사이 간격(intervalMs)을 그대로 적는다.
@@ -25,45 +28,180 @@ const VERDICTS = [['RESELLER', '되팔이'], ['MACRO', '매크로'], ['CANCEL_AB
 const ACTIONS = { NORMAL: [['CLEAR', '해제 (점수 0, 제한 풀기)']], OTHER: [['CONFIRM', '확정만'], ['RESTRICT', '예매 제한'], ['BAN', '이용 정지']] };
 const COLORS = ['var(--ink)', 'var(--stop)', 'var(--go)', '#1D4ED8', '#D97757', 'var(--amber-d)'];
 
+// 상태 점 색 (Ant Design Badge). 글자도 같이 써서 색만으로 구분하지 않는다
+const STATUS_TAG = { OPEN: 'warning', REVIEWING: 'processing', CONFIRMED: 'error', DISMISSED: 'success' };
+const PAGE_SIZE = 10;
+
 export function CaseList() {
-  const claims = useOutletContext();
+  const navigate = useNavigate();
   const [status, setStatus] = useState('');
+  const [page, setPage] = useState(0);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [sel, setSel] = useState(null);
   useEffect(() => {
-    get('/api/v1/admin/cases?size=50' + (status ? `&status=${status}` : '')).then(setData).catch(setError);
-  }, [status]);
+    setData(null);
+    get(`/api/v1/admin/cases?size=${PAGE_SIZE}&page=${page}` + (status ? `&status=${status}` : ''))
+      .then((d) => {
+        setData(d);
+        setSel((cur) => cur ?? d.items[0]?.caseId ?? null);
+      })
+      .catch(setError);
+  }, [status, page]);
+
+  const columns = [
+    { title: '케이스', dataIndex: 'caseId', width: 76, render: (id) => <Link to={`/admin/cases/${id}`} onClick={(e) => e.stopPropagation()}>C-{id}</Link> },
+    { title: '대상', dataIndex: 'subjectHash', ellipsis: true, render: (h, c) => <span>{ko(SUBJECT, c.subjectType)} <span className="adm-mono" style={{ color: 'var(--faint)' }}>{h.slice(0, 4)}…</span></span> },
+    { title: '발동', dataIndex: 'triggerType', width: 80, render: (t) => <span title={t}>{ko(TRIGGER, t)}</span> },
+    { title: '열 때', dataIndex: 'scoreAtOpen', width: 56, align: 'right', render: (v) => <span className="adm-num">{Math.round(v)}</span> },
+    { title: '지금', dataIndex: 'currentScore', width: 56, align: 'right', render: (v) => <span className="adm-num">{v != null ? Math.round(v) : '—'}</span> },
+    {
+      title: '상태',
+      dataIndex: 'status',
+      width: 128,
+      render: (st, c) => (
+        <Space size={4}>
+          <Badge status={STATUS_TAG[st]} text={<span title={st}>{ko(CASE_STATUS, st)}</span>} />
+          {c.verdict && <Typography.Text type="secondary" style={{ fontSize: 12 }}>{ko(VERDICT, c.verdict)}</Typography.Text>}
+        </Space>
+      ),
+    },
+    { title: '열린 시각', dataIndex: 'openedAt', width: 84, render: (t) => <Typography.Text type="secondary">{ago(t)}</Typography.Text> },
+  ];
+  const items = data?.items || [];
+  const from = page * PAGE_SIZE + 1;
+
   return (
     <>
-      <div className="head"><h1>케이스</h1><span style={{ flex: 1 }} /><Who claims={claims} /></div>
-      <ErrorBox error={error} />
-      <section className="panel">
-        <h2>
-          <span className="grow">의심 케이스 {data ? `${data.items.length}건` : ''}</span>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: 160, minHeight: 32 }} aria-label="상태">
-            <option value="">모든 상태</option>
-            {Object.keys(STATUS).map((s) => <option key={s}>{s}</option>)}
-          </select>
-        </h2>
-        <table>
-          <thead><tr><th>케이스</th><th>대상</th><th>발동 규칙</th><th className="n">열 때 점수</th><th className="n">지금 점수</th><th>상태</th><th>열린 시각</th></tr></thead>
-          <tbody>
-            {(data?.items || []).map((c) => (
-              <tr key={c.caseId}>
-                <td><Link className="link" to={`/admin/cases/${c.caseId}`}>C-{c.caseId}</Link></td>
-                <td>{c.subjectType} <span className="faint num">{c.subjectHash.slice(0, 4)}…</span></td>
-                <td><span className="st plain stop">{c.triggerType}</span></td>
-                <td className="n num">{Math.round(c.scoreAtOpen)}</td>
-                <td className="n num">{c.currentScore != null ? Math.round(c.currentScore) : '—'}</td>
-                <td><span className={'st ' + (STATUS[c.status] || '')}>{c.status}</span>{c.verdict && <span className="faint"> {c.verdict}</span>}</td>
-                <td className="mut">{ago(c.openedAt)}</td>
-              </tr>
-            ))}
-            {data && !data.items.length && <tr><td colSpan={7} className="mut">케이스가 없어요.</td></tr>}
-          </tbody>
-        </table>
-      </section>
+      <div className="adm-title">
+        <h1>의심 케이스</h1>
+      </div>
+      {error && <ApiError error={error} onClose={() => setError(null)} style={{ marginBottom: 16 }} />}
+      <Row gutter={16} wrap={false} style={{ alignItems: 'stretch' }}>
+        <Col flex="auto" style={{ minWidth: 0 }}>
+          <Card className="adm-work">
+            <Segmented
+              style={{ marginBottom: 12, alignSelf: 'flex-start' }}
+              value={status}
+              onChange={(v) => {
+                setStatus(v);
+                setPage(0);
+                setSel(null);
+              }}
+              options={[{ label: '전체', value: '' }, ...Object.keys(STATUS_TAG).map((k) => ({ label: ko(CASE_STATUS, k), value: k }))]}
+            />
+            <Table
+              className="adm-fixed"
+              size="middle"
+              rowKey="caseId"
+              loading={!data && !error}
+              columns={columns}
+              dataSource={items}
+              scroll={{ y: 440 }}
+              pagination={false}
+              rowClassName={(c) => (c.caseId === sel ? 'ant-table-row-selected' : '')}
+              onRow={(c) => ({ onClick: () => setSel(c.caseId), onDoubleClick: () => navigate(`/admin/cases/${c.caseId}`) })}
+              locale={{ emptyText: '이 상태의 케이스가 없어요' }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+              <Typography.Text type="secondary" className="adm-num">
+                {items.length ? `${from}–${from + items.length - 1}번째` : ''} · {page + 1}쪽
+              </Typography.Text>
+              <Button size="small" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>이전</Button>
+              <Button size="small" disabled={!data?.hasNext} onClick={() => setPage((p) => p + 1)}>다음</Button>
+            </div>
+          </Card>
+        </Col>
+        <Col flex="380px">
+          <CasePreview caseId={sel} />
+        </Col>
+      </Row>
     </>
+  );
+}
+
+/** 점수 근거 (risk_score.reasons JSON: [{rule, observed, threshold, points, severity}]). JSON이 아니면 글자 그대로 */
+function Reasons({ raw }) {
+  if (!raw) return null;
+  let list = null;
+  try {
+    list = JSON.parse(raw);
+  } catch {
+    /* 글자 그대로 */
+  }
+  if (!Array.isArray(list)) return <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginTop: 12 }}>{raw}</Typography.Paragraph>;
+  return (
+    <>
+      <Typography.Text type="secondary" style={{ display: 'block', fontSize: 13, marginTop: 12, marginBottom: 4 }}>점수 근거</Typography.Text>
+      <Space direction="vertical" size={4} style={{ width: '100%', marginBottom: 8 }}>
+        {list.map((r, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13 }}>
+            <span title={r.rule}>{ko(RULE, r.rule)}</span>
+            <span style={{ color: 'var(--mut)' }}>
+              {r.observed != null && <>관측 {r.observed}{r.threshold != null ? ` / 기준 ${r.threshold}` : ''} · </>}
+              +{r.points}점
+            </span>
+          </div>
+        ))}
+      </Space>
+    </>
+  );
+}
+
+/** 목록 옆 요약: GET /api/v1/admin/cases/{id}의 사유·마커·연결 계정. 판정·조치는 상세 화면에서 */
+function CasePreview({ caseId }) {
+  const [d, setD] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    if (!caseId) return;
+    setD(null);
+    setError(null);
+    get(`/api/v1/admin/cases/${caseId}`).then(setD).catch(setError);
+  }, [caseId]);
+  const s = d?.summary;
+  return (
+    <Card
+      className="adm-work"
+      title={caseId ? `C-${caseId}` : '케이스 요약'}
+      extra={caseId && <Link to={`/admin/cases/${caseId}`}>자세히</Link>}
+    >
+      {!caseId ? (
+        <Empty style={{ marginTop: 120 }} description="왼쪽 표에서 케이스를 고르세요" />
+      ) : error ? (
+        <ApiError error={error} />
+      ) : !d ? (
+        <Spin style={{ marginTop: 120 }} />
+      ) : (
+        <>
+          <Descriptions
+            size="small"
+            column={1}
+            items={[
+              { key: 'st', label: '상태', children: <Space size={8}><Badge status={STATUS_TAG[s.status]} text={ko(CASE_STATUS, s.status)} />{s.verdict && <span>{ko(VERDICT, s.verdict)}</span>}</Space> },
+              { key: 'sub', label: '대상', children: <span>{ko(SUBJECT, s.subjectType)} <span className="adm-mono">{s.subjectHash.slice(0, 8)}…</span></span> },
+              { key: 'tr', label: '발동', children: <span>{ko(TRIGGER, s.triggerType)}{s.triggerDetail ? ` · ${s.triggerDetail}` : ''}</span> },
+              { key: 'sc', label: '점수', children: <span className="adm-num">{Math.round(s.scoreAtOpen)} → {s.currentScore != null ? Math.round(s.currentScore) : '—'}</span> },
+              { key: 'acc', label: '연결 계정', children: `${d.accounts.length}개` },
+              { key: 'op', label: '열림', children: `${s.openedAt?.replace('T', ' ').slice(0, 16)}${s.closedAt ? ` · 닫힘 ${s.closedAt.replace('T', ' ').slice(5, 16)}` : ''}` },
+            ]}
+          />
+          <Reasons raw={d.reasons} />
+          <Typography.Text type="secondary" style={{ display: 'block', fontSize: 13, marginTop: 8, marginBottom: 4 }}>의심 행동 {d.markers.length}개</Typography.Text>
+          <div style={{ fontSize: 13 }}>
+            {d.markers.slice(0, 12).map((m) => (
+              <div key={m.markerId} title={m.ruleCode} style={{ padding: '2px 0' }}>
+                {m.label || ko(RULE, m.ruleCode)}
+                {m.severity && m.severity !== 'LOW' && (
+                  <Typography.Text type={m.severity === 'HIGH' ? 'danger' : 'warning'} style={{ marginLeft: 8, fontSize: 12 }}>{ko(SEVERITY, m.severity)}</Typography.Text>
+                )}
+              </div>
+            ))}
+            {d.markers.length > 12 && <Typography.Text type="secondary">외 {d.markers.length - 12}개</Typography.Text>}
+            {!d.markers.length && <Typography.Text type="secondary">없음</Typography.Text>}
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 
@@ -101,7 +239,7 @@ export default function CaseDetail() {
     <>
       <div className="head">
         <h1>케이스 C-{caseId}</h1>
-        <span className="crumb"><Link className="link" to="/admin/risk">위험 사용자</Link> / {s ? `${s.subjectType} ${s.subjectHash.slice(0, 4)}…` : ''}</span>
+        <span className="crumb"><Link className="link" to="/admin/risk">위험 사용자</Link> / {s ? `${ko(SUBJECT, s.subjectType)} ${s.subjectHash.slice(0, 4)}…` : ''}</span>
         <span style={{ flex: 1 }} />
         <Who claims={claims} />
       </div>
@@ -111,8 +249,8 @@ export default function CaseDetail() {
           <div className={'kpi' + (Number(s.currentScore ?? s.scoreAtOpen) >= 80 ? ' alarm' : '')}>
             <div className="l">위험 점수</div>
             <div className="n">{Math.round(s.currentScore ?? s.scoreAtOpen)}</div>
-            <div className="d">열 때 {Math.round(s.scoreAtOpen)} · {s.subjectType} {s.subjectHash.slice(0, 6)}…</div>
-            <span className="src">risk_score · 1분 배치</span>
+            <div className="d">열 때 {Math.round(s.scoreAtOpen)} · {ko(SUBJECT, s.subjectType)} {s.subjectHash.slice(0, 6)}…</div>
+            <span className="src">1분마다 계산</span>
           </div>
           <div className="kpi">
             <div className="l">같은 키로 묶인 계정</div>
@@ -121,13 +259,13 @@ export default function CaseDetail() {
           </div>
           <div className="kpi">
             <div className="l">발동 규칙</div>
-            <div className="n" style={{ fontSize: 18, padding: '8px 0' }}><span className="st stop">{s.triggerType}</span></div>
+            <div className="n" style={{ fontSize: 18, padding: '8px 0' }}><span className="st stop">{ko(TRIGGER, s.triggerType)}</span></div>
             <div className="d">{s.triggerDetail || d.reasons || ''}</div>
           </div>
           <div className="kpi">
             <div className="l">상태</div>
-            <div className="n" style={{ fontSize: 22, padding: '6px 0' }}><span className={'st ' + (STATUS[s.status] || '')} style={{ fontSize: 14 }}>{s.status}</span></div>
-            <div className="d">{ago(s.openedAt)} 열림{s.verdict ? ` · 판정 ${s.verdict}` : ''}</div>
+            <div className="n" style={{ fontSize: 22, padding: '6px 0' }}><span className={'st ' + (STATUS[s.status] || '')} style={{ fontSize: 14 }}>{ko(CASE_STATUS, s.status)}</span></div>
+            <div className="d">{ago(s.openedAt)} 열림{s.verdict ? ` · 판정 ${ko(VERDICT, s.verdict)}` : ''}</div>
           </div>
         </div>
       )}
@@ -144,10 +282,10 @@ export default function CaseDetail() {
             {d.markers?.length > 0 && (
               <>
                 <hr className="sep" />
-                <h2 style={{ fontSize: 14 }}>탐지 마커 {d.markers.length}개</h2>
+                <h2 style={{ fontSize: 14 }}>의심 행동 {d.markers.length}개</h2>
                 {d.markers.map((m) => (
                   <div key={m.markerId} className="row" style={{ fontSize: 13, padding: '4px 0', borderBottom: '1px solid var(--line2)' }}>
-                    <span className={'st plain ' + (m.severity === 'HIGH' ? 'stop' : 'amber')}>{m.ruleCode}</span>
+                    <span className={'st plain ' + (m.severity === 'HIGH' ? 'stop' : 'amber')} title={m.ruleCode}>{ko(RULE, m.ruleCode)}</span>
                     <span className="grow">{m.label}</span>
                     <span className="faint num">{time(m.at)}</span>
                   </div>
@@ -186,7 +324,7 @@ function Timeline({ tl, color, range }) {
         </span>
         <a className="btn ghost sm" href="#replay">재생 ↓</a>
       </h2>
-      <p className="sub">MongoDB 행동 로그. 빨간 줄이 의심 구간 안, 흐린 줄은 앞뒤 맥락이에요. {tl?.truncated ? '많아서 앞부분만 보여요.' : ''}
+      <p className="sub">빨간 줄이 의심 구간 안, 흐린 줄은 앞뒤 맥락이에요. {tl?.truncated ? '많아서 앞부분만 보여요.' : ''}
         {range?.cut ? ` 의심 구간이 24시간보다 길어 마지막 24시간만 보여요 (서버 조회 한도).` : ''}</p>
       {tl && !tl.events.length && <p className="mut">이 기간 행동 로그가 없어요.</p>}
       <ol className="tl">
@@ -202,7 +340,7 @@ function Timeline({ tl, color, range }) {
                 {r.e.responseStatus && r.e.responseStatus >= 400 ? <span className="faint"> · {r.e.responseStatus}</span> : null}
                 {r.e.intervalMs != null && r.e.intervalMs < 1000 ? <span style={{ fontSize: 12, color: 'var(--stop)', fontWeight: 700 }}> · 앞 이벤트와 {r.e.intervalMs}ms</span> : null}
               </span>
-              {r.marks.map((m) => <span key={m.markerId} className={'st plain ' + (m.severity === 'HIGH' ? 'stop' : 'amber')}>{m.ruleCode}</span>)}
+              {r.marks.map((m) => <span key={m.markerId} className={'st plain ' + (m.severity === 'HIGH' ? 'stop' : 'amber')} title={m.ruleCode}>{ko(RULE, m.ruleCode)}</span>)}
             </li>
           ),
         )}
@@ -235,31 +373,30 @@ function Judge({ caseId, summary, claims, onDone }) {
   return (
     <>
       <h2>판정과 조치</h2>
-      {!can && <p className="sub">REVIEWER 이상만 판정할 수 있어요. 지금은 읽기만 돼요.</p>}
-      {closed && <div className="alert sky">이미 판정이 끝난 케이스예요 ({summary.status}{summary.verdict ? ` · ${summary.verdict}` : ''}).</div>}
+      {!can && <p className="sub">검토자 이상만 판정할 수 있어요. 지금은 읽기만 돼요.</p>}
+      {closed && <div className="alert sky">이미 판정이 끝난 케이스예요 ({ko(CASE_STATUS, summary.status)}{summary.verdict ? ` · ${ko(VERDICT, summary.verdict)}` : ''}).</div>}
       <ErrorBox error={error} />
       {result && (
         <div className="alert sky">
-          저장했어요. 케이스 {result.caseStatus}, 조치 {result.action} (admin_action #{result.actionId}), 회원 상태 바뀐 계정 {result.membersChanged}개.
-          위험 캐시(Redis)도 바로 바뀌었어요.
+          저장했어요. 케이스 {ko(CASE_STATUS, result.caseStatus)}, 조치 {ko(CASE_ACTION, result.action)} (관리자 기록 #{result.actionId}), 회원 상태 바뀐 계정 {result.membersChanged}개. 위험 점수에도 바로 반영됐어요.
         </div>
       )}
       <fieldset disabled={!can || closed} style={{ border: 0, padding: 0, margin: 0 }}>
         <label className="field"><span className="lbl">판정</span>
           <select value={verdict} onChange={(e) => setVerdict(e.target.value)}>
-            {VERDICTS.map(([v, l]) => <option key={v} value={v}>{v} ({l})</option>)}
+            {VERDICTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </label>
         <label className="field"><span className="lbl">조치</span>
           <select value={action} onChange={(e) => setAction(e.target.value)}>
-            {options.map(([v, l]) => <option key={v} value={v}>{v} ({l})</option>)}
+            {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </label>
         <label className="field"><span className="lbl">사유</span>
-          <textarea rows={3} value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="예: 같은 CI 4계정이 0.03초 안에 동시 진입·선점" />
-          <span className="hint">5자 이상. admin_action에 남아요.</span>
+          <textarea rows={3} value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="예: 같은 명의 4계정이 0.03초 안에 동시 진입·선점" />
+          <span className="hint">5자 이상. 관리자 기록에 남아요.</span>
         </label>
-        <ConfirmButton className="btn wide" confirm={`한 번 더 누르면 ${action} 저장`} onConfirm={save} disabled={memo.trim().length < 5}>판정 저장</ConfirmButton>
+        <ConfirmButton className="btn wide" confirm={`한 번 더 누르면 ${ko(CASE_ACTION, action)} 저장`} onConfirm={save} disabled={memo.trim().length < 5}>판정 저장</ConfirmButton>
       </fieldset>
     </>
   );
@@ -282,12 +419,12 @@ function Unmask({ caseId, claims }) {
   return (
     <>
       <h2 style={{ fontSize: 14 }}>개인정보 보기</h2>
-      <p className="sub" style={{ margin: '-6px 0 12px' }}>감독자(SUPERVISOR)만 가능해요. 사유와 함께 먼저 기록되고, 기록이 실패하면 원문도 안 나와요. 화면을 떠나면 사라져요.</p>
+      <p className="sub" style={{ margin: '-6px 0 12px' }}>총괄 관리자만 가능해요. 사유와 함께 먼저 기록되고, 기록이 실패하면 원문도 안 나와요. 화면을 떠나면 사라져요.</p>
       <ErrorBox error={error} />
       {rows ? (
         <table>
           <thead><tr><th>회원</th><th>이름</th><th>휴대폰</th><th>이메일</th><th>상태</th></tr></thead>
-          <tbody>{rows.map((a) => <tr key={a.memberId}><td className="num">{a.memberId}</td><td>{a.name}</td><td className="num">{a.phone}</td><td>{a.email}</td><td>{a.status}</td></tr>)}</tbody>
+          <tbody>{rows.map((a) => <tr key={a.memberId}><td className="num">{a.memberId}</td><td>{a.name}</td><td className="num">{a.phone}</td><td>{a.email}</td><td>{ko(MEMBER_STATUS, a.status)}</td></tr>)}</tbody>
         </table>
       ) : (
         <fieldset disabled={!can} style={{ border: 0, padding: 0, margin: 0 }}>

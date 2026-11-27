@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { RUN_STATUS, ko } from './labels.js';
 
 /**
  * 두 단계 버튼: 처음 누르면 "한 번 더 누르면 …"으로 바뀌고 4초 안에 다시 눌러야 실행 (alert·confirm 대신, DESIGN.md)
@@ -39,7 +40,7 @@ export function ErrorBox({ error, onClose }) {
       <div style={{ fontSize: 12, marginTop: 2 }}>
         <code>{error.code}</code>
         {error.status ? ` · HTTP ${error.status}` : ''}
-        {error.traceId && <> · traceId <code>{error.traceId}</code></>}
+        {error.traceId && <> · 오류 번호 <code>{error.traceId}</code></>}
         {onClose && (
           <button type="button" className="btn ghost sm" style={{ marginLeft: 8, minHeight: 24 }} onClick={onClose}>닫기</button>
         )}
@@ -51,5 +52,5 @@ export function ErrorBox({ error, onClose }) {
 /** 운행 상태 배지. 색만으로 구분하지 않고 글자도 같이 (DESIGN.md) */
 export function RunStatus({ status }) {
   const cls = { ON_SALE: 'go', SCHEDULED: 'amber', CLOSED: '', DEPARTED: 'sky' }[status] ?? '';
-  return <span className={'st ' + cls}>{status}</span>;
+  return <span className={'st ' + cls} title={status}>{ko(RUN_STATUS, status)}</span>;
 }

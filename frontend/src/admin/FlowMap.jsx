@@ -18,7 +18,7 @@ const C = {
   bg: '#13202F', grid: 'rgba(255,248,231,.05)', edge: 'rgba(143,211,255,.16)', node: '#1D2F45', text: '#F3EEE2',
   sub: '#9FB0C6', e4: '#76839A', ok: '#3FBF7F', warn: '#F2B705', crit: '#FF5D5D', dot: '#8FD3FF', err: '#FF5D5D', rej: '#F2B705',
 };
-const STORE_UNIT = { redis: '명령', oracle: '커넥션', mongo: '명령', kafka: '발행' };
+const STORE_UNIT = { redis: '작업', oracle: '연결', mongo: '작업', kafka: '보냄' };
 
 const fmt = (v) => (v == null ? '—' : v >= 100 ? Math.round(v).toLocaleString() : v >= 10 ? v.toFixed(0) : v.toFixed(1));
 function nice(x) {
@@ -296,9 +296,9 @@ export default function FlowMap({ flow, error, stale, age }) {
       {error && <div className="alert stop">흐름 값을 못 읽었어요: {error.message}</div>}
       <div className="tr-legend" aria-hidden={table}>
         <span><i className="tr-ldot" /> 정상 요청</span>
-        <span><i className="tr-ldot err" /> 서버 오류 5xx</span>
-        <span><i className="tr-ldot rej" /> 요청 제한 429 (되돌아감)</span>
-        <span><i className="tr-ldot e4" /> 그 밖의 4xx</span>
+        <span><i className="tr-ldot err" /> 서버 오류</span>
+        <span><i className="tr-ldot rej" /> 요청 제한 (되돌아감)</span>
+        <span><i className="tr-ldot e4" /> 사용자 쪽 오류</span>
         <span className="mut">점 1개 = 요청 {unit.toLocaleString()}건 · 저장소 작업 {sunit.toLocaleString()}건</span>
         <span className="mut grow tr-right">
           지금 {fmt(total)}건/초{total > 0 ? ` · 오류 ${((100 * err) / total).toFixed(1)}%` : ''}
@@ -392,11 +392,11 @@ function Tip({ hover, flow, groups, stores }) {
     rows = [['초당 요청', fmt(groups.reduce((s, g) => s + g.rps, 0))]];
   } else if (hover.id === 'app') {
     title = '앱 서버';
-    rows = [['응답하는 앱', `${flow?.instancesUp ?? 0} / ${flow?.instancesTotal ?? 0}대`], ['Kafka 소비', `${fmt(flow?.kafkaConsumed)}/초`]];
+    rows = [['응답하는 앱', `${flow?.instancesUp ?? 0} / ${flow?.instancesTotal ?? 0}대`], ['메시지 처리', `${fmt(flow?.kafkaConsumed)}/초`]];
   } else if (hover.id.startsWith('g')) {
     const g = groups[+hover.id.slice(1)];
     title = g.name;
-    rows = [['초당 요청', fmt(g.rps)], ['평균 응답', `${fmt(g.avgMs)}ms`], ['5xx', `${fmt(g.err5)}/초`], ['429 제한', `${fmt(g.rejected)}/초`], ['409 충돌', `${fmt(g.conflict)}/초`], ['그 밖의 4xx', `${fmt(g.err4)}/초`]];
+    rows = [['초당 요청', fmt(g.rps)], ['평균 응답', `${fmt(g.avgMs)}ms`], ['서버 오류', `${fmt(g.err5)}/초`], ['요청 제한', `${fmt(g.rejected)}/초`], ['좌석 겹침', `${fmt(g.conflict)}/초`], ['사용자 쪽 오류', `${fmt(g.err4)}/초`]];
     if (hover.id === 'g0') rows.push(['줄 선 사람', fmt(flow?.queueWaiting)], ['입장한 사람', fmt(flow?.queueActive)]);
   } else {
     const s = stores[+hover.id.slice(1)];
@@ -418,7 +418,7 @@ function FlowTable({ flow, groups, stores }) {
   return (
     <table>
       <thead>
-        <tr><th>구간</th><th className="n">초당</th><th className="n">평균 응답</th><th className="n">5xx/초</th><th className="n">429/초</th><th className="n">409/초</th><th className="n">4xx/초</th></tr>
+        <tr><th>구간</th><th className="n">초당</th><th className="n">평균 응답</th><th className="n">서버 오류/초</th><th className="n">요청 제한/초</th><th className="n">좌석 겹침/초</th><th className="n">사용자 오류/초</th></tr>
       </thead>
       <tbody>
         {groups.map((g) => (
@@ -432,7 +432,7 @@ function FlowTable({ flow, groups, stores }) {
             <td>앱 → {s.name} ({STORE_UNIT[s.key]})</td><td className="n">{fmt(s.ops)}</td><td colSpan={5} />
           </tr>
         ))}
-        <tr><td>Kafka → 앱 (소비)</td><td className="n">{fmt(flow?.kafkaConsumed)}</td><td colSpan={5} /></tr>
+        <tr><td>메시지 전달 → 앱 (처리)</td><td className="n">{fmt(flow?.kafkaConsumed)}</td><td colSpan={5} /></tr>
       </tbody>
     </table>
   );

@@ -9,11 +9,11 @@ export default function RequestLog({ rows = 8, filter }) {
   const shown = (filter ? log.filter(filter) : log).slice(0, rows);
   return (
     <section className="panel">
-      <h2>이 화면이 보낸 요청</h2>
-      <p className="sub">traceId로 서버 로그를 찾을 수 있어요 (응답 헤더 X-Trace-Id, 로그 MDC traceId)</p>
+      <h2>개발자용 정보 (이 화면이 보낸 요청)</h2>
+      <p className="sub">문제가 생기면 오류 번호를 개발자에게 알려 주세요.</p>
       <table className="reqlog">
         <thead>
-          <tr><th>시각</th><th>요청</th><th className="n">상태</th><th className="n">시간</th><th>traceId</th></tr>
+          <tr><th>시각</th><th>요청</th><th className="n">상태</th><th className="n">시간</th><th>오류 번호</th></tr>
         </thead>
         <tbody>
           {shown.map((r, i) => (

@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router';
 import { get } from '../api/client.js';
 import { usePolling } from '../hooks/usePolling.js';
 import { Who } from './AdminLayout.jsx';
 import FlowMap from './FlowMap.jsx';
 import Icon from './Icon.jsx';
+import { plainFlow, plainTraffic } from './labels.js';
 
 /**
  * A-10 트래픽 관제. 서비스 전체에 지금 얼마나 몰리고, 어디가 느리거나 깨지는지 한 화면에.
@@ -62,7 +63,8 @@ export default function Traffic() {
   const range = RANGES.some(([k]) => k === params.get('range')) ? params.get('range') : '1h';
   const view = usePolling(() => get(`/api/v1/admin/traffic?range=${range}`), 10_000, [range]);
   const flow = usePolling(() => get('/api/v1/admin/traffic/flow'), 2_000, []);
-  const v = view.data;
+  const v = useMemo(() => plainTraffic(view.data), [view.data]);
+  const flowData = useMemo(() => plainFlow(flow.data), [flow.data]);
   const now = useNow(1000);
   const viewAt = useReceivedAt(view.data);
   const flowAt = useReceivedAt(flow.data);
@@ -93,7 +95,7 @@ export default function Traffic() {
         </div>
         {GRAFANA && (
           <a className="btn ghost sm" href={GRAFANA} target="_blank" rel="noreferrer">
-            <Icon name="external" /> Grafana
+            <Icon name="external" /> 자세한 그래프
           </a>
         )}
         <button type="button" className="btn ghost sm" onClick={toggleFull} aria-pressed={full}>
@@ -104,7 +106,7 @@ export default function Traffic() {
       </div>
 
       <HealthBar v={v} error={view.error} stale={viewStale} age={viewAt ? Math.round((now - viewAt) / 1000) : null} />
-      <FlowMap flow={flow.data} error={flow.error} stale={flowStale} age={flowAt ? Math.round((now - flowAt) / 1000) : null} />
+      <FlowMap flow={flowData} error={flow.error} stale={flowStale} age={flowAt ? Math.round((now - flowAt) / 1000) : null} />
       {v?.available && (
         <div className={viewStale ? 'tr-stale' : undefined}>
           <Kpis n={v.now} charts={v.charts} />
@@ -117,8 +119,8 @@ export default function Traffic() {
           </div>
           <Endpoints rows={v.endpoints} />
           <p className="tr-foot faint">
-            Prometheus가 5초마다 앱에서 거둔 값을 서버가 고정 쿼리로 읽어 보여 줘요. 그래프 값은 {v.stepSec}초 간격 평균이라
-            실제보다 5~{Math.max(30, v.stepSec)}초 늦어요. 이 화면 자신의 요청과 actuator(수집)는 세지 않아요.
+            서버 상태를 5초마다 모아 보여 줘요. 그래프 값은 {v.stepSec}초 간격 평균이라
+            실제보다 5~{Math.max(30, v.stepSec)}초 늦어요. 이 화면 자신의 요청과 상태 수집 요청은 세지 않아요.
           </p>
         </div>
       )}
@@ -163,12 +165,12 @@ function Kpis({ n, charts }) {
   const surgeText = n.surge != null ? `평소의 ${fmt(n.surge)}배 · 최고 ${fmt(n.peakRps)}` : `최고 ${fmt(n.peakRps)} · 평소 값 쌓는 중`;
   const tiles = [
     ['초당 요청', fmt(n.rps), surgeText, n.surge >= 3 ? 'surge' : false, line('total', 0)],
-    ['응답 p95', n.p95Ms == null ? '—' : `${fmt(n.p95Ms, 0)}ms`, `p50 ${fmt(n.p50Ms, 0)} · p99 ${fmt(n.p99Ms, 0)}ms`, n.p95Ms >= 1000,
+    ['느린 응답 (상위 5%)', n.p95Ms == null ? '—' : `${fmt(n.p95Ms, 0)}ms`, `보통 ${fmt(n.p50Ms, 0)} · 아주 느림(상위 1%) ${fmt(n.p99Ms, 0)}ms`, n.p95Ms >= 1000,
       line('latency', 1)],
-    ['5xx 오류', n.errorPct == null ? '—' : `${fmt(n.errorPct, 2)}%`, `4xx ${fmt(n.clientErrorPct)}% · 429 ${fmt(n.rejectPct)}%`,
+    ['서버 오류율', n.errorPct == null ? '—' : `${fmt(n.errorPct, 2)}%`, `사용자 쪽 오류 ${fmt(n.clientErrorPct)}% · 요청 제한 ${fmt(n.rejectPct)}%`,
       n.errorPct >= 1, line('errors', 0)],
     ['대기열', fmt(n.queueWaiting, 0), `입장 ${fmt(n.queueActive, 0)}명`, false, line('queue', 0)],
-    ['예약 성공/초', fmt(n.reservePerSec), `결제 ${fmt(n.payPerSec)}/초 · 409 충돌 ${fmt(n.conflictPerSec)}/초`, false,
+    ['예약 성공/초', fmt(n.reservePerSec), `결제 ${fmt(n.payPerSec)}/초 · 좌석 겹침 ${fmt(n.conflictPerSec)}/초`, false,
       line('business', 0)],
     ['앱 서버', `${n.instancesUp}/${n.instancesTotal}`, n.instancesUp < n.instancesTotal ? '응답 없는 앱 있음' : '모두 응답',
       n.instancesUp < n.instancesTotal, null],
@@ -205,11 +207,11 @@ function Spark({ v }) {
 /** 자원 게이지: 막대 + 주의·위험 눈금 (서버 TrafficService.health와 같은 문턱) */
 function Meters({ n }) {
   const rows = [
-    ['CPU', n.cpuPct, 80, 95],
-    ['힙 메모리', n.heapPct, 85, 95],
-    ['DB 커넥션', n.dbPoolPct, 80, 95, n.dbPending ? `대기 ${fmt(n.dbPending, 0)}` : null],
-    ['Tomcat 스레드', n.tomcatPct, 80, 95],
-    ['Redis 메모리', n.redisMemPct, 80, 90],
+    ['CPU (서버 계산량)', n.cpuPct, 80, 95],
+    ['서버 메모리', n.heapPct, 85, 95],
+    ['DB 연결 사용', n.dbPoolPct, 80, 95, n.dbPending ? `대기 ${fmt(n.dbPending, 0)}` : null],
+    ['동시 처리 칸', n.tomcatPct, 80, 95],
+    ['임시 저장소 사용량', n.redisMemPct, 80, 90],
     // 로그인 대기실 (LoginGate): 몰리면 줄을 서고 다 차면 "N초 뒤 자동 재시도". 다른 API에는 영향 없음
     ['로그인 대기실', n.loginQueuePct, 50, 90, n.loginQueue ? `${fmt(n.loginQueue, 0)}명` : null],
   ];
@@ -252,17 +254,17 @@ function DataLoss({ p }) {
   const qLv = p.queuePct == null ? '' : p.queuePct >= 90 ? 'crit' : p.queuePct >= 50 ? 'warn' : 'ok';
   const oLv = p.outboxOldestSec == null ? '' : p.outboxOldestSec >= 120 ? 'crit' : p.outboxOldestSec >= 30 ? 'warn' : 'ok';
   const cells = [
-    ['행동 로그 수집', p.behaviorPerSec == null ? '—' : `${fmt(p.behaviorPerSec)}/초`, 'Kafka가 받은 것', 'ok'],
-    ['MongoDB 적재', p.storedPerSec == null ? '—' : `${fmt(p.storedPerSec)}/초`, '수집과 비슷해야 정상', p.behaviorPerSec > 1 && (p.storedPerSec ?? 0) < p.behaviorPerSec * 0.5 ? 'warn' : 'ok'],
-    ['형식 오류 (최근 5분)', `${n0(p.skipped5m)}건`, '적재 안 됨 · 밀림에도 안 잡힘', p.skipped5m >= 1 ? (p.skipped5m >= (p.stored5m ?? 0) ? 'crit' : 'warn') : 'ok'],
-    ['버림 (최근 5분)', `${n0(p.dropped5m)}건`, `보내기 큐가 넘쳐서 · 지금 ${fmt(p.droppedPerSec)}/초`, p.dropped5m >= 1000 ? 'crit' : p.dropped5m >= 1 ? 'warn' : 'ok'],
-    ['전송 실패 (최근 5분)', `${n0(p.failed5m)}건`, 'Kafka가 받지 못함', p.failed5m >= 1000 ? 'crit' : p.failed5m >= 1 ? 'warn' : 'ok'],
-    ['보내기 큐', p.queuePct == null ? '—' : `${fmt(p.queuePct)}%`, '5만 건이 차면 버리기 시작', qLv],
+    ['행동 로그 수집', p.behaviorPerSec == null ? '—' : `${fmt(p.behaviorPerSec)}/초`, '서버가 받은 것', 'ok'],
+    ['행동 로그 저장', p.storedPerSec == null ? '—' : `${fmt(p.storedPerSec)}/초`, '수집과 비슷해야 정상', p.behaviorPerSec > 1 && (p.storedPerSec ?? 0) < p.behaviorPerSec * 0.5 ? 'warn' : 'ok'],
+    ['형식 오류 (최근 5분)', `${n0(p.skipped5m)}건`, '저장 안 됨 · 밀림에도 안 잡힘', p.skipped5m >= 1 ? (p.skipped5m >= (p.stored5m ?? 0) ? 'crit' : 'warn') : 'ok'],
+    ['버림 (최근 5분)', `${n0(p.dropped5m)}건`, `보낼 대기 줄이 넘쳐서 · 지금 ${fmt(p.droppedPerSec)}/초`, p.dropped5m >= 1000 ? 'crit' : p.dropped5m >= 1 ? 'warn' : 'ok'],
+    ['전송 실패 (최근 5분)', `${n0(p.failed5m)}건`, '메시지 전달 실패', p.failed5m >= 1000 ? 'crit' : p.failed5m >= 1 ? 'warn' : 'ok'],
+    ['보낼 대기 줄', p.queuePct == null ? '—' : `${fmt(p.queuePct)}%`, '5만 건이 차면 버리기 시작', qLv],
     ['격리 보관 (최근 1시간)', `${n0(p.deadLetters1h)}건`,
       p.deadLetters1h ? (p.deadLetters || []).slice(0, 2).map((d) => `${d.group} ${REASON[d.reason] || d.reason} ${Math.round(d.count)}`).join(' · ')
-        : '소비자가 포기한 메시지 없음', p.deadLetters5m >= 1 ? 'warn' : 'ok'],
-    ['예약 이벤트 미발행', `${n0(p.outboxPending)}건`,
-      p.outboxPending ? `가장 오래 ${n0(p.outboxOldestSec)}초째${p.outboxFailed ? ` · 실패 ${n0(p.outboxFailed)}` : ''}` : 'outbox → Kafka 밀림 없음', oLv],
+        : '처리를 포기한 기록 없음', p.deadLetters5m >= 1 ? 'warn' : 'ok'],
+    ['아직 안 보낸 예약 알림', `${n0(p.outboxPending)}건`,
+      p.outboxPending ? `가장 오래 ${n0(p.outboxOldestSec)}초째${p.outboxFailed ? ` · 실패 ${n0(p.outboxFailed)}` : ''}` : '밀림 없음', oLv],
   ];
   const lagMax = Math.max(1, ...p.lags.map((l) => l.lag ?? 0));
   return (
@@ -278,11 +280,11 @@ function DataLoss({ p }) {
         ))}
       </div>
       {p.lagMeasured === false && (
-        <div className="alert amber">Kafka에 닿지 못해 소비 밀림을 잴 수 없어요. 이벤트·행동 로그가 멈췄을 수 있어요.</div>
+        <div className="alert amber">메시지 전달 장치에 닿지 못해 밀림을 잴 수 없어요. 예약 알림·행동 로그 처리가 멈췄을 수 있어요.</div>
       )}
       <table className="tr-lag">
         <thead>
-          <tr><th>Kafka 소비 그룹</th><th className="n">밀린 메시지</th><th className="tr-opt">　</th><th>상태</th></tr>
+          <tr><th>처리 담당</th><th className="n">밀린 일</th><th className="tr-opt">　</th><th>상태</th></tr>
         </thead>
         <tbody>
           {p.lags.map((l) => (
@@ -315,7 +317,7 @@ function LineChart({ chart, t, step, restarts = [], wide }) {
     ro.observe(box.current);
     return () => ro.disconnect();
   }, []);
-  const H = wide ? 220 : 200, L = 46, R = chart.lines.length <= 4 ? 112 : 14, T = 10, B = 24;
+  const H = wide ? 220 : 200, L = 46, R = chart.lines.length <= 4 ? 150 : 14, T = 10, B = 24;
   const pw = w - L - R, ph = H - T - B;
   let max = 0;
   chart.lines.forEach((l) => l.v.forEach((x) => x != null && (max = Math.max(max, x))));
@@ -350,6 +352,12 @@ function LineChart({ chart, t, step, restarts = [], wide }) {
     .map((o) => ({ ...o, y: y(o.l.v[o.i]) }))
     .sort((a, b) => a.y - b.y);
   tags.forEach((o, j) => j && o.y < tags[j - 1].y + 13 && (o.y = tags[j - 1].y + 13));
+  // 아래로 밀다가 그래프 바닥(시각 축)을 넘으면, 바닥에 맞추고 위쪽 이름표를 다시 올린다
+  const floor = T + ph + 2;
+  for (let j = tags.length - 1; j >= 0; j--) {
+    const lim = j === tags.length - 1 ? floor : tags[j + 1].y - 13;
+    if (tags[j].y > lim) tags[j].y = lim;
+  }
   const t0 = t[0], tn = t[t.length - 1];
   // 가까운 재시작(배포 중 앱 두 대가 차례로 뜨는 경우 등)은 한 줄로 합친다
   const marks = [];
@@ -397,7 +405,8 @@ function LineChart({ chart, t, step, restarts = [], wide }) {
           ))}
           {R > 20 && tags.map((o) => (
             <text key={o.l.name} x={L + pw + 6} y={o.y + 4} className="tr-tag">
-              {fmt(o.l.v[o.i])}{u} {o.l.name.length > 6 ? o.l.name.slice(0, 5) + '…' : o.l.name}
+              {fmt(o.l.v[o.i])}{u} {o.l.name.length > 10 ? o.l.name.slice(0, 9) + '…' : o.l.name}
+              <title>{o.l.name}</title>
             </text>
           ))}
           {hi != null && (
@@ -439,13 +448,13 @@ const prettyUri = (u) => (u === '/**' ? '없는 주소 · 정적 파일 (/**)' :
 function Endpoints({ rows }) {
   return (
     <section className="panel">
-      <h2>많이 불린 API <span className="mut tr-h-sub">최근 1분</span></h2>
+      <h2>많이 쓰인 기능 <span className="mut tr-h-sub">최근 1분</span></h2>
       {rows.length === 0 ? (
         <div className="mut">최근 1분 동안 요청이 없어요</div>
       ) : (
         <table>
           <thead>
-            <tr><th>API</th><th className="tr-opt">영역</th><th className="n">초당</th><th className="n tr-opt">비중</th><th className="n">p95</th><th className="n">4xx</th><th className="n">5xx</th></tr>
+            <tr><th>기능</th><th className="tr-opt">영역</th><th className="n">초당</th><th className="n tr-opt">비중</th><th className="n" title="상위 5% 응답 시간">느림</th><th className="n" title="사용자 쪽 오류">사용자 오류</th><th className="n" title="서버 오류">서버 오류</th></tr>
           </thead>
           <tbody>
             {rows.map((r) => (
