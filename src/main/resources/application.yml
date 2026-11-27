@@ -108,10 +108,15 @@ jejari:
     risk-sync-stale-after: 30m  # 위험 점수 표시 키(risk:meta:synced_at)가 이보다 오래되면 경고 (재동기화 주기 10분의 3배). 점수는 그대로 사용
     dev-on-sale-runs: ""      # 개발 모드에서 판매 중으로 볼 운행 ID (예: 9001, 시드(db/seed)의 ON_SALE 운행은 9001·9002)
   seat:
-    # 단체 할당석 만들기 (concurrency.md §18.1, GroupQuotaScheduler). 단체 신청·승인 API가 들어오기 전에는 false:
-    # 켜면 판매 오픈 때 좌석의 group.quota_rate(5%)가 BLOCKED로 묶여 출발 30일 전까지 개인이 못 산다. 반납(§18.4)은 늘 돈다
+    # 단체 할당석 만들기 (concurrency.md §18.1, GroupQuotaScheduler). 판매 오픈 때 좌석의 group.quota_rate(5%)를 BLOCKED로 묶고
+    # 단체 승인(GroupAllocator)이 거기서 배정한다. 남은 할당석은 출발 group.quota_release_days(30)일 전에 개인 판매로 풀린다(§18.4, 늘 돈다).
+    # 단체 API가 들어와 기본으로 켰다 (2026-11-27). 봇 대회처럼 좌석 수를 고정해야 하면 JEJARI_GROUP_QUOTA_ENABLED=false
     group-quota:
-      create-enabled: ${JEJARI_GROUP_QUOTA_ENABLED:false}
+      create-enabled: ${JEJARI_GROUP_QUOTA_ENABLED:true}
+  train:
+    # 시드 편성(horizon-trains)의 운행을 오늘 ~ 2개월+1일까지 매일 이어 준다 (RunHorizonScheduler, 10분마다).
+    # 대기열 입장 스케줄러가 활성 운행(queue:runs)만 돌게 고쳐져(5fc4504) 운행이 늘어도 1초 틱이 밀리지 않아 기본으로 켰다 (2026-11-27)
+    run-horizon-enabled: ${JEJARI_RUN_HORIZON_ENABLED:true}
   risk:
     # 위험 점수 캐시(risk:*) 재동기화: Oracle risk_score → Redis. 앱 시작 직후 한 번, 그 뒤 이 간격마다 (RiskCacheResync)
     cache-resync-enabled: true

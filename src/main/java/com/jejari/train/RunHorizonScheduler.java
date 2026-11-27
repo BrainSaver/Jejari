@@ -47,16 +47,14 @@ import org.springframework.stereotype.Component;
  * {@code uq_train_run_train_id_run_date}에 걸려 그 문장만 되돌아간다. 다음 주기에는 {@code NOT EXISTS}가
  * 상대가 넣은 행을 보므로 할 일이 없어진다 — 그래서 중복 키는 경고하지 않고 넘긴다.
  *
- * <p><b>기본값은 꺼짐이다</b> ({@code jejari.train.run-horizon-enabled=true}로 켠다).
+ * <p><b>기본값은 켜짐이다</b> ({@code jejari.train.run-horizon-enabled}, 환경변수 {@code JEJARI_RUN_HORIZON_ENABLED}).
+ * 테스트는 build.gradle에서 끈다. 처음에는 아래 이유로 꺼 뒀고, 대기열 입장이 활성 운행({@code queue:runs})만
+ * 돌게 고쳐진 뒤(5fc4504, 2026-11-19, 서버 틱 0.87ms) 2026-11-27에 켰다. 꺼 뒀던 이유:
  * 판매 중 운행이 늘면 대기열 입장 스케줄러가 매초 그만큼 돈다
  * ({@code QueueAdmitScheduler} → {@code admit()}은 대기열이 비어도 Redis 왕복 4번).
  * 공용 서버는 이미 {@code deploy/tago-refresh.sh}가 실제 KTX 시간표를 매일 넣어 ON_SALE 운행이
  * 900건쯤이고, 1초 틱의 ~830ms를 쓰고 있다 (로컬 왕복 0.23ms 기준). 여기에 이 스케줄러의
- * 120건을 더하면 ~940ms로 틱을 거의 다 써서 입장 처리가 밀린다. 그래서 켜는 것은 선택으로 두고,
- * 대기열이 빈 운행을 건너뛰게 고쳐진 뒤에 기본값을 바꾼다 (팀에-알림 2-4).
- *
- * <p>로컬에서 날짜별 운행을 쓰려면 시드 04가 이미 예매 가능 기간을 깔아 두므로 그대로 쓰면 되고,
- * 날이 지나 창이 짧아지는 것까지 막으려면 이 속성을 켜면 된다.
+ * 120건을 더하면 ~940ms로 틱을 거의 다 써서 입장 처리가 밀린다 (팀에-알림 2-4).
  */
 @Component
 @ConditionalOnProperty(name = "jejari.train.run-horizon-enabled", havingValue = "true")

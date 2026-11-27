@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Map;
 
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import com.jejari.common.error.BusinessException;
@@ -39,14 +40,16 @@ public class DashboardService {
 	private final ReservationStatsReader stats;
 	private final QueueStatsReader queue;
 	private final Clock clock;
+	private final JdbcTemplate jdbc;
 
 	public DashboardService(TrainRunReader runs, SeatMapService seatMap, ReservationStatsReader stats,
-			QueueStatsReader queue, Clock clock) {
+			QueueStatsReader queue, Clock clock, JdbcTemplate jdbc) {
 		this.runs = runs;
 		this.seatMap = seatMap;
 		this.stats = stats;
 		this.queue = queue;
 		this.clock = clock;
+		this.jdbc = jdbc;
 	}
 
 	public RunDashboard of(long runId) {
@@ -85,6 +88,12 @@ public class DashboardService {
 			}
 		}
 		int total = states.size();
-		return new RunDashboard.Seats(total, sold, held, total - sold - held);
+		// 단체 할당석(BLOCKED)도 배치도에서는 선택 불가(HELD)라 위에서 선점으로 세졌다 → 따로 세어 뺀다 (§18.2).
+		// 원천은 DB 행이다: 반납 시각에 Redis GROUP 키가 먼저 사라져도 행이 남아 있는 동안은 배치도도 HELD로 본다
+		Integer q = jdbc.queryForObject("SELECT COUNT(*) FROM seat_inventory WHERE run_id = ? AND status = 'BLOCKED'",
+				Integer.class, runId);
+		int quota = Math.min(q == null ? 0 : q, held);
+		held -= quota;
+		return new RunDashboard.Seats(total, sold, held, quota, total - sold - held - quota);
 	}
 }

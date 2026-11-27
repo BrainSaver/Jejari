@@ -257,8 +257,8 @@ function Kpis({ d }) {
   return (
     <div className="kpis">
       <Kpi label="판매" n={seats.sold} d={`${seats.total.toLocaleString()}석 중 ${pct}%`} src="Redis seatmap 캐시 · ≤1초 늦음" />
-      <Kpi label="선점 중 (결제 대기)" n={seats.held} d="seat:hold 키가 살아 있는 좌석" src="Redis seatmap 캐시" />
-      <Kpi label="남은 좌석" n={seats.remaining} d="전체 − 판매 − 선점" src="계산값" />
+      <Kpi label="선점 중 (결제 대기)" n={seats.held} d={seats.groupQuota ? `seat:hold 키가 살아 있는 좌석 · 단체 할당석 ${seats.groupQuota}석은 따로` : 'seat:hold 키가 살아 있는 좌석'} src="Redis seatmap 캐시" />
+      <Kpi label="남은 좌석" n={seats.remaining} d={seats.groupQuota ? '전체 − 판매 − 선점 − 단체 할당석' : '전체 − 판매 − 선점'} src="계산값" />
       <Kpi
         label="대기열"
         n={queue.waiting}

@@ -21,9 +21,12 @@ public record RunDashboard(
 	/**
 	 * 좌석 수. 원천은 {@code seatmap:{runId}} 캐시라 최대 {@code seatmap.cache_ms}만큼 늦을 수 있다.
 	 *
-	 * @param held 선점 + 대기자 보류 (Redis {@code seat:hold} 키가 살아 있는 좌석)
+	 * @param held 선점 + 대기자 보류 (Redis {@code seat:hold} 키가 살아 있는 좌석). 단체 할당석은 빼고 센다
+	 * @param groupQuota 단체 할당석 ({@code seat_inventory} BLOCKED, §18.2). 개인은 못 고르지만 아직 팔린 것도 선점도 아니다.
+	 *                   배치도에서는 "선택 불가"(HELD)로 보여 예전에는 선점 수에 섞였다
+	 * @param remaining 개인이 지금 살 수 있는 좌석 = 전체 − 판매 − 선점 − 할당석
 	 */
-	public record Seats(int total, int sold, int held, int remaining) {
+	public record Seats(int total, int sold, int held, int groupQuota, int remaining) {
 	}
 
 	/**

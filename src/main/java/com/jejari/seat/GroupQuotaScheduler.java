@@ -32,8 +32,9 @@ import com.jejari.common.config.AppPolicy;
  * 일반 선점(§2)은 {@code hold.lua}에서 지고, Redis 키가 먼저 사라져도 DB 확인(§2.2-1)에서 거절된다.
  * 선점 코드를 단체용으로 따로 고치지 않아도 할당석이 일반 판매에서 빠진다.
  *
- * <p><b>만들기는 기본으로 꺼 둔다</b> ({@code jejari.seat.group-quota.create-enabled=false}). 단체 신청·승인 API가
- * 들어오기 전에 켜면 좌석 5%가 출발 30일 전까지 아무도 못 사는 좌석이 된다. 반납은 늘 돈다
+ * <p><b>만들기는 기본으로 켠다</b> ({@code jejari.seat.group-quota.create-enabled}, 환경변수 {@code JEJARI_GROUP_QUOTA_ENABLED}).
+ * 처음에는 꺼 뒀다 — 단체 신청·승인 API 없이 켜면 좌석 5%가 출발 30일 전까지 아무도 못 사는 좌석이 된다.
+ * API({@code com.jejari.group})가 들어와 2026-11-27에 켰다. 테스트는 build.gradle에서 끈다. 반납은 늘 돈다
  * (켰다가 끈 뒤 남은 할당석도 제때 풀리게).
  *
  * <p>앱이 여러 대여도 된다: 만들기는 운행에 BLOCKED 행이 하나도 없을 때만 하고, 두 대가 동시에 넣으면 한쪽이

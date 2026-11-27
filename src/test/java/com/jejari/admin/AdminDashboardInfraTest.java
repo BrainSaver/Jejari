@@ -157,8 +157,8 @@ class AdminDashboardInfraTest {
 		assertThat(seats.get("sold").asInt()).isEqualTo(soldBefore);
 		assertThat(seats.get("remaining").asInt()).isEqualTo(totalSeats - soldBefore - 2);
 		// 합이 전체와 맞아야 한다 (화면이 비율을 그린다)
-		assertThat(seats.get("sold").asInt() + seats.get("held").asInt() + seats.get("remaining").asInt())
-				.isEqualTo(totalSeats);
+		assertThat(seats.get("sold").asInt() + seats.get("held").asInt() + seats.get("groupQuota").asInt()
+				+ seats.get("remaining").asInt()).isEqualTo(totalSeats);
 	}
 
 	@Test
