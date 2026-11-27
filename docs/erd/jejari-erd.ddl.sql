@@ -1,4 +1,4 @@
--- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v40)
+-- 제자리 Oracle DDL (ERD 편집기에서 생성, 스키마 v41)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -1449,6 +1449,8 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.rate_relax_signup_per_hour', '2000', 1, 'NUMBER', '임시 해제 동안 해제 IP의 시간당 본인인증·가입 한도 (1~5000)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.rate_relax_login_per_min', '3000', 1, 'NUMBER', '임시 해제 동안 해제 IP의 분당 회원 로그인 한도 (1~10000). 관리자 로그인·비회원 조회는 해제하지 않음');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.account_switch_sec', '15', 1, 'NUMBER', '기기(DEVICE) 대상 MULTI_ACCOUNT_SYNC: 그 기기에서 다른 계정으로 이 초 안에 바뀐 계정만 동시 선점으로 셈 (가족이 한 컴퓨터로 차례로 사는 것과 가르기)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.declined_cards_min', '3', 1, 'NUMBER', 'DECLINED_CARDS(카드 대입): 명의(CI)가 최근 1시간에 서로 다른 카드로 거절당한 수가 이 이상이면 점수. PG_로 시작하는 실패 사유(PG 장애)는 세지 않음');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('risk.rule.declined_cards_points', '30', 1, 'NUMBER', 'DECLINED_CARDS 점수. 점수만 (케이스 아님). 30 = 경고 등급, 단독으로는 결제 단계 차단(80)에 닿지 않음');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (1, 2880, NULL, NULL, 400, '출발 2일 전까지 1인 400원');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (2, 0, 2880, 0.1, NULL, '1일 전 ~ 출발 전 10%');
 INSERT INTO group_fee_policy (fee_policy_id, min_minutes_before, max_minutes_before, fee_rate, fixed_amount, description) VALUES (3, -20, 0, 0.15, NULL, '출발 후 20분까지 15%');

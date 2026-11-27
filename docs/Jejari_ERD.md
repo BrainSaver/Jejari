@@ -2,7 +2,7 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v40 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-24
+> 스키마 v41 · ERD 편집기(`docs/erd/jejari-erd.html`)에서 생성 · 생성일 2026-11-27
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
 > 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
@@ -628,6 +628,8 @@ Oracle
 | auth.rate_relax_signup_per_hour | 2000 | 1 | NUMBER | 임시 해제 동안 해제 IP의 시간당 본인인증·가입 한도 (1~5000) |
 | auth.rate_relax_login_per_min | 3000 | 1 | NUMBER | 임시 해제 동안 해제 IP의 분당 회원 로그인 한도 (1~10000). 관리자 로그인·비회원 조회는 해제하지 않음 |
 | risk.rule.account_switch_sec | 15 | 1 | NUMBER | 기기(DEVICE) 대상 MULTI_ACCOUNT_SYNC: 그 기기에서 다른 계정으로 이 초 안에 바뀐 계정만 동시 선점으로 셈 (가족이 한 컴퓨터로 차례로 사는 것과 가르기) |
+| risk.rule.declined_cards_min | 3 | 1 | NUMBER | DECLINED_CARDS(카드 대입): 명의(CI)가 최근 1시간에 서로 다른 카드로 거절당한 수가 이 이상이면 점수. PG_로 시작하는 실패 사유(PG 장애)는 세지 않음 |
+| risk.rule.declined_cards_points | 30 | 1 | NUMBER | DECLINED_CARDS 점수. 점수만 (케이스 아님). 30 = 경고 등급, 단독으로는 결제 단계 차단(80)에 닿지 않음 |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -2609,6 +2611,7 @@ Oracle
 | v38 | 단체 신청 번호 시퀀스 group_booking_seq (길동현 요청): group_booking.group_id를 매김 |
 | v39 | 인증 시도 제한 임시 해제 (강동균): app_policy auth.rate_relax_until(OFF)·rate_relax_ip_hashes(NONE)·rate_relax_reason·rate_relax_signup_per_hour(2000)·rate_relax_login_per_min(3000). 지정 IP만 종료 시각까지, 읽을 때 비교로 자동 복구. 관리자 로그인·비회원 조회는 해제 안 함 |
 | v40 | 2차 대회 진짜 사람으로 잰 규칙 기준값: app_policy risk.rule.inhuman_step_ms 500 → 1000(사람 최소 2.74초), account_switch_sec 3 → 15초(가족 계정 전환 최소 31.7초, 행 추가), no_search_entry_points 10 → 30(botc 6/6·사람 0/27, 점수만) |
+| v41 | 결제 거절 반복 신호(카드 대입, 강다인 요청): app_policy risk.rule.declined_cards_min(3)·declined_cards_points(30). 명의가 1시간에 서로 다른 카드로 거절 3장 이상 → 30점, 점수만(케이스 아님). PG_로 시작하는 실패 사유는 PG 장애라 세지 않음. 기존 DB는 db/patch/v41.sql |
 
 ## 참고 자료
 
