@@ -1,0 +1,101 @@
+name: Infra test
+
+# 통합 테스트(@Tag("infra"))를 실제 Redis·Kafka·Oracle·MongoDB로 돌린다. 기본 CI(ci.yml)는 인프라 없이 돈다.
+#   push마다  : Oracle 없이 도는 것만 (@Tag("no-oracle"): 대기열·Kafka 발행, Redis·Kafka만 띄움, 약 3분)
+#   매일 밤   : 전부 (Oracle·Mongo까지 compose로 띄움. Oracle 첫 기동 + DDL·시드에 몇 분 걸려 밤에 한 번)
+# 비밀값은 저장소에 두지 않는다: 실행마다 .env를 임의 값으로 새로 만든다 (이 실행 안에서만 쓰고 버림).
+
+on:
+  push:
+    branches: [main, SeongWon, DongGyun, DongHyeon, DaIn, YoungJun]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 17 * * *'   # 매일 02:00 KST (UTC 17:00)
+  workflow_dispatch:       # Actions 화면에서 전체를 바로 돌리기
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-${{ github.ref }}-${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+  cancel-in-progress: true
+
+jobs:
+  no-oracle:
+    name: Infra test (Redis·Kafka)
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Make throwaway .env
+        run: bash .github/scripts/ci-env.sh > .env
+
+      - name: Start Redis·Kafka
+        run: |
+          docker compose up -d --wait redis kafka
+          docker compose up kafka-init   # 토픽 만들고 끝남 (KAFKA_AUTO_CREATE_TOPICS_ENABLE=false)
+
+      - name: Infra test (no Oracle)
+        run: ./gradlew infraTest -PnoOracle --console=plain
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: infra-test-report-no-oracle
+          path: |
+            build/reports/tests/infraTest
+            build/test-results/infraTest
+          retention-days: 7
+
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --tail=200 redis kafka kafka-init
+
+  full:
+    name: Infra test (전체, Oracle 포함)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Make throwaway .env
+        run: bash .github/scripts/ci-env.sh > .env
+
+      # Oracle은 첫 기동 때 docker/oracle/init이 최신 DDL(docs/erd/jejari-erd.ddl.sql)과 시드(db/seed)를 넣는다.
+      # healthy = 앱 계정으로 FREEPDB1에 실제로 접속됨 (compose.yaml healthcheck)
+      - name: Start Oracle·Mongo·Redis·Kafka
+        run: |
+          docker compose up -d --wait --wait-timeout 900 oracle mongo redis kafka
+          docker compose up kafka-init
+
+      - name: Infra test (all)
+        run: ./gradlew infraTest --console=plain
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: infra-test-report-full
+          path: |
+            build/reports/tests/infraTest
+            build/test-results/infraTest
+          retention-days: 7
+
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --tail=200 oracle mongo redis kafka kafka-init
