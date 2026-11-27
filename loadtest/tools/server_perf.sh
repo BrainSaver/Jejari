@@ -9,7 +9,7 @@
 #
 # 기본값은 11-19 조영준 님 측정과 같은 조건: 200명이 20초 안에 흩어져 도착, 한 명이 예매 한 번.
 #   USERS=200 SPREAD_SEC=20 RUN_TAG=perf1 FROM=3900023(서울) TO=3900114(부산)
-# k6가 PATH에 있으면 그것을, 없으면 Docker의 grafana/k6:1.1.0을 쓴다 (11-19와 같은 버전).
+# k6가 PATH에 있으면 그것을, 없으면 Docker의 grafana/k6:1.1.0을 쓴다 (11-19와 같은 버전). 개선 전후 비교는 K6_DOCKER=1로 버전을 맞춘다.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1   # Git Bash가 /lt 같은 경로를 C:/... 로 바꾸지 않게
 cd "$(dirname "$0")/.."      # loadtest/
@@ -28,7 +28,7 @@ need_url() {
 }
 
 k6run() {
-  if command -v k6 >/dev/null 2>&1; then
+  if [[ "${K6_DOCKER:-}" != 1 ]] && command -v k6 >/dev/null 2>&1; then   # K6_DOCKER=1이면 설치된 k6 대신 Docker의 $K6_IMAGE (11-19와 같은 버전)
     k6 "$@"
   else
     local here; here="$(pwd -W 2>/dev/null || pwd)"   # Windows Git Bash면 C:/... 형식
@@ -38,17 +38,20 @@ k6run() {
 
 cmd_find() {
   need_url
-  curl -fsS -o /dev/null "$BASE_URL/actuator/health" || { echo "서버 상태 확인 실패: $BASE_URL/actuator/health"; exit 1; }
+  curl -fsS "$BASE_URL/actuator/health" > /dev/null || { echo "서버 상태 확인 실패: $BASE_URL/actuator/health"; exit 1; }
   echo "판매 중인 운행 ($FROM → $TO, 오늘부터 ${DAYS}일, 남은 좌석 많은 순)"
-  local all="[]" d day
+  # 날마다 받은 JSON은 파일로 모은다 (14일치를 명령줄 인자로 넘기면 Windows에서 "Argument list too long")
+  local tmp d day
+  tmp="$(mktemp -d)"
   for ((d = 0; d < DAYS; d++)); do
     day="$(date -d "+${d} days" +%F 2>/dev/null || date -v+"${d}"d +%F)"
-    local one
-    one="$(curl -fsS "$BASE_URL/api/v1/runs?from=$FROM&to=$TO&date=$day" || echo '[]')"
-    all="$(node -e 'const a=JSON.parse(process.argv[1]),b=JSON.parse(process.argv[2]);process.stdout.write(JSON.stringify(a.concat(b)))' "$all" "$one")"
+    curl -fsS "$BASE_URL/api/v1/runs?from=$FROM&to=$TO&date=$day" > "$tmp/$d.json" || echo '[]' > "$tmp/$d.json"
   done
+  local dir; dir="$(cd "$tmp" && (pwd -W 2>/dev/null || pwd))"
   node -e '
-    const runs = JSON.parse(process.argv[1]).filter((r) => r.bookable && r.remaining);
+    const fs = require("fs"), path = require("path");
+    const all = fs.readdirSync(process.argv[1]).flatMap((f) => { try { return JSON.parse(fs.readFileSync(path.join(process.argv[1], f), "utf8")); } catch { return []; } });
+    const runs = all.filter((r) => r.bookable && r.remaining);
     const left = (r) => Object.values(r.remaining).reduce((s, n) => s + (n || 0), 0);
     runs.sort((a, b) => left(b) - left(a));
     if (!runs.length) { console.log("  예매 가능한 운행이 없습니다 (FROM·TO·DAYS를 바꿔 보세요)"); process.exit(1); }
@@ -59,7 +62,8 @@ cmd_find() {
       console.log("  " + String(r.runId).padEnd(10) + " " + (r.trainKind + " " + r.trainNo).padEnd(9) + " " + String(r.departureAt).slice(0, 16).padEnd(18) + " " + left(r) + warn);
     }
     console.log("\n  측정마다 다른 운행을 쓰고, 개선 전후 비교는 같은 열차(좌석 수가 같은 것)끼리 하세요.");
-  ' "$all" "$USERS"
+  ' "$dir" "$USERS"
+  rm -rf "$tmp"
 }
 
 cmd_accounts() {

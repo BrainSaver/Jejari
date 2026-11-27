@@ -70,18 +70,23 @@ export default function ChatWidget() {
     <>
       {/* 글자 크기는 .user{zoom}이라 px 여백·버튼·탭바가 같이 커진다. 그래서 여백은 그대로 두고, 화면 단위(vw·vh)만 배율로 나눈다.
           960px 미만은 아래 탭바(내 정보 등) 위로 올리고, 가로로 눕힌 폰은 높이가 모자라 창을 버튼 왼쪽에 둔다.
+          높이는 100dvh(주소창을 뺀 지금 보이는 높이)에서 아래·위 안전 영역(제스처 바·노치)까지 빼서 계산한다. 100vh는 주소창이 보일 때 실제보다 커서 창 위가 잘렸다.
           폰에서는 버튼을 52px로 줄이고 본문 아래에 여백을 둬서, 맨 아래 버튼(열차 찾기 등)을 마스코트 위로 올려 누를 수 있게 한다 */}
       <style>{`
+        .chat-win{--vh:100vh;--sb:env(safe-area-inset-bottom,0px);--st:env(safe-area-inset-top,0px)}
+        @supports (height:100dvh){.chat-win{--vh:100dvh}}
         .chat-fab{right:16px;bottom:calc(20px + env(safe-area-inset-bottom) / var(--z,1))}
-        .chat-win{right:16px;bottom:calc(92px + env(safe-area-inset-bottom) / var(--z,1));width:min(360px,calc(100vw / var(--z,1) - 32px));height:min(480px,calc(100vh / var(--z,1) - 108px))}
+        .chat-win{right:16px;bottom:calc(92px + var(--sb) / var(--z,1));width:min(360px,calc(100vw / var(--z,1) - 32px));height:min(480px,calc((var(--vh) - var(--sb) - var(--st)) / var(--z,1) - 108px))}
         @media (max-width:959px){
           .chat-fab{bottom:calc(76px + env(safe-area-inset-bottom) / var(--z,1))}
-          .chat-fab img{width:52px;height:47px}
+          .chat-fab img{width:58px;height:52px}
+          .chat-fab{right:10px}
           .user .body{padding-bottom:84px}
-          .chat-win{bottom:calc(148px + env(safe-area-inset-bottom) / var(--z,1));height:min(480px,calc(100vh / var(--z,1) - 160px))}
+          .in-line .chat-fab{bottom:calc(168px + env(safe-area-inset-bottom) / var(--z,1))}
+          .chat-win{bottom:calc(148px + var(--sb) / var(--z,1));height:min(480px,calc((var(--vh) - var(--sb) - var(--st)) / var(--z,1) - 160px))}
         }
         @media (max-width:959px) and (max-height:500px){
-          .chat-win{right:96px;bottom:calc(76px + env(safe-area-inset-bottom) / var(--z,1));width:min(360px,calc(100vw / var(--z,1) - 112px));height:calc(100vh / var(--z,1) - 88px)}
+          .chat-win{right:96px;bottom:calc(76px + var(--sb) / var(--z,1));width:min(360px,calc(100vw / var(--z,1) - 112px));height:calc((var(--vh) - var(--sb) - var(--st)) / var(--z,1) - 88px)}
         }
       `}</style>
       {open && (
@@ -90,12 +95,12 @@ export default function ChatWidget() {
           display: 'flex', flexDirection: 'column',
           background: 'var(--card)', border: '2px solid var(--ink)', borderRadius: 14, boxShadow: '0 8px 24px rgba(0,0,0,.25)', overflow: 'hidden',
         }}>
-          <header style={{ background: 'var(--ink)', color: '#fff', padding: '10px 14px', fontWeight: 900, display: 'flex', justifyContent: 'space-between' }}>
+          <header style={{ flexShrink: 0, background: 'var(--ink)', color: '#fff', padding: '10px 14px', fontWeight: 900, display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Face mood="wink" size={28} />예매 도우미</span>
             <button type="button" aria-label="닫기" onClick={() => setOpen(false)}
               style={{ background: 'none', border: 0, color: '#fff', font: 'inherit', cursor: 'pointer' }}>✕</button>
           </header>
-          <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {msgs.map((m, i) => (
               <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-end', alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '92%' }}>
                 {m.role === 'assistant' && <Face mood={m.mood} />}
@@ -132,7 +137,7 @@ export default function ChatWidget() {
             )}
             <div ref={end} />
           </div>
-          <form onSubmit={send} style={{ display: 'flex', gap: 6, padding: 10, borderTop: '1px solid var(--line)' }}>
+          <form onSubmit={send} style={{ flexShrink: 0, display: 'flex', gap: 6, padding: 10, borderTop: '1px solid var(--line)' }}>
             <input value={text} onChange={(e) => setText(e.target.value)} maxLength={500} placeholder="무엇이 궁금하세요?"
               aria-label="질문" style={{ flex: 1, minWidth: 0, padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 10, font: 'inherit' }} />
             <button type="submit" disabled={busy || !text.trim()}

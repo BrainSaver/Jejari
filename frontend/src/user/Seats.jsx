@@ -370,6 +370,12 @@ export default function Seats() {
                 </span>
                 <b className="num" style={{ fontSize: 22 }}>{sum.toLocaleString()}원</b>
               </div>
+              {/* 폰에서는 위쪽 타이머가 좌석표를 내리면 안 보여, 늘 보이는 아래 칸에 남은 시간을 같이 둔다 */}
+              {!expired && (
+                <p className="m-only" style={{ margin: 0, fontSize: 13, fontWeight: 700, color: left < 60 ? 'var(--stop)' : 'var(--mut)' }}>
+                  좌석을 고를 수 있는 시간 <span className="num">{mmss(left)}</span>
+                </p>
+              )}
               <button type="button" className={'btn' + (picked.length === total && !expired ? '' : ' off')} disabled={picked.length !== total || busy || expired} onClick={hold}>
                 {busy ? <><span className="spinner" />좌석을 잡는 중…</> : picked.length === total ? '이 좌석 잡기' : `${total - picked.length}석 더 골라 주세요`}
               </button>

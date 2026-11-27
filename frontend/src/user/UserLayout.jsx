@@ -25,6 +25,7 @@ export default function UserLayout() {
   const { member } = useMember();
   const navigate = useNavigate();
   const unread = useUnread(member, pathname);
+  const inLine = /^\/(queue\/[^/]+|runs\/[^/]+\/seats)$/.test(pathname);
   const { name: myName, guest } = useMyProfile(member);
   // 로그아웃하면 "로그아웃됐어요" 안내를 몇 초 보여 준다 (오른쪽 위 글자만 바뀌면 눈치채기 어렵다)
   const [bye, setBye] = useState(false);
@@ -44,7 +45,7 @@ export default function UserLayout() {
 
   return (
     <EaseRoot>
-      <div className="app">
+      <div className={'app' + (inLine ? ' in-line' : '')}>
         <EaseBar />
         <header className="gnb">
           <Link className="logo" to="/"><Seal />제자리</Link>
@@ -81,14 +82,16 @@ export default function UserLayout() {
           <Outlet />
         </div>
 
-        <nav className="tabbar" aria-label="주요 메뉴">
+        {/* 줄 서기·좌석 고르기 중에는 폰 아래 탭을 숨긴다: 잘못 누르면 줄에서 빠지고(다시 맨 뒤),
+            좌석 화면의 [이 좌석 잡기] 칸이 탭 뒤에 깔려 가려졌다 (2026-11-26 점검). 위쪽 [열차 다시 고르기]로 나갈 수 있다 */}
+        {!inLine && <nav className="tabbar" aria-label="주요 메뉴">
           {menu.map(([to, icon, label]) => (
             <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'on' : '')}>
               <span className={to === '/notifications' && unread > 0 ? 'dot' : ''}><Icon name={icon} /></span>
               {label}
             </NavLink>
           ))}
-        </nav>
+        </nav>}
         <ChatWidget />
       </div>
     </EaseRoot>

@@ -147,7 +147,7 @@ export default function Pay() {
             </div>
             <aside className="c2 stick">
               <section className={'clock' + (left < 120 ? ' late' : '')} style={{ order: 2 }}>
-                <div className="row" style={{ fontSize: 13.5, color: '#B9C1D3' }}><span className="grow">결제 기한</span><span>{hm(s.payDeadlineAt)}까지</span></div>
+                <div className="row" style={{ fontSize: 13.5, color: '#B9C1D3' }}><span className="grow">남은 시간</span><span>{/* 큰 남은 시간(09:49)과 같은 모양이면 헷갈려 "9시 46분까지"로 */}{hm(s.payDeadlineAt).replace(/^0?(\d+):(\d+)$/, '$1시 $2분')}까지</span></div>
                 <div className="big" role="timer" aria-live="off">{mmss(left)}</div>
                 <div className="drain"><i style={{ width: `${Math.min(100, (left / 600) * 100)}%` }} /></div>
                 <div style={{ fontSize: 13, color: '#B9C1D3', marginTop: 10 }}>시간이 지나면 좌석이 다음 분께 넘어가요.</div>
