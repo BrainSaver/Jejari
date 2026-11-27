@@ -5,7 +5,8 @@ import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-route
 import { get, post } from '../api/client.js';
 import Icon from '../admin/Icon.jsx';
 import { ConfirmButton } from '../admin/ui.jsx';
-import { GRADE, hm, mmss, people, RES_STATUS, seatText, shortDate, useLeft, won } from './fmt.js';
+import { GRADE, hm, mmss, people, RES_STATUS, seatText, shortDate, toMs, useLeft, won } from './fmt.js';
+import { BUSY_RETRY_MAX, busyWaitSec } from './payBusy.js';
 import RouteLine from './RouteLine.jsx';
 import { useMember } from './useMember.js';
 
@@ -19,6 +20,8 @@ import { useMember } from './useMember.js';
  * - 결제 수단 등록 API가 아직 없어 이 화면에서 가상 카드번호를 받는다 (기능설계서 1.1). 서버는 해시·끝 4자리만 저장
  * - Mock PG는 카드 끝자리로 결과를 정한다: 0 거절 · 9 결과 모름 · 8 늦은 승인 · 나머지 승인 (시연용 안내를 둔다)
  * - 멱등 키는 결제하기 한 번에 하나. 응답을 못 받아 다시 누르면 같은 키 → 결제는 한 번만
+ * - 결제 요청이 몰리면(503 PAYMENT_BUSY + Retry-After) 그만큼 기다렸다 같은 키로 자동으로 다시 보낸다 (payBusy.js).
+ *   서버가 결제 행을 만들기 전에 거절하고 멱등 키를 지우므로 두 번 결제되지 않고 좌석도 그대로다
  */
 /**
  * 시험 카드는 회원마다 번호가 다르다 (4111 + 회원 ID 11자리 + 끝자리). 모두 같은 번호를 쓰면 카드 한 장에 붙는
@@ -40,6 +43,7 @@ const MESSAGES = {
   PAYMENT_IN_PROGRESS: '결제 중이라 지금은 취소할 수 없어요.',
   PAYMENT_RISK_BLOCKED: '이상 이용이 감지되어 결제가 제한되었어요. 잡아 둔 좌석은 풀렸고 결제는 되지 않았어요. 문의는 고객센터로 해 주세요.',
   // 도용 카드 상한 (concurrency.md §4.3). 좌석은 그대로라 다른 카드로 바로 다시 결제할 수 있다
+  PAYMENT_BUSY: '결제 요청이 몰려 아직 처리하지 못했어요. 좌석은 그대로 잡혀 있으니 잠시 후 [결제하기]를 다시 눌러 주세요.',
   PAYMENT_CARD_LINK_LIMIT: '이 카드는 여러 사람이 이미 쓰고 있어 결제할 수 없어요. 잡아 둔 좌석은 그대로니 다른 카드로 결제해 주세요.',
 };
 
@@ -54,6 +58,9 @@ export default function Pay() {
   const [card, setCard] = useState(formatCard(cards[0][0])); // 4자리씩 띄워 보여 줌 (보낼 때는 숫자만)
   const [busy, setBusy] = useState(false);
   const key = useRef(null);
+  const [wait, setWait] = useState(null); // 자동 재시도 대기 {until: ms, attempt}
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []); // 화면을 떠나면 재시도를 멈춘다
   const left = useLeft(d?.summary.payDeadlineAt);
 
   const load = () => get(`/api/v1/reservations/${id}`).then(setD).catch(setError);
@@ -83,16 +90,32 @@ export default function Pay() {
     setBusy(true);
     setError(null);
     key.current = key.current || uuid();
+    const deadline = toMs(s.payDeadlineAt);
     try {
-      await post(`/api/v1/reservations/${id}/payments`, { cardNumber: digits }, { 'Idempotency-Key': key.current });
-      navigate(`/pay/${id}/result`);
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await post(`/api/v1/reservations/${id}/payments`, { cardNumber: digits }, { 'Idempotency-Key': key.current });
+          if (alive.current) navigate(`/pay/${id}/result`);
+          return;
+        } catch (e) {
+          // 몰려서 거절: Retry-After만큼(±20%) 기다렸다 같은 키로 다시. 기한이 모자라거나 횟수를 다 쓰면 사람에게 알린다
+          const sec = e.code === 'PAYMENT_BUSY' ? busyWaitSec(e.retryAfter, attempt, (deadline - Date.now()) / 1000) : null;
+          if (sec == null || !alive.current) throw e;
+          setWait({ until: Date.now() + sec * 1000, attempt: attempt + 1 });
+          await new Promise((ok) => setTimeout(ok, sec * 1000));
+          setWait(null);
+          if (!alive.current) return;
+        }
+      }
     } catch (e) {
+      if (!alive.current) return;
       if (e.code === 'PAYMENT_DUPLICATED') navigate(`/pay/${id}/result`);
       else if (e.code === 'RESERVATION_NOT_HOLD') load();
       else if (e.code === 'PAYMENT_RISK_BLOCKED') { setError(e); load(); } // 좌석이 풀려 예약이 취소 상태로 바뀜
       else setError(e);
     } finally {
-      setBusy(false);
+      setWait(null);
+      if (alive.current) setBusy(false);
     }
   };
 
@@ -121,6 +144,16 @@ export default function Pay() {
         {d && (
           <div className="lay">
             <div className="c1">
+              {wait && !expired && (
+                <div className="alert amber" role="status" aria-live="polite" style={{ order: 1 }}>
+                  <Icon name="info" />
+                  <span className="grow">
+                    결제 요청이 몰려 있어요. 좌석은 그대로 잡혀 있어요.{' '}
+                    <b className="num">{Math.max(0, Math.ceil((wait.until - Date.now()) / 1000))}초</b> 뒤 자동으로 다시 결제해요
+                    ({wait.attempt}/{BUSY_RETRY_MAX}). 다시 누르지 않아도 돼요.
+                  </span>
+                </div>
+              )}
               {(expired || error) && (
                 <div className="alert stop" role="alert" style={{ order: 1, flexWrap: 'wrap' }}>
                   <Icon name="info" />
@@ -168,7 +201,7 @@ export default function Pay() {
               </section>
               <div className="stack" style={{ order: 5 }}>
                 <button className={'btn' + (expired ? ' off' : '')} type="button" disabled={busy || expired || !/^\d{12,19}$/.test(digits)} onClick={pay}>
-                  {busy ? <><span className="spinner" />결제하는 중…</> : `${won(s.totalAmount)} 결제하기`}
+                  {busy ? <><span className="spinner" />{wait ? `몰려서 ${Math.max(0, Math.ceil((wait.until - Date.now()) / 1000))}초 뒤 자동으로 다시 (${wait.attempt}/${BUSY_RETRY_MAX})` : '결제하는 중…'}</> : `${won(s.totalAmount)} 결제하기`}
                 </button>
                 <ConfirmButton className="btn ghost" confirm="한 번 더 누르면 좌석을 놓아요" onConfirm={cancel} disabled={expired}>
                   잡은 좌석 취소

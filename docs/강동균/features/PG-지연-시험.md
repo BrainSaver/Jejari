@@ -113,7 +113,7 @@ cd loadtest && ./run.sh pgslow -e RUN_ID=<빈 좌석 많은 서울→부산 운�
 
 ## 다음
 
-- [ ] 결제 화면: `PAYMENT_BUSY`를 받으면 `Retry-After`만큼 기다렸다 자동으로 다시 (지금은 안내 문구만, 같은 멱등 키라 다시 눌러도 안전)
+- [x] (2026-11-27) 결제 화면: `PAYMENT_BUSY`면 `Retry-After`만큼(±20%) 뒤 같은 멱등 키로 자동 재시도 — 최대 10번, 결제 기한이 10초 넘게 남을 때만, 화면을 떠나면 멈춤 (`frontend/src/user/payBusy.js` + 단위 테스트 5개, 가짜 서버 응답으로 브라우저 확인: 503 두 번 → 1초 간격 재시도 3번·키 1개 → 결과 화면)
 - [ ] 기능설계서 9장 오류 코드 표에 `PAYMENT_BUSY`(503) 추가 — 팀장 문서라 확인 뒤
 - [ ] 공용 서버에서 한 번 (조영준 님 일정): `docker compose --profile pg up -d mock-pg`, 앱 `JEJARI_PG_MODE=http`. 끝나면 mock으로 되돌림
 - [ ] 상한 값: 40은 "응답 한도가 길 때 스레드를 지키는" 시험값. 3초 한도에서는 꺼 둬도 버텼으니 기본은 끔 유지
