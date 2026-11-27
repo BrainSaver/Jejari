@@ -33,6 +33,14 @@ VM 1대(e2-standard-4, 서울)에 로컬과 같은 `compose.yaml`을 올리고, 
 | `User=ubuntu` | 실제 사용자로 채움 | GCP Ubuntu에는 `ubuntu` 계정이 없음 (`gcloud compute ssh`가 내 PC 사용자 이름으로 만듦) |
 | 내 PC `.env`를 복사 | **새로 생성** | 로컬 비밀번호·임시 키가 서버로 가지 않게. HMAC 키만 팀 공용 |
 
+## 꼭 지킬 것 (이 서버가 아닌 곳에 배포할 때도)
+
+- **빌드는 `./gradlew buildFrontend bootJar`** (Node 22 필요). `bootJar`만 하면 화면(frontend) 없이 jar가 만들어져 첫 화면이 JSON `NOT_FOUND`가 됩니다 (11-18 실제로 겪음, [트러블슈팅](../docs/조영준/troubleshooting/20261118-공용서버-화면-누락.md)). `deploy.sh`는 PC에 Node를 깔지 않으려고 Node 22 컨테이너로 `npm ci && npm run build`를 한 뒤 `bootJar`를 하고, jar에 화면이 없으면 배포를 멈춥니다 (같은 결과)
+- **HTTPS 필수** (앞에 Caddy 같은 HTTPS 프록시). http로 열면:
+  - 로그인 유지가 깨집니다. 리프레시 쿠키가 `Secure`(`JWT_REFRESH_COOKIE_SECURE` 기본 true)라 http에서는 브라우저가 저장·전송하지 않아, 15분 뒤 재발급이 전부 실패합니다
+  - 외부 PG로 결제하면 카드번호가 평문으로 나갑니다. 그래서 `HttpPgClient`는 `jejari.payment.pg.base-url`이 https가 아니면 앱이 뜨지 않습니다 (`127.0.0.1`·`localhost`의 가짜 PG만 http 허용)
+  - http는 **내 PC 개발용만**: `.env`에 `JWT_REFRESH_COOKIE_SECURE=false`
+
 도메인은 사지 않습니다. 처음엔 `외부IP.sslip.io`(IP를 이름으로 바꿔 주는 공개 DNS)로 시작했고, **11-18부터 팀장님이 만든 DuckDNS 이름**을 씁니다 (`.env`의 `JEJARI_DOMAIN`, 주소는 팀 채널). 둘 다 Let's Encrypt 인증서를 Caddy가 자동으로 받습니다. DuckDNS는 IP를 가리키는 방식이라 **VM을 껐다 켜 외부 IP가 바뀌면 DuckDNS에서 IP를 다시 맞춰야** 합니다. `setup-server.sh`는 정해 둔 이름을 덮어쓰지 않습니다.
 
 ## 순서
