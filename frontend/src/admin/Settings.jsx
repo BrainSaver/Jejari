@@ -1,10 +1,11 @@
+import { Alert, Button, Card, Col, Collapse, Descriptions, Empty, Input, Menu, Popconfirm, Row, Table, Tag, Timeline, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { del, get, post, put } from '../api/client.js';
-import { Who } from './AdminLayout.jsx';
 import LoadTestPanel from './LoadTestPanel.jsx';
-import RequestLog from './RequestLog.jsx';
+import RequestLogPanel from './RequestLogPanel.jsx';
 import { ConfirmButton, ErrorBox } from './ui.jsx';
+import { ApiError } from './ui-antd.jsx';
 import { hasRole } from './useAdminAuth.js';
 
 /**
@@ -26,6 +27,7 @@ export default function Settings() {
   const [group, setGroup] = useState('');
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(null);
+  const [page, setPage] = useState(1);
   const [error, setError] = useState(null);
   // 임시 해제 상태: 해제 칸과 부하 시험 칸이 같이 쓴다 (부하 시험 칸이 해제하면 해제 칸도 바로 바뀜)
   const [relax, setRelax] = useState(null);
@@ -48,62 +50,131 @@ export default function Settings() {
   }, [list]);
   const shown = (list || []).filter((p) => (!group || p.group === group) && (!q || p.key.includes(q) || (p.description || '').includes(q)));
   const cur = list?.find((p) => p.key === sel) || null;
+  useEffect(() => setPage(1), [group, q]);
+
+  const wide = useWide(1400);
+  const columns = [
+    { title: '키', dataIndex: 'key', width: wide ? '36%' : '56%', ellipsis: { showTitle: true }, render: (k) => <span className="adm-mono" style={{ fontWeight: 700 }}>{k}</span> },
+    {
+      title: '값',
+      dataIndex: 'value',
+      width: wide ? '22%' : undefined,
+      ellipsis: { showTitle: true },
+      render: (v, p) => (
+        <>
+          <b className="adm-num">{v}</b>
+          {p.cachedValue != null && p.cachedValue !== p.value && (
+            <Tag color="warning" style={{ marginLeft: 6 }} title="Redis policy:cache 값이 DB와 달라요">캐시 {p.cachedValue}</Tag>
+          )}
+        </>
+      ),
+    },
+    { title: '버전', dataIndex: 'version', width: 64, align: 'right', render: (v) => <span className="adm-num">{v}</span> },
+    wide && { title: '설명', dataIndex: 'description', ellipsis: { showTitle: true }, render: (d) => <Typography.Text type="secondary">{d}</Typography.Text> },
+  ].filter(Boolean);
 
   return (
     <>
-      <div className="head"><h1>운영 설정</h1><span style={{ flex: 1 }} /><Who claims={claims} /></div>
-      <div className="alert sky">
-        앱은 정책을 Redis <code>policy:cache</code> → Oracle <code>app_policy</code> 순으로 읽어요. 저장하면 DB를 먼저 바꾸고(버전 +1, 이력 기록),
-        커밋 뒤 캐시를 바꿔요. 각 앱의 메모리 캐시가 1초라 모든 서버에 1초 안에 반영돼요.
-        {!canWrite && <div style={{ marginTop: 4 }}>지금 권한({claims?.adm})은 보기만 돼요. 저장은 SUPERVISOR.</div>}
+      <div className="adm-title">
+        <h1>운영 설정</h1>
+        <Typography.Text type="secondary">
+          정책 {list?.length ?? '—'}개 · 저장하면 DB(버전 +1, 이력) → Redis <code>policy:cache</code> → 각 앱 1초 안에 반영
+        </Typography.Text>
       </div>
-      <ErrorBox error={error} onClose={() => setError(null)} />
-      <AuthRelax canWrite={canWrite} st={relax} setSt={setRelax} onChanged={load} />
-      <LoadTestPanel canWrite={canWrite} relax={relax} onRelaxChanged={() => { loadRelax(); load(); }} />
-      <div className="tabs multi" role="tablist">
-        <button type="button" className={group === '' ? 'on' : ''} onClick={() => setGroup('')}>전체 <span className="num" style={{ opacity: 0.7 }}>{list?.length || ''}</span></button>
-        {groups.map(([g, n]) => (
-          <button key={g} type="button" className={group === g ? 'on' : ''} onClick={() => setGroup(g)}>{g} <span className="num" style={{ opacity: 0.7 }}>{n}</span></button>
-        ))}
-      </div>
-      <div className="cols c21">
-        <section className="panel">
-          <h2>
-            <span className="grow">설정 {shown.length}개</span>
-            <input placeholder="키·설명 찾기" aria-label="키·설명 찾기" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 200, minHeight: 32 }} />
-          </h2>
-          <table>
-            <thead><tr><th>키</th><th>값</th><th className="n">버전</th><th>설명</th></tr></thead>
-            <tbody>
-              {shown.map((p) => (
-                <tr key={p.key} className={sel === p.key ? 'sel' : ''} onClick={() => setSel(p.key)} style={{ cursor: 'pointer' }}>
-                  <td className="mono key" style={{ fontSize: 13 }}>{breakable(p.key)}</td>
-                  <td>
-                    <b className="num">{p.value}</b>
-                    {p.cachedValue != null && p.cachedValue !== p.value && (
-                      <span className="st plain amber" style={{ marginLeft: 6 }} title="Redis policy:cache 값이 DB와 달라요">캐시 {p.cachedValue}</span>
-                    )}
-                    <small className="faint vtype">{p.valueType}</small>
-                  </td>
-                  <td className="n num">{p.version}</td>
-                  <td className="mut desc" style={{ fontSize: 12.5 }}>{p.description}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-        <section className="panel">
-          {cur ? <Editor key={cur.key} p={cur} canWrite={canWrite} onSaved={load} /> : <p className="mut">왼쪽에서 설정을 고르세요.</p>}
-        </section>
-      </div>
-      <RequestLog filter={(r) => r.path.includes('/admin/policies') || r.path.includes('/admin/auth-relax')} rows={5} />
+      {!canWrite && <Alert type="info" showIcon style={{ marginBottom: 16 }} message={`지금 권한(${claims?.adm})은 보기만 돼요. 저장은 SUPERVISOR.`} />}
+      {error && <ApiError error={error} onClose={() => setError(null)} style={{ marginBottom: 16 }} />}
+
+      <Collapse
+        style={{ marginBottom: 16, background: 'var(--card)' }}
+        items={[
+          {
+            key: 'relax',
+            label: (
+              <span style={{ fontWeight: 800 }}>
+                인증 제한 임시 해제{' '}
+                {relax ? (relax.active ? <Tag color="warning">해제 중 · {relax.until?.replace('T', ' ').slice(5, 16)}까지</Tag> : <Tag>평소</Tag>) : <Tag>정책 없음</Tag>}
+              </span>
+            ),
+            children: (
+              <div className="admin embed">
+                <AuthRelax canWrite={canWrite} st={relax} setSt={setRelax} onChanged={load} />
+              </div>
+            ),
+          },
+          {
+            key: 'k6',
+            label: (
+              <span style={{ fontWeight: 800 }}>
+                공용 서버 부하 시험 (k6) <Tag color="gold">이 PC에서 실행</Tag>
+              </span>
+            ),
+            children: (
+              <div className="admin embed">
+                <LoadTestPanel canWrite={canWrite} relax={relax} onRelaxChanged={() => { loadRelax(); load(); }} />
+              </div>
+            ),
+          },
+        ]}
+      />
+
+      <Row gutter={16} wrap={false} style={{ alignItems: 'stretch' }} className="adm-row">
+        <Col flex="176px">
+          <Card className="adm-work" styles={{ body: { padding: 8 } }}>
+            <Menu
+              mode="inline"
+              selectedKeys={[group || '__all']}
+              onClick={({ key }) => setGroup(key === '__all' ? '' : key)}
+              style={{ borderInlineEnd: 0, background: 'transparent' }}
+              items={[
+                { key: '__all', label: <GroupLabel name="전체" n={list?.length} /> },
+                ...groups.map(([g, n]) => ({ key: g, label: <GroupLabel name={g} n={n} /> })),
+              ]}
+            />
+          </Card>
+        </Col>
+        <Col flex="auto" style={{ minWidth: 0 }}>
+          <Card className="adm-work">
+            <Input.Search
+              allowClear
+              placeholder="키·설명 찾기 (예: rate_relax)"
+              aria-label="키·설명 찾기"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              style={{ marginBottom: 8 }}
+            />
+            <Table
+              className="adm-fixed"
+              size="middle"
+              rowKey="key"
+              loading={!list && !error}
+              columns={columns}
+              dataSource={shown}
+              scroll={{ y: 440 }}
+              pagination={{ current: page, pageSize: 10, onChange: setPage, showSizeChanger: false, size: 'small', showTotal: (t, [a, b]) => `${a}–${b} / ${t}` }}
+              rowClassName={(p) => (p.key === sel ? 'ant-table-row-selected' : '')}
+              onRow={(p) => ({ onClick: () => setSel(p.key) })}
+              locale={{ emptyText: '맞는 설정이 없어요' }}
+            />
+          </Card>
+        </Col>
+        <Col flex="320px">
+          <Card className="adm-work" title={cur ? <span className="adm-mono" style={{ fontSize: 14 }}>{cur.key}</span> : '설정 편집'}>
+            {cur ? <Editor key={cur.key} p={cur} canWrite={canWrite} onSaved={load} /> : <Empty style={{ marginTop: 120 }} description="왼쪽 표에서 설정을 고르세요" />}
+          </Card>
+        </Col>
+      </Row>
+      <RequestLogPanel filter={(r) => r.path.includes('/admin/policies') || r.path.includes('/admin/auth-relax')} />
     </>
   );
 }
 
-/** 긴 키(auth.rate_relax_signup_per_hour)를 글자 중간이 아니라 . 과 _ 뒤에서만 줄바꿈되게 한다 */
-function breakable(key) {
-  return key.split(/(?<=[._])/).flatMap((part, i) => (i ? [<wbr key={i} />, part] : [part]));
+function GroupLabel({ name, n }) {
+  return (
+    <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+      <span className="adm-num" style={{ opacity: 0.6, fontWeight: 700 }}>{n ?? ''}</span>
+    </span>
+  );
 }
 
 function Editor({ p, canWrite, onSaved }) {
@@ -130,35 +201,57 @@ function Editor({ p, canWrite, onSaved }) {
 
   return (
     <>
-      <h2 className="mono" style={{ fontSize: 15 }}>{p.key}</h2>
-      <p className="sub">{p.description}</p>
-      {saved && <div className="alert sky">저장했어요. 버전 {saved.version}, 캐시 {saved.cachedValue}. 1초 안에 모든 서버에 반영돼요.</div>}
-      <ErrorBox error={error} />
-      {error?.code === 'POLICY_VERSION_CONFLICT' && (
-        <button type="button" className="btn ghost sm" style={{ marginBottom: 12 }} onClick={onSaved}>다시 읽기</button>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>{p.description}</Typography.Paragraph>
+      <Descriptions
+        size="small"
+        column={1}
+        style={{ marginBottom: 12 }}
+        items={[
+          { key: 't', label: '형식', children: <Tag>{p.valueType}</Tag> },
+          { key: 'v', label: '지금 값', children: <b className="adm-num">{p.value}</b> },
+          { key: 'ver', label: '버전', children: <span className="adm-num">{p.version}</span> },
+          {
+            key: 'c',
+            label: '캐시',
+            children: p.cachedValue == null || p.cachedValue === p.value ? <Tag color="success">DB와 같음</Tag> : <Tag color="warning">{p.cachedValue}</Tag>,
+          },
+          { key: 'u', label: '마지막 변경', children: `${p.updatedAt ? p.updatedAt.replace('T', ' ').slice(0, 16) : '—'}${p.updatedBy ? ` · 관리자 #${p.updatedBy}` : ''}` },
+        ]}
+      />
+      {saved && <Alert type="success" showIcon style={{ marginBottom: 12 }} message={`저장했어요. 버전 ${saved.version}, 캐시 ${saved.cachedValue}. 1초 안에 모든 서버에 반영돼요.`} />}
+      {error && <ApiError error={error} onClose={() => setError(null)} style={{ marginBottom: 12 }} />}
+      {error?.code === 'POLICY_VERSION_CONFLICT' && <Button size="small" style={{ marginBottom: 12 }} onClick={onSaved}>다시 읽기</Button>}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <Input aria-label="새 값" value={value} onChange={(e) => setValue(e.target.value)} disabled={!canWrite} />
+        <Popconfirm
+          title="이 값으로 저장할까요?"
+          description={`${p.value} → ${value}`}
+          okText="저장"
+          cancelText="그만두기"
+          onConfirm={save}
+          disabled={!canWrite || value === p.value}
+        >
+          <Button type="primary" disabled={!canWrite || value === p.value}>저장</Button>
+        </Popconfirm>
+      </div>
+      <Typography.Title level={5} style={{ fontSize: 13.5, marginTop: 0 }}>변경 이력</Typography.Title>
+      {hist && !hist.length ? (
+        <Typography.Text type="secondary">아직 바꾼 적이 없어요 (시드 값).</Typography.Text>
+      ) : (
+        <Timeline
+          style={{ marginTop: 8 }}
+          items={(hist || []).map((h) => ({
+            key: h.historyId,
+            children: (
+              <span style={{ fontSize: 13 }}>
+                <span className="adm-num" style={{ color: 'var(--faint)' }}>v{h.version}</span>{' '}
+                <span className="adm-num">{h.oldValue ?? '—'}</span> → <b className="adm-num">{h.newValue}</b>
+                <div style={{ fontSize: 12, color: 'var(--mut)' }}>{h.changedAt?.replace('T', ' ').slice(5, 16)}{h.changedBy ? ` · 관리자 #${h.changedBy}` : ''}</div>
+              </span>
+            ),
+          }))}
+        />
       )}
-      <label className="field">
-        <span className="lbl">값 ({p.valueType}) · 지금 {p.value}, 버전 {p.version}</span>
-        <input value={value} onChange={(e) => setValue(e.target.value)} disabled={!canWrite} />
-        <span className="hint">마지막 변경 {p.updatedAt ? p.updatedAt.replace('T', ' ').slice(0, 19) : '—'}{p.updatedBy ? ` · 관리자 #${p.updatedBy}` : ''}</span>
-      </label>
-      <ConfirmButton className="btn wide" confirm={`한 번 더 누르면 ${p.value} → ${value}`} onConfirm={save} disabled={!canWrite || value === p.value}>
-        저장
-      </ConfirmButton>
-      <hr className="sep" />
-      <h2 style={{ fontSize: 14 }}>변경 이력</h2>
-      {hist && !hist.length && <p className="mut">아직 바꾼 적이 없어요 (시드 값).</p>}
-      <table>
-        <tbody>
-          {(hist || []).map((h) => (
-            <tr key={h.historyId}>
-              <td className="num faint">v{h.version}</td>
-              <td><span className="num">{h.oldValue ?? '—'}</span> → <b className="num">{h.newValue}</b></td>
-              <td className="mut" style={{ fontSize: 12.5 }}>{h.changedAt?.replace('T', ' ').slice(5, 16)}{h.changedBy ? ` · #${h.changedBy}` : ''}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </>
   );
 }
@@ -232,4 +325,17 @@ function AuthRelax({ canWrite, st, setSt, onChanged }) {
       )}
     </section>
   );
+}
+
+/** 화면 폭이 min 이상인지. 좁으면(1280 등) 설정 표에서 설명 칸을 빼고 키를 넓게 보인다 (설명은 오른쪽 편집 칸에 있음) */
+function useWide(min) {
+  const q = `(min-width: ${min}px)`;
+  const [ok, setOk] = useState(() => window.matchMedia(q).matches);
+  useEffect(() => {
+    const m = window.matchMedia(q);
+    const on = () => setOk(m.matches);
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, [q]);
+  return ok;
 }
