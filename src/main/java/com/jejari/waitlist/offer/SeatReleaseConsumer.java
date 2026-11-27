@@ -82,7 +82,8 @@ public class SeatReleaseConsumer {
 	@KafkaListener(id = EventTopics.GROUP_SEAT_RELEASE, topics = EventTopics.RESERVATION,
 			containerFactory = CONTAINER_FACTORY)
 	public void consume(List<ConsumerRecord<String, String>> records) {
-		for (ConsumerRecord<String, String> record : records) {
+		for (int i = 0; i < records.size(); i++) {
+			ConsumerRecord<String, String> record = records.get(i);
 			if (com.jejari.event.dlq.DeadLetters.notForMe(record, EventTopics.GROUP_SEAT_RELEASE)) {
 				continue;   // 다른 그룹 몫으로 다시 넣은 메시지
 			}
@@ -99,12 +100,44 @@ public class SeatReleaseConsumer {
 			try {
 				handle(freed);
 			} catch (RuntimeException e) {
+				if (transientInfra(e)) {
+					// Redis·DB 연결이 잠깐 끊긴 것: 격리 보관하면 그 좌석의 Redis 정리·취소표 제안이 사람이 다시 넣을 때까지 멈춘다
+					// (2026-11-27 장애 주입: Redis 45초 정지에 47건이 바로 보관함으로). 이 메시지 앞까지만 커밋하고
+					// 컨테이너가 5초마다 이 메시지부터 다시 준다 (FixedBackOff 무제한). 처리는 멱등(inbox)이라 다시 돌려도 같다
+					log.warn("seat-release: 예약 {} 처리 실패 (연결 장애) → 5초 뒤 이 메시지부터 다시", freed.reservationId(), e);
+					throw new org.springframework.kafka.listener.BatchListenerFailedException("seat-release 일시 장애", e, i);
+				}
 				// 한 건 실패가 나머지를 막지 않게 넘어간다. 예전 주석은 "재전달은 재시작 때"였지만 AckMode.BATCH라 이 묶음이 끝나면
 				// 오프셋이 커밋되어 다시 오지 않는다 → 그 좌석의 취소표 제안이 사라졌다. 지금은 격리 보관함에 옮겨 다시 처리할 수 있게
 				log.warn("seat-release: 예약 {} 처리 실패 → 격리 보관", freed.reservationId(), e);
 				park(record, com.jejari.event.dlq.DeadLetters.HANDLER_FAILED, e);
 			}
 		}
+	}
+
+	/**
+	 * 잠깐의 연결 장애인가 (기다리면 풀림). 맞으면 격리 보관 대신 다시 시도한다.
+	 * Redis 명령 자체의 오류(Lua 스크립트 오류 등 {@code RedisCommandExecutionException})는 다시 해도 같으므로 아니다 — 무한 재시도로 파티션을 막지 않게.
+	 */
+	static boolean transientInfra(Throwable e) {
+		for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
+			if (t instanceof io.lettuce.core.RedisCommandExecutionException) {
+				return false;
+			}
+			if (t instanceof org.springframework.data.redis.RedisConnectionFailureException
+					|| t instanceof io.lettuce.core.RedisConnectionException
+					|| t instanceof io.lettuce.core.RedisCommandTimeoutException
+					|| t instanceof org.springframework.dao.TransientDataAccessException
+					|| t instanceof org.springframework.dao.DataAccessResourceFailureException
+					|| t instanceof java.net.ConnectException) {
+				return true;
+			}
+			// "Connection disconnected"·"Connection closed"처럼 연결이 끊겨 명령이 취소된 경우 (11-27 실제 원인)
+			if (t.getClass() == io.lettuce.core.RedisException.class) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private com.jejari.event.dlq.DeadLetters deadLetters;   // 없으면(단위 시험) 예전처럼 로그만
