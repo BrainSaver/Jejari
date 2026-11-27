@@ -31,7 +31,8 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * 소비 그룹 {@code risk-signal} (기능설계서 8.4). 예약 확정·취소 이벤트가 오면 그 예약의 CI와 결제 수단을
- * 위험 점수 재계산 대상으로 표시한다. 실제 계산은 1분 배치가 한다 ("취소 시 즉시 재계산" = 다음 배치, 최대 1분).
+ * 위험 점수 재계산 대상으로 표시한다. 결제 실패로 만료된 예약({@code RESERVATION_EXPIRED}, 사유 {@code PAY_FAILED})도
+ * 표시한다 — 카드 대입(DECLINED_CARDS)은 거절이 쌓이는 순간 다시 세야 한다 (2026-11-27). 실제 계산은 1분 배치가 한다 ("취소 시 즉시 재계산" = 다음 배치, 최대 1분).
  *
  * <ul>
  *   <li>표시(SADD)는 몇 번 해도 같아서 processed_event(inbox)를 쓰지 않는다. 재전달돼도 결과가 같다.</li>
@@ -107,8 +108,10 @@ public class RiskSignalListener {
 		}
 		try {
 			EventEnvelope e = EventEnvelope.parse(json, value);
+			boolean payFailed = EventType.RESERVATION_EXPIRED.name().equals(e.eventType())
+					&& "PAY_FAILED".equals(e.payload() == null ? null : e.payload().path("reason").asString(null));
 			if (!EventType.RESERVATION_CONFIRMED.name().equals(e.eventType())
-					&& !EventType.RESERVATION_CANCELED.name().equals(e.eventType())) {
+					&& !EventType.RESERVATION_CANCELED.name().equals(e.eventType()) && !payFailed) {
 				return null;
 			}
 			long id = Long.parseLong(e.aggregateId());

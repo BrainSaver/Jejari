@@ -7,7 +7,7 @@
 //
 //   node loadtest/contest/practice/run.mjs                 # 전부 (가입 → 구매)
 //   PROFILES=botfast,botsteady HUMANS=0 node …            # 일부만
-//   GEN=2 node …                                         # 2단계 9종 · GEN=3 녹화 꾸미기 9종 · GEN=h 사람 변형 10종(오탐) · GEN=all 전부
+//   GEN=2 node …                                         # 2단계 9종 · GEN=3 녹화 꾸미기·카드 대입 10종 · GEN=h 사람 변형 11종(오탐) · GEN=all 전부
 //   MODE=signup | buy | all (기본 all)
 //
 // 앱은 신뢰 프록시 모드로: --jejari.auth.trusted-proxies=127.0.0.1,0:0:0:0:0:0:0:1 (프로필마다 다른 IP를 X-Forwarded-For로 보냄.
@@ -55,7 +55,7 @@ const P = (kind, family, desc, o = {}) => ({
   think: T.quick, searches: 1, seatMap: true, mapPolls: 0, party: 2, pick: 'random', retrySame: 0, pay: true,
   cancelAfterPayMs: null, holdNoPay: false, holdCancelLoops: 0, start: 'sync', device: 'own', card: 'own',
   sameCi: false, queueSpam: 0, ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0 Safari/537.36',
-  runHop: 0, limitProbe: false, burst: false, gen: 1, step: null, ipEach: false, staggerMs: [20000, 40000], rec: null, count: null, ip: null, doubleClick: false, ...o,
+  runHop: 0, limitProbe: false, burst: false, gen: 1, step: null, ipEach: false, staggerMs: [20000, 40000], rec: null, count: null, ip: null, doubleClick: false, declineFirst: 0, ...o,
 });
 const PROFILES = [
   // 속도
@@ -140,6 +140,7 @@ const GENH = [
   PH('humannat', '회사·학교 같은 IP 뒤 6명이 오픈 순간 동시에 (기기는 각자)', { ip: 'shared', count: 6 }),
   PH('humancancel', '결제 뒤 1~2분 만에 날짜를 잘못 고른 걸 알고 취소', { cancelAfterPayMs: [60000, 120000] }),
   PH('humanslow', '천천히 고르는 사람 (날짜 4번 조회, 생각 3~10초)', { searches: 4, think: () => Math.min(20000, logn(5000, 0.5)) }),
+  PH('humantypo', '카드번호를 한 번 틀려 거절된 뒤 제 카드로 다시 (DECLINED_CARDS 오탐 확인: 서로 다른 카드 2장 = 문턱 3 아래)', { declineFirst: 1 }),
 ];
 
 // 3단계 추가: 남은 빈틈 (마우스 궤적 보강 제안 5절)
@@ -147,6 +148,9 @@ GEN3.push(
   P3('botrecjump', '클릭 자리에 점 하나만 찍고 클릭 (순간이동인데 클릭 수가 적어 문턱 아래)', { rec: 'jump' }),
   P3('botrecmobile', '휴대폰인 척: 모바일 브라우저 + 터치 클릭만 (진짜 휴대폰 사용자와 녹화가 같음)', { rec: 'mobile', ua: MOBILE_UA }),
   P3('botrecreal', '사람과 같은 녹화(곡선·가감속·멈췄다 클릭) + 2단계 피하기 전부 = 가장 잘 숨는 봇 (어디까지 막히나 상한)', { rec: 'human' }),
+  // 카드 대입 (DECLINED_CARDS, ERD v41, 강다인 2026-11-27): 훔친 카드 목록이 살아 있는지 우리 결제로 시험. 거절되면 좌석이 풀리므로
+  // 매번 다시 선점한다. 사람처럼 녹화를 꾸미고 2단계 피하기도 갖춰, "결제 거절" 신호만으로 잡히는지 본다
+  P3('botcardtest', '서로 다른 카드 3장으로 결제가 거절된 뒤 4번째 카드로 승인 (카드 대입)', { rec: 'human', declineFirst: 3 }),
 );
 
 const HUMAN = P('human', '합성 사람', '사람처럼 둘러보고 쉬고, 가끔 실패하면 다른 좌석. 화면 녹화도 보냄', { think: T.human, searches: 2, rec: 'human' });
@@ -255,6 +259,7 @@ function makeCtx(p, n) {
     ip: fakeIp(p.ip === 'shared' ? `${p.kind}.shared` : p.kind.startsWith('human') || p.ipEach ? `${p.kind}.${n}` : p.kind),
     // 카드: 계정마다 다르게 (프로필·번호로 만든 15자리 + 끝자리 1 = 모의 PG 승인). botsharedcard만 프로필 안에서 하나를 같이 씀
     card: cardFor(p.card === 'shared' ? `${p.kind}.shared` : `${p.kind}.${n}`),
+    declinesLeft: p.declineFirst, // 카드 대입: 이만큼 서로 다른 카드로 거절당한 뒤 제 카드로
     deviceFor() {
       if (p.device === 'none') return null;
       if (p.device === 'shared') return shared;
@@ -323,7 +328,9 @@ async function hold(ctx, pass, seatIds) {
     { runId: RUN_ID, fromStationId: FROM, toStationId: TO, seats: seatIds.map((seatId) => ({ seatId, passengerType: 'ADULT' })), channel: 'WEB' },
     { 'X-Queue-Token': pass, 'Idempotency-Key': crypto.randomUUID() });
 }
-const pay = (ctx, id) => call(ctx, 'POST', `/api/v1/reservations/${id}/payments`, { cardNumber: ctx.card }, { 'Idempotency-Key': crypto.randomUUID() });
+const pay = (ctx, id, card = ctx.card) => call(ctx, 'POST', `/api/v1/reservations/${id}/payments`, { cardNumber: card }, { 'Idempotency-Key': crypto.randomUUID() });
+/** 거절될 카드: 계정·순번마다 다른 번호, 끝자리 0 = 모의 PG 거절 */
+const declineCard = (ctx, i) => cardFor(`${ctx.p.kind}.${ctx.n}.decline.${i}`).slice(0, -1) + '0';
 const cancel = (ctx, id) => call(ctx, 'POST', `/api/v1/reservations/${id}/cancel`);
 
 async function buyOne(ctx, runDate) {
@@ -369,6 +376,14 @@ async function buyOne(ctx, runDate) {
       await sleep(burstThink());
       if (p.step) await sleep(rand(...p.step)); // 선점 → 결제
       if (ctx.rec) await recClick(ctx, 'reservations/:id/pay', 'pay-submit');
+      if (ctx.declinesLeft > 0) {
+        // 거절되면 예약은 만료되고 좌석이 풀린다 (Saga 보상) → 좌석표를 다시 보고 다시 선점
+        const bad = await pay(ctx, rid, declineCard(ctx, ctx.declinesLeft--));
+        if (bad.data?.paymentStatus === 'APPROVED') ctx.errors.push('거절 카드가 승인됨');
+        empty = await seatMap(ctx, pass);
+        await sleep(burstThink());
+        continue;
+      }
       const r = await pay(ctx, rid);
       if (r.status === 200 || r.status === 201) {
         ctx.seats += seats.length;

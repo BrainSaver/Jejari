@@ -402,6 +402,7 @@ public class SuspiciousCaseOpener {
 			case INHUMAN_STEP -> "사람 손으로 불가능한 속도 (좌석표→선점·선점→결제 " + policy.inhumanStepMs() + "ms 미만 " + n
 					+ "번)";
 			case NO_SEARCH_ENTRY -> "열차 조회 없이 대기열 진입";
+			case DECLINED_CARDS -> "서로 다른 카드로 결제 거절 반복 (1시간에 " + n + "장, 카드 대입)";
 			default -> r.rule().name() + " " + n;
 		};
 	}

@@ -7,6 +7,7 @@ import com.jejari.risk.PreviousScore.ReviewStatus;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Random;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.DisplayName;
@@ -27,7 +28,7 @@ class RiskEngineTest {
     static final class S {
         SubjectType type = SubjectType.CI;
         Instant from = FROM;
-        long intervals, fast, sameSeat, purchases, seats, maxSingle, cancels, fastCancels, lastMinute, linked, sync, mouse, headless, inhuman;
+        long intervals, fast, sameSeat, purchases, seats, maxSingle, cancels, fastCancels, lastMinute, linked, sync, mouse, headless, inhuman, declined;
         boolean noSearch;
         double mean, sd;
         Long age;
@@ -44,12 +45,13 @@ class RiskEngineTest {
         S headless(long n) { headless = n; return this; }
         S noSearch(boolean b) { noSearch = b; return this; }
         S inhuman(long n) { inhuman = n; return this; }
+        S declined(long n) { declined = n; return this; }
         S age(Long d) { age = d; return this; }
         S from(Instant f) { from = f; return this; }
 
         RiskSignals build() {
             return new RiskSignals(type, H, from, intervals, fast, mean, sd, sameSeat, purchases, seats, maxSingle,
-                    cancels, fastCancels, lastMinute, cancels == 0 ? null : 10.0, linked, sync, age, 0, mouse, headless, noSearch, inhuman);
+                    cancels, fastCancels, lastMinute, cancels == 0 ? null : 10.0, linked, sync, age, 0, mouse, headless, noSearch, inhuman, declined);
         }
     }
 
@@ -220,6 +222,27 @@ class RiskEngineTest {
             assertThat(r.points()).isEqualTo(30); // 2차 대회 botc 6/6 · 사람 0/27 (11-24) → 10에서 30. 순번만 미루고 케이스는 안 염
             assertThat(r.severity()).isEqualTo(Severity.LOW);
             assertThat(score(s().noSearch(true)).openCase()).isFalse();
+        }
+
+        @Test
+        void DECLINED_CARDS는_서로_다른_카드_3장부터_30점_케이스는_안_연다() {
+            // 사람은 카드번호 오타·한도 초과로 1~2장 (강다인 결정 2026-11-27, ERD v41)
+            assertThat(score(s().declined(2)).reasons()).isEmpty();
+            Reason r = score(s().declined(3)).reasons().get(0);
+            assertThat(r.rule()).isEqualTo(RiskRule.DECLINED_CARDS);
+            assertThat(r.points()).isEqualTo(30);
+            assertThat(r.severity()).isEqualTo(Severity.MID);
+            assertThat(score(s().declined(3)).openCase()).isFalse(); // 점수만. 단독으로는 결제 단계 차단(80)에 닿지 않음
+            assertThat(score(s().declined(20)).reasons().get(0).points()).isEqualTo(30); // 단계 없이 한 번
+        }
+
+        @Test
+        void DECLINED_CARDS는_정책으로_끄거나_문턱을_바꾼다() {
+            RiskEngine off = new RiskEngine(RiskPolicy.fromMap(Map.of("risk.rule.declined_cards_points", "0")));
+            assertThat(off.score(s().declined(9).build(), null, NOW).reasons()).isEmpty();
+            RiskEngine five = new RiskEngine(RiskPolicy.fromMap(Map.of("risk.rule.declined_cards_min", "5")));
+            assertThat(five.score(s().declined(4).build(), null, NOW).reasons()).isEmpty();
+            assertThat(five.score(s().declined(5).build(), null, NOW).reasons()).hasSize(1);
         }
 
         @Test
