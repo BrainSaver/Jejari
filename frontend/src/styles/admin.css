@@ -25,6 +25,8 @@
 .admin .cols{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr);gap:16px;align-items:start}
 .admin .cols>.panel{margin-bottom:0}
 .admin .cols.c21{grid-template-columns:minmax(0,2fr) minmax(300px,1fr)}
+/* 기준 데이터: 왼쪽 목록을 스크롤해도 오른쪽 수정 폼이 화면에 붙어 있게 (상단 바 56px + 여백 16px). 폼이 길면 폼 안에서 스크롤 */
+.admin .cols>.panel.stick{position:sticky;top:72px;max-height:calc(100vh - 88px);overflow:auto}
 .admin .kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:16px;background:var(--card);border:1px solid var(--line);border-radius:12px}
 .admin .kpi{padding:14px 18px;border-left:1px solid var(--line2)}
 /* 4칸짜리 KPI (A-11 봇 대회 결과). 좁으면 2칸씩 */
@@ -78,11 +80,12 @@
 .admin .filters .field{margin:0;min-width:150px}
 .admin tr.sel td{background:var(--sign-t)}
 .admin .btn.armed,.admin .btn.armed:hover{background:var(--stop);color:#fff;box-shadow:none}
-.admin .alert{border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.5;font-weight:600;border-left:5px solid currentColor;margin-bottom:16px}
-.admin .alert.amber{background:var(--amber-t);color:var(--amber-d);border-left-color:var(--amber)}
-.admin .alert.stop{background:var(--stop-t);color:var(--stop)}
-.admin .alert.sky{background:var(--sky-t);color:var(--ink)}
-.admin .alert.go{background:var(--go-t);color:var(--go-d)}
+/* 안내 상자: Ant Design Alert처럼 얇은 테두리·옅은 바탕만 (왼쪽 굵은 띠·굵은 글씨 없음) */
+.admin .alert{border-radius:4px;padding:8px 12px;font-size:13px;line-height:1.6;font-weight:400;border:1px solid #D9DEE6;background:#F5F7FA;color:rgba(0,0,0,0.88);margin-bottom:16px}
+.admin .alert.amber{background:#FFFBE6;border-color:#FFE58F}
+.admin .alert.stop{background:#FFF2F0;border-color:#FFCCC7;color:var(--stop)}
+.admin .alert.sky{background:#F5F7FA;border-color:#D9DEE6}
+.admin .alert.go{background:#F6FFED;border-color:#B7EB8F}
 
 /* ---- 백엔드가 보이게: 관리자 화면에만 있는 요소 ---- */
 /* 값마다 어디서 읽었는지 (Redis 캐시인지 Oracle인지, 얼마나 늦을 수 있는지) */
@@ -106,7 +109,7 @@
 .admin .login form{width:100%;max-width:380px;background:var(--card);border-radius:16px;padding:28px;border-top:6px solid;border-image:var(--saek) 1}
 .admin .login h1{font-family:var(--serif);font-size:24px;margin:0 0 4px}
 
-@media (max-width:1100px){.admin .kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.admin .kpi:nth-child(3n+1){border-left:0}.admin .cols{grid-template-columns:1fr}}
+@media (max-width:1100px){.admin .kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.admin .kpi:nth-child(3n+1){border-left:0}.admin .cols{grid-template-columns:1fr}.admin .cols>.panel.stick{position:static;max-height:none}}
 /* 좁은 화면: 왼쪽 메뉴를 위쪽 가로 줄로 (시안은 숨겼지만 그러면 로그아웃·이동이 안 된다) */
 @media (max-width:720px){.admin .wrap{flex-direction:column}.admin .side{position:static;width:100%;height:auto;flex-direction:row;align-items:center;overflow-x:auto;padding:0;border-right:0;border-bottom:5px solid;border-image:var(--saek) 1}.admin .side>div{display:flex}.admin .brand{padding:10px 12px}.admin .brand small,.admin .side .grp{display:none}.admin .side a,.admin .side button.link{padding:12px 10px;white-space:nowrap;border-left:0;border-bottom:4px solid transparent;width:auto}.admin .side a.active{border-bottom-color:var(--sign)}.admin .side .out{margin:0 0 0 auto}.admin .main{padding:16px}.admin .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.admin .kpi:nth-child(odd){border-left:0}}
 

@@ -6,6 +6,7 @@ import { Who } from './AdminLayout.jsx';
 import RequestLog from './RequestLog.jsx';
 import { BY } from './ModelOpinion.jsx';
 import { ErrorBox } from './ui.jsx';
+import { CASE_STATUS, ko } from './labels.js';
 
 /**
  * A-05 위험 사용자 (ADM-04). GET /api/v1/admin/risks?minScore=&status=&type=&page=
@@ -17,7 +18,7 @@ import { ErrorBox } from './ui.jsx';
  *  - 모델 의견(RISK-05): 대상에 묶인 계정 중 가장 높은 모델 점수. 보조 의견이라 필터·정렬은 규칙 점수로만.
  *    숨김 설정(jejari.model.show=false)·사용 중인 모델 없음이면 칸을 빼고 이유만 한 줄
  */
-const TYPE = { CI: 'CI', PAYMENT: '결제수단', DEVICE: '기기' };
+const TYPE = { CI: '명의', PAYMENT: '결제수단', DEVICE: '기기' };
 const REVIEW = { NONE: ['', '검토 전'], PENDING: ['amber', '검토 중'], CONFIRMED: ['stop', '확정'], CLEARED: ['go', '해제'] };
 const CASE = { OPEN: 'amber', REVIEWING: 'sky', CONFIRMED: 'stop', DISMISSED: 'go' };
 // 위험 점수 등급 (서버 RiskGrade: 경고 risk.rule.warning_threshold 30 · 위험 risk.rule.case_threshold 80 — 케이스·결제 차단과 같은 기준)
@@ -48,7 +49,7 @@ export default function Risk() {
         <Who claims={claims} />
       </div>
       <div className="alert sky">
-        점수는 서버의 1분 배치가 행동 로그(Kafka → MongoDB)와 예매 기록을 묶음 키(CI·결제수단·기기 해시)별로 모아 계산해요.
+        점수는 서버가 1분마다 행동 기록과 예매 기록을 명의·결제수단·기기별로 모아 계산해요.
         이 화면은 30초마다 다시 읽어요. 개인정보는 서버가 가린 값이에요.
       </div>
       <section className="panel">
@@ -61,7 +62,7 @@ export default function Risk() {
           <Field label="검토 상태">
             <select value={f.status} onChange={set('status')}>
               <option value="">전체</option>
-              {Object.entries(REVIEW).map(([k, [, l]]) => <option key={k} value={k}>{l} ({k})</option>)}
+              {Object.entries(REVIEW).map(([k, [, l]]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </Field>
           <Field label="대상">
@@ -115,7 +116,7 @@ export default function Risk() {
                   <td>
                     {r.latestCase ? (
                       <Link className="link" to={`/admin/cases/${r.latestCase.caseId}`}>
-                        <span className="cid">C-{r.latestCase.caseId}</span> <span className={'st ' + (CASE[r.latestCase.status] || '')}>{r.latestCase.status}</span>
+                        <span className="cid">C-{r.latestCase.caseId}</span> <span className={'st ' + (CASE[r.latestCase.status] || '')}>{ko(CASE_STATUS, r.latestCase.status)}</span>
                       </Link>
                     ) : <span className="faint">—</span>}
                   </td>

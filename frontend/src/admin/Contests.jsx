@@ -4,6 +4,7 @@ import { get } from '../api/client.js';
 import { Who } from './AdminLayout.jsx';
 import { ErrorBox } from './ui.jsx';
 import { ciText } from './stats.js';
+import { RUN_STATUS, ko } from './labels.js';
 
 /**
  * 봇 대회 결과 (읽기 전용). GET /api/v1/admin/contests · /api/v1/admin/contests/{tag}?runId=
@@ -14,7 +15,7 @@ import { ciText } from './stats.js';
  *  - 막힌 층 = 매수제한 · 규칙(케이스) · 순번조정(최고 점수 × 점당 ms) · 관리자판정. 하나도 없으면 "뚫림"
  *  - 참가자 종류는 이메일(lt{태그}.{종류}.g…)에서 읽는다. 서버는 이 라벨을 탐지에 쓰지 않는다
  */
-const SUBJECT = { CI: 'CI', PAYMENT: '결제수단', DEVICE: '기기' };
+const SUBJECT = { CI: '명의', PAYMENT: '결제수단', DEVICE: '기기' };
 
 const ci = ciText;
 
@@ -92,12 +93,12 @@ export default function Contests() {
         {data?.run && (
           <p className="mut" style={{ fontSize: 13, margin: '10px 0 0' }}>
             운행 <b>{data.run.runId}</b>{data.run.trainNo ? ` · 열차 ${data.run.trainNo}` : ''}{data.run.runDate ? ` · ${data.run.runDate}` : ''}
-            {data.run.saleEventName ? ` · ${data.run.saleEventName}` : ''}{data.run.status ? ` · ${data.run.status}` : ''}
+            {data.run.saleEventName ? ` · ${data.run.saleEventName}` : ''}{data.run.status ? ` · ${ko(RUN_STATUS, data.run.status)}` : ''}
             {' '}· 점수 1점 = 대기열 {data.penaltyMsPerPoint / 1000}초
           </p>
         )}
         {data && !data.behaviorAvailable && (
-          <p className="faint" style={{ fontSize: 13 }}>행동 로그(MongoDB)를 읽지 못해 선점 시도·매수 제한 거절·기기 연결은 빠졌어요.</p>
+          <p className="faint" style={{ fontSize: 13 }}>행동 기록을 읽지 못해 선점 시도·매수 제한 거절·기기 연결은 빠졌어요.</p>
         )}
       </section>
 

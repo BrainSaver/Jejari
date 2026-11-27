@@ -49,7 +49,7 @@ export default function AdminLogin() {
           {error && (
             <div className="alert stop" role="alert">
               {isBusy(error) ? BUSY_MESSAGE : MESSAGES[error.code] || error.message}
-              {error.traceId && <div className="faint" style={{ fontSize: 12 }}>traceId {error.traceId}</div>}
+              {error.traceId && <div className="faint" style={{ fontSize: 12 }}>오류 번호 {error.traceId}</div>}
             </div>
           )}
           <div className="field">

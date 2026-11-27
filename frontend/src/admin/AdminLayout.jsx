@@ -4,6 +4,7 @@ import { logout } from '../api/client.js';
 import Icon, { Seal } from './Icon.jsx';
 import { C } from './theme.js';
 import { useAdminAuth } from './useAdminAuth.js';
+import { ROLE, ko } from './labels.js';
 
 const MENU = [
   ['운영', [['dashboard', 'pulse', '실시간 현황'], ['traffic', 'flow', '트래픽 관제'], ['risk', 'shield', '위험 사용자'], ['cases', 'folder', '케이스'], ['groups', 'person', '단체 신청'], ['models', 'swap', '모델 관리'], ['contests', 'flag', '봇 대회 결과']]],
@@ -47,7 +48,7 @@ export default function AdminLayout() {
       </Layout.Sider>
       <Layout>
         <Layout.Header className="adm-header">
-          <Typography.Text type="secondary" style={{ fontWeight: 700 }}>
+          <Typography.Text type="secondary">
             {here ? here.g : '관리자'} / <span style={{ color: C.ink }}>{here ? here.label : ''}</span>
           </Typography.Text>
           <span style={{ flex: 1 }} />
@@ -71,7 +72,7 @@ export function Who({ claims }) {
   return (
     <div className="who">
       <i>{(claims?.adm || '?')[0]}</i>관리자 #{claims?.sub}
-      <span style={{ color: 'var(--faint)' }}>{claims?.adm}</span>
+      <span style={{ color: 'var(--faint)' }}>{ko(ROLE, claims?.adm)}</span>
     </div>
   );
 }

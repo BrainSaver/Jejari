@@ -1,4 +1,4 @@
-import { Badge, Collapse, Table, Tag, Typography } from 'antd';
+import { Collapse, Table, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { subscribeRequestLog } from '../api/client.js';
 import { seoulTime } from '../lib/time.js';
@@ -20,7 +20,7 @@ export default function RequestLogPanel({ rows = 10, filter }) {
       ellipsis: true,
       render: (p, r) => (
         <span className="adm-mono">
-          <Tag style={{ marginRight: 6 }}>{r.method}</Tag>
+          <span style={{ marginRight: 6, color: 'rgba(0,0,0,0.45)' }}>{r.method}</span>
           {p.replace('/api/v1', '')}
         </span>
       ),
@@ -30,11 +30,11 @@ export default function RequestLogPanel({ rows = 10, filter }) {
       dataIndex: 'status',
       width: 90,
       align: 'right',
-      render: (s) => <Typography.Text strong type={s >= 200 && s < 300 ? 'success' : 'danger'}>{s || '연결 실패'}</Typography.Text>,
+      render: (s) => <Typography.Text type={s >= 200 && s < 300 ? 'success' : 'danger'}>{s || '연결 실패'}</Typography.Text>,
     },
     { title: '시간', dataIndex: 'ms', width: 90, align: 'right', render: (v) => <span className="adm-num">{v}ms</span> },
     {
-      title: 'traceId',
+      title: '오류 번호',
       dataIndex: 'traceId',
       width: 160,
       render: (t) => (t ? <Typography.Text className="adm-mono" copyable={{ text: t }}>{t.slice(0, 12)}…</Typography.Text> : '-'),
@@ -42,14 +42,15 @@ export default function RequestLogPanel({ rows = 10, filter }) {
   ];
   return (
     <Collapse
-      style={{ marginTop: 16, background: 'var(--card)' }}
+      style={{ marginTop: 16, background: '#fff' }}
       items={[
         {
           key: 'log',
           label: (
-            <span style={{ fontWeight: 800 }}>
-              이 화면이 보낸 요청 <Badge count={shown.length} color="var(--ink2)" showZero style={{ marginLeft: 6 }} />
-              <Typography.Text type={bad ? 'danger' : 'secondary'} style={{ marginLeft: 10, fontWeight: 600, fontSize: 12.5 }}>
+            <span>
+              개발자용 정보 (이 화면이 보낸 요청)
+              <Typography.Text type="secondary" style={{ marginLeft: 12, fontSize: 13 }}>{shown.length}건</Typography.Text>
+              <Typography.Text type={bad ? 'danger' : 'secondary'} style={{ marginLeft: 8, fontSize: 13 }}>
                 실패 {bad}건
               </Typography.Text>
             </span>

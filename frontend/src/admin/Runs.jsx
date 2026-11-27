@@ -7,6 +7,7 @@ import { Who } from './AdminLayout.jsx';
 import RequestLog from './RequestLog.jsx';
 import { ConfirmButton, ErrorBox, RunStatus } from './ui.jsx';
 import { hasRole } from './useAdminAuth.js';
+import { ROLE, RUN_STATUS, ko } from './labels.js';
 
 /**
  * A-03 운행·명절 행사 (ADM-02). API: /api/v1/admin/sale-events, /api/v1/admin/runs
@@ -86,10 +87,9 @@ export default function Runs() {
       </div>
 
       <div className="alert sky">
-        <b>상태는 서버의 판매 오픈 스케줄러가 바꿔요.</b> <span className="num">SCHEDULED</span> → 판매 오픈 시각이 지나면{' '}
-        <span className="num">ON_SALE</span> → 판매 마감 시각이 지나면 <span className="num">CLOSED</span>. 주기는 app_policy{' '}
+        <b>상태는 서버의 판매 오픈 스케줄러가 바꿔요.</b> 판매 전 → 판매 오픈 시각이 지나면 판매 중 → 판매 마감 시각이 지나면 판매 마감. 주기는 app_policy{' '}
         <code>sale.open_interval_sec</code>, 조건부 UPDATE라 앱이 여러 대여도 한 번만 바뀌어요. 이 화면은 10초마다 다시 읽어요.
-        {!canWrite && <div style={{ marginTop: 4 }}>지금 권한({claims?.adm})은 보기만 돼요. 저장은 SUPERVISOR.</div>}
+        {!canWrite && <div style={{ marginTop: 4 }}>지금 권한({ko(ROLE, claims?.adm)})은 보기만 돼요. 저장은 총괄 관리자만 할 수 있어요.</div>}
       </div>
 
       <ErrorBox error={error} onClose={() => setError(null)} />
@@ -186,7 +186,7 @@ export default function Runs() {
           <Field label="상태">
             <select value={filter.status} onChange={(e) => setFilter({ ...filter, status: e.target.value })}>
               <option value="">모든 상태</option>
-              {['SCHEDULED', 'ON_SALE', 'CLOSED', 'DEPARTED'].map((s) => <option key={s}>{s}</option>)}
+              {['SCHEDULED', 'ON_SALE', 'CLOSED', 'DEPARTED'].map((s) => <option key={s} value={s}>{ko(RUN_STATUS, s)}</option>)}
             </select>
           </Field>
           <Field label="열차">
@@ -348,9 +348,9 @@ function EventForm({ init, onSave, onCancel }) {
         <Field label="우선 예매 (선택)"><input type="datetime-local" value={f.priorityOpenAt} onChange={set('priorityOpenAt')} /></Field>
         <Field label="상태">
           <select value={f.status} onChange={set('status')}>
-            <option value="PLANNED">준비 (PLANNED)</option>
-            <option value="OPEN">판매 중 (OPEN)</option>
-            <option value="CLOSED">끝 (CLOSED)</option>
+            <option value="PLANNED">준비</option>
+            <option value="OPEN">판매 중</option>
+            <option value="CLOSED">끝</option>
           </select>
         </Field>
       </div>
@@ -367,11 +367,11 @@ function EventForm({ init, onSave, onCancel }) {
         </div>
       ) : (
         <p className="sub" style={{ margin: '10px 0 0' }}>
-          판매 오픈을 바꾸면 이 행사의 <b>판매 전(SCHEDULED)</b> 운행도 같이 바뀌어요. 이미 열린 운행은 그대로예요. 매수 제한 수정은 아직 없어요.
+          판매 오픈을 바꾸면 이 행사의 <b>판매 전</b> 운행도 같이 바뀌어요. 이미 열린 운행은 그대로예요. 매수 제한 수정은 아직 없어요.
         </p>
       )}
       <p className="sub" style={{ margin: '10px 0' }}>
-        {isNew && '행사와 행사 전용 매수 제한 정책 4개가 한 트랜잭션으로 생겨요. 정책이 없으면 상시 정책만 걸려 명절 전체 한도가 빠져요 (동시성 §10.6).'}
+        {isNew && '행사와 행사 전용 매수 제한 정책 4개가 함께 생겨요. 정책이 없으면 상시 정책만 걸려 명절 전체 한도가 빠져요 (동시성 §10.6).'}
       </p>
       <div className="row">
         <button className="btn sm" type="submit" disabled={busy}>{busy ? '저장 중' : '저장'}</button>
@@ -465,8 +465,8 @@ function BulkForm({ trains, events, event, onCreate }) {
         <span className="faint" style={{ fontSize: 12 }}>아무것도 안 고르면 매일</span>
       </div>
       <p className="sub" style={{ margin: '0 0 12px' }}>
-        판매 오픈은 {f.saleEventId ? '행사 판매 오픈 시각을 그대로 복사' : '출발 2개월 전 07:00 (Oracle ADD_MONTHS)'}, 마감은 운행일 다음 날 00:00.
-        정차 시각은 누적 거리 ÷ 2.7km/분 + 중간 정차 2분. 같은 날 운행이 이미 있으면 건너뛰고, 전부 한 트랜잭션이에요 (최대 92일).
+        판매 오픈은 {f.saleEventId ? '행사 판매 오픈 시각을 그대로 복사' : '출발 2개월 전 07:00'}, 마감은 운행일 다음 날 00:00.
+        정차 시각은 누적 거리 ÷ 2.7km/분 + 중간 정차 2분. 같은 날 운행이 이미 있으면 건너뛰고, 한 번에 최대 92일까지 만들어요.
       </p>
       <button className="btn sm" type="submit" disabled={busy || !f.trainId}>{busy ? '만드는 중' : '운행 만들기'}</button>
       {result && (

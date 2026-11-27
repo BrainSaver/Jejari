@@ -121,7 +121,7 @@ export default function LoadTestPanel({ canWrite, relax, onRelaxChanged }) {
 
   return (
     <section className="panel" style={{ marginBottom: 16 }}>
-      <h2><span className="grow">공용 서버 부하 시험 (k6)</span><span className="st plain">이 PC에서 실행</span></h2>
+      <h2><span className="grow">접속 몰림 시험</span><span className="st plain">이 PC에서 실행</span></h2>
       <p className="sub">
         게이지로 인원을 정하고 <b>해제 + 명령 만들기</b>를 누르면, 이 PC의 가입·로그인 제한을 잠시 풀고 터미널에 붙여 넣을 명령을 만들어요.
         명령은 저장소 폴더에서 Git Bash·WSL로 돌려요. <b>봇 대회 중에는 돌리지 마세요.</b>
@@ -193,7 +193,7 @@ export default function LoadTestPanel({ canWrite, relax, onRelaxChanged }) {
           해제 + 명령 만들기
         </ConfirmButton>
       ) : (
-        <p className="mut">해제는 SUPERVISOR만 할 수 있어요.</p>
+        <p className="mut">해제는 총괄 관리자만 할 수 있어요.</p>
       )}
       {!tagOk && <p className="mut">실행 태그는 영문 소문자·숫자 12자 이내예요.</p>}
 

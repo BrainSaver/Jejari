@@ -6,6 +6,7 @@ import { TYPE } from './ModelOpinion.jsx';
 import RequestLog from './RequestLog.jsx';
 import { ConfirmButton, ErrorBox } from './ui.jsx';
 import { hasRole } from './useAdminAuth.js';
+import { ROLE, ko } from './labels.js';
 
 /**
  * A-09 모델 관리 (RISK-05 이어서). 합성 모델 버전을 실데이터 점수로 비교하고, 케이스 화면 "모델 보조 의견"에 보여 줄 버전을 고른다.
@@ -61,7 +62,7 @@ export default function Models() {
       <div className="alert sky">
         모델 점수는 <b>보조 의견</b>이에요. 사용 중인 버전이 케이스 화면의 "모델 보조 의견" 카드에 나올 뿐, 대기열 순번·이용 제한·케이스 열기에는 쓰지 않아요.
         점수는 서버가 매시간 등록된 모든 버전으로 매겨 두므로, 켜기 전에 실데이터로 비교할 수 있어요.
-        {!canWrite && <div style={{ marginTop: 4 }}>지금 권한({claims?.adm})은 보기만 돼요. 바꾸기는 SUPERVISOR.</div>}
+        {!canWrite && <div style={{ marginTop: 4 }}>지금 권한({ko(ROLE, claims?.adm)})은 보기만 돼요. 바꾸기는 총괄 관리자만 할 수 있어요.</div>}
       </div>
       <ErrorBox error={error} onClose={() => setError(null)} />
       {done && <div className="alert go">{done}을(를) 사용 중으로 바꿨어요. 케이스 화면에 바로 반영돼요.</div>}
@@ -117,7 +118,7 @@ export default function Models() {
           </table>
         </div>
         <p className="faint" style={{ fontSize: 12, marginTop: 6 }}>
-          "관리자 판정"은 케이스에서 봇(RESELLER·MACRO·CANCEL_ABUSE)이나 사람(NORMAL)으로 판정한 계정만 셉니다. 규칙이 연 케이스에만 판정이 있어
+          "관리자 판정"은 케이스에서 봇(되팔이·매크로·취소 남용)이나 사람(정상)으로 판정한 계정만 셉니다. 규칙이 연 케이스에만 판정이 있어
           규칙 쪽으로 치우친 숫자예요. 점수가 없는 버전은 켤 수 없어요.
         </p>
       </section>
@@ -145,7 +146,7 @@ function Gate({ m }) {
         ))}
       </ul>
       {(m.precision != null || m.recall != null) && (
-        <div className="faint">판정 시험 몫 정밀도 {p1(m.precision)} · 재현율 {p1(m.recall)}</div>
+        <div className="faint"><span title="정밀도·재현율">시험에서 봇이라 한 것 중 맞은 비율 {p1(m.precision)} · 실제 봇 중 잡은 비율 {p1(m.recall)}</span></div>
       )}
     </div>
   );
@@ -199,7 +200,7 @@ function Audit({ claims }) {
           disabled={!canSample || !(count >= 1 && count <= 20)}>
           표본 뽑기
         </ConfirmButton>
-        {!canSample && <span className="faint" style={{ fontSize: 12.5 }}>REVIEWER 이상</span>}
+        {!canSample && <span className="faint" style={{ fontSize: 12.5 }}>검토자 이상</span>}
       </div>
       {res && (
         <p style={{ fontSize: 13, marginTop: 8 }}>
@@ -256,7 +257,13 @@ function Compare({ list }) {
   );
 }
 
+const DIFF_PAGE = 10; // 표가 길어지지 않게 10줄씩 넘겨 본다
+
 function DiffTable({ title, rows, total, a, b }) {
+  const [page, setPage] = useState(0);
+  useEffect(() => setPage(0), [rows]);
+  const pages = Math.max(1, Math.ceil(rows.length / DIFF_PAGE));
+  const shown = rows.slice(page * DIFF_PAGE, (page + 1) * DIFF_PAGE);
   const verdict = { BOT: <span className="st plain stop">봇 판정</span>, HUMAN: <span className="st plain go">사람 판정</span> };
   return (
     <div style={{ minWidth: 0 }}>
@@ -267,7 +274,7 @@ function DiffTable({ title, rows, total, a, b }) {
         <table>
           <thead><tr><th>회원</th><th className="n">{a}</th><th className="n">{b}</th><th>닮은 유형</th><th>판정</th></tr></thead>
           <tbody>
-            {rows.map((r) => {
+            {shown.map((r) => {
               const t = r.typeA || r.typeB;
               return (
                 <tr key={r.memberId}>
@@ -281,6 +288,13 @@ function DiffTable({ title, rows, total, a, b }) {
             })}
           </tbody>
         </table>
+        {pages > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 8, fontSize: 13 }}>
+            <span className="mut">{page * DIFF_PAGE + 1}–{Math.min(rows.length, (page + 1) * DIFF_PAGE)} / {rows.length}</span>
+            <button type="button" className="btn ghost sm" disabled={page === 0} onClick={() => setPage(page - 1)}>이전</button>
+            <button type="button" className="btn ghost sm" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>다음</button>
+          </div>
+        )}
         </div>
       )}
     </div>

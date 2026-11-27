@@ -5,6 +5,7 @@ import { Who } from './AdminLayout.jsx';
 import RequestLog from './RequestLog.jsx';
 import { ErrorBox } from './ui.jsx';
 import { hasRole } from './useAdminAuth.js';
+import { ROLE, ko } from './labels.js';
 
 /**
  * A-02 기준 데이터 (ADM-01). API: /api/v1/admin/stations · routes · car-types · trains
@@ -22,10 +23,10 @@ const TABS = [
 ];
 
 const RULES = {
-  stations: '역은 지우지 않는 참조 데이터예요 (ERD refOnly). 삭제 대신 이름·좌표만 고쳐요. 역 코드는 바꿀 수 없어요.',
-  routes: '노선을 쓰는 열차가 있으면 역 구성은 잠기고 이름만 고칠 수 있어요 (409 IN_USE). 화면에서 만든 노선 ID는 100부터 (시드는 1~).',
-  'car-types': '이 유형을 쓰는 열차가 있으면 좌석 수·등급·열 배치는 잠기고 이름만 고칠 수 있어요. 이름을 바꾸면 서버의 좌석 배치도 캐시를 비워요.',
-  trains: '저장하면 호차 구성대로 좌석이 한 트랜잭션에서 함께 생겨요. 운행이 붙은 뒤에는 노선·방향·편성이 잠겨요. 화면에서 만든 열차 ID는 1000부터.',
+  stations: '역은 지우지 않는 참조 데이터예요. 삭제 대신 이름·좌표만 고쳐요. 역 코드는 바꿀 수 없어요.',
+  routes: '노선을 쓰는 열차가 있으면 역 구성은 잠기고 이름만 고칠 수 있어요. 화면에서 만든 노선 ID는 100부터 (시드는 1~).',
+  'car-types': '이 유형을 쓰는 열차가 있으면 좌석 수·등급·열 배치는 잠기고 이름만 고칠 수 있어요. 이름을 바꾸면 좌석 배치도에도 바로 반영돼요.',
+  trains: '저장하면 호차 구성대로 좌석이 함께 생겨요. 운행이 붙은 뒤에는 노선·방향·편성이 잠겨요. 화면에서 만든 열차 ID는 1000부터.',
 };
 
 export default function Master() {
@@ -82,7 +83,7 @@ export default function Master() {
       </div>
       <div className="alert sky">
         {RULES[tab]}
-        {!canWrite && <div style={{ marginTop: 4 }}>지금 권한({claims?.adm})은 보기만 돼요. 저장은 SUPERVISOR.</div>}
+        {!canWrite && <div style={{ marginTop: 4 }}>지금 권한({ko(ROLE, claims?.adm)})은 보기만 돼요. 저장은 총괄 관리자만 할 수 있어요.</div>}
       </div>
       <ErrorBox error={error} onClose={() => setError(null)} />
       <Tab data={data} canWrite={canWrite} save={save} key={tab} />
@@ -104,7 +105,7 @@ function Layout({ title, count, search, setSearch, placeholder, onNew, canWrite,
         </h2>
         {list}
       </section>
-      <section className="panel">{form}</section>
+      <section className="panel stick">{form}</section>
     </div>
   );
 }
@@ -453,10 +454,6 @@ function Trains({ data, canWrite, save }) {
           <div className="alert sky" style={{ margin: '0 0 14px' }}>
             {cur && !locked && cars.join() !== cur.cars.map((c) => c.carTypeCode).join() ? '저장하면 좌석을 지우고 다시 만들어요: ' : cur ? '지금 좌석: ' : '저장하면 좌석이 함께 만들어져요: '}
             <b>{cars.length}량 {seats.toLocaleString()}석</b>
-            <div style={{ fontSize: 12, marginTop: 4 }}>
-              <code>seat_id = train_id × 100000 + 호차 × 1000 + 순번</code>
-              {cur ? ` (예: 1호차 첫 좌석 ${cur.trainId * 100000 + 1001})` : ' · 열차 ID는 저장할 때 1000번대에서 정해져요'}
-            </div>
           </div>
           <SaveButton busy={busy} label={cur ? (locked ? '번호·종류만 저장' : '열차 저장') : '열차 등록'} disabled={!canWrite || !cars.length} />
         </form>

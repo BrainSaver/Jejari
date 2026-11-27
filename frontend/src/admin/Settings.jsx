@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Col, Collapse, Descriptions, Empty, Input, Menu, Popconfirm, Row, Table, Tag, Timeline, Typography } from 'antd';
+import { Alert, Button, Card, Col, Collapse, Descriptions, Empty, Input, Popconfirm, Row, Select, Table, Tag, Timeline, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router';
 import { del, get, post, put } from '../api/client.js';
@@ -6,6 +6,7 @@ import LoadTestPanel from './LoadTestPanel.jsx';
 import RequestLogPanel from './RequestLogPanel.jsx';
 import { ConfirmButton, ErrorBox } from './ui.jsx';
 import { ApiError } from './ui-antd.jsx';
+import { POLICY_GROUP, ROLE, VALUE_TYPE, ko } from './labels.js';
 import { hasRole } from './useAdminAuth.js';
 
 /**
@@ -52,9 +53,20 @@ export default function Settings() {
   const cur = list?.find((p) => p.key === sel) || null;
   useEffect(() => setPage(1), [group, q]);
 
-  const wide = useWide(1400);
+  const wide = useWide(1200);
   const columns = [
-    { title: '키', dataIndex: 'key', width: wide ? '36%' : '56%', ellipsis: { showTitle: true }, render: (k) => <span className="adm-mono" style={{ fontWeight: 700 }}>{k}</span> },
+    {
+      title: '설정',
+      dataIndex: 'key',
+      width: wide ? '60%' : '62%',
+      ellipsis: true,
+      render: (k, p) => (
+        <div style={{ lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis' }} title={p.description ? `${p.description}\n${k}` : k}>
+          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.description || k}</div>
+          {p.description && <div className="adm-mono" style={{ fontSize: 11.5, color: 'var(--faint, #8c8c8c)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k}</div>}
+        </div>
+      ),
+    },
     {
       title: '값',
       dataIndex: 'value',
@@ -62,15 +74,14 @@ export default function Settings() {
       ellipsis: { showTitle: true },
       render: (v, p) => (
         <>
-          <b className="adm-num">{v}</b>
+          <span className="adm-num">{v}</span>
           {p.cachedValue != null && p.cachedValue !== p.value && (
-            <Tag color="warning" style={{ marginLeft: 6 }} title="Redis policy:cache 값이 DB와 달라요">캐시 {p.cachedValue}</Tag>
+            <Tag color="warning" style={{ marginLeft: 6 }} title={`서버에 아직 반영되지 않았어요 (지금 서버 값 ${p.cachedValue})`}>적용 안 됨</Tag>
           )}
         </>
       ),
     },
     { title: '버전', dataIndex: 'version', width: 64, align: 'right', render: (v) => <span className="adm-num">{v}</span> },
-    wide && { title: '설명', dataIndex: 'description', ellipsis: { showTitle: true }, render: (d) => <Typography.Text type="secondary">{d}</Typography.Text> },
   ].filter(Boolean);
 
   return (
@@ -78,21 +89,23 @@ export default function Settings() {
       <div className="adm-title">
         <h1>운영 설정</h1>
         <Typography.Text type="secondary">
-          정책 {list?.length ?? '—'}개 · 저장하면 DB(버전 +1, 이력) → Redis <code>policy:cache</code> → 각 앱 1초 안에 반영
+          정책 {list?.length ?? '—'}개
         </Typography.Text>
       </div>
-      {!canWrite && <Alert type="info" showIcon style={{ marginBottom: 16 }} message={`지금 권한(${claims?.adm})은 보기만 돼요. 저장은 SUPERVISOR.`} />}
+      {!canWrite && <Alert type="info" showIcon style={{ marginBottom: 16 }} message={`지금 권한(${ko(ROLE, claims?.adm)})은 보기만 돼요. 저장은 총괄 관리자만 할 수 있어요.`} />}
       {error && <ApiError error={error} onClose={() => setError(null)} style={{ marginBottom: 16 }} />}
 
       <Collapse
-        style={{ marginBottom: 16, background: 'var(--card)' }}
+        style={{ marginBottom: 16, background: '#fff' }}
         items={[
           {
             key: 'relax',
             label: (
-              <span style={{ fontWeight: 800 }}>
-                인증 제한 임시 해제{' '}
-                {relax ? (relax.active ? <Tag color="warning">해제 중 · {relax.until?.replace('T', ' ').slice(5, 16)}까지</Tag> : <Tag>평소</Tag>) : <Tag>정책 없음</Tag>}
+              <span>
+                인증 제한 임시 해제
+                <Typography.Text type={relax?.active ? 'warning' : 'secondary'} style={{ marginLeft: 12, fontSize: 13 }}>
+                  {relax ? (relax.active ? `해제 중 · ${relax.until?.replace('T', ' ').slice(5, 16)}까지` : '평소') : '정책 없음'}
+                </Typography.Text>
               </span>
             ),
             children: (
@@ -104,8 +117,9 @@ export default function Settings() {
           {
             key: 'k6',
             label: (
-              <span style={{ fontWeight: 800 }}>
-                공용 서버 부하 시험 (k6) <Tag color="gold">이 PC에서 실행</Tag>
+              <span>
+                접속 몰림 시험
+                <Typography.Text type="secondary" style={{ marginLeft: 12, fontSize: 13 }}>이 PC에서 실행</Typography.Text>
               </span>
             ),
             children: (
@@ -118,30 +132,29 @@ export default function Settings() {
       />
 
       <Row gutter={16} wrap={false} style={{ alignItems: 'stretch' }} className="adm-row">
-        <Col flex="176px">
-          <Card className="adm-work" styles={{ body: { padding: 8 } }}>
-            <Menu
-              mode="inline"
-              selectedKeys={[group || '__all']}
-              onClick={({ key }) => setGroup(key === '__all' ? '' : key)}
-              style={{ borderInlineEnd: 0, background: 'transparent' }}
-              items={[
-                { key: '__all', label: <GroupLabel name="전체" n={list?.length} /> },
-                ...groups.map(([g, n]) => ({ key: g, label: <GroupLabel name={g} n={n} /> })),
-              ]}
-            />
-          </Card>
-        </Col>
         <Col flex="auto" style={{ minWidth: 0 }}>
           <Card className="adm-work">
-            <Input.Search
-              allowClear
-              placeholder="키·설명 찾기 (예: rate_relax)"
-              aria-label="키·설명 찾기"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              style={{ marginBottom: 8 }}
-            />
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <Select
+                aria-label="분류"
+                style={{ width: 220, flex: 'none' }}
+                value={group}
+                onChange={setGroup}
+                showSearch
+                optionFilterProp="search"
+                options={[
+                  { value: '', label: `전체 분류 (${list?.length ?? 0})`, search: '전체' },
+                  ...groups.map(([g, n]) => ({ value: g, label: `${ko(POLICY_GROUP, g)} · ${g} (${n})`, search: `${ko(POLICY_GROUP, g)} ${g}` })),
+                ]}
+              />
+              <Input.Search
+                allowClear
+                placeholder="키·설명 찾기 (예: rate_relax)"
+                aria-label="키·설명 찾기"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </div>
             <Table
               className="adm-fixed"
               size="middle"
@@ -159,21 +172,12 @@ export default function Settings() {
         </Col>
         <Col flex="320px">
           <Card className="adm-work" title={cur ? <span className="adm-mono" style={{ fontSize: 14 }}>{cur.key}</span> : '설정 편집'}>
-            {cur ? <Editor key={cur.key} p={cur} canWrite={canWrite} onSaved={load} /> : <Empty style={{ marginTop: 120 }} description="왼쪽 표에서 설정을 고르세요" />}
+            {cur ? <Editor key={cur.key} p={cur} canWrite={canWrite} onSaved={load} /> : <Empty style={{ marginTop: 120 }} description="표에서 설정을 고르세요" />}
           </Card>
         </Col>
       </Row>
       <RequestLogPanel filter={(r) => r.path.includes('/admin/policies') || r.path.includes('/admin/auth-relax')} />
     </>
-  );
-}
-
-function GroupLabel({ name, n }) {
-  return (
-    <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
-      <span className="adm-num" style={{ opacity: 0.6, fontWeight: 700 }}>{n ?? ''}</span>
-    </span>
   );
 }
 
@@ -207,18 +211,18 @@ function Editor({ p, canWrite, onSaved }) {
         column={1}
         style={{ marginBottom: 12 }}
         items={[
-          { key: 't', label: '형식', children: <Tag>{p.valueType}</Tag> },
-          { key: 'v', label: '지금 값', children: <b className="adm-num">{p.value}</b> },
+          { key: 't', label: '형식', children: ko(VALUE_TYPE, p.valueType) },
+          { key: 'v', label: '지금 값', children: <span className="adm-num">{p.value}</span> },
           { key: 'ver', label: '버전', children: <span className="adm-num">{p.version}</span> },
           {
             key: 'c',
-            label: '캐시',
-            children: p.cachedValue == null || p.cachedValue === p.value ? <Tag color="success">DB와 같음</Tag> : <Tag color="warning">{p.cachedValue}</Tag>,
+            label: '적용',
+            children: p.cachedValue == null || p.cachedValue === p.value ? '적용됨' : <Typography.Text type="warning">아직 적용 안 됨 (지금 서버 값 {p.cachedValue})</Typography.Text>,
           },
           { key: 'u', label: '마지막 변경', children: `${p.updatedAt ? p.updatedAt.replace('T', ' ').slice(0, 16) : '—'}${p.updatedBy ? ` · 관리자 #${p.updatedBy}` : ''}` },
         ]}
       />
-      {saved && <Alert type="success" showIcon style={{ marginBottom: 12 }} message={`저장했어요. 버전 ${saved.version}, 캐시 ${saved.cachedValue}. 1초 안에 모든 서버에 반영돼요.`} />}
+      {saved && <Alert type="success" showIcon style={{ marginBottom: 12 }} message={`저장했어요. 버전 ${saved.version}. 1초 안에 모든 서버에 반영돼요.`} />}
       {error && <ApiError error={error} onClose={() => setError(null)} style={{ marginBottom: 12 }} />}
       {error?.code === 'POLICY_VERSION_CONFLICT' && <Button size="small" style={{ marginBottom: 12 }} onClick={onSaved}>다시 읽기</Button>}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -234,7 +238,7 @@ function Editor({ p, canWrite, onSaved }) {
           <Button type="primary" disabled={!canWrite || value === p.value}>저장</Button>
         </Popconfirm>
       </div>
-      <Typography.Title level={5} style={{ fontSize: 13.5, marginTop: 0 }}>변경 이력</Typography.Title>
+      <Typography.Text type="secondary" style={{ display: 'block', fontSize: 13 }}>변경 이력</Typography.Text>
       {hist && !hist.length ? (
         <Typography.Text type="secondary">아직 바꾼 적이 없어요 (시드 값).</Typography.Text>
       ) : (
@@ -245,7 +249,7 @@ function Editor({ p, canWrite, onSaved }) {
             children: (
               <span style={{ fontSize: 13 }}>
                 <span className="adm-num" style={{ color: 'var(--faint)' }}>v{h.version}</span>{' '}
-                <span className="adm-num">{h.oldValue ?? '—'}</span> → <b className="adm-num">{h.newValue}</b>
+                <span className="adm-num">{h.oldValue ?? '—'}</span> → <span className="adm-num">{h.newValue}</span>
                 <div style={{ fontSize: 12, color: 'var(--mut)' }}>{h.changedAt?.replace('T', ' ').slice(5, 16)}{h.changedBy ? ` · 관리자 #${h.changedBy}` : ''}</div>
               </span>
             ),
@@ -257,7 +261,7 @@ function Editor({ p, canWrite, onSaved }) {
 }
 
 /**
- * 인증 시도 제한 임시 해제. k6로 공용 서버에 계정을 많이 만들 때 그 PC의 IP만 정한 시각까지 가입·로그인 한도를 높인다.
+ * 인증 시도 제한 임시 해제. 접속 몰림 시험으로 공용 서버에 계정을 많이 만들 때 그 PC의 IP만 정한 시각까지 가입·로그인 한도를 높인다.
  * 종료 시각이 지나면 아무도 안 눌러도 평소 한도로 돌아간다 (서버가 읽을 때마다 시각을 비교).
  */
 function AuthRelax({ canWrite, st, setSt, onChanged }) {
@@ -295,9 +299,9 @@ function AuthRelax({ canWrite, st, setSt, onChanged }) {
         </div>
       ) : (
         <p className="sub">
-          k6로 공용 서버에 계정을 많이 만들 때 그 PC의 IP만 최대 {st.maxHours}시간 동안 가입·로그인 한도를 높여요
+          접속 몰림 시험으로 공용 서버에 계정을 많이 만들 때 그 PC의 IP만 최대 {st.maxHours}시간 동안 가입·로그인 한도를 높여요
           (평소 IP당 가입 시간당 {st.normalSignupPerHour} · 로그인 분당 {st.normalLoginPerMin}). 시각이 지나면 저절로 평소로 돌아가요.
-          원본 IP는 저장하지 않고 해시만 남겨요. <b>봇 대회 중에는 켜지 마세요</b> (같은 와이파이의 봇도 같이 풀려요).
+          원본 IP는 저장하지 않고 가린 값만 남겨요. <b>봇 대회 중에는 켜지 마세요</b> (같은 와이파이의 봇도 같이 풀려요).
         </p>
       )}
       <ErrorBox error={error} onClose={() => setError(null)} />
@@ -315,7 +319,7 @@ function AuthRelax({ canWrite, st, setSt, onChanged }) {
           </label>
           <label className="field" style={{ margin: 0, flex: 1, minWidth: 200 }}>
             <span className="lbl">사유 (5자 이상)</span>
-            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="예: k6 시나리오 11 공용 서버 측정" />
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="예: 접속 몰림 시험 (시나리오 11) 공용 서버 측정" />
           </label>
           <ConfirmButton className="btn tall" confirm={`한 번 더 누르면 ${hours}시간 해제`} onConfirm={start} disabled={reason.trim().length < 5}>
             {st.active ? 'IP 추가·연장' : '해제 시작'}

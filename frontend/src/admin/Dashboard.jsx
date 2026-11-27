@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Checkbox, Col, Empty, Form, Input, Popconfirm, Row, Select, Space, Tag, Typography } from 'antd';
+import { Alert, Badge, Button, Card, Checkbox, Col, Empty, Form, Input, Popconfirm, Row, Select, Space, Typography } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router';
 import { get, post, subscribeRequestLog } from '../api/client.js';
@@ -6,8 +6,8 @@ import { addDays, md, seoulMs, seoulToday } from '../lib/time.js';
 import { usePolling } from '../hooks/usePolling.js';
 import Icon from './Icon.jsx';
 import RequestLogPanel from './RequestLogPanel.jsx';
-import { C } from './theme.js';
 import { ApiError } from './ui-antd.jsx';
+import { ROLE, RUN_STATUS, ko } from './labels.js';
 import { hasRole } from './useAdminAuth.js';
 
 /**
@@ -46,11 +46,11 @@ export default function Dashboard() {
           onChange={(v) => setParams({ run: v })}
           options={runs.map((r) => ({ value: String(r.runId), label: r.label }))}
         />
-        {data && <Tag color={data.status === 'ON_SALE' ? 'success' : 'warning'}>{data.status}</Tag>}
+        {data && <Badge status={data.status === 'ON_SALE' ? 'success' : 'warning'} text={ko(RUN_STATUS, data.status)} />}
         <span style={{ flex: 1 }} />
         <Button onClick={refreshNow} icon={<Icon name="refresh" />}>지금 다시 읽기</Button>
         {GRAFANA && (
-          <Button href={GRAFANA} target="_blank" rel="noreferrer" icon={<Icon name="external" />}>Grafana</Button>
+          <Button href={GRAFANA} target="_blank" rel="noreferrer" icon={<Icon name="external" />}>자세한 그래프</Button>
         )}
         <div style={{ flexBasis: '100%' }}>
           <LiveInfo data={data} error={error} lastReq={lastReq} />
@@ -81,11 +81,11 @@ export default function Dashboard() {
 
 /**
  * ADM-07 예약 강제 취소 (강다인 API). POST /api/v1/admin/reservations/{id}/cancel {"memo"}.
- * 확정 예약만, 수수료 0·전액 환불, admin_action에 사유가 남는다. SUPERVISOR만 — 서버가 막고 화면은 버튼만 끈다.
+ * 확정 예약만, 수수료 0·전액 환불, admin_action에 사유가 남는다. 총괄 관리자만 — 서버가 막고 화면은 버튼만 끈다.
  */
 const CANCEL_HINT = {
   ACTION_REASON_REQUIRED: '사유를 5자 이상 적어 주세요. 아무것도 바뀌지 않았어요.',
-  ADMIN_FORBIDDEN: 'SUPERVISOR만 강제 취소할 수 있어요.',
+  ADMIN_FORBIDDEN: '총괄 관리자만 강제 취소할 수 있어요.',
   RESERVATION_NOT_FOUND: '없는 예약 번호예요.',
   RESERVATION_NOT_CONFIRMED: '확정된 예약이 아니거나 이미 취소됐어요. 결제 전 예약은 기한이 지나면 스스로 풀려요.',
   CANCEL_NOT_ALLOWED: '지금은 수수료를 계산할 수 없는 때예요(출발 뒤 한도·도착 뒤). 위약금 면제로 다시 취소해 주세요.',
@@ -122,10 +122,7 @@ function ForceCancel({ claims, onDone, unknown }) {
 
   return (
     <Card className="adm-work" title="예약 강제 취소" extra={<Typography.Text type="secondary">결과 모름 {unknown ?? '—'}건</Typography.Text>}>
-      <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>
-        확정된 예약을 취소해요. 기본은 수수료 면제·전액 환불이고, 매크로로 판정했으면 면제를 끄고 사용자 취소와 같은 수수료(단체는 단체 위약금)를 받아요. 사유는 admin_action에 남아요.
-      </Typography.Paragraph>
-      {!can && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`지금 권한(${claims?.adm})으로는 강제 취소할 수 없어요. SUPERVISOR만 가능해요.`} />}
+      {!can && <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`지금 권한(${ko(ROLE, claims?.adm)})으로는 강제 취소할 수 없어요. 총괄 관리자만 가능해요.`} />}
       {error && <ApiError error={error} onClose={() => setError(null)} style={{ marginBottom: 12 }} />}
       {result && (
         <Alert
@@ -156,7 +153,7 @@ function ForceCancel({ claims, onDone, unknown }) {
           onConfirm={go}
           disabled={!ready}
         >
-          <Button danger type="primary" block size="large" disabled={!ready} loading={busy}>강제 취소</Button>
+          <Button danger type="primary" block disabled={!ready} loading={busy}>강제 취소</Button>
         </Popconfirm>
       </Form>
     </Card>
@@ -233,17 +230,17 @@ function LiveInfo({ data, error, lastReq }) {
   const age = data ? Math.max(0, Math.round((now - seoulMs(data.asOf)) / 1000)) : null;
   return (
     <Space size={10} wrap style={{ fontSize: 13 }} aria-live="polite">
-      {error ? <Tag color="error">응답 실패</Tag> : <Tag color="success">실시간 · 10초마다</Tag>}
+      {error ? <Typography.Text type="danger">응답 실패</Typography.Text> : <Typography.Text type="secondary">10초마다 갱신</Typography.Text>}
       {data && (
         <Typography.Text type="secondary">
-          서버 시각 <b className="adm-num">{data.asOf.slice(11, 19)}</b> ({age}초 전)
+          서버 시각 <span className="adm-num">{data.asOf.slice(11, 19)}</span> ({age}초 전)
         </Typography.Text>
       )}
       {lastReq && (
         <Typography.Text type="secondary">
-          응답 <b className="adm-num">{lastReq.ms}ms</b>
+          응답 <span className="adm-num">{lastReq.ms}ms</span>
           {lastReq.traceId && (
-            <Typography.Text className="adm-mono" type="secondary" copyable={{ text: lastReq.traceId }} style={{ marginLeft: 6 }}>
+            <Typography.Text className="adm-mono" type="secondary" copyable={{ text: lastReq.traceId }} style={{ marginLeft: 6 }} title="오류 번호 (문제가 생기면 개발자에게 알려 주세요)">
               {lastReq.traceId.slice(0, 12)}…
             </Typography.Text>
           )}
@@ -262,7 +259,7 @@ function Kpis({ d }) {
     { label: '선점 중', n: seats.held, d: seats.groupQuota ? `결제 대기 · 단체 할당 ${seats.groupQuota}석 따로` : '결제 기다리는 좌석', src: 'Redis', tip: 'seat:hold 키가 살아 있는 좌석' },
     { label: '남은 좌석', n: seats.remaining, d: seats.groupQuota ? '전체 − 판매 − 선점 − 단체' : '전체 − 판매 − 선점', src: '계산' },
     { label: '대기열', n: queue.waiting, d: drainSec != null ? `입장 중 ${queue.active} · 소진 ${fmtSec(drainSec)}` : `입장 중 ${queue.active}`, src: 'Redis', tip: `ZSET queue:${d.runId}` },
-    { label: '입장 속도', n: queue.admitPerSec, unit: '/초', d: '입장 스케줄러가 매번 기록', src: 'Redis', tip: `queue:throughput:${d.runId}` },
+    { label: '입장 속도', n: queue.admitPerSec, unit: '/초', d: '1초마다 기록', src: 'Redis', tip: `queue:throughput:${d.runId}` },
     { label: '결제 결과 모름', n: payments.unknown, d: '확인 시각 지난 결제 · 전체 운행', src: 'Oracle', tip: 'payment', alarm: payments.unknown > 0 },
   ];
   return (
@@ -276,31 +273,18 @@ function Kpis({ d }) {
   );
 }
 
-/** 값이 바뀌면 카드가 노랗게 깜빡인다 → "방금 서버 값이 바뀌었다"가 보인다 */
+/** 숫자 카드. 출처(Redis·Oracle)는 이름에 마우스를 올리면 보인다 */
 function Kpi({ label, n, unit, d, src, tip, alarm }) {
-  const prev = useRef(n);
-  const [bump, setBump] = useState(0);
-  useEffect(() => {
-    if (prev.current !== n) setBump((b) => b + 1);
-    prev.current = n;
-  }, [n]);
   return (
-    <Card
-      key={bump}
-      size="small"
-      className={bump ? 'adm-flash' : undefined}
-      style={{ flex: 1, background: alarm ? C.stopT : undefined, borderColor: alarm ? C.stop : undefined }}
-      styles={{ body: { padding: '12px 14px' } }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: 12.5, fontWeight: 800, color: C.mut }}>
-        {label}
-        <Tag title={tip} style={{ marginInlineEnd: 0, fontSize: 11 }}>{src}</Tag>
+    <Card size="small" style={{ flex: 1 }} styles={{ body: { padding: '12px 16px' } }}>
+      <Typography.Text type="secondary" style={{ fontSize: 13 }} title={tip ? `${src} · ${tip}` : src}>{label}</Typography.Text>
+      <div className="adm-num" style={{ fontSize: 26, fontWeight: 500, lineHeight: 1.3, marginTop: 2 }}>
+        <Typography.Text type={alarm ? 'danger' : undefined} style={{ fontSize: 'inherit' }}>
+          {Number(n).toLocaleString()}
+          {unit && <span style={{ fontSize: 14 }}>{unit}</span>}
+        </Typography.Text>
       </div>
-      <div className="adm-num" style={{ fontSize: 28, fontWeight: 900, lineHeight: 1.2, marginTop: 4, color: alarm ? C.stop : C.ink }}>
-        {Number(n).toLocaleString()}
-        {unit && <span style={{ fontSize: 15, fontWeight: 700 }}>{unit}</span>}
-      </div>
-      <div style={{ fontSize: 12, color: C.mut, wordBreak: 'keep-all' }}>{d}</div>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>{d}</Typography.Text>
     </Card>
   );
 }
@@ -344,21 +328,18 @@ function RateChart({ data }) {
   return (
     <Card
       className="adm-work"
-      title="분당 예약·결제·취소·만료"
+      title={<span title={`막대 한 칸 = 1분 · 마지막 흐린 칸은 진행 중인 분 · 범례 숫자는 최근 ${windowSec}초 · 만료는 결제로 이어지지 못하고 풀린 선점`}>분당 예약·결제·취소·만료</span>}
       extra={
         <Space size={14} wrap style={{ fontSize: 12.5 }}>
           {SERIES.map(([k, name, color, hatch]) => (
             <span key={k}>
-              <i style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, marginRight: 5, verticalAlign: -1, background: hatch ? 'repeating-linear-gradient(135deg, var(--stop) 0 2px, #fff 2px 3.5px)' : color }} />
-              {name} <b className="adm-num">{rates[k] ?? '—'}</b>
+              <i style={{ display: 'inline-block', width: 10, height: 10, marginRight: 5, verticalAlign: -1, background: hatch ? 'repeating-linear-gradient(135deg, var(--stop) 0 2px, #fff 2px 3.5px)' : color }} />
+              {name} <span className="adm-num">{rates[k] ?? '—'}</span>
             </span>
           ))}
         </Space>
       }
     >
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12.5, marginBottom: 8 }}>
-        막대 한 칸 = 1분 (Oracle 집계) · 최근 {rows.length || HISTORY_MIN}분 · 마지막 흐린 칸은 진행 중인 분 · 범례 숫자는 최근 {windowSec}초 · <b>만료</b>는 결제로 이어지지 못하고 풀린 선점
-      </Typography.Paragraph>
       <div ref={box} style={{ flex: 1, minHeight: 0, position: 'relative' }}>
         {!data ? null : !rows.length ? (
           <Empty style={{ marginTop: 80 }} description="분당 이력을 못 읽었어요. 숫자 카드는 그대로 갱신돼요." />
@@ -372,7 +353,7 @@ function RateChart({ data }) {
             </defs>
             {[0, 0.2, 0.4, 0.6, 0.8, 1].map((f) => (
               <g key={f}>
-                <line x1={L} x2={W} y1={y(top * f)} y2={y(top * f)} stroke="var(--line2)" />
+                <line x1={L} x2={W} y1={y(top * f)} y2={y(top * f)} stroke="#F0F0F0" />
                 <text x={L - 8} y={y(top * f) + 4} textAnchor="end" fontSize="11" fill="var(--faint)">{Math.round(top * f)}</text>
               </g>
             ))}
@@ -383,7 +364,7 @@ function RateChart({ data }) {
                 <g key={h.minute} opacity={live ? 0.5 : 1}>
                   <title>{`${h.minute.slice(11, 16)}${live ? ' (진행 중)' : ''} · 예약 ${h.reservations} · 결제 ${h.payments} · 취소 ${h.cancels} · 만료 ${h.expires}`}</title>
                   {SERIES.map(([k, , color, hatch], j) => (
-                    <rect key={k} x={x0 + j * bw} y={y(h[k])} width={bw - 1} height={Math.max(h[k] ? 1 : 0, H - y(h[k]))} rx="2" fill={hatch ? 'url(#hatch-stop)' : color} />
+                    <rect key={k} x={x0 + j * bw} y={y(h[k])} width={bw - 1} height={Math.max(h[k] ? 1 : 0, H - y(h[k]))} fill={hatch ? 'url(#hatch-stop)' : color} />
                   ))}
                   {((Number(h.minute.slice(14, 16)) % 5 === 0 && i < rows.length - 2) || live) && (
                     <text x={x0 + (bw * SERIES.length) / 2} y={H + 18} textAnchor="middle" fontSize="12" fill="var(--mut)">{h.minute.slice(11, 16)}</text>
@@ -392,7 +373,7 @@ function RateChart({ data }) {
               );
             })}
             {total === 0 && (
-              <text x={(W + L) / 2} y={H / 2} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--faint)">최근 {rows.length}분 동안 예약·결제·취소·만료가 없어요</text>
+              <text x={(W + L) / 2} y={H / 2} textAnchor="middle" fontSize="13" fill="var(--faint)">최근 {rows.length}분 동안 예약·결제·취소·만료가 없어요</text>
             )}
           </svg>
         )}

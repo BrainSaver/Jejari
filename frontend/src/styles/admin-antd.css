@@ -1,20 +1,20 @@
-/* Ant Design으로 다시 만든 관리자 화면의 틀 (AdminApp이 불러온다). 색은 tokens.css 변수만 쓴다 */
-.adm-shell{font-size:14px;line-height:1.5715;background:var(--paper)}
-.adm-sider{border-right:4px solid var(--sign)}
+/* Ant Design으로 다시 만든 관리자 화면의 틀 (AdminApp이 불러온다). 꾸밈 없이 antd 기본 모양에 가깝게: 회색 바탕·흰 카드·얇은 회색 선 */
+:root:has(.adm-shell){background:#F5F5F5}
+.adm-shell{font-size:14px;line-height:1.5715;background:#F5F5F5}
 .adm-sider .ant-layout-sider-children{display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
-.adm-brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:900;font-size:16px;padding:20px 20px 16px}
-.adm-brand small{display:block;font-weight:700;font-size:12px;color:#8FA1BE}
+.adm-brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:600;font-size:16px;padding:20px 20px 16px}
+.adm-brand small{display:block;font-weight:400;font-size:12px;color:rgba(255,255,255,0.55)}
 .adm-sider .ant-menu{padding:0 8px;border-inline-end:0!important}
 .adm-sider .ant-menu .ic{width:16px;height:16px}
-.adm-header{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
-.adm-shell .who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut);white-space:nowrap;font-weight:700}
-.adm-shell .who i{line-height:1;width:26px;height:26px;border-radius:7px;background:var(--sign);color:var(--ink);display:grid;place-items:center;font-style:normal;font-weight:900;font-size:12px}
+.adm-header{display:flex;align-items:center;gap:12px;border-bottom:1px solid #F0F0F0;position:sticky;top:0;z-index:10}
+.adm-shell .who{display:flex;align-items:center;gap:8px;font-size:13px;color:rgba(0,0,0,0.65);white-space:nowrap;font-weight:400}
+.adm-shell .who i{line-height:1;width:26px;height:26px;border-radius:50%;background:#E6E9EE;color:var(--ink);display:grid;place-items:center;font-style:normal;font-weight:600;font-size:12px}
 .adm-shell .ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:square;stroke-linejoin:miter;flex:none}
 
 /* 새 화면 본문 */
 .adm-page{padding:20px 24px 40px;max-width:1440px;margin:0 auto}
 .adm-title{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:16px}
-.adm-title h1{margin:0;font-size:22px;font-weight:900}
+.adm-title h1{margin:0;font-size:20px;font-weight:600}
 .adm-num{font-variant-numeric:tabular-nums}
 .adm-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
 
@@ -32,7 +32,3 @@
 .admin.legacy{min-height:0;background:transparent}
 .admin.legacy .head .who{display:none}
 .admin.embed{min-height:0;background:transparent}
-
-/* 값이 바뀐 지표 카드가 잠깐 노랗게 */
-.adm-flash{animation:adm-flash 1.2s ease-out}
-@keyframes adm-flash{0%{background:var(--sign-t)}100%{background:var(--card)}}

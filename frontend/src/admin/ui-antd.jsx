@@ -16,7 +16,7 @@ export function ApiError({ error, onClose, style }) {
           {error.status ? ` · HTTP ${error.status}` : ''}
           {error.traceId && (
             <>
-              {' · traceId '}
+              {' · 오류 번호 '}
               <Typography.Text className="adm-mono" copyable>{error.traceId}</Typography.Text>
             </>
           )}

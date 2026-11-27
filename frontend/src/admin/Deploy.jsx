@@ -13,10 +13,10 @@ import { ConfirmButton, ErrorBox } from './ui.jsx';
  * 프로젝트가 끝나면 지운다.
  */
 const STATE = {
-  OK: ['go', '정상', '서버가 main의 최신(CI 통과) 버전이에요.'],
-  WAITING_CI: ['amber', 'CI 기다림', '새 커밋의 GitHub CI가 아직 안 끝났어요. 끝나면 다시 누르거나 다음 자동 주기(10분)를 기다리세요.'],
-  CI_FAILED: ['stop', 'CI 실패', '최근 커밋들이 CI를 통과하지 못해 배포하지 않았어요.'],
-  BLOCKED: ['stop', '멈춤 (DB·인프라 변경)', 'ERD·DB 패치·시드·서버 설정이 바뀐 커밋이에요. 아래 "막힌 커밋 승인"에서 할 일을 처리하고 승인하면 배포돼요.'],
+  OK: ['go', '정상', '서버가 자동 검사를 통과한 최신 코드 버전이에요.'],
+  WAITING_CI: ['amber', '자동 검사 기다림', '새 코드 버전의 자동 검사가 아직 안 끝났어요. 끝나면 다시 누르거나 다음 자동 주기(10분)를 기다리세요.'],
+  CI_FAILED: ['stop', '자동 검사 실패', '최근 코드 버전들이 자동 검사를 통과하지 못해 배포하지 않았어요.'],
+  BLOCKED: ['stop', '멈춤 (DB·서버 설정 변경)', 'DB 구조·기본 데이터·서버 설정이 바뀐 코드 버전이에요. 아래 "막힌 버전 승인"에서 할 일을 처리하고 승인하면 배포돼요.'],
   FAILED: ['stop', '실패', '빌드나 앱 기동이 실패했어요. 서버 로그를 확인하세요 (journalctl -u jejari-autodeploy).'],
 };
 
@@ -64,7 +64,7 @@ export default function Deploy() {
       <div className="head"><h1>배포</h1><span style={{ flex: 1 }} /><Who claims={claims} /></div>
       <div className="alert sky">
         버튼을 누르면 서버의 자동 배포 장치를 <b>지금 한 번</b> 실행해요. 자동으로는 10분마다 돌아요.
-        GitHub main에서 <b>CI를 통과한 최신 커밋</b>만 배포해요 (보통 2~4분). 앱이 1대라 재시작하는 <b>40초~1분 동안 사이트가 느려져요</b> (요청은 앱이 뜰 때까지 기다렸다 처리). 시연 중에는 누르지 마세요.
+        <b>자동 검사를 통과한 최신 코드 버전</b>만 배포해요 (보통 2~4분). 앱이 1대라 재시작하는 <b>40초~1분 동안 사이트가 느려져요</b> (요청은 앱이 뜰 때까지 기다렸다 처리). 시연 중에는 누르지 마세요.
       </div>
       <ErrorBox error={error} onClose={() => setError(null)} />
       {s && !s.enabled && <div className="alert amber">이 서버에서는 수동 배포가 꺼져 있어요 (공용 서버에서만 켜요).</div>}
@@ -74,7 +74,7 @@ export default function Deploy() {
             <h2>지금 서버</h2>
             <table>
               <tbody>
-                <tr><th style={{ width: 120 }}>배포된 커밋</th><td><code>{s.deployedSha || '-'}</code> <span className="mut">{s.deployedSubject}</span></td></tr>
+                <tr><th style={{ width: 120 }}>배포된 코드 버전</th><td><code>{s.deployedSha || '-'}</code> <span className="mut">{s.deployedSubject}</span></td></tr>
                 <tr><th>마지막 판단</th><td><span className={`st ${tone}`}>{label}</span> <span className="faint num">{s.lastStateAt}</span></td></tr>
                 <tr><th>내용</th><td className="mut" style={{ fontSize: 13 }}>{s.lastMessage}</td></tr>
                 <tr><th>마지막 수동 요청</th><td className="faint num">{s.lastRequest || '-'}</td></tr>
@@ -102,7 +102,7 @@ export default function Deploy() {
 }
 
 const KIND = {
-  PATCH: ['amber', 'DB 패치'],
+  PATCH: ['amber', 'DB 구조 변경'],
   INFO: ['go', '할 일 없음'],
   MANUAL: ['stop', '서버에서 직접'],
 };
@@ -130,7 +130,7 @@ function BlockedPanel({ onChanged }) {
   if (!b.blocked) {
     return (
       <section className="panel" style={{ marginTop: 16 }}>
-        <h2>막힌 커밋 승인</h2>
+        <h2>막힌 버전 승인</h2>
         <p className="sub">막힌 파일 목록이 아직 없어요. 자동 배포 장치가 한 번 더 돌면 생겨요 (최대 10분, 위 "지금 배포"를 누르면 바로).</p>
       </section>
     );
@@ -174,13 +174,13 @@ function BlockedPanel({ onChanged }) {
 
   return (
     <section className="panel" style={{ marginTop: 16 }}>
-      <h2>막힌 커밋 승인</h2>
+      <h2>막힌 버전 승인</h2>
       <p className="sub">
         <code>{b.shortSha}</code> <span className="mut">{b.subject}</span>
       </p>
       <div className="alert sky">
-        DB 패치는 <b>[적용]</b>으로 Oracle에 넣어요. "서버에서 직접"은 적힌 명령을 운영자가 서버에서 실행한 뒤(또는 배포 직후 하기로 하고) 체크하세요.
-        모두 끝나면 <b>승인</b>할 수 있고, 승인하면 이 커밋 하나만 BLOCKED를 건너뛰고 배포해요.
+        DB 구조 변경은 <b>[적용]</b>을 누르면 DB에 반영돼요. "서버에서 직접"은 적힌 명령을 운영자가 서버에서 실행한 뒤(또는 배포 직후 하기로 하고) 체크하세요.
+        모두 끝나면 <b>승인</b>할 수 있고, 승인하면 이 버전 하나만 멈춤을 건너뛰고 배포해요.
       </div>
       <table>
         <thead>
@@ -232,14 +232,14 @@ function BlockedPanel({ onChanged }) {
       </table>
       <div style={{ marginTop: 12 }}>
         {b.approvedAt ? (
-          <div className="alert go">승인됨 ({b.approvedAt}). 자동 배포가 이 커밋을 배포해요. 위 "마지막 판단"이 바뀔 때까지 기다려 주세요.</div>
+          <div className="alert go">승인됨 ({b.approvedAt}). 자동 배포가 이 버전을 배포해요. 위 "마지막 판단"이 바뀔 때까지 기다려 주세요.</div>
         ) : (
           <>
             <ConfirmButton className="btn" confirm="한 번 더 누르면 승인·배포" onConfirm={approve} disabled={!b.canAct || patchLeft > 0 || manualLeft > 0}>
               승인하고 배포
             </ConfirmButton>
             {b.canAct && (patchLeft > 0 || manualLeft > 0) && (
-              <p className="sub" style={{ marginTop: 8 }}>남은 일: DB 패치 {patchLeft}개, 서버 작업 체크 {manualLeft}개</p>
+              <p className="sub" style={{ marginTop: 8 }}>남은 일: DB 구조 변경 {patchLeft}개, 서버 작업 체크 {manualLeft}개</p>
             )}
             {!b.canAct && <p className="sub" style={{ marginTop: 8 }}>이 계정은 보기만 돼요.</p>}
           </>
