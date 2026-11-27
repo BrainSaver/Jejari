@@ -52,7 +52,7 @@ public class PolicyProvider implements PolicyBounds {
 	@Override
 	public Map<String, Range> bounds() {
 		return Map.of(
-				ADMIT_PER_SEC, new Range(1, 2000),        // 0이면 입장이 멈춤. 상한 2000은 k6 확인 후 확정
+				ADMIT_PER_SEC, new Range(1, 2000),        // 0이면 입장이 멈춤. 상한 2000은 서버 한계가 아니라 입력 실수를 막는 값 (운영 값 200, 공용 서버 11-26 측정은 동시 600명·초당 554건)
 				PASS_TTL_SEC, new Range(60, 1800),
 				PASS_EXTEND_SEC, new Range(60, 1800),     // 토큰 유효 시간과 같은 범위 (app_policy에 행이 생기면 적용)
 				ENTRY_TTL_SEC, new Range(1200, 86400),    // 대기 기록이 줄 서는 동안 사라지지 않게
