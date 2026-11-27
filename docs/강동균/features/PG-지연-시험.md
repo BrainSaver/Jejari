@@ -94,7 +94,7 @@ k6 (구매자 300명 + 조회만 하는 50명)
   **PG가 아예 응답하지 않는 장애**로 원리를 보였다
 - 회차마다 한 번씩만 쟀다. 조회 p95처럼 작은 차이(0.32~0.88초)는 PC 상태에 따라 흔들릴 수 있다. **p99·최대·스레드 수처럼 큰 차이만 결론으로 쓴다**
 - 측정(1초 간격)도 스레드가 필요해서, 스레드가 다 찬 동안에는 간격이 벌어진다. 다 찬 시간은 기록보다 길다
-- 공용 서버에서는 아직 안 쟀다. 서버는 11-19부터 앱 1대(`jejari@8080`)라 스레드·상한이 로컬과 같은 단위다
+- 공용 서버에서는 11-27 오후에 쟀다 (아래 "공용 서버 결과"). 서버는 11-19부터 앱 1대(`jejari@8080`)라 스레드·상한이 로컬과 같은 단위다
 
 ## 다시 돌리기
 
@@ -154,15 +154,18 @@ curl -s -X PUT 127.0.0.1:8090/_config -H 'Content-Type: application/json' -d '{"
 ```
 
 ```bash
-# [서버] 3. 결과 모름이 0이 될 때까지 기다린다 — 0이 되기 전에 mock으로 되돌리면 스캐너가 "PG가 모르는 주문"으로 실패 처리해
-#   가짜 PG는 승인했는데 좌석이 풀린다 (정합성 검사가 깨짐). 로컬에서는 약 1분
+# [서버] 3-1. 가짜 PG가 다시 답하게 (이 줄만. 되돌리기와 한 번에 붙이지 않는다)
 curl -s -X PUT 127.0.0.1:8090/_config -H 'Content-Type: application/json' -d '{"latencyMinMs":0,"latencyMaxMs":0,"capacity":200,"hangRate":0}'; echo
-PW=$(grep '^ORACLE_APP_PASSWORD=' .env | cut -d= -f2); U=$(grep '^ORACLE_APP_USER=' .env | cut -d= -f2)
-echo "SELECT status, COUNT(*) FROM payment WHERE created_at > SYSTIMESTAMP - INTERVAL '1' HOUR GROUP BY status;"   | $C exec -T oracle bash -lc "sqlplus -S -L $U/$PW@localhost:1521/FREEPDB1"       # REQUESTED가 0이 될 때까지 반복
 ```
 
+3-2. **결과 모름이 0이 될 때까지 기다린다.** 스캐너는 결제 **마감(선점 + 10분)이 지난 뒤에** PG에 묻는다 → 장애 측정 끝나고 약 10분.
+0이 되기 전에 mock으로 되돌리면 스캐너가 "PG가 모르는 주문"(`PG_NOT_RECEIVED`)으로 실패 처리해 가짜 PG는 승인했는데 좌석이 풀린다.
+서버 DB 없이도 내 PC에서 볼 수 있다: 시험 계정으로 로그인해 `GET /api/v1/reservations`의 `PAYMENT_PENDING` 수를 센다 (11-27에 이렇게 함).
+3-1이 앞서야 하는 이유: 장애 설정 그대로면 스캐너의 조회도 응답을 못 받아 계속 모름으로 남는다.
+
 ```bash
-# [서버] 4. 되돌리기 (꼭)
+# [서버] 4. 되돌리기 (꼭, 3-2에서 0을 본 뒤)
+cd ~/Jejari && C="docker compose -f compose.yaml -f deploy/compose.server.yaml"
 sed -i '/^JEJARI_PG_MODE=/d' .env
 sudo systemctl restart jejari@8080 && until curl -fs localhost:8080/actuator/health >/dev/null; do sleep 3; done; echo UP
 $C stop mock-pg
@@ -171,9 +174,26 @@ sudo systemctl enable --now jejari-autodeploy.timer && sudo systemctl start jeja
 
 볼 것: 조회만 하는 사람의 p99·최대(①과 ④ 차이), 스레드 최고(`tomcat_threads_busy`), 정합성 0건 (로컬 표와 같은 기준).
 
+## 공용 서버 결과 (2026-11-27 14:31~14:46)
+
+서버 일은 조영준 님(브라우저 SSH), k6·확인은 강동균 PC. 구매자 100명/10초(`pg1` 계정, `ACCOUNTS=existing`) + 조회만 50명 × 75초. 응답 한도 기본 3초, 동시 상한 끔.
+
+| | 기준 · 운행 731175 | 장애 · 운행 731149 |
+|---|---|---|
+| 가짜 PG | 서버 기본값 **0.5~1.5초** (0초로 바꾸는 단계를 안 넣어서 — 실제 PG에 더 가까움) | 승인은 하되 응답을 30초 안 줌 |
+| 결제 | 100/100 승인 | 100건 결과 모름 → 마감(14:45:54) 뒤 **30초 안에 100건 승인 확정** |
+| 결제 응답 p95 · 최대 | 2.20초 · 2.83초 | **3.27초 · 3.38초** (3초 한도에서 끊김) |
+| 조회만 하는 사람 p95 · p99 · 최대 | 0.28 · 0.85 · 2.65초 | **0.14 · 0.50 · 2.23초** |
+| 조회 실패 | 0 / 3,456 | 0 / 3,565 |
+| 남은 좌석 | 525 → 425 | 525 → 425 |
+
+- **결론**: PG가 멈춰도 결제와 상관없는 사람은 느려지지 않았다. 로컬 ④(응답 한도 3초)와 같은 결과를 서버에서도 확인
+- 못 본 것: 서버 스레드 수(`tomcat_threads_busy`)는 서버 안에서만 보여 이번엔 안 쟀다. 결제 행 수는 DB가 아니라 예약 상태(회원 API)로 확인
+- 시험 중 다른 사람 결제가 있었다면 그것도 가짜 PG를 탔다 (장애 1분 30초 동안은 결과 모름 → 마감 뒤 확정)
+
 ## 다음
 
 - [x] (2026-11-27) 결제 화면: `PAYMENT_BUSY`면 `Retry-After`만큼(±20%) 뒤 같은 멱등 키로 자동 재시도 — 최대 10번, 결제 기한이 10초 넘게 남을 때만, 화면을 떠나면 멈춤 (`frontend/src/user/payBusy.js` + 단위 테스트 5개, 가짜 서버 응답으로 브라우저 확인: 503 두 번 → 1초 간격 재시도 3번·키 1개 → 결과 화면)
 - [x] 기능설계서 9장 오류 코드 표에 `PAYMENT_BUSY`(503) 추가 — 11-27 팀장 허가
-- [ ] 공용 서버에서 한 번 (조영준 님 일정): `docker compose --profile pg up -d mock-pg`, 앱 `JEJARI_PG_MODE=http`. 끝나면 mock으로 되돌림
+- [x] 공용 서버에서 한 번 (11-27 14:31~14:46, 서버 일 조영준 님) → 위 "공용 서버 결과". 되돌림·자동 배포 다시 켬 확인
 - [ ] 상한 값: 40은 "응답 한도가 길 때 스레드를 지키는" 시험값. 3초 한도에서는 꺼 둬도 버텼으니 기본은 끔 유지
