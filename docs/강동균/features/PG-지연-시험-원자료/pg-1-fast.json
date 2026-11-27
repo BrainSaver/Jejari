@@ -1,0 +1,27 @@
+{
+  "profile": "fast",
+  "buyers": 300,
+  "spreadSec": 30,
+  "browsers": 50,
+  "journeySuccess": 1,
+  "pay": {
+    "approved": 300,
+    "unknown": 0,
+    "failed": 0,
+    "busyResponses": 0,
+    "busyGaveUp": 0,
+    "userMsP50": 1280,
+    "userMsP95": 2273,
+    "userMsMax": 3309,
+    "requestMsP95": 2273
+  },
+  "browse": {
+    "ok": 1,
+    "msP50": 15,
+    "msP95": 879,
+    "msP99": 1614,
+    "msMax": 2519,
+    "requestMsP95": 616,
+    "errorRate": 0
+  }
+}

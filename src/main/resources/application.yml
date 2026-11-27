@@ -161,6 +161,20 @@ jejari:
       send-timeout: 10s       # Kafka 확인(acks=all) 대기 한도
     cleanup-enabled: true     # 발행 끝난 outbox·오래된 processed_event 정리 (매일 04:10)
     policy-cache-ms: 10000    # app_policy 값을 앱에서 들고 있는 시간
+  # 결제 PG 연결 (PaymentConfig). 기본은 앱 안의 가짜 PG(mock, 0초 응답). 결제 부하 시험 때만 http로
+  # (가짜 PG 서버 loadtest/mock-pg/server.js, 결과: docs/강동균/features/PG-지연-시험.md)
+  payment:
+    pg:
+      mode: ${JEJARI_PG_MODE:mock}              # mock | http
+      base-url: ${JEJARI_PG_URL:http://127.0.0.1:8090}   # 이 기기 밖이면 https만 (카드번호가 본문에 들어감)
+      connect-timeout-ms: 1000
+      # 승인 응답 한도. 넘으면 결과 모름 → 마감에 스캐너가 PG에 조회. 결제 한 건이 요청 스레드를 붙잡는 최대 시간이라
+      # 가장 중요한 방어다 (2026-11-27 로컬: PG 응답 장애 때 30초면 스레드 200개가 다 참, 3초면 최고 68개)
+      read-timeout-ms: 3000
+      # PG 동시 승인 상한 (PgBulkhead). 0이면 끔. 넘치면 503 PAYMENT_BUSY + Retry-After
+      max-concurrent: ${JEJARI_PG_MAX_CONCURRENT:0}
+      acquire-wait-ms: 0
+      busy-retry-after-sec: 3
   # 알림 (EVT-06·WL-04). 실제 푸시·메일 없이 알림함(IN_APP) + 로그
   notification:
     consumer-enabled: true      # 예약 이벤트 → 알림 행 (소비 그룹 notification: 만료·환불)
