@@ -24,6 +24,7 @@ import com.jejari.support.WebSecurityTestConfig;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Tag("infra")
+@Tag("no-oracle") // Oracle 없이 돈다 → CI에서 push마다 (infraTest -PnoOracle, .github/workflows/infra-test.yml)
 @ExtendWith(NoRunningApp.class)
 @DataRedisTest
 @Import({QueueConfig.class, QueueTestBeans.class, WebSecurityTestConfig.ClockBean.class})

@@ -30,6 +30,7 @@ import com.jejari.support.NoRunningApp;
  * 같은 키(reservation_id)는 같은 파티션에 보낸 순서대로 쌓이는지.
  */
 @Tag("infra")
+@Tag("no-oracle") // Oracle 없이 돈다 → CI에서 push마다 (infraTest -PnoOracle, .github/workflows/infra-test.yml)
 @ExtendWith(NoRunningApp.class)
 class KafkaEventPublisherInfraTest {
 

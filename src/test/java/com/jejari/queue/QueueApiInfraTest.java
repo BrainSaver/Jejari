@@ -42,6 +42,7 @@ import com.jejari.support.WebSecurityTestConfig;
  * ({@code ./gradlew infraTest}).
  */
 @Tag("infra")
+@Tag("no-oracle") // Oracle 없이 돈다 → CI에서 push마다 (infraTest -PnoOracle, .github/workflows/infra-test.yml)
 @ExtendWith(NoRunningApp.class)
 @WebMvcTest(controllers = {QueueController.class, QueueApiInfraTest.SeatsProbe.class})
 @WebSecurityTestConfig
