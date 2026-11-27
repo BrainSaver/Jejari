@@ -53,6 +53,7 @@ public final class SignalCollector {
     private long fastCancels;
     private long lastMinuteCancels;
     private double cancelMinutesSum;
+    private long declinedCards;
 
     // 다계정 동시 선점 (시간순 슬라이딩 창)
     private final ArrayDeque<Hold> window = new ArrayDeque<>();
@@ -320,6 +321,13 @@ public final class SignalCollector {
         return this;
     }
 
+    /** 최근 1시간에 서로 다른 카드로 결제를 거절당한 수 (CI 대상, 읽는 쪽이 PG 장애 사유를 뺌) */
+    public SignalCollector declinedCards(long count) {
+        if (count < 0) throw new IllegalArgumentException("거절 카드 수가 음수입니다");
+        declinedCards = count;
+        return this;
+    }
+
     /** 이 대상에 연결된 계정 수 (자기 포함) */
     public SignalCollector linkedAccounts(long count) {
         if (count < 0) throw new IllegalArgumentException("연결 계정 수가 음수입니다");
@@ -343,6 +351,6 @@ public final class SignalCollector {
                 purchaseCount, totalSeats, maxSingle,
                 userCancels, fastCancels, lastMinuteCancels, avgCancel,
                 linkedAccounts, subjectType == SubjectType.DEVICE ? deviceSync() : maxSync, accountAgeDays, seatRetryFailures, mechanicalMouse,
-                headlessHolds, queueEnters > 0 && searches == 0, inhumanSteps);
+                headlessHolds, queueEnters > 0 && searches == 0, inhumanSteps, declinedCards);
     }
 }

@@ -133,6 +133,36 @@ public class RiskInputReader {
 		};
 	}
 
+	/** DECLINED_CARDS를 보는 창. 카드 대입은 짧은 시간에 몰아서 한다 (정책 키 없이 고정, 강다인 결정 2026-11-27) */
+	public static final java.time.Duration DECLINE_WINDOW = java.time.Duration.ofHours(1);
+
+	/**
+	 * 카드 대입 (DECLINED_CARDS): 이 명의의 계정들이 최근 1시간에 결제를 거절당한 <b>서로 다른 카드</b> 수. CI 대상만.
+	 *
+	 * <ul>
+	 *   <li>카드는 {@code method_hash}로 센다. {@code method_id}는 회원마다 따로라 계정을 바꿔 같은 카드를 쓰면 다르게 세진다</li>
+	 *   <li>{@code PG_}로 시작하는 실패 사유(PG_FAILED·PG_ERROR·PG_TIMEOUT·PG_NOT_RECEIVED…)는 PG 장애라 뺀다 —
+	 *       PG가 아프면 정상 사용자도 실패가 쌓인다 (강다인 님 지적)</li>
+	 *   <li>시각은 결제 요청 시각. 창은 {@code from}(관리자 해제 이후)과 1시간 전 중 늦은 쪽부터</li>
+	 * </ul>
+	 */
+	public void declinedCards(SignalCollector c, RiskSubject s, Instant from, Instant now) {
+		if (s.type() != SubjectType.CI) {
+			return; // 카드 쪽(한 카드에 여러 명의)은 카드 명의 상한이 맡는다. 기기는 구매·결제를 묶지 않는다
+		}
+		Instant since = from.isAfter(now.minus(DECLINE_WINDOW)) ? from : now.minus(DECLINE_WINDOW);
+		Long n = jdbc.queryForObject("""
+				SELECT COUNT(DISTINCT pm.method_hash)
+				  FROM payment p
+				  JOIN payment_method pm ON pm.method_id = p.method_id
+				 WHERE p.status = 'FAILED'
+				   AND NVL(p.fail_reason, '-') NOT LIKE 'PG\\_%' ESCAPE '\\'
+				   AND p.requested_at >= ?
+				   AND p.reservation_id IN (""" + reservationsOf(s.type()) + ")",
+				Long.class, Timestamp.from(since), s.hash());
+		c.declinedCards(n == null ? 0 : n);
+	}
+
 	/** from 이후 확정된 구매와 사용자 취소(USER) */
 	public void transactions(SignalCollector c, RiskSubject s, Instant from) {
 		String resv = reservationsOf(s.type());

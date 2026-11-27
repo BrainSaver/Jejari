@@ -74,6 +74,10 @@ public final class RiskEngine {
         if (s.queueWithoutSearch() && policy.noSearchEntryPoints() > 0) {
             reasons.add(new Reason(RiskRule.NO_SEARCH_ENTRY, 1, 1, policy.noSearchEntryPoints(), Severity.LOW));
         }
+        if (s.declinedCards() >= policy.declinedCardsMin() && policy.declinedCardsPoints() > 0) {
+            reasons.add(new Reason(RiskRule.DECLINED_CARDS, s.declinedCards(), policy.declinedCardsMin(),
+                    policy.declinedCardsPoints(), Severity.MID));
+        }
 
         if (s.intervalCount() >= policy.regularMinSamples() && s.intervalCv() <= policy.regularMaxCv()
                 && policy.regularPoints() > 0) {

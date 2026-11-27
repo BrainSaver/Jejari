@@ -33,6 +33,8 @@ import java.util.Map;
  * @param noSearchEntryPoints  조회 없이 대기열 진입 NO_SEARCH_ENTRY 배점 (LOW)
  * @param inhumanStepMs        "좌석표 → 선점", "선점 → 결제"가 이보다 빠르면 사람 손으로 불가능한 속도로 본다
  * @param inhumanStep          그런 단계 수 → INHUMAN_STEP
+ * @param declinedCardsMin     최근 1시간에 서로 다른 카드로 거절당한 수가 이 이상이면 DECLINED_CARDS (카드 대입)
+ * @param declinedCardsPoints  DECLINED_CARDS 배점 (점수만, 0이면 끔)
  * @param warningThreshold     위험 점수 등급 "경고"의 시작 점수 ({@link RiskGrade}). "위험"은 caseThreshold
  * @param halfLifeDays         이전 점수 반감기 (일)
  * @param caseThreshold        최종 점수가 이 이상이면 케이스를 연다 (RISK_THRESHOLD)
@@ -49,7 +51,7 @@ public record RiskPolicy(
         Tier linkedAccounts,
         long newAccountDays, int newAccountPoints,
         Tier linearMouse, Tier headlessHold, int noSearchEntryPoints,
-        long inhumanStepMs, Tier inhumanStep, int warningThreshold,
+        long inhumanStepMs, Tier inhumanStep, long declinedCardsMin, int declinedCardsPoints, int warningThreshold,
         double halfLifeDays, int caseThreshold) {
 
     public RiskPolicy {
@@ -72,6 +74,10 @@ public record RiskPolicy(
         points(newAccountPoints, "newAccountPoints");
         points(noSearchEntryPoints, "noSearchEntryPoints");
         positive(inhumanStepMs, "inhumanStepMs");
+        if (declinedCardsMin < 2) {
+            throw new IllegalArgumentException("declinedCardsMin은 2 이상이어야 합니다 (1이면 카드번호를 한 번 잘못 넣은 사람도 걸림)");
+        }
+        points(declinedCardsPoints, "declinedCardsPoints");
         if (warningThreshold < 1 || warningThreshold >= caseThreshold) {
             throw new IllegalArgumentException("warningThreshold는 1 이상이고 caseThreshold보다 작아야 합니다");
         }
@@ -121,6 +127,8 @@ public record RiskPolicy(
      * 계정 전환 15초: 기기(DEVICE) 대상의 MULTI_ACCOUNT_SYNC는 그 기기에서 다른 계정으로 15초 안에 바뀐 계정만 센다.
      *   가족이 한 컴퓨터로 차례로 사면 로그아웃·로그인·검색에 시간이 걸린다 — 2차 대회 가족 역할 최소 31.7초 (3초면 3초씩 쉬는 다계정 봇이 빠짐, ERD v40).
      * LINEAR_MOUSE 8 / 20: 로컬 실측(2026-11-23) botb 세션마다 17~29, botc·사람 0~1
+     * DECLINED_CARDS 3장 → 30 (MID, 케이스 아님): 사람은 오타·한도 초과로 1~2장. 30 = 경고 등급, 단독으로는 결제 단계 차단(80)에
+     *   닿지 않고 다른 신호와 합쳐야 막힌다 (ERD v41, 강다인 결정 2026-11-27)
      */
     public static RiskPolicy defaults() {
         return new RiskPolicy(
@@ -136,7 +144,7 @@ public record RiskPolicy(
                 7, 5,
                 new Tier(8, 25, 20, 40),
                 new Tier(1, 30, 3, 45), 30,
-                1000, new Tier(2, 30, 5, 40), 30,
+                1000, new Tier(2, 30, 5, 40), 3, 30, 30,
                 30, 80);
     }
 
@@ -164,6 +172,7 @@ public record RiskPolicy(
                 tier(p, "linear_mouse", d.linearMouse),
                 tier(p, "headless_hold", d.headlessHold), i(p, "no_search_entry_points", d.noSearchEntryPoints),
                 l(p, "inhuman_step_ms", d.inhumanStepMs), tier(p, "inhuman_step", d.inhumanStep),
+                l(p, "declined_cards_min", d.declinedCardsMin), i(p, "declined_cards_points", d.declinedCardsPoints),
                 i(p, "warning_threshold", d.warningThreshold),
                 dbl(p, "half_life_days", d.halfLifeDays), i(p, "case_threshold", d.caseThreshold));
     }

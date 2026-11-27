@@ -220,6 +220,7 @@ public class RiskScoreBatch {
 		reader.mouse(c, s, behaviorFrom);
 		reader.headless(c, now);
 		reader.transactions(c, s, purchaseFrom);
+		reader.declinedCards(c, s, purchaseFrom, now);
 		reader.accounts(c, s, now);
 		RiskResult r = engine.score(c.build(), prev, now);
 		if (!shouldWrite(stored, r, decayRefreshAfter)) {

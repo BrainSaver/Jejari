@@ -93,6 +93,11 @@ class InputValidationTest {
         assertThat(p.fastClick().points()).isEqualTo(30);
         assertThat(p.fastClick().highThreshold()).isEqualTo(60); // 없는 키는 기본값
         assertThat(p.caseThreshold()).isEqualTo(70);
+        RiskPolicy d = RiskPolicy.fromMap(Map.of("risk.rule.declined_cards_min", "4", "risk.rule.declined_cards_points", "25"));
+        assertThat(d.declinedCardsMin()).isEqualTo(4);
+        assertThat(d.declinedCardsPoints()).isEqualTo(25);
+        assertThat(RiskPolicy.defaults().declinedCardsMin()).isEqualTo(3);   // ERD v41 예시값과 같게
+        assertThat(RiskPolicy.defaults().declinedCardsPoints()).isEqualTo(30);
     }
 
     @Test
@@ -116,7 +121,9 @@ class InputValidationTest {
                 Map.of("risk.rule.half_life_days", "0"),
                 Map.of("risk.rule.case_threshold", "0"),
                 Map.of("risk.rule.case_threshold", "101"),
-                Map.of("risk.rule.new_account_points", "3000000000"))) {
+                Map.of("risk.rule.new_account_points", "3000000000"),
+                Map.of("risk.rule.declined_cards_min", "1"),       // 1장 = 카드번호 한 번 틀린 사람도
+                Map.of("risk.rule.declined_cards_points", "101"))) {
             assertThatThrownBy(() -> RiskPolicy.fromMap(bad)).as(bad.toString()).isInstanceOf(IllegalArgumentException.class);
         }
     }

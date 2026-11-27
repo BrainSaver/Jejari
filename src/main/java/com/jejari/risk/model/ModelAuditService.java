@@ -45,6 +45,13 @@ public class ModelAuditService {
 	static final String DETAIL = "무작위 점검 표본 — 의심 근거 아님, 모델 학습용 판정";
 	static final int MAX_COUNT = 20;
 	static final Duration WINDOW = Duration.ofDays(7);
+	/**
+	 * 후보를 요청 수의 몇 배 뽑을지 (최대 {@link #MAX_CANDIDATES}). 처음엔 5배였는데 탈퇴·삭제된 회원의 행동 로그(180일 보관)가 섞이면
+	 * 살아 있는 계정이 후보에 거의 안 들어가 요청보다 적게 열렸다 — 통합 테스트 전체 실행 뒤 후보 27명 중 3명만 살아 있어
+	 * "2명 요청 → 1명"으로 70%쯤 실패 (2026-11-27). 후보는 회원 ID 목록이라 넉넉히 뽑아도 가볍고, 목표 수가 차면 바로 멈춘다
+	 */
+	static final int CANDIDATE_FACTOR = 50;
+	static final int MAX_CANDIDATES = 1000;
 
 	private final JdbcTemplate jdbc;
 	private final MongoTemplate mongo;
@@ -87,13 +94,13 @@ public class ModelAuditService {
 		}
 		Instant now = clock.instant();
 		Instant from = now.minus(WINDOW);
-		// 최근 활동 계정에서 무작위 (Mongo $sample). 열린 케이스·중복 명의를 빼면 모자랄 수 있어 넉넉히 뽑는다
+		// 최근 활동 계정에서 무작위 (Mongo $sample). 탈퇴 회원·열린 케이스·중복 명의를 빼면 모자랄 수 있어 넉넉히 뽑는다
 		List<Long> picked = new ArrayList<>();
 		for (Document d : mongo.getCollection("behavior_log").aggregate(List.of(
 				new Document("$match", new Document("ts", new Document("$gte", java.util.Date.from(from)))
 						.append("member_id", new Document("$ne", null))),
 				new Document("$group", new Document("_id", "$member_id")),
-				new Document("$sample", new Document("size", count * 5))))) {
+				new Document("$sample", new Document("size", Math.min(MAX_CANDIDATES, count * CANDIDATE_FACTOR)))))) {
 			if (d.get("_id") instanceof Number n) {
 				picked.add(n.longValue());
 			}

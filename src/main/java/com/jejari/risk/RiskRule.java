@@ -59,7 +59,14 @@ public enum RiskRule {
      * 요청을 몇 번만 하는 매크로(연타·일정 간격 규칙의 최소 횟수에 안 닿음)를 잡는다 (강동균 연습 봇 30종 중 25종, 2026-11-23).
      * 마커 규칙 — ERD 패치 전에는 {@code MarkerCodes}가 마커를 빼서 점수만
      */
-    INHUMAN_STEP(true);
+    INHUMAN_STEP(true),
+
+    /**
+     * 카드 대입: 명의(CI)가 최근 1시간에 <b>서로 다른 카드</b>로 결제를 여러 번 거절당함 = 훔친 카드 목록이 살아 있는지 우리 결제로 시험.
+     * 같은 카드 반복 거절은 사람(잔액 부족 뒤 재시도)이라 세지 않고, {@code PG_}로 시작하는 실패 사유(PG 장애)도 세지 않는다.
+     * 점수만 (케이스 아님, ERD v41 정책 키 2개). 추천안 강동균 · 결정 강다인 (2026-11-27)
+     */
+    DECLINED_CARDS(false);
 
     private final boolean marker;
 

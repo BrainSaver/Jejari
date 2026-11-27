@@ -69,6 +69,10 @@ class RiskScoreBatchInfraTest {
 
 	@AfterEach
 	void tearDown() {
+		// 거절 결제(DECLINED_CARDS 테스트)는 결제 수단·예약보다 먼저
+		for (Long m : members) {
+			jdbc.update("DELETE FROM payment WHERE reservation_id IN (SELECT reservation_id FROM reservation WHERE member_id = ?)", m);
+		}
 		// 로그인 세션을 가리키는 case_session·case_marker를 먼저, 그다음 세션 (회원보다 먼저 지워야 FK에 안 걸린다)
 		for (String h : hashes) {
 			jdbc.update("DELETE FROM case_session WHERE case_id IN (SELECT case_id FROM suspicious_case WHERE subject_hash = ?)", h);
@@ -252,6 +256,63 @@ class RiskScoreBatchInfraTest {
 		batch.run();
 
 		assertThat(finalScore(SubjectType.PAYMENT, card)).isEqualByComparingTo("20.00"); // LINKED_ACCOUNTS HIGH
+	}
+
+	// ------------------------------------------------------------ DECLINED_CARDS (카드 대입, ERD v41)
+
+	@Test
+	void 서로_다른_카드_3장이_1시간_안에_거절되면_DECLINED_CARDS_30점() {
+		String ci = hash();
+		long m = member(ci, Instant.now().minus(30, ChronoUnit.DAYS));
+		for (int i = 0; i < 3; i++) {
+			declinedPayment(m, ci, hash(), "CARD_DECLINED", 10);
+		}
+		dirty.mark(new RiskSubject(SubjectType.CI, ci));
+
+		batch.run();
+
+		assertThat(finalScore(SubjectType.CI, ci)).isEqualByComparingTo("30.00");
+		assertThat(jdbc.queryForObject("SELECT reasons FROM risk_score WHERE subject_type = 'CI' AND subject_hash = ?",
+				String.class, ci)).contains("DECLINED_CARDS");
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM suspicious_case WHERE subject_hash = ?", Integer.class, ci))
+				.isZero(); // 점수만, 케이스 아님
+	}
+
+	@Test
+	void PG_장애_사유_같은_카드_반복_1시간_지난_거절은_세지_않는다() {
+		String ci = hash();
+		long m = member(ci, Instant.now().minus(30, ChronoUnit.DAYS));
+		String same = hash();
+		declinedPayment(m, ci, same, "CARD_DECLINED", 5);      // 같은 카드 3번 = 1장 (잔액 부족 뒤 재시도하는 사람)
+		declinedPayment(m, ci, same, "CARD_DECLINED", 6);
+		declinedPayment(m, ci, same, "CARD_DECLINED", 7);
+		declinedPayment(m, ci, hash(), "PG_TIMEOUT", 8);       // PG 장애 (강다인 님: PG_로 시작하는 사유는 모두 뺌)
+		declinedPayment(m, ci, hash(), "PG_NOT_RECEIVED", 9);
+		declinedPayment(m, ci, hash(), "CARD_DECLINED", 90);   // 1시간 넘게 지남
+		dirty.mark(new RiskSubject(SubjectType.CI, ci));
+
+		batch.run();
+
+		assertThat(rowCount(ci) == 0 || finalScore(SubjectType.CI, ci).signum() == 0).isTrue();
+	}
+
+	/** 거절된 결제 한 건: 예약은 결제 실패로 만료(EXPIRED), 결제는 FAILED. card = 카드 해시, minutesAgo = 결제 요청 시각 */
+	void declinedPayment(long memberId, String ci, String card, String reason, int minutesAgo) {
+		long methodId = NEXT_ID.getAndIncrement();
+		jdbc.update("INSERT INTO payment_method (method_id, member_id, method_hash, method_type, card_last4) VALUES (?, ?, ?, 'CARD', '0000')",
+				methodId, memberId, card);
+		long r = jdbc.queryForObject("SELECT reservation_seq.NEXTVAL FROM dual", Long.class);
+		jdbc.update("""
+				INSERT INTO reservation (reservation_id, member_id, ci_hash, run_id, from_station_id, to_station_id,
+				  seat_count, total_amount, status, channel, source, held_at, pay_deadline_at, idempotency_key, version)
+				VALUES (?, ?, ?, 9001, '3900023', '3900114', 1, 59800, 'EXPIRED', 'WEB', 'NORMAL',
+				  SYSTIMESTAMP - NUMTODSINTERVAL(?, 'MINUTE'), SYSTIMESTAMP, ?, 0)""",
+				r, memberId, ci, minutesAgo + 1, UUID.randomUUID().toString());
+		long p = jdbc.queryForObject("SELECT payment_seq.NEXTVAL FROM dual", Long.class);
+		jdbc.update("""
+				INSERT INTO payment (payment_id, reservation_id, method_id, amount, status, fail_reason, idempotency_key, requested_at)
+				VALUES (?, ?, ?, 59800, 'FAILED', ?, ?, SYSTIMESTAMP - NUMTODSINTERVAL(?, 'MINUTE'))""",
+				p, r, methodId, reason, UUID.randomUUID().toString(), minutesAgo);
 	}
 
 	@Test
